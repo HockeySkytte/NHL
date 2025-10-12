@@ -3,6 +3,6 @@ services:
     name: nhl-analytics
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn wsgi:app"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT wsgi:app"
     autoDeploy: true
     plan: free

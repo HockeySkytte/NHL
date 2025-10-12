@@ -226,6 +226,46 @@ def api_standings(season: int):
         return jsonify({'error': 'Failed to fetch standings'}), 502
 
 
+@main_bp.route('/api/diag/models')
+def api_diag_models():
+    """Diagnostics for model loading in production.
+    Returns Python and package versions, model directory, and available model files.
+    """
+    import sys
+    info: Dict[str, Any] = {}
+    try:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        model_dir = os.path.join(project_root, 'Model')
+        files = []
+        try:
+            files = sorted([f for f in os.listdir(model_dir) if f.endswith('.pkl')]) if os.path.isdir(model_dir) else []
+        except Exception:
+            files = []
+        # Versions
+        def _ver(mod_name: str) -> Optional[str]:
+            try:
+                mod = __import__(mod_name)
+                return getattr(mod, '__version__', 'unknown')
+            except Exception:
+                return None
+        info = {
+            'python': sys.version,
+            'versions': {
+                'numpy': _ver('numpy'),
+                'pandas': _ver('pandas'),
+                'sklearn': _ver('sklearn'),
+                'xgboost': _ver('xgboost'),
+                'joblib': _ver('joblib'),
+            },
+            'model_dir': model_dir,
+            'model_count': len(files),
+            'models': files,
+        }
+    except Exception:
+        info = {'error': 'diagnostics_failed'}
+    return jsonify(info)
+
+
 # Load Teams.csv (used for theming and lookups in templates)
 def _load_teams_csv() -> List[Dict[str, str]]:
     paths = [
