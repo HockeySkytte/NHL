@@ -1,2 +1,6 @@
-flask==3.0.3
-requests==2.32.3
+flask
+requests
+numpy
+joblib
+beautifulsoup4
+gunicorn
