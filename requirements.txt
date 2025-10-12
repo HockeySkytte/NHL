@@ -1,6 +1,9 @@
-flask
+Flask
 requests
 numpy
 joblib
 beautifulsoup4
 gunicorn
+pandas
+xgboost
+scikit-learn
