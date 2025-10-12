@@ -21,6 +21,30 @@ except Exception:
 
 # Blueprint
 main_bp = Blueprint('main', __name__)
+
+# --- Module-level caches for performance ---
+_MODEL_CACHE: Dict[str, Any] = {}
+_FEATURE_COLS_CACHE: Dict[str, List[str]] = {}
+_PBP_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_SHIFTS_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_BOX_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+
+def _cache_get(cache: Dict, key, ttl: int) -> Optional[Any]:
+    try:
+        import time
+        ts, val = cache.get(key, (0, None))
+        if ts and (time.time() - ts) < ttl:
+            return val
+    except Exception:
+        return None
+    return None
+
+def _cache_set(cache: Dict, key, val) -> None:
+    try:
+        import time
+        cache[key] = (time.time(), val)
+    except Exception:
+        pass
 @main_bp.route('/')
 def index_page():
     """Frontpage Schedule view."""
@@ -429,6 +453,14 @@ def game_page(game_id: int):
 
 @main_bp.route('/api/game/<int:game_id>/boxscore')
 def api_game_boxscore(game_id: int):
+    # Serve from cache if available
+    try:
+        ttl = int(os.getenv('BOX_CACHE_TTL_SECONDS', '600'))
+        cached = _cache_get(_BOX_CACHE, int(game_id), ttl)
+        if cached:
+            return jsonify(cached)
+    except Exception:
+        pass
     url = f'https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore'
     try:
         resp = requests.get(url, timeout=20)
@@ -440,6 +472,10 @@ def api_game_boxscore(game_id: int):
     # Pass through mostly untouched; rename id to gameId for consistency
     if 'id' in data and 'gameId' not in data:
         data['gameId'] = data['id']
+    try:
+        _cache_set(_BOX_CACHE, int(game_id), data)
+    except Exception:
+        pass
     return jsonify(data)
 
 
@@ -464,6 +500,14 @@ def api_game_right_rail(game_id: int):
 @main_bp.route('/api/game/<int:game_id>/play-by-play')
 def api_game_pbp(game_id: int):
     """Fetch NHL play-by-play and map to requested wide schema."""
+    # Serve from cache when available
+    try:
+        ttl = int(os.getenv('PBP_CACHE_TTL_SECONDS', '600'))
+        cached = _cache_get(_PBP_CACHE, int(game_id), ttl)
+        if cached:
+            return jsonify(cached)
+    except Exception:
+        pass
     url = f'https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play'
     try:
         resp = requests.get(url, timeout=25)
@@ -473,24 +517,25 @@ def api_game_pbp(game_id: int):
         return jsonify({'error': 'Upstream error', 'status': resp.status_code}), 502
     data = resp.json()
 
-    # Fetch skater bios for this game to retrieve shoots/catches for players
+    # Fetch skater bios for this game to retrieve shoots/catches for players (optional for performance)
     shoots_map: Dict[int, str] = {}
     try:
-        gid_for_bios = data.get('id') or game_id
-        bios_url = f"https://api.nhle.com/stats/rest/en/skater/bios?limit=-1&start=0&cayenneExp=gameId={gid_for_bios}"
-        r_bios = requests.get(bios_url, timeout=20)
-        if r_bios.status_code == 200:
-            bios_json = r_bios.json()
-            rows = bios_json.get('data') if isinstance(bios_json, dict) else []
-            if isinstance(rows, list):
-                for row in rows:
-                    try:
-                        pid = row.get('playerId')
-                        sc = row.get('shootsCatches') or row.get('shoots') or row.get('ShootsCatches')
-                        if isinstance(pid, int) and sc:
-                            shoots_map[pid] = str(sc).strip().upper()[:1]
-                    except Exception:
-                        continue
+        if os.getenv('FETCH_BIOS', '0') == '1':
+            gid_for_bios = data.get('id') or game_id
+            bios_url = f"https://api.nhle.com/stats/rest/en/skater/bios?limit=-1&start=0&cayenneExp=gameId={gid_for_bios}"
+            r_bios = requests.get(bios_url, timeout=15)
+            if r_bios.status_code == 200:
+                bios_json = r_bios.json()
+                rows = bios_json.get('data') if isinstance(bios_json, dict) else []
+                if isinstance(rows, list):
+                    for row in rows:
+                        try:
+                            pid = row.get('playerId')
+                            sc = row.get('shootsCatches') or row.get('shoots') or row.get('ShootsCatches')
+                            if isinstance(pid, int) and sc:
+                                shoots_map[pid] = str(sc).strip().upper()[:1]
+                        except Exception:
+                            continue
     except Exception:
         shoots_map = {}
 
@@ -1072,18 +1117,15 @@ def api_game_pbp(game_id: int):
             a = int(str(s)[:4]); b = int(str(s)[4:])
             return (a+1)*10000 + (b+1)
 
-        # Cache for loaded models keyed by filename
-        model_cache: Dict[str, Any] = {}
-
         def load_model(fname: str):
-            if fname in model_cache:
-                return model_cache[fname]
+            if fname in _MODEL_CACHE:
+                return _MODEL_CACHE[fname]
             path = os.path.join(model_dir, fname)
             if not os.path.exists(path):
                 return None
             try:
                 m = joblib.load(path)
-                model_cache[fname] = m
+                _MODEL_CACHE[fname] = m
                 return m
             except Exception:
                 return None
@@ -1095,16 +1137,21 @@ def api_game_pbp(game_id: int):
         ]
 
         def _required_columns_for_model(m: Any) -> Optional[List[str]]:
-            cols = None
             try:
+                key = f"cols_id_{id(m)}"
+                if key in _FEATURE_COLS_CACHE:
+                    return _FEATURE_COLS_CACHE[key]
+                cols = None
                 if hasattr(m, 'feature_names_in_'):
                     cols = list(getattr(m, 'feature_names_in_'))
                 elif hasattr(m, 'get_booster'):
                     booster = m.get_booster()
                     cols = getattr(booster, 'feature_names', None)
+                if cols:
+                    _FEATURE_COLS_CACHE[key] = cols
+                return cols
             except Exception:
-                cols = None
-            return cols
+                return None
 
         def _vectorize_row_for_model(row_obj: Dict[str, Any], m: Any):
             cols = _required_columns_for_model(m)
@@ -1142,13 +1189,20 @@ def api_game_pbp(game_id: int):
                 s_next = season_next(s_cur)
                 s_prev2 = season_prev(s_prev)   # s-2
                 s_next2 = season_next(s_next)   # s+2
-                # Derive three filenames according to spec for season s:
-                # 1) (s-2 .. s), 2) (s-1 .. s+1), 3) (s .. s+2)
-                names = [
-                    f"{model_prefix}_{s_prev2}_{s_cur}.pkl",
-                    f"{model_prefix}_{s_prev}_{s_next}.pkl",
-                    f"{model_prefix}_{s_cur}_{s_next2}.pkl",
+                # Derive filenames; number of windows configurable via env XG_WINDOWS (default 1 for perf)
+                num_windows = 1
+                try:
+                    num_windows = max(1, min(3, int(os.getenv('XG_WINDOWS', '1'))))
+                except Exception:
+                    num_windows = 1
+                all_names = [
+                    f"{model_prefix}_{s_prev2}_{s_cur}.pkl",    # window 1: s-2..s
+                    f"{model_prefix}_{s_prev}_{s_next}.pkl",    # window 2: s-1..s+1
+                    f"{model_prefix}_{s_cur}_{s_next2}.pkl",    # window 3: s..s+2
                 ]
+                # Choose middle window first as most centered
+                order = [1, 0, 2]
+                names = [all_names[i] for i in order[:num_windows]]
             models = [load_model(n) for n in names]
             models = [m for m in models if m is not None]
             if not models:
@@ -1252,10 +1306,15 @@ def api_game_pbp(game_id: int):
 
     mapped_sanitized = [_sanitize_row(r) for r in mapped]
 
-    return jsonify({
+    out_obj = {
         'gameId': data.get('id'),
         'plays': mapped_sanitized,
-    })
+    }
+    try:
+        _cache_set(_PBP_CACHE, int(game_id), out_obj)
+    except Exception:
+        pass
+    return jsonify(out_obj)
 
 
 @main_bp.route('/api/game/<int:game_id>/shifts')
@@ -1852,13 +1911,19 @@ def api_game_shifts(game_id: int):
                 'StrengthState': strength,
             })
 
-    return jsonify({
+    out = {
         'gameId': game_id,
         'seasonDir': season_dir,
         'suffix': suffix,
         'source': urls,
         'shifts': split_rows,
-    })
+    }
+    try:
+        ttl = int(os.getenv('SHIFTS_CACHE_TTL_SECONDS', '600'))
+        _cache_set(_SHIFTS_CACHE, int(game_id), out)
+    except Exception:
+        pass
+    return jsonify(out)
     running_away = 0
     running_home = 0
 
