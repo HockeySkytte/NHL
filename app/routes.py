@@ -11,7 +11,7 @@ from typing import Dict, List, Tuple, Optional, Any
 import requests
 import numpy as np  # for numeric handling in model inference
 import joblib       # to load pickled models
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, jsonify, render_template, request
 
 try:
     from bs4 import BeautifulSoup  # type: ignore
@@ -1057,7 +1057,10 @@ def api_game_pbp(game_id: int):
         last_game_time = row.get('gameTime') if row.get('gameTime') is not None else last_game_time
 
     # xG computations using pickled models, skipping ENA strength
+    compute_xg = (request.args.get('xg', '1') != '0') and (os.getenv('XG_DISABLED', '0') != '1')
     try:
+        if not compute_xg:
+            raise Exception('xg_disabled')
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         model_dir = os.path.join(project_root, 'Model')
 
@@ -1204,9 +1207,33 @@ def api_game_pbp(game_id: int):
         # Fail-safe: don't block PBP if models or pandas are unavailable
         pass
 
+    # Sanitize JSON output to avoid NaN/Inf and numpy types
+    def _safe_val(v: Any):
+        try:
+            import numpy as _np  # type: ignore
+            if isinstance(v, (_np.generic,)):
+                v = v.item()
+        except Exception:
+            pass
+        if isinstance(v, float):
+            try:
+                if not math.isfinite(v):
+                    return None
+            except Exception:
+                return None
+        return v
+
+    def _sanitize_row(r: Dict[str, Any]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for k, v in r.items():
+            out[k] = _safe_val(v)
+        return out
+
+    mapped_sanitized = [_sanitize_row(r) for r in mapped]
+
     return jsonify({
         'gameId': data.get('id'),
-        'plays': mapped,
+        'plays': mapped_sanitized,
     })
 
 
