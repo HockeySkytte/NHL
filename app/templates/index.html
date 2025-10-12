@@ -1,0 +1,196 @@
+{% extends 'base.html' %}
+{% block head %}
+<style>
+  .month-container { margin-bottom:32px; }
+  .game-tile { position:relative; overflow:hidden; }
+  .game-tile .bg-logo { position:absolute; inset:0; background-position:center; background-repeat:no-repeat; background-size:85%; opacity:0.3; filter:grayscale(100%) contrast(120%); pointer-events:none; }
+  .game-tile .game-date { position:absolute; top:4px; left:6px; font-size:10px; opacity:.85; z-index:2; color:inherit; }
+  .game-tile .matchup { position:absolute; left:8px; bottom:6px; font-weight:600; font-size:.9rem; z-index:2; }
+  .game-tile .score-line { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:1.5rem; font-weight:700; text-align:center; line-height:1.1; z-index:2; white-space:nowrap; }
+  .game-tile .status-chip { position:absolute; right:6px; bottom:6px; z-index:2; }
+  /* Smaller card height */
+  .calendar-grid .game-tile { aspect-ratio:7/5 !important; }
+  /* Month controls as title */
+  #monthControls select { font-size:26px; font-weight:600; background:transparent; border:none; color:var(--text); padding:4px 8px; letter-spacing:1px; }
+  #monthControls select option { color:#111; background:#f1f3f6; }
+  #monthControls select:focus { outline:none; }
+  #monthControls button { background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:8px 12px; font-size:20px; line-height:1; border-radius:10px; font-weight:600; cursor:pointer; transition:.18s background; }
+  #monthControls button:hover:not(:disabled){ background:var(--panel); }
+  #monthControls button:disabled { opacity:.35; cursor:default; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="monthControls" style="display:flex; justify-content:center; align-items:center; gap:.75rem; margin:0 0 1rem 0;"></div>
+<div id="scheduleRoot"></div>
+<div id="scheduleLegend" style="margin-top:8px; font-size:16px; display:flex; gap:32px; align-items:center; justify-content:center; flex-wrap:wrap; font-weight:600;"></div>
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+{% endblock %}
+{% block scripts %}
+<script>
+// Load teams JSON embedded in a non-JS script tag to keep template parsers happy
+const teams = JSON.parse(document.getElementById('teams-data').textContent);
+const teamSelect = document.getElementById('teamSelect');
+const seasonSelect = document.getElementById('seasonSelect');
+const seasonStateSelect = document.getElementById('seasonStateSelect');
+const scheduleRoot = document.getElementById('scheduleRoot');
+let seasonMeta = window.__seasonMeta || [];
+
+function lightenDarken(hex, factor){
+  hex = hex.replace('#','');
+  let r=parseInt(hex.substring(0,2),16), g=parseInt(hex.substring(2,4),16), b=parseInt(hex.substring(4,6),16);
+  if(factor>1){r=r+(255-r)*(factor-1); g=g+(255-g)*(factor-1); b=b+(255-b)*(factor-1);} else {r*=factor; g*=factor; b*=factor;}
+  r=Math.min(255,Math.max(0,Math.round(r))); g=Math.min(255,Math.max(0,Math.round(g))); b=Math.min(255,Math.max(0,Math.round(b)));
+  return '#' + r.toString(16).padStart(2,'0') + g.toString(16).padStart(2,'0') + b.toString(16).padStart(2,'0');
+}
+
+function isLight(hex){
+  hex=hex.replace('#','');
+  let r=parseInt(hex.substring(0,2),16), g=parseInt(hex.substring(2,4),16), b=parseInt(hex.substring(4,6),16);
+  return (0.299*r+0.587*g+0.114*b)>155;
+}
+
+let currentFilteredGames = [];
+let monthMeta = []; // [{key, year, month, label}]
+let currentMonthIndex = 0;
+
+async function loadSchedule(){
+  const team = teamSelect.value;
+  const season = seasonSelect.value;
+  if(!team||!season) return;
+  scheduleRoot.innerHTML = '<p>Loading schedule...</p>';
+  const r = await fetch(`/api/schedule/${team}/${season}`);
+  let games = await r.json();
+  console.debug('Raw schedule sample:', games.slice(0,3));
+  // Exclude preseason (gameType 1)
+  games = games.filter(g=> String(g.gameType) !== '1');
+  // Normalize gameType: 2->R, 3->P (others kept)
+  games = games.map(g=>{
+    const raw = String(g.gameType).toUpperCase();
+    const norm = (raw==='2'||raw==='R') ? 'R' : (raw==='3'||raw==='P') ? 'P' : raw;
+    return { ...g, gameType: norm };
+  });
+  const state = seasonStateSelect.value; // '2' regular, '3' playoffs
+  const want = state==='2' ? 'R' : (state==='3' ? 'P' : null);
+  currentFilteredGames = want ? games.filter(g=>g.gameType===want) : games;
+  buildMonthMeta();
+  renderCurrentMonth(team);
+}
+
+function buildMonthMeta(){
+  const set = new Set();
+  monthMeta = [];
+  currentFilteredGames.forEach(g=>{
+    if(!g.date) return; const d = new Date(g.date); if(isNaN(d)) return; const key = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    if(!set.has(key)){
+      set.add(key);
+      monthMeta.push({key, year:d.getFullYear(), month:d.getMonth(), label: d.toLocaleString('default',{month:'long'})+ ' '+ d.getFullYear()});
+    }
+  });
+  monthMeta.sort((a,b)=> a.year===b.year? a.month-b.month : a.year-b.year);
+  // Choose month containing today if present else first
+  const today = new Date();
+  const todayKey = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
+  const idx = monthMeta.findIndex(m=>m.key===todayKey);
+  currentMonthIndex = idx>=0? idx : 0;
+  buildMonthControls();
+}
+
+function buildMonthControls(){
+  const mc = document.getElementById('monthControls');
+  if(!mc) return;
+  if(!monthMeta.length){ mc.innerHTML=''; return; }
+  mc.innerHTML = '';
+  const prevBtn = document.createElement('button'); prevBtn.textContent='◀'; prevBtn.disabled = currentMonthIndex===0; prevBtn.onclick=()=>{ if(currentMonthIndex>0){ currentMonthIndex--; renderCurrentMonth(teamSelect.value); buildMonthControls(); }};
+  const nextBtn = document.createElement('button'); nextBtn.textContent='▶'; nextBtn.disabled = currentMonthIndex===monthMeta.length-1; nextBtn.onclick=()=>{ if(currentMonthIndex<monthMeta.length-1){ currentMonthIndex++; renderCurrentMonth(teamSelect.value); buildMonthControls(); }};
+  const select = document.createElement('select');
+  monthMeta.forEach((m,i)=>{ const opt=document.createElement('option'); opt.value=i; opt.textContent=m.label; if(i===currentMonthIndex) opt.selected=true; select.appendChild(opt); });
+  select.onchange = ()=>{ currentMonthIndex = parseInt(select.value,10); renderCurrentMonth(teamSelect.value); buildMonthControls(); };
+  mc.appendChild(prevBtn); mc.appendChild(select); mc.appendChild(nextBtn);
+}
+
+function handleSeasonStateAvailability(){ loadSchedule(); }
+
+// Monday-first month builder
+function getMondayStartOffset(jsDow){
+  // jsDow: 0=Sun ... 6=Sat -> want 0 for Mon
+  return (jsDow+6)%7; // Sun(0)->6, Mon(1)->0,...
+}
+
+function buildMonth(year, month, games, team){
+  const first=new Date(year,month,1); const startDow=getMondayStartOffset(first.getDay());
+  const days=new Date(year, month+1,0).getDate();
+  const teamRow = teams.find(t=>t.Team===team);
+  const baseColor = teamRow?teamRow.Color:'#1d2735';
+  const light = lightenDarken(baseColor, isLight(baseColor)?0.6:1.6);
+  const dark = lightenDarken(baseColor, isLight(baseColor)?0.35:0.8);
+  let html=`<div class="month-container">`;
+  html+='<div class="day-names">'+['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div>${d}</div>`).join('')+'</div>';
+  html+='<div class="calendar-grid">';
+  for(let i=0;i<startDow;i++){ html+='<div class="game-tile empty"></div>'; }
+  for(let day=1; day<=days; day++){
+    const dateGames = games.filter(g=>g._dateObj.getDate()==day);
+    if(!dateGames.length){ html+=`<div class="game-tile"><div class="game-date">${day}</div></div>`; continue; }
+    // Only first game shown succinctly; could extend
+    const g=dateGames[0];
+    const opp = g.opponent;
+    const isHome = g.is_home;
+    const tileColor = isHome? light : dark;
+    const label = isHome? 'vs ' + opp : 'at ' + opp;
+    const status = g.status || '';
+    // Score / outcome
+    let scoreLine='';
+  const statusUp = (g.status||'').toUpperCase();
+  const haveScores = g.home_score!=null && g.away_score!=null && (statusUp.includes('FINAL') || statusUp==='OFF');
+    if(haveScores){
+      const teamScore = isHome? g.home_score : g.away_score;
+      const oppScore = isHome? g.away_score : g.home_score;
+      let outcome='';
+      if(teamScore>oppScore) outcome='W';
+      else if(teamScore<oppScore){
+        const lpt = (g.lastPeriodType||'').toUpperCase();
+        if(lpt==='SO' || lpt==='SHOOTOUT') outcome='SOL';
+        else if(lpt==='OT') outcome='OTL';
+        else outcome='L';
+      } else if(teamScore===oppScore) {
+        outcome='T';
+      }
+      scoreLine = `${outcome} ${teamScore}-${oppScore}`.trim();
+    }
+    const oppLogo = (teams.find(t=>t.Team===opp)||{}).Logo || '';
+    const gameLink = `/game/${g.id}`;
+    html+=`<a href="${gameLink}" class="game-tile ${isHome?'home':'away'}" style="background:${tileColor}; color:${isLight(tileColor)?'#081018':'#f1f5f9'}; text-decoration:none;">
+      <div class="bg-logo" style="background-image:url('${oppLogo}')"></div>
+      <div class="game-date">${day}</div>
+      <div class="matchup">${label}</div>
+      ${scoreLine?`<div class="score-line">${scoreLine}</div>`:''}
+      <div class="status-chip">${status}</div>
+    </a>`;
+  }
+  html+='</div></div>';
+  return html;
+}
+function renderCurrentMonth(team){
+  if(!currentFilteredGames.length){ scheduleRoot.innerHTML='<p>No games.</p>'; return; }
+  if(!monthMeta.length){ scheduleRoot.innerHTML='<p>No games.</p>'; return; }
+  const meta = monthMeta[currentMonthIndex];
+  const games = currentFilteredGames.map(g=>{ const d=new Date(g.date); return {...g, _dateObj:d}; }).filter(g=> g._dateObj.getFullYear()==meta.year && g._dateObj.getMonth()==meta.month);
+  scheduleRoot.innerHTML = buildMonth(meta.year, meta.month, games, team);
+  renderLegend(team);
+}
+
+function renderLegend(team){
+  const el = document.getElementById('scheduleLegend');
+  if(!el) return;
+  const teamRow = teams.find(t=>t.Team===team);
+  const base = teamRow?teamRow.Color:'#1d2735';
+  const light = lightenDarken(base, isLight(base)?0.6:1.6);
+  const dark = lightenDarken(base, isLight(base)?0.35:0.8);
+  el.innerHTML = `<span style="display:inline-flex; align-items:center; gap:8px;"><span style="width:22px;height:22px;border-radius:6px;background:${light};border:1px solid rgba(255,255,255,.15);"></span>Home</span>
+  <span style="display:inline-flex; align-items:center; gap:8px;"><span style="width:22px;height:22px;border-radius:6px;background:${dark};border:1px solid rgba(255,255,255,.15);"></span>Away</span>`;
+}
+
+// Global init handles theme and data population; ensure schedule loads after meta.
+seasonStateSelect && seasonStateSelect.addEventListener('change', ()=> loadSchedule());
+setTimeout(()=> loadSchedule(), 600);
+</script>
+{% endblock %}

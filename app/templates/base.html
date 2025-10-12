@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NHL Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0d0f16; --panel:#141826; --panel-alt:#1c2233; --text:#e6e8ec; --text-dim:#9aa4b1; --accent:#4da3ff; }
+    body { margin:0; font-family:Inter, system-ui, sans-serif; background:linear-gradient(160deg,#05060a,#0f121a); color:var(--text); }
+    .app-shell { display:grid; grid-template-columns:260px 1fr; min-height:100vh; }
+  aside { background:radial-gradient(circle at 30% 20%, var(--panel), #0b0e15); padding:16px 14px 20px; border-right:1px solid #232a3a; }
+  header { display:flex; align-items:center; gap:10px; margin-bottom:24px; }
+  header img.logo { height:48px; filter:drop-shadow(0 0 4px #000); }
+  h1 { font-size:24px; letter-spacing:.8px; font-weight:650; margin:0; }
+  nav.tabs { display:flex; gap:36px; padding:0 34px; height:66px; align-items:flex-end; border-bottom:1px solid #1f2734; background:#0e121b; position:sticky; top:0; z-index:30; }
+  nav.tabs a { position:relative; top:10px; padding:12px 6px 18px; font-size:16px; font-weight:600; color:var(--text-dim); text-decoration:none; letter-spacing:.6px; }
+  nav.tabs a.active, nav.tabs a:hover { color:var(--text); }
+  nav.tabs a.active::after { content:""; position:absolute; left:0; right:0; bottom:10px; height:4px; border-radius:4px; background:var(--accent); box-shadow:0 0 8px -1px var(--accent); }
+    .filters { display:flex; flex-direction:column; gap:18px; }
+    label { display:flex; flex-direction:column; font-size:12px; gap:6px; text-transform:uppercase; letter-spacing:.9px; color:var(--text-dim); font-weight:600; }
+  select { background:var(--panel-alt); color:var(--text); border:1px solid #2a3142; padding:10px 12px; border-radius:8px; font-size:14px; font-weight:500; appearance:none; -webkit-appearance:none; -moz-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239aa4b1'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; background-size:18px; padding-right:42px; }
+  select:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  label.checkbox-row { flex-direction:row; align-items:center; font-size:11px; letter-spacing:.8px; text-transform:uppercase; gap:8px; font-weight:600; }
+  label.checkbox-row span { position:relative; top:1px; }
+  label.checkbox-row input { accent-color:var(--accent); width:16px; height:16px; }
+    main { padding:26px 42px 60px; }
+    .calendar-grid { width:100%; display:grid; grid-template-columns:repeat(7, 1fr); gap:6px; }
+    .month-header { display:flex; justify-content:space-between; align-items:center; margin:6px 0 20px; }
+    .month-title { font-size:28px; font-weight:600; letter-spacing:1px; }
+    .day-names { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:4px; }
+    .day-names div { text-align:center; font-size:11px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); }
+    .game-tile { position:relative; aspect-ratio:7/6; border-radius:10px; padding:6px 6px 4px; display:flex; flex-direction:column; justify-content:space-between; overflow:hidden; background:#1a2231; border:1px solid #1d2735; box-shadow:0 2px 4px -2px rgba(0,0,0,.6); }
+    .game-tile.empty { background:transparent; border:none; box-shadow:none; }
+    .game-date { font-size:11px; font-weight:600; letter-spacing:.5px; color:var(--text-dim); }
+    .matchup { font-size:18px; font-weight:700; line-height:1.15; letter-spacing:.5px; }
+    .home { outline:2px solid rgba(255,255,255,.08); }
+    .legend { display:flex; gap:16px; font-size:12px; margin-top:18px; color:var(--text-dim); }
+    .legend span { display:inline-flex; align-items:center; gap:6px; }
+    .dot { width:14px; height:14px; border-radius:4px; background:var(--panel-alt); box-shadow:0 0 0 1px #222d3d; }
+    footer { margin-top:60px; font-size:12px; color:#5b6472; }
+    .status-chip { position:absolute; bottom:4px; right:6px; font-size:10px; font-weight:600; letter-spacing:.5px; background:rgba(0,0,0,.35); padding:3px 6px; border-radius:5px; backdrop-filter:blur(4px); }
+    .skeleton { background:linear-gradient(100deg,#1d2431,#2a3344 40%,#1d2431 60%); background-size:200% 100%; animation:shimmer 1.2s linear infinite; }
+    @keyframes shimmer { to { background-position:-200% 0; } }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="app-shell">
+    <aside>
+      <header>
+        <img class="logo" src="https://assets.nhle.com/logos/nhl/svg/NHL_dark.svg" alt="NHL" />
+        <h1>NHL Analytics</h1>
+      </header>
+      <div class="filters">
+        <label>Team
+          <select id="teamSelect"></select>
+        </label>
+        <label>Season
+          <select id="seasonSelect"></select>
+        </label>
+        {% if show_season_state %}
+        <label>Season State
+          <select id="seasonStateSelect">
+            <option value="2" selected>Regular Season</option>
+            <option value="3">Playoffs</option>
+          </select>
+        </label>
+        {% endif %}
+        <label class="checkbox-row"><input type="checkbox" id="includeHistoric" /> <span>Include Historic Teams</span></label>
+      </div>
+    </aside>
+    <div>
+      <nav class="tabs">
+        <a href="/" class="{% if active_tab=='Schedule' %}active{% endif %}">Schedule</a>
+        <a href="/standings" class="{% if active_tab=='Standings' %}active{% endif %}">Standings</a>
+        <a href="#" class="{% if active_tab=='Live Games' %}active{% endif %}">Live Games</a>
+        <a href="#" class="{% if active_tab=='Game Projections' %}active{% endif %}">Game Projections</a>
+        <a href="#" class="{% if active_tab=='Skaters' %}active{% endif %}">Skaters</a>
+        <a href="#" class="{% if active_tab=='Goalies' %}active{% endif %}">Goalies</a>
+        <a href="#" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
+        <a href="#" class="{% if active_tab=='About' %}active{% endif %}">About</a>
+      </nav>
+      <main>
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if(window.__filtersInit) return; window.__filtersInit = true;
+    const teamSelect = document.getElementById('teamSelect');
+    const seasonSelect = document.getElementById('seasonSelect');
+    const seasonStateSelect = document.getElementById('seasonStateSelect');
+    const includeHistoric = document.getElementById('includeHistoric');
+    if(!teamSelect || !seasonSelect) return;
+    function parseTeams(){
+      const tag = document.getElementById('teams-data');
+      if(!tag) return [];
+      try { return JSON.parse(tag.textContent); } catch(e){ return []; }
+    }
+    const teamsData = parseTeams();
+    if(typeof lightenDarken==='undefined'){
+      window.lightenDarken = function(hex, factor){ hex=hex.replace('#',''); let r=parseInt(hex.substring(0,2),16), g=parseInt(hex.substring(2,4),16), b=parseInt(hex.substring(4,6),16); if(factor>1){r=r+(255-r)*(factor-1); g=g+(255-g)*(factor-1); b=b+(255-b)*(factor-1);} else {r*=factor; g*=factor; b*=factor;} r=Math.min(255,Math.max(0,Math.round(r))); g=Math.min(255,Math.max(0,Math.round(g))); b=Math.min(255,Math.max(0,Math.round(b))); return '#' + r.toString(16).padStart(2,'0') + g.toString(16).padStart(2,'0') + b.toString(16).padStart(2,'0'); };
+    }
+    if(typeof isLight==='undefined'){
+      window.isLight = function(hex){ hex=hex.replace('#',''); let r=parseInt(hex.substring(0,2),16), g=parseInt(hex.substring(2,4),16), b=parseInt(hex.substring(4,6),16); return (0.299*r+0.587*g+0.114*b)>155; };
+    }
+    function setTheme(){
+      const teamRow = teamsData.find(t=>t.Team===teamSelect.value);
+      if(!teamRow) return;
+      const base = teamRow.Color || '#1d2735';
+      const light = lightenDarken(base, isLight(base)?0.55:1.4);
+      const dark1 = lightenDarken(base, isLight(base)?0.35:0.75);
+      const dark2 = lightenDarken(base, isLight(base)?0.25:0.55);
+      const root = document.documentElement;
+      root.style.setProperty('--accent', light);
+      root.style.setProperty('--bg', dark2);
+      root.style.setProperty('--panel', dark1);
+      root.style.setProperty('--panel-alt', base);
+      const valueColor = isLight(base)? '#0f141b' : '#f1f5f9';
+      const viewModeSelect = document.getElementById('viewMode');
+      [teamSelect, seasonSelect, seasonStateSelect, viewModeSelect].filter(Boolean).forEach(sel=> sel.style.color = valueColor);
+    }
+    function populateTeams(){
+      const showHistoric = includeHistoric && includeHistoric.checked;
+      const list = teamsData.filter(t=> showHistoric || String(t.Active)==='1');
+      list.sort((a,b)=>a.Name.localeCompare(b.Name));
+      const prev = teamSelect.value || localStorage.getItem('team');
+      teamSelect.innerHTML = list.map(t=>`<option value="${t.Team}">${t.Name}</option>`).join('');
+      if(prev && list.find(t=>t.Team===prev)) teamSelect.value = prev; else if(list.length) teamSelect.value = list[0].Team;
+      localStorage.setItem('team', teamSelect.value);
+    }
+    async function loadSeasons(){
+      const team = teamSelect.value; if(!team) return;
+      seasonSelect.innerHTML = '<option>Loading...</option>';
+      try {
+        const r = await fetch(`/api/seasons/${team}`); const meta = await r.json();
+        window.__seasonMeta = meta;
+        seasonSelect.innerHTML = meta.map(o=>`<option value="${o.season}">${o.season}</option>`).join('');
+        const saved = localStorage.getItem('season');
+        if(saved && meta.find(m=>String(m.season)===saved)) seasonSelect.value = saved; else if(meta.length) seasonSelect.value = meta[0].season;
+        handleSeasonStateAvailability();
+      } catch(e){ seasonSelect.innerHTML='<option>Error</option>'; }
+    }
+    function handleSeasonStateAvailability(){
+      if(!seasonStateSelect) return; const val = parseInt(seasonSelect.value,10); const meta = (window.__seasonMeta||[]).find(m=>m.season===val); const playoffs = meta && Array.isArray(meta.gameTypes) && meta.gameTypes.map(String).includes('3');
+      for(const opt of seasonStateSelect.options){ if(opt.value==='3'){ opt.disabled = !playoffs; if(!playoffs && seasonStateSelect.value==='3') seasonStateSelect.value='2'; }}
+      triggerDataReload();
+    }
+    function triggerDataReload(){
+      if(typeof loadSchedule==='function') loadSchedule();
+      if(typeof loadStandings==='function') loadStandings();
+    }
+    // Event listeners
+    teamSelect.addEventListener('change', ()=>{ localStorage.setItem('team', teamSelect.value); setTheme(); loadSeasons(); });
+    seasonSelect.addEventListener('change', ()=>{ localStorage.setItem('season', seasonSelect.value); handleSeasonStateAvailability(); triggerDataReload(); });
+    if(seasonStateSelect) seasonStateSelect.addEventListener('change', ()=> triggerDataReload());
+    if(includeHistoric) includeHistoric.addEventListener('change', ()=>{ populateTeams(); setTheme(); loadSeasons(); });
+    // Init
+    populateTeams(); setTheme(); loadSeasons();
+  })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

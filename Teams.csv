@@ -1,0 +1,60 @@
+Team,TeamID,Name,Logo,Color,Active
+ATL,11,Atlanta Thrashers,https://assets.nhle.com/logos/nhl/svg/ATL_19992000-20102011_dark.svg,#041E42,0
+HFD,34,Hartford Whalers,https://assets.nhle.com/logos/nhl/svg/HFD_19921993-19961997_dark.svg,#046A38,0
+MNS,31,Minnesota North Stars,https://assets.nhle.com/logos/nhl/svg/MNS_19911992-19921993_dark.svg,#007A33,0
+QUE,32,Quebec Nordiques,https://assets.nhle.com/logos/nhl/svg/QUE_19791980-19941995_dark.svg,#005EB8,0
+WIN,33,Winnipeg Jets (1979),https://assets.nhle.com/logos/nhl/svg/WIN_19901991-19951996_dark.svg,#012169,0
+CLR,35,Colorado Rockies,https://assets.nhle.com/logos/nhl/svg/CLR_19761977-19811982_dark.svg,#0032A0,0
+SEN,36,Ottawa Senators (1917),https://assets.nhle.com/logos/nhl/svg/SEN_19171918-19331934_dark.svg,#DA291C,0
+HAM,37,Hamilton Tigers,https://assets.nhle.com/logos/nhl/svg/HAM_19231924-19241925_dark.svg,#FFC72C,0
+PIR,38,Pittsburgh Pirates,https://assets.nhle.com/logos/nhl/svg/PIR_19291930_dark.svg,#E57200,0
+QUA,39,Philadelphia Quakers,https://assets.nhle.com/logos/nhl/svg/QUA_19301931_dark.svg,#E35205,0
+DCG,40,Detroit Cougars,https://assets.nhle.com/logos/nhl/svg/DCG_19261927-19291930_dark.svg,#E4002B,0
+MWN,41,Montreal Wanderers,https://assets.nhle.com/logos/nhl/svg/MWN_19171918_dark.svg,#E4002B,0
+QBD,42,Quebec Bulldogs,https://assets.nhle.com/logos/nhl/svg/QBD_19191920_dark.svg,#0032A0,0
+MMR,43,Montreal Maroons,https://assets.nhle.com/logos/nhl/svg/MMR_19351936-19371938_dark.svg,#672146,0
+NYA,44,New York Americans,https://assets.nhle.com/logos/nhl/svg/NYA_19401941_dark.svg,#C8102E,0
+SLE,45,St. Louis Eagles,https://assets.nhle.com/logos/nhl/svg/SLE_19341935_dark.svg,#0032A0,0
+OAK,46,Oakland Seals,https://assets.nhle.com/logos/nhl/svg/OAK_19671968-19691970_dark.svg,#046A38,0
+AFM,47,Atlanta Flames,https://assets.nhle.com/logos/nhl/svg/AFM_19721973-19791980_dark.svg,#C8102E,0
+KCS,48,Kansas City Scouts,https://assets.nhle.com/logos/nhl/svg/KCS_19741975-19761977_dark.svg,#0032A0,0
+CLE,49,Cleveland Barons,https://assets.nhle.com/logos/nhl/svg/CLE_19761977-19771978_dark.svg,#C8102E,0
+DFL,50,Detroit Falcons,https://assets.nhle.com/logos/nhl/svg/DFL_19301931-19311932_dark.svg,#E4002B,0
+BRK,51,Brooklyn Americans,https://assets.nhle.com/logos/nhl/svg/BRK_19411942_dark.svg,#C8102E,0
+CGS,56,California Golden Seals,https://assets.nhle.com/logos/nhl/svg/CGS_19741975-19761977_dark.svg,#009CA6,0
+TAN,57,Toronto Arenas,https://assets.nhle.com/logos/nhl/svg/TAN_19171918-19181919_dark.svg,#003087,0
+TSP,58,Toronto St. Patricks,https://assets.nhle.com/logos/nhl/svg/TSP_19261927_dark.svg,#046A38,0
+DET,17,Detroit Red Wings,https://assets.nhle.com/logos/nhl/svg/DET_dark.svg,#ce1126,1
+BOS,6,Boston Bruins,https://assets.nhle.com/logos/nhl/svg/BOS_dark.svg,#fcb514,1
+PIT,5,Pittsburgh Penguins,https://assets.nhle.com/logos/nhl/svg/PIT_dark.svg,#fcb514,1
+TBL,14,Tampa Bay Lightning,https://assets.nhle.com/logos/nhl/svg/TBL_dark.svg,#002868,1
+PHI,4,Philadelphia Flyers,https://assets.nhle.com/logos/nhl/svg/PHI_dark.svg,#f74902,1
+CAR,12,Carolina Hurricanes,https://assets.nhle.com/logos/nhl/svg/CAR_dark.svg,#cc0000,1
+CGY,20,Calgary Flames,https://assets.nhle.com/logos/nhl/svg/CGY_dark.svg,#ce1126,1
+MTL,8,Montreal Canadiens,https://assets.nhle.com/logos/nhl/svg/MTL_dark.svg,#af1e2d,1
+WSH,15,Washington Capitals,https://assets.nhle.com/logos/nhl/svg/WSH_dark.svg,#cf0a2c,1
+VAN,23,Vancouver Canucks,https://assets.nhle.com/logos/nhl/svg/VAN_dark.svg,#001f5b,1
+COL,21,Colorado Avalanche,https://assets.nhle.com/logos/nhl/svg/COL_dark.svg,#6f263d,1
+NSH,18,Nashville Predators,https://assets.nhle.com/logos/nhl/svg/NSH_dark.svg,#ffb81c,1
+ANA,24,Anaheim Ducks,https://assets.nhle.com/logos/nhl/svg/ANA_dark.svg,#f95602,1
+VGK,54,Vegas Golden Knights,https://assets.nhle.com/logos/nhl/svg/VGK_dark.svg,#b4975a,1
+DAL,25,Dallas Stars,https://assets.nhle.com/logos/nhl/svg/DAL_dark.svg,#006847,1
+PHX,27,Phoenix Coyotes,https://assets.nhle.com/logos/nhl/svg/PHX_20032004-20132014_dark.svg,#862633,0
+CHI,16,Chicago Blackhawks,https://assets.nhle.com/logos/nhl/svg/CHI_dark.svg,#ce1126,1
+NYR,3,New York Rangers,https://assets.nhle.com/logos/nhl/svg/NYR_dark.svg,#0038a8,1
+FLA,13,Florida Panthers,https://assets.nhle.com/logos/nhl/svg/FLA_dark.svg,#c8102e,1
+EDM,22,Edmonton Oilers,https://assets.nhle.com/logos/nhl/svg/EDM_dark.svg,#041e41,1
+MIN,30,Minnesota Wild,https://assets.nhle.com/logos/nhl/svg/MIN_dark.svg,#024930,1
+STL,19,St. Louis Blues,https://assets.nhle.com/logos/nhl/svg/STL_dark.svg,#002f87,1
+NYI,2,New York Islanders,https://assets.nhle.com/logos/nhl/svg/NYI_dark.svg,#00539b,1
+LAK,26,Los Angeles Kings,https://assets.nhle.com/logos/nhl/svg/LAK_dark.svg,#acaea9,1
+BUF,7,Buffalo Sabres,https://assets.nhle.com/logos/nhl/svg/BUF_dark.svg,#002654,1
+OTT,9,Ottawa Senators,https://assets.nhle.com/logos/nhl/svg/OTT_dark.svg,#ce1126,1
+TOR,10,Toronto Maple Leafs,https://assets.nhle.com/logos/nhl/svg/TOR_dark.svg,#002868,1
+NJD,1,New Jersey Devils,https://assets.nhle.com/logos/nhl/svg/NJD_dark.svg,#ce1126,1
+WPG,52,Winnipeg Jets,https://assets.nhle.com/logos/nhl/svg/WPG_dark.svg,#002868,1
+SEA,55,Seattle Kraken,https://assets.nhle.com/logos/nhl/svg/SEA_dark.svg,#0092A8,1
+SJS,28,San Jose Sharks,https://assets.nhle.com/logos/nhl/svg/SJS_dark.svg,#006d75,1
+ARI,53,Arizona Coyotes,https://assets.nhle.com/logos/nhl/svg/ARI_20202021-20232024_dark.svg,#6F263D,0
+CBJ,29,Columbus Blue Jackets,https://assets.nhle.com/logos/nhl/svg/CBJ_dark.svg,#002654,1
+UTA,68,Utah Mammoth,https://assets.nhle.com/logos/nhl/svg/UTA_dark.svg,#71afe5,1

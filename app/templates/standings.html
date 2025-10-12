@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% block head %}
+<style>
+  .standings-wrapper { display:flex; flex-direction:column; gap:40px; max-width:1400px; margin:0 auto; }
+  .standings-table { width:100%; border-collapse:collapse; font-size:15px; }
+  .standings-table th { text-align:left; font-size:13px; text-transform:uppercase; letter-spacing:1px; padding:10px 12px; color:var(--text-dim); font-weight:700; border-bottom:1px solid #222b37; }
+  .standings-table td { padding:10px 12px; border-bottom:1px solid #1a2230; font-size:15px; }
+  .standings-table tbody tr:hover { background:#141c28; }
+  .team-cell { display:flex; align-items:center; gap:10px; font-weight:600; }
+  .team-cell img { height:46px; width:46px; object-fit:contain; filter:drop-shadow(0 0 3px rgba(0,0,0,.7)); }
+  /* Removed selected team highlight per request */
+  /* No accent bar per user request */
+  .sortable { cursor:pointer; user-select:none; }
+  .sortable span.sort-indicator { opacity:.4; margin-left:4px; font-size:10px; }
+  .sortable.active span.sort-indicator { opacity:1; color:var(--accent); }
+  .controls-bar { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end; }
+  .controls-bar label { font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:600; display:flex; flex-direction:column; gap:6px; }
+  .pill { font-size:11px; font-weight:600; padding:2px 6px; border-radius:4px; background:#273140; color:var(--text-dim); }
+  .clinch-p { background:#1f6f3d; color:#e8fbea; }
+  .clinch-z { background:#6843b7; color:#f2e9ff; }
+  .clinch-x { background:#245d96; color:#e4f4ff; }
+  .clinch-y { background:#9a5d17; color:#fff2df; }
+  .clinch-e { background:#5a1e1e; color:#ffdddd; }
+  .clinch-t { background:#555; color:#eee; }
+  .loader { padding:20px; }
+  .single-col { display:block; }
+  .standings-group { margin-bottom:56px; }
+  .standings-group + .standings-group { padding-top:32px; border-top:1px solid #1d2632; }
+  .standings-group h2 { font-size:22px !important; }
+  /* Dark accent header background */
+  .standings-table thead { background: linear-gradient(0deg, rgba(0,0,0,.65), rgba(0,0,0,.65)), var(--accent); }
+  .standings-table th { background: transparent; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="standings-wrapper">
+  <div class="controls-bar">
+    <label style="max-width:200px;">View Mode
+      <select id="viewMode">
+        <option value="division" selected>Division</option>
+        <option value="conference">Conference</option>
+        <option value="league">League</option>
+      </select>
+    </label>
+  </div>
+  <div id="standingsRoot" class="single-col"></div>
+</div>
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+<script id="seasons-data" type="application/json">{{ seasons|tojson|safe }}</script>
+{% endblock %}
+{% block scripts %}
+<script>
+const teams = JSON.parse(document.getElementById('teams-data').textContent);
+const seasons = JSON.parse(document.getElementById('seasons-data').textContent);
+// Use global season/team selects from base template
+const globalSeasonSelect = document.getElementById('seasonSelect');
+const globalTeamSelect = document.getElementById('teamSelect');
+const root = document.getElementById('standingsRoot');
+const viewModeSelect = document.getElementById('viewMode');
+const standingsCache = {}; // season -> data
+let sortKey = localStorage.getItem('standingsSortKey') || 'points';
+let sortDir = localStorage.getItem('standingsSortDir') || 'desc';
+// Era flags
+let hasTies = false;
+let hasOTL = false;
+// Removed playoff separator concept; sorting makes separator unnecessary
+const storedViewMode = localStorage.getItem('standingsViewMode');
+if(storedViewMode){
+  const opt = [...viewModeSelect.options].find(o=> o.value===storedViewMode);
+  if(opt) viewModeSelect.value = storedViewMode;
+}
+const FALLBACK_LOGO = 'https://www-league.nhlstatic.com/images/logos/league-dark/133-flat.svg';
+
+function groupData(data){
+  const mode = viewModeSelect.value;
+  if(mode==='league'){
+    return [['League', sortRows([...data])]];
+  }
+  if(mode==='conference'){
+    const map={};
+    data.forEach(r=>{ const key = r.conferenceName || 'Other'; (map[key]=map[key]||[]).push(r); });
+    Object.values(map).forEach(arr=> sortRows(arr));
+    return Object.entries(map).sort((a,b)=> a[0].localeCompare(b[0]));
+  }
+  // division
+  const map={};
+  data.forEach(r=>{ const key = r.divisionName || 'Other'; (map[key]=map[key]||[]).push(r); });
+  Object.values(map).forEach(arr=> sortRows(arr));
+  return Object.entries(map).sort((a,b)=> a[0].localeCompare(b[0]));
+}
+
+function sortRows(rows){
+  const dir = sortDir==='asc'?1:-1;
+  rows.sort((a,b)=>{
+    const av = getSortValue(a, sortKey); const bv = getSortValue(b, sortKey);
+    if(av < bv) return -1*dir;
+    if(av > bv) return 1*dir;
+    // secondary sort by points then wins
+    if(a.points!==b.points) return (b.points-a.points);
+    if(a.wins!==b.wins) return (b.wins-a.wins);
+    return 0;
+  });
+  return rows;
+}
+
+function getSortValue(r,key){
+  switch(key){
+    case '#': return r.points; // ranking placeholder
+    case 'team': return r.teamAbbrev?.default || '';
+    case 'gp': return r.gamesPlayed;
+    case 'points': return r.points;
+    case 'w': return r.wins;
+    case 'l': return r.losses;
+    case 'ties': return r.ties || 0;
+    case 'otl': return r.otLosses;
+    case 'gf': return r.goalFor;
+    case 'ga': return r.goalAgainst;
+    case 'diff': return r.goalDifferential;
+    case 'ppct': return r.pointPctg;
+    case 'l10': return (r.l10Wins||0) - (r.l10Losses||0); // simple proxy
+    case 'streak': return r.streakCount || 0;
+    default: return 0;
+  }
+}
+
+function renderTables(data){
+  const groups = groupData(data);
+  if(sortKey==='otl' && !hasOTL) sortKey='points';
+  if(sortKey==='ties' && !hasTies) sortKey='points';
+  root.innerHTML = groups.map(([label, rows])=> buildTable(label, rows, data)).join('');
+  attachSortHandlers();
+}
+
+function buildTable(label, rows, all){
+  const selectedTeam = (globalTeamSelect && globalTeamSelect.value) || '';
+  const columns = getColumns();
+  const bodyHtml = rows.map((r,i)=> renderRow(r,i, selectedTeam, columns)).join('');
+  return `<div class="standings-group"><h2 style="margin:0 0 14px; font-size:18px; letter-spacing:.6px;">${label}</h2>
+    <table class="standings-table"><thead><tr>
+      ${columns.map(c=> headerCell(c.label, c.key)).join('')}
+    </tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+}
+
+function getColumns(){
+  const cols = [
+    {key:'rank', label:'#'},
+    {key:'team', label:'Team'},
+    {key:'gp', label:'GP'},
+    {key:'points', label:'P'},
+    {key:'w', label:'W'},
+    {key:'l', label:'L'}
+  ];
+  if(hasTies) cols.push({key:'ties', label:'T'});
+  if(hasOTL) cols.push({key:'otl', label:'OTL'});
+  cols.push(
+    {key:'gf', label:'GF'},
+    {key:'ga', label:'GA'},
+    {key:'diff', label:'Diff'},
+    {key:'ppct', label:'P%'},
+    {key:'l10', label:'L10'},
+    {key:'streak', label:'Strk'}
+  );
+  return cols;
+}
+
+function getTeamAbbrev(r){
+  return (r.teamAbbrev && typeof r.teamAbbrev === 'object') ? r.teamAbbrev.default : (r.teamAbbrev || (r.teamName && r.teamName.default) || '');
+}
+
+function headerCell(label,key){
+  if(key==='rank') return `<th>${label}</th>`; // do not sort rank
+  const active = (sortKey===key);
+  const dirSymbol = active ? (sortDir==='asc'?'▲':'▼') : '◆';
+  return `<th class="sortable ${active?'active':''}" data-key="${key}">${label}<span class="sort-indicator">${dirSymbol}</span></th>`;
+}
+
+function renderRow(r,i, selectedTeam, columns){
+  const abbrev = getTeamAbbrev(r);
+  const upperSel = selectedTeam ? selectedTeam.toUpperCase() : '';
+  const isSelected = upperSel && abbrev === upperSel;
+  const l10 = `${(r.l10Wins??'?')}-${(r.l10Losses??'?')}-${(r.l10OtLosses||0)}`;
+  const streak = `${r.streakCode||''}${r.streakCount||''}`;
+  let pct = '';
+  if(typeof r.pointPctg === 'number'){
+    try { pct = r.pointPctg.toFixed(3).slice(1); } catch(_) { pct=''; }
+  }
+  const diffVal = (typeof r.goalDifferential === 'number') ? r.goalDifferential : ((r.goalFor||0) - (r.goalAgainst||0));
+  const diff = `${diffVal>0?'+':''}${diffVal}`;
+  const logo = r.teamLogo || FALLBACK_LOGO;
+  const values = {
+    rank: i+1,
+    team: `<div class="team-cell"><img src="${logo}" alt="${abbrev}"/><span style="font-size:16px; font-weight:600;">${abbrev}</span></div>`,
+    gp: r.gamesPlayed||'',
+    points: r.points||0,
+    w: r.wins||0,
+    l: r.losses||0,
+    ties: r.ties||0,
+    otl: r.otLosses||0,
+    gf: r.goalFor||0,
+    ga: r.goalAgainst||0,
+    diff: diff,
+    ppct: pct,
+    l10: l10,
+    streak: streak
+  };
+  return `<tr>${columns.map(c=> `<td>${values[c.key]}</td>`).join('')}</tr>`;
+}
+
+async function loadStandings(force=false){
+  const season = globalSeasonSelect.value;
+  if(!/^\d{8}$/.test(season)) { return waitForSeasonThenLoad(); }
+  if(!force && standingsCache[season]){ renderTables(standingsCache[season]); return; }
+  root.innerHTML = '<div class="loader">Loading standings...</div>';
+  try {
+    const r = await fetch(`/api/standings/${season}`);
+    const data = await r.json();
+    if(data.error){ root.innerHTML = '<p>Error loading standings.</p>'; return; }
+    standingsCache[season] = data.standings || [];
+    if(!standingsCache[season].length){
+      root.innerHTML = '<p style="opacity:.7;">Historical standings not available for this season.</p>';
+      return;
+    }
+    deriveEraFlags(season, standingsCache[season]);
+    renderTables(standingsCache[season]);
+  } catch(e){ root.innerHTML='<p>Error loading standings.</p>'; }
+}
+
+function deriveEraFlags(season, rows){
+  hasTies = rows.some(r=> (r.ties||0) > 0);
+  hasOTL = rows.some(r=> (r.otLosses||0) > 0);
+}
+
+function waitForSeasonThenLoad(attempt=0){
+  if(attempt>20) return; // give up after ~3s
+  if(/^\d{8}$/.test(globalSeasonSelect.value)) return loadStandings();
+  setTimeout(()=> waitForSeasonThenLoad(attempt+1),150);
+}
+
+function attachSortHandlers(){
+  root.querySelectorAll('th.sortable').forEach(th=>{
+    th.onclick = ()=>{
+      const key = th.dataset.key;
+  if(sortKey===key){ sortDir = (sortDir==='asc'?'desc':'asc'); }
+  else { sortKey=key; sortDir = (key==='team'?'asc':'desc'); }
+  localStorage.setItem('standingsSortKey', sortKey);
+  localStorage.setItem('standingsSortDir', sortDir);
+      // Re-render using cached current season data
+      if(standingsCache[globalSeasonSelect.value]) renderTables(standingsCache[globalSeasonSelect.value]);
+    };
+  });
+}
+// Sync with global filters
+globalSeasonSelect.addEventListener('change', ()=> loadStandings(true));
+globalTeamSelect.addEventListener('change', ()=>{ /* team selection doesn't filter standings yet, but keeps theme synced */ });
+viewModeSelect.addEventListener('change', ()=>{ 
+  localStorage.setItem('standingsViewMode', viewModeSelect.value);
+  const season = globalSeasonSelect.value;
+  if(standingsCache[season]){ deriveEraFlags(season, standingsCache[season]); renderTables(standingsCache[season]); }
+});
+document.addEventListener('DOMContentLoaded', ()=> waitForSeasonThenLoad());
+</script>
+{% endblock %}
