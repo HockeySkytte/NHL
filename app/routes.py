@@ -1088,33 +1088,49 @@ def api_game_pbp(game_id: int):
             except Exception:
                 return None
 
-        # Build expected dummy column set by inspecting the models or by union of features from data
-        # We'll prepare features on the fly similar to training script
+        # Low-memory per-row one-hot encoding without building a full dummy matrix
         base_feature_cols = [
             "Venue", "shotType2", "ScoreState2", "RinkVenue",
             "StrengthState2", "BoxID2", "LastEvent"
         ]
 
-        # Prepare a pandas DataFrame for plays to compute dummies
-        try:
-            import pandas as _pd
-        except Exception:
-            _pd = None
+        def _required_columns_for_model(m: Any) -> Optional[List[str]]:
+            cols = None
+            try:
+                if hasattr(m, 'feature_names_in_'):
+                    cols = list(getattr(m, 'feature_names_in_'))
+                elif hasattr(m, 'get_booster'):
+                    booster = m.get_booster()
+                    cols = getattr(booster, 'feature_names', None)
+            except Exception:
+                cols = None
+            return cols
 
-        if _pd is not None and mapped:
-            df_all = _pd.DataFrame(mapped)
-            # Fill and cast
+        def _vectorize_row_for_model(row_obj: Dict[str, Any], m: Any):
+            cols = _required_columns_for_model(m)
+            if not cols:
+                return None, None  # can't align reliably
+            # Build one-hot vector aligned to cols
+            vec = [0.0] * len(cols)
+            # Precompute string values for the row features
+            vals = {}
             for c in base_feature_cols:
-                if c in df_all.columns:
-                    df_all[c] = df_all[c].fillna('missing').astype(str)
-                else:
-                    df_all[c] = 'missing'
-            # Precompute full dummy matrix; we will slice rows and align columns per model
-            X_dummies = _pd.get_dummies(df_all[base_feature_cols]).astype(float)
-        else:
-            X_dummies = None
+                v = row_obj.get(c)
+                vals[c] = 'missing' if v is None else str(v)
+            # For each required column, parse as prefix_value and set 1.0 if match
+            for i, cname in enumerate(cols):
+                if '_' not in cname:
+                    # Unexpected; leave as 0.0
+                    continue
+                base, suffix = cname.split('_', 1)
+                rv = vals.get(base)
+                if rv is None:
+                    continue
+                if rv == suffix:
+                    vec[i] = 1.0
+            return vec, cols
 
-        def predict_avg_for_row(idx: int, season_val: Optional[int], model_prefix: str) -> Optional[float]:
+        def predict_avg_for_row(row_obj: Dict[str, Any], season_val: Optional[int], model_prefix: str) -> Optional[float]:
             if season_val is None:
                 return None
             s_cur = int(season_val)
@@ -1135,29 +1151,34 @@ def api_game_pbp(game_id: int):
                 ]
             models = [load_model(n) for n in names]
             models = [m for m in models if m is not None]
-            if not models or X_dummies is None:
+            if not models:
                 return None
-            # Build row feature vector aligned to model's expected features inferred from X_train columns at train time.
-            # Since we don't have model.feature_names_, we align by columns used in training code: get_dummies(base_feature_cols)
-            x_row = X_dummies.iloc[idx:idx+1].copy()
             preds = []
             for m in models:
                 try:
-                    x_in = x_row
-                    # Some sklearn models may carry feature_names_in_; align in one shot to avoid fragmentation
-                    if hasattr(m, 'feature_names_in_'):
-                        cols_needed = list(getattr(m, 'feature_names_in_'))
-                        x_in = x_row.reindex(columns=cols_needed, fill_value=0.0)
-                    # Predict proba
-                    p = m.predict_proba(x_in)[:, 1]
+                    vec, cols = _vectorize_row_for_model(row_obj, m)
+                    if vec is None:
+                        # Fallback: try tiny pandas DF for this single row (still low-memory)
+                        try:
+                            import pandas as _pd2  # local import fallback
+                            _d = {c: [str(row_obj.get(c) if row_obj.get(c) is not None else 'missing')] for c in base_feature_cols}
+                            df1 = _pd2.DataFrame(_d)
+                            df1 = _pd2.get_dummies(df1).astype(float)
+                            if hasattr(m, 'feature_names_in_'):
+                                cols_needed = list(getattr(m, 'feature_names_in_'))
+                                df1 = df1.reindex(columns=cols_needed, fill_value=0.0)
+                            p = m.predict_proba(df1)[:, 1]
+                            preds.append(float(p[0]))
+                            continue
+                        except Exception:
+                            continue
+                    else:
+                        import numpy as _np2  # local import
+                        x_arr = _np2.asarray([vec], dtype=float)
+                        p = m.predict_proba(x_arr)[:, 1]
                     preds.append(float(p[0]))
                 except Exception:
-                    # Best effort: try raw predict_proba with current columns
-                    try:
-                        p = m.predict_proba(x_row)[:, 1]
-                        preds.append(float(p[0]))
-                    except Exception:
-                        continue
+                    continue
             if not preds:
                 return None
             return float(sum(preds) / len(preds))
@@ -1192,15 +1213,15 @@ def api_game_pbp(game_id: int):
                 continue
             # xG_S for shots only
             if row.get('Shot') == 1:
-                val = predict_avg_for_row(i_row, season_val, 'xgbs')
+                val = predict_avg_for_row(row, season_val, 'xgbs')
                 if val is not None:
                     row['xG_S'] = round(val, 6)
             # xG_F and xG_F2 for Fenwick only
             if row.get('Fenwick') == 1:
-                val_f = predict_avg_for_row(i_row, season_val, 'xgb')
+                val_f = predict_avg_for_row(row, season_val, 'xgb')
                 if val_f is not None:
                     row['xG_F'] = round(val_f, 6)
-                val_f2 = predict_avg_for_row(i_row, season_val, 'xgb2')
+                val_f2 = predict_avg_for_row(row, season_val, 'xgb2')
                 if val_f2 is not None:
                     row['xG_F2'] = round(val_f2, 6)
     except Exception:
