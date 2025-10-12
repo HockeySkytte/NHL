@@ -45,6 +45,35 @@ def _cache_set(cache: Dict, key, val) -> None:
         cache[key] = (time.time(), val)
     except Exception:
         pass
+    
+# --- Small on-disk cache utilities (persist across restarts) ---
+def _disk_cache_base() -> str:
+    base = os.getenv('XG_CACHE_DIR')
+    if base:
+        return base
+    try:
+        if os.name == 'nt':
+            import tempfile
+            return os.path.join(tempfile.gettempdir(), 'nhl_cache')
+        return '/tmp/nhl_cache'
+    except Exception:
+        return '/tmp/nhl_cache'
+
+def _disk_cache_path_pbp(game_id: int) -> str:
+    d = _disk_cache_base()
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(d, f'pbp_{int(game_id)}.json')
+
+def _disk_cache_path_shifts(game_id: int) -> str:
+    d = _disk_cache_base()
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(d, f'shifts_{int(game_id)}.json')
 @main_bp.route('/')
 def index_page():
     """Frontpage Schedule view."""
@@ -397,6 +426,52 @@ def _get_boxid_map() -> Dict[Tuple[int, int], Tuple[str, str, int]]:
     return mapping
 
 
+# --- Model utilities ---
+def _project_root() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+def _model_dir() -> str:
+    return os.path.join(_project_root(), 'Model')
+
+def load_model_file(fname: str) -> Optional[Any]:
+    """Module-level model loader with cache."""
+    if fname in _MODEL_CACHE:
+        return _MODEL_CACHE[fname]
+    path = os.path.join(_model_dir(), fname)
+    if not os.path.exists(path):
+        return None
+    try:
+        m = joblib.load(path)
+        _MODEL_CACHE[fname] = m
+        return m
+    except Exception:
+        return None
+
+def current_season_id(now: Optional[datetime] = None) -> int:
+    d = now or datetime.utcnow()
+    y = d.year
+    if d.month >= 9:
+        start_y = y
+        end_y = y + 1
+    else:
+        start_y = y - 1
+        end_y = y
+    return start_y * 10000 + end_y
+
+def preload_common_models() -> None:
+    """Eager-load central window models for the current season to reduce cold-start latency."""
+    try:
+        s = current_season_id()
+        a = int(str(s)[:4]); b = int(str(s)[4:])
+        s_prev = (a-1)*10000 + (b-1)
+        s_next = (a+1)*10000 + (b+1)
+        middle = f"{s_prev}_{s_next}.pkl"
+        for prefix in ('xgbs', 'xgb', 'xgb2'):
+            load_model_file(f"{prefix}_{middle}")
+    except Exception:
+        pass
+
+
 @main_bp.route('/api/team/<team_code>/<int:season>/schedule')
 def api_team_schedule(team_code: str, season: int):
     """Team schedule for a given season using NHL club-schedule-season endpoint."""
@@ -500,10 +575,23 @@ def api_game_right_rail(game_id: int):
 @main_bp.route('/api/game/<int:game_id>/play-by-play')
 def api_game_pbp(game_id: int):
     """Fetch NHL play-by-play and map to requested wide schema."""
-    # Serve from cache when available
+    # Serve from disk/memory cache when available; for live games use short TTL
+    live_ttl = 5  # seconds for live
+    std_ttl = int(os.getenv('PBP_CACHE_TTL_SECONDS', '600'))
+    disk_path = _disk_cache_path_pbp(int(game_id))
     try:
-        ttl = int(os.getenv('PBP_CACHE_TTL_SECONDS', '600'))
-        cached = _cache_get(_PBP_CACHE, int(game_id), ttl)
+        # Try disk cache first (has metadata such as gameState)
+        if os.path.exists(disk_path):
+            import json, time
+            with open(disk_path, 'r', encoding='utf-8') as f:
+                js = json.load(f)
+            ts = float(js.get('_cachedAt', 0.0))
+            gstate = str(js.get('gameState') or '').upper()
+            ttl = live_ttl if gstate in ('LIVE', 'SCHEDULED', 'PREVIEW', 'INPROGRESS') else std_ttl
+            if ts and (time.time() - ts) < ttl:
+                return jsonify({k: v for k, v in js.items() if not k.startswith('_')})
+        # Try in-memory cache if disk miss
+        cached = _cache_get(_PBP_CACHE, int(game_id), std_ttl)
         if cached:
             return jsonify(cached)
     except Exception:
@@ -516,6 +604,8 @@ def api_game_pbp(game_id: int):
     if resp.status_code != 200:
         return jsonify({'error': 'Upstream error', 'status': resp.status_code}), 502
     data = resp.json()
+    # Capture upstream game state
+    game_state = str(data.get('gameState') or data.get('gameStatus') or '').upper()
 
     # Fetch skater bios for this game to retrieve shoots/catches for players (optional for performance)
     shoots_map: Dict[int, str] = {}
@@ -1247,37 +1337,116 @@ def api_game_pbp(game_id: int):
             except Exception:
                 return None
 
-        # Compute xG_F (Fenwick), xG_S (Shot), xG_F2 (Fenwick) using different model families
-        for i_row, row in enumerate(mapped):
-            season_val = row.get('Season')
-            strength_state = row.get('StrengthState')
-
-            # ENA overrides
-            if strength_state == 'ENA':
-                # xG_S: 1 for ENA shots on goal
+        # Compute xG with batched predictions by (family, window) to reduce Python overhead
+        # 1) Handle ENA upfront
+        for row in mapped:
+            if row.get('StrengthState') == 'ENA':
                 if row.get('Shot') == 1:
                     row['xG_S'] = 1.0
-                # xG_F and xG_F2: logistic formula for ENA fenwick attempts
                 if row.get('Fenwick') == 1:
                     val_en = compute_empty_net_fenwick(row.get('ShotDistance'), row.get('ShotAngle'))
                     if val_en is not None:
                         row['xG_F'] = round(val_en, 6)
                         row['xG_F2'] = round(val_en, 6)
-                # Skip model predictions for ENA rows
+        # 2) Group remaining rows by family
+        families = {
+            'xgbs': [i for i, r in enumerate(mapped) if r.get('Shot') == 1 and r.get('StrengthState') != 'ENA'],
+            'xgb':  [i for i, r in enumerate(mapped) if r.get('Fenwick') == 1 and r.get('StrengthState') != 'ENA'],
+            'xgb2': [i for i, r in enumerate(mapped) if r.get('Fenwick') == 1 and r.get('StrengthState') != 'ENA'],
+        }
+
+        def window_filenames_for_season(s_cur: int, prefix: str) -> List[str]:
+            s_prev = season_prev(s_cur)
+            s_next = season_next(s_cur)
+            s_prev2 = season_prev(s_prev)
+            s_next2 = season_next(s_next)
+            num_windows = 1
+            try:
+                num_windows = max(1, min(3, int(os.getenv('XG_WINDOWS', '1'))))
+            except Exception:
+                num_windows = 1
+            all_names = [
+                f"{prefix}_{s_prev2}_{s_cur}.pkl",
+                f"{prefix}_{s_prev}_{s_next}.pkl",
+                f"{prefix}_{s_cur}_{s_next2}.pkl",
+            ]
+            order = [1, 0, 2]
+            return [all_names[i] for i in order[:num_windows]]
+
+        for family, idxs in families.items():
+            if not idxs:
                 continue
-            # xG_S for shots only
-            if row.get('Shot') == 1:
-                val = predict_avg_for_row(row, season_val, 'xgbs')
-                if val is not None:
-                    row['xG_S'] = round(val, 6)
-            # xG_F and xG_F2 for Fenwick only
-            if row.get('Fenwick') == 1:
-                val_f = predict_avg_for_row(row, season_val, 'xgb')
-                if val_f is not None:
-                    row['xG_F'] = round(val_f, 6)
-                val_f2 = predict_avg_for_row(row, season_val, 'xgb2')
-                if val_f2 is not None:
-                    row['xG_F2'] = round(val_f2, 6)
+            # Group by season to resolve window filenames once per season
+            by_season: Dict[int, List[int]] = {}
+            for i in idxs:
+                s = mapped[i].get('Season')
+                if s is None:
+                    continue
+                by_season.setdefault(int(s), []).append(i)
+            for s_cur, row_idx in by_season.items():
+                if s_cur == 20252026:
+                    names = [f"{family}_20222023_20242025.pkl"]
+                else:
+                    names = window_filenames_for_season(s_cur, family)
+                models = [load_model(n) for n in names]
+                models = [m for m in models if m is not None]
+                if not models:
+                    continue
+                # Precompute required columns per model
+                model_cols: List[Tuple[Any, Optional[List[str]]]] = []
+                for m in models:
+                    cols = _required_columns_for_model(m)
+                    model_cols.append((m, cols))
+                # Vectorize all rows once per model and predict
+                preds_accum = [[] for _ in row_idx]
+                for (m, cols) in model_cols:
+                    if cols is None:
+                        # fallback to per-row tiny pandas
+                        try:
+                            import pandas as _pd2
+                            # Build rows into DF strings
+                            data_rows = []
+                            for i in row_idx:
+                                r = mapped[i]
+                                data_rows.append({c: str(r.get(c) if r.get(c) is not None else 'missing') for c in base_feature_cols})
+                            df = _pd2.DataFrame(data_rows)
+                            df = _pd2.get_dummies(df).astype(float)
+                            if hasattr(m, 'feature_names_in_'):
+                                cols_needed = list(getattr(m, 'feature_names_in_'))
+                                df = df.reindex(columns=cols_needed, fill_value=0.0)
+                            p = m.predict_proba(df)[:, 1]
+                            for j, val in enumerate(p):
+                                preds_accum[j].append(float(val))
+                            continue
+                        except Exception:
+                            continue
+                    # Fast vectorization using known columns
+                    import numpy as _np2
+                    mat = _np2.zeros((len(row_idx), len(cols)), dtype=float)
+                    for rpos, i in enumerate(row_idx):
+                        r = mapped[i]
+                        # Precompute string values
+                        vals = {c: ('missing' if r.get(c) is None else str(r.get(c))) for c in base_feature_cols}
+                        for cix, cname in enumerate(cols):
+                            if '_' not in cname:
+                                continue
+                            base, suffix = cname.split('_', 1)
+                            if vals.get(base) == suffix:
+                                mat[rpos, cix] = 1.0
+                    p = m.predict_proba(mat)[:, 1]
+                    for j, val in enumerate(p):
+                        preds_accum[j].append(float(val))
+                # Average predictions across windows and write back
+                for j, i in enumerate(row_idx):
+                    if not preds_accum[j]:
+                        continue
+                    avgp = float(sum(preds_accum[j]) / len(preds_accum[j]))
+                    if family == 'xgbs':
+                        mapped[i]['xG_S'] = round(avgp, 6)
+                    elif family == 'xgb':
+                        mapped[i]['xG_F'] = round(avgp, 6)
+                    elif family == 'xgb2':
+                        mapped[i]['xG_F2'] = round(avgp, 6)
     except Exception:
         # Fail-safe: don't block PBP if models or pandas are unavailable
         pass
@@ -1309,9 +1478,19 @@ def api_game_pbp(game_id: int):
     out_obj = {
         'gameId': data.get('id'),
         'plays': mapped_sanitized,
+        'gameState': game_state,
     }
     try:
         _cache_set(_PBP_CACHE, int(game_id), out_obj)
+    except Exception:
+        pass
+    # Write to disk cache with metadata
+    try:
+        import json, time
+        js = dict(out_obj)
+        js['_cachedAt'] = time.time()
+        with open(disk_path, 'w', encoding='utf-8') as f:
+            json.dump(js, f)
     except Exception:
         pass
     return jsonify(out_obj)
@@ -1338,6 +1517,11 @@ def api_game_shifts(game_id: int):
         'home': f"https://www.nhl.com/scores/htmlreports/{season_dir}/TH{suffix}.HTM",
     }
 
+    # Disk cache check first (needs gameState awareness from boxscore)
+    live_ttl = 5
+    std_ttl = int(os.getenv('SHIFTS_CACHE_TTL_SECONDS', '600'))
+    disk_path = _disk_cache_path_shifts(int(game_id))
+
     def fetch_html(url: str) -> Optional[str]:
         try:
             headers = {
@@ -1363,6 +1547,20 @@ def api_game_shifts(game_id: int):
         box = r.json()
     except Exception:
         return jsonify({'error': 'Failed to fetch boxscore'}), 502
+
+    # Try disk cache after knowing the gameState
+    try:
+        if os.path.exists(disk_path):
+            import json, time
+            with open(disk_path, 'r', encoding='utf-8') as f:
+                js = json.load(f)
+            ts = float(js.get('_cachedAt', 0.0))
+            gstate = str(js.get('gameState') or '').upper()
+            ttl = live_ttl if gstate in ('LIVE', 'SCHEDULED', 'PREVIEW', 'INPROGRESS') else std_ttl
+            if ts and (time.time() - ts) < ttl:
+                return jsonify({k: v for k, v in js.items() if not k.startswith('_')})
+    except Exception:
+        pass
 
     def unify_roster(team_stats: Dict) -> List[Dict]:
         res: List[Dict] = []
@@ -1921,6 +2119,20 @@ def api_game_shifts(game_id: int):
     try:
         ttl = int(os.getenv('SHIFTS_CACHE_TTL_SECONDS', '600'))
         _cache_set(_SHIFTS_CACHE, int(game_id), out)
+    except Exception:
+        pass
+    # Include gameState for disk cache TTL check and persist to disk
+    try:
+        game_state = str((box.get('gameState') or box.get('gameStatus') or '')).upper()
+        out['gameState'] = game_state
+    except Exception:
+        pass
+    try:
+        import json, time
+        js = dict(out)
+        js['_cachedAt'] = time.time()
+        with open(disk_path, 'w', encoding='utf-8') as f:
+            json.dump(js, f)
     except Exception:
         pass
     return jsonify(out)
