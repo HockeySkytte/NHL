@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block head %}
+<style>
+.live-wrapper{ max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:16px; }
+.live-header{ display:flex; align-items:center; justify-content:space-between; }
+.live-table{ width:100%; border-collapse:collapse; font-size:15px; }
+.live-table th{ text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 12px; color:var(--text-dim); font-weight:700; border-bottom:1px solid #222b37; }
+.live-table td{ padding:10px 12px; border-bottom:1px solid #1a2230; }
+.live-empty{ color:var(--text-dim); font-size:14px; padding:16px; }
+.team-cell{ display:flex; align-items:center; gap:8px; font-weight:650; }
+.team-cell img{ height:28px; width:28px; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+.status-chip{ font-size:11px; font-weight:700; padding:2px 6px; border-radius:6px; background:#263145; color:#d7deea; }
+.link-row{ color:var(--text); text-decoration:none; display:block; }
+tbody tr:hover{ background:#141c28; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="live-wrapper">
+  <div class="live-header">
+    <h2 style="margin:0;">Live Games</h2>
+    <span id="lastUpdated" style="font-size:12px; color:var(--text-dim);"></span>
+  </div>
+  <div id="liveRoot" class="panel"></div>
+</div>
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+{% endblock %}
+{% block scripts %}
+<script>
+const liveRoot = document.getElementById('liveRoot');
+const teamsData = JSON.parse(document.getElementById('teams-data').textContent||'[]');
+function teamLogo(abbrev){ const row = teamsData.find(t=> t.Team===abbrev); return row?.Logo || `https://assets.nhle.com/logos/nhl/svg/${abbrev}_light.svg`; }
+function fmtTime(iso){ try{ return new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }catch(e){ return iso; } }
+function renderRows(games){
+  if(!games || games.length===0){
+    liveRoot.innerHTML = `<div class="live-empty">No live games right now.</div>`;
+    return;
+  }
+  const header = `<thead><tr>
+    <th>Start (UTC)</th><th>Status</th><th>Away</th><th>Score</th><th>Home</th><th>Venue</th>
+  </tr></thead>`;
+  const rows = games.map(g=>{
+    const away = g.awayTeam||{}; const home = g.homeTeam||{};
+    const status = (g.gameState||'').toUpperCase();
+    const score = (away.score!=null || home.score!=null) ? `${away.score??''} - ${home.score??''}` : '';
+    const venue = (g.venue&&g.venue.default)||'';
+    const start = g.startTimeUTC? fmtTime(g.startTimeUTC) : '';
+    const link = `/game/${g.id}`;
+    return `<tr>
+      <td>${start}</td>
+      <td><span class="status-chip">${status}</span></td>
+      <td>
+        <a class="link-row" href="${link}" title="Open game">
+          <div class="team-cell"><img src="${teamLogo(away.abbrev)}" alt="${away.abbrev}"/> ${away.placeName?.default||''} ${away.commonName?.default||away.abbrev||''}</div>
+        </a>
+      </td>
+      <td>${score}</td>
+      <td>
+        <a class="link-row" href="${link}" title="Open game">
+          <div class="team-cell"><img src="${teamLogo(home.abbrev)}" alt="${home.abbrev}"/> ${home.placeName?.default||''} ${home.commonName?.default||home.abbrev||''}</div>
+        </a>
+      </td>
+      <td>${venue}</td>
+    </tr>`;
+  }).join('');
+  liveRoot.innerHTML = `<div style="overflow:auto;">
+    <table class="live-table">${header}<tbody>${rows}</tbody></table>
+  </div>`;
+}
+async function loadLive(){
+  try{
+    const r = await fetch('/api/live-games');
+    const js = await r.json();
+    document.getElementById('lastUpdated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    if(Array.isArray(js.games)) renderRows(js.games); else renderRows([]);
+  }catch(e){ renderRows([]); }
+}
+loadLive();
+// Optional: auto-refresh every 30 seconds
+setInterval(loadLive, 30000);
+</script>
+{% endblock %}
