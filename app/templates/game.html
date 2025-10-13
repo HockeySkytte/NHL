@@ -273,22 +273,79 @@ async function ensureShootsCatchesIfLive(){
 
 async function renderShifts(){
   await ensureData();
-  const cols = ['ShiftIndex','PlayerID','Name','Position','Team','Period','Start','End','Duration','StrengthState'];
-  const rows = (shiftsData.shifts||[]).map(s=> `<tr>
-      ${cols.map(c=>`<td>${s[c]??''}</td>`).join('')}
-    </tr>`).join('');
+  // Precompute faceoffs by gameTime and team-perspective zone
+  const faceoffTimes = new Map(); // gameTime -> array of {team, zone}
+  for(const pl of (pbpData?.plays||[])){
+    if(String(pl.Event||'').toLowerCase()==='faceoff'){
+      const gt = Number(pl.gameTime||0);
+      const team = pl.EventTeam||null; const zone = pl.Zone||null;
+      if(!faceoffTimes.has(gt)) faceoffTimes.set(gt, []);
+      faceoffTimes.get(gt).push({team, zone});
+    }
+  }
+  // Build maps for quick lookup: ShiftIndex -> players (by team)
+  const byShift = new Map();
+  for(const s of (shiftsData.shifts||[])){
+    const key = Number(s.ShiftIndex);
+    if(!byShift.has(key)) byShift.set(key, []);
+    byShift.get(key).push(s);
+  }
+  // Aggregate xG by ShiftIndex for and against per team using Fenwick events and selected xG model
+  const xgKey = 'xG_F';
+  const xgByShiftFor = new Map(); // key: team@shift -> sum
+  const xgByShiftAgainst = new Map();
+  for(const pl of (pbpData?.plays||[])){
+    if(pl.Fenwick!==1) continue;
+    const si = Number(pl.ShiftIndex||0); if(!si) continue;
+    const evTeam = pl.EventTeam||null; if(!evTeam) continue;
+    const val = Number(pl[xgKey] ?? 0) || 0;
+    // For event team at this shift
+    const kf = `${evTeam}@${si}`; xgByShiftFor.set(kf, (xgByShiftFor.get(kf)||0)+val);
+    // Against for the opponent team at same shift
+    const opp = pl.Opponent||null; if(opp){ const ka = `${opp}@${si}`; xgByShiftAgainst.set(ka, (xgByShiftAgainst.get(ka)||0)+val); }
+  }
+  // Compute ZoneStart per row: if a faceoff exists at Start time for the player's team, map zone O/N/D from their perspective; else OTF
+  function zoneStartForRow(row){
+    const start = Number(row.Start||0);
+    const team = row.Team;
+    const entries = faceoffTimes.get(start)||[];
+    if(!entries.length) return 'OTF';
+    // choose the first faceoff at exact start involving the same team, else just OTF
+    const match = entries.find(e=> e.team===team) || entries[0];
+    if(!match || !match.zone) return 'OTF';
+    // Zone per perspective: if event team == player's team, use zone; else mirror O<->D
+    const z = String(match.zone||'').toUpperCase();
+    if(z==='N') return 'N';
+    if(match.team===team){
+      return (z==='O'||z==='D')? z : 'OTF';
+    } else {
+      if(z==='O') return 'D';
+      if(z==='D') return 'O';
+      return 'OTF';
+    }
+  }
+  // Render rows with computed ZoneStart, xGF, xGA per row's team@ShiftIndex
+  const cols = ['ShiftIndex','PlayerID','Name','Position','Team','Period','Start','End','Duration','StrengthState','ZoneStart','xGF','xGA'];
+  const enrichedRows = (shiftsData.shifts||[]).map(s=>{
+    const zs = zoneStartForRow(s);
+    const key = `${s.Team}@${s.ShiftIndex}`;
+    const xgf = xgByShiftFor.get(key)||0;
+    const xga = xgByShiftAgainst.get(key)||0;
+    return Object.assign({}, s, {ZoneStart: zs, xGF: Number(xgf.toFixed(3)), xGA: Number(xga.toFixed(3))});
+  });
+  const rows = enrichedRows.map(row=> `<tr>${cols.map(c=>`<td>${row[c]??''}</td>`).join('')}</tr>`).join('');
   const emptyMsg = (shiftsData.shifts||[]).length ? '' : `<div style="color:var(--text-dim); font-size:13px; margin:6px 0 12px;">No shifts found for this game yet.</div>`;
   tabContent.innerHTML = `<div class="panel"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Shifts</h3><button id="exportShiftsBtn" class="btn-export">Export CSV</button></div>
     ${emptyMsg}
     <div style='overflow:auto; max-height:70vh;'>
-    <table class='table' style='min-width:980px;'>
+    <table class='table' style='min-width:1200px;'>
       <thead><tr>
         ${cols.map(c=>`<th>${c}</th>`).join('')}
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
   </div>`;
-  document.getElementById('exportShiftsBtn')?.addEventListener('click', ()=> exportRowsToCSV(`shifts_${GAME_ID}.csv`, shiftsData.shifts||[], cols));
+  document.getElementById('exportShiftsBtn')?.addEventListener('click', ()=> exportRowsToCSV(`shifts_${GAME_ID}.csv`, enrichedRows, cols));
 }
 
 function exportRowsToCSV(filename, rows, cols){
@@ -331,7 +388,11 @@ async function renderReport(){
     {value:'Shot', label:'Shot'},
     {value:'Miss', label:'Miss'}
   ];
-  const strengths = uniqueValues((pbpData.plays||[]).map(pl=> pl.StrengthState)).filter(Boolean).map(v=>({value:v,label:v}));
+  const strengths = (()=>{
+    const team = (buildTeamPerspectiveOptions()[0]?.value)||'';
+    const vals = uniqueValues((pbpData.plays||[]).map(pl=> perspectiveStrength(pl, team))).filter(Boolean);
+    return vals.map(v=>({value:v,label:v}));
+  })();
   const onIce = buildOnIcePlayerList();
 
   tabContent.innerHTML = `
@@ -453,6 +514,21 @@ function buildTeamPerspectiveOptions(){
   ];
 }
 function uniqueValues(arr){ return Array.from(new Set(arr||[])); }
+function reverseStrengthCode(s){
+  if(!s) return s;
+  const up = String(s).toUpperCase();
+  if(up==='ENA') return 'ENF';
+  if(up==='ENF') return 'ENA';
+  const m = String(s).match(/^(\d+)v(\d+)$/i);
+  if(m){ return `${m[2]}v${m[1]}`; }
+  return s;
+}
+function perspectiveStrength(pl, team){
+  const s = pl?.StrengthState; if(!s) return s;
+  if(!team) return s;
+  const isAgainst = (pl?.Opponent===team);
+  return isAgainst? reverseStrengthCode(s) : s;
+}
 function getSelectedXgKey(){ const v=document.getElementById('slicerXg')?.value||'xG_F'; return v; }
 function xgVal(pl){ const k=getSelectedXgKey(); const v=pl?.[k]; return v!=null? Number(v) : 0; }
 function isShotBasedXg(){ return getSelectedXgKey()==='xG_S'; }
@@ -510,8 +586,11 @@ function filterPbpBase(){
     }
     // Period filter
     if(periods.size>0 && !periods.has(String(pl.Period))) return false;
-    // Strength filter
-    if(strengths.size>0 && !strengths.has(pl.StrengthState)) return false;
+    // Strength filter (team perspective)
+    if(strengths.size>0){
+      const st = perspectiveStrength(pl, team);
+      if(!strengths.has(st)) return false;
+    }
     // Player1 filter only
     if(players.size>0){ const id=String(pl.Player1_ID||''); if(!players.has(id)) return false; }
     // On-ice AND semantics using names fields split by " - "
@@ -565,8 +644,13 @@ function wireReportEvents(){
   // multi selects change => re-render current view
   ['slicerTeam','slicerPlayer','slicerPeriod','slicerEvent','slicerStrength','slicerOnIce','slicerXg'].forEach(id=>{
     const el=document.getElementById(id); if(!el) return; el.addEventListener('change',()=>{
-      const active=document.querySelector('.report-subtabs .subtab-btn.active')?.dataset.view||'shot-map';
-      renderReportView(active);
+      if(id==='slicerTeam'){
+        // Team change affects strength perspective and options: rebuild slicers
+        renderReport();
+      } else {
+        const active=document.querySelector('.report-subtabs .subtab-btn.active')?.dataset.view||'shot-map';
+        renderReportView(active);
+      }
     });
   });
   document.querySelectorAll('.report-subtabs .subtab-btn').forEach(btn=>{
