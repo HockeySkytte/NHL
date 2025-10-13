@@ -12,11 +12,11 @@
     :root { --bg:#0d0f16; --panel:#141826; --panel-alt:#1c2233; --text:#e6e8ec; --text-dim:#9aa4b1; --accent:#4da3ff; }
     body { margin:0; font-family:Inter, system-ui, sans-serif; background:linear-gradient(160deg,#05060a,#0f121a); color:var(--text); }
     .app-shell { display:grid; grid-template-columns:260px 1fr; min-height:100vh; }
-  aside { background:radial-gradient(circle at 30% 20%, var(--panel), #0b0e15); padding:16px 14px 20px; border-right:1px solid #232a3a; }
-  header { display:flex; align-items:center; gap:10px; margin-bottom:24px; }
-  header img.logo { height:48px; filter:drop-shadow(0 0 4px #000); }
+  aside { background:radial-gradient(circle at 30% 20%, var(--panel), #0b0e15); padding:16px 8px 20px; border-right:1px solid #232a3a; }
+  header { display:flex; align-items:left; gap:2px; margin-bottom:24px; }
+  header img.logo { height:60px; filter:drop-shadow(0 0 4px #000); }
   h1 { font-size:24px; letter-spacing:.8px; font-weight:650; margin:0; }
-  nav.tabs { display:flex; gap:36px; padding:0 34px; height:66px; align-items:flex-end; border-bottom:1px solid #1f2734; background:#0e121b; position:sticky; top:0; z-index:30; }
+  nav.tabs { display:flex; gap:36px; padding:0 34px; height:46px; align-items:flex-end; border-bottom:1px solid #1f2734; background:#0e121b; position:sticky; top:0; z-index:30; }
   nav.tabs a { position:relative; top:10px; padding:12px 6px 18px; font-size:16px; font-weight:600; color:var(--text-dim); text-decoration:none; letter-spacing:.6px; }
   nav.tabs a.active, nav.tabs a:hover { color:var(--text); }
   nav.tabs a.active::after { content:""; position:absolute; left:0; right:0; bottom:10px; height:4px; border-radius:4px; background:var(--accent); box-shadow:0 0 8px -1px var(--accent); }
@@ -27,7 +27,7 @@
   label.checkbox-row { flex-direction:row; align-items:center; font-size:11px; letter-spacing:.8px; text-transform:uppercase; gap:8px; font-weight:600; }
   label.checkbox-row span { position:relative; top:1px; }
   label.checkbox-row input { accent-color:var(--accent); width:16px; height:16px; }
-    main { padding:26px 42px 60px; }
+  main { padding:26px 42px 24px; }
     .calendar-grid { width:100%; display:grid; grid-template-columns:repeat(7, 1fr); gap:6px; }
     .month-header { display:flex; justify-content:space-between; align-items:center; margin:6px 0 20px; }
     .month-title { font-size:28px; font-weight:600; letter-spacing:1px; }
