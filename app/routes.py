@@ -591,14 +591,20 @@ def game_page(game_id: int):
 
 @main_bp.route('/api/game/<int:game_id>/boxscore')
 def api_game_boxscore(game_id: int):
-    # Serve from cache if available
+    # Allow bypassing cache for live refreshes
     try:
-        ttl = int(os.getenv('BOX_CACHE_TTL_SECONDS', '600'))
-        cached = _cache_get(_BOX_CACHE, int(game_id), ttl)
-        if cached:
-            return jsonify(cached)
+        force = str(request.args.get('force', '')).lower() in ('1', 'true', 'yes', 'y', 'force')
     except Exception:
-        pass
+        force = False
+    # Serve from cache if available and not forced
+    if not force:
+        try:
+            ttl = int(os.getenv('BOX_CACHE_TTL_SECONDS', '600'))
+            cached = _cache_get(_BOX_CACHE, int(game_id), ttl)
+            if cached:
+                return jsonify(cached)
+        except Exception:
+            pass
     url = f'https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore'
     try:
         resp = requests.get(url, timeout=20)
@@ -614,7 +620,14 @@ def api_game_boxscore(game_id: int):
         _cache_set(_BOX_CACHE, int(game_id), data)
     except Exception:
         pass
-    return jsonify(data)
+    resp_json = jsonify(data)
+    # Add no-store when forced to help downstream avoid caching
+    if force:
+        try:
+            resp_json.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+    return resp_json
 
 
 @main_bp.route('/api/game/<int:game_id>/right-rail')

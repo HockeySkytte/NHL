@@ -1,16 +1,24 @@
 {% extends 'base.html' %}
 {% block head %}
 <style>
-.live-wrapper{ max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:16px; }
-.live-header{ display:flex; align-items:center; justify-content:space-between; }
-.live-table{ width:100%; border-collapse:collapse; font-size:15px; }
-.live-table th{ text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 12px; color:var(--text-dim); font-weight:700; border-bottom:1px solid #222b37; }
-.live-table td{ padding:10px 12px; border-bottom:1px solid #1a2230; }
+
+.live-wrapper{ width:100%; margin:0; display:flex; flex-direction:column; gap:16px; align-items:flex-start; }
+.live-header{ display:flex; align-items:center; justify-content:space-between; width:100%; }
+.live-table{ width:100%; border-collapse:collapse; font-size:15px; table-layout:auto; }
+.live-table th{ text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:700; border-bottom:1px solid #222b37; }
+.live-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; word-break:break-word; }
+.live-table th.col-right, .live-table td.col-right{ text-align:right; }
+.live-table th.col-center, .live-table td.col-center{ text-align:center; }
+.live-table th.col-left, .live-table td.col-left{ text-align:left; }
 .live-empty{ color:var(--text-dim); font-size:14px; padding:16px; }
-.team-cell{ display:flex; align-items:center; gap:8px; font-weight:650; }
-.team-cell img{ height:28px; width:28px; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+.team-cell{ display:flex; align-items:center; gap:10px; font-weight:650; }
+.team-cell.right{ justify-content:flex-end; }
+.team-cell img{ height:40px; width:40px; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
 .status-chip{ font-size:11px; font-weight:700; padding:2px 6px; border-radius:6px; background:#263145; color:#d7deea; }
-.link-row{ color:var(--text); text-decoration:none; display:block; }
+/* limit link styling to anchors only to avoid breaking <tr> */
+a.link-row{ color:var(--text); text-decoration:none; display:block; }
+/* make table rows clearly clickable */
+.live-table tbody tr{ cursor:pointer; }
 tbody tr:hover{ background:#141c28; }
 </style>
 {% endblock %}
@@ -18,7 +26,7 @@ tbody tr:hover{ background:#141c28; }
 <div class="live-wrapper">
   <div class="live-header">
     <h2 style="margin:0;">Live Games</h2>
-    <span id="lastUpdated" style="font-size:12px; color:var(--text-dim);"></span>
+    <span id="lastUpdated" style="font-size:14px; color:var(--text-dim);"></span>
   </div>
   <div id="liveRoot" class="panel"></div>
 </div>
@@ -36,46 +44,82 @@ function renderRows(games){
     return;
   }
   const header = `<thead><tr>
-    <th>Start (UTC)</th><th>Status</th><th>Away</th><th>Score</th><th>Home</th><th>Venue</th>
+    <th class="col-center">Period</th>
+    <th class="col-center">Time Remaining</th>
+    <th class="col-center">Intermission</th>
+    <th class="col-center">SOG (Away)</th>
+    <th class="col-center">Away</th>
+    <th class="col-center">Score</th>
+    <th class="col-center">Home</th>
+    <th class="col-center">SOG (Home)</th>
+    <th class="col-center">Venue</th>
   </tr></thead>`;
   const rows = games.map(g=>{
     const away = g.awayTeam||{}; const home = g.homeTeam||{};
-    const status = (g.gameState||'').toUpperCase();
     const score = (away.score!=null || home.score!=null) ? `${away.score??''} - ${home.score??''}` : '';
     const venue = (g.venue&&g.venue.default)||'';
-    const start = g.startTimeUTC? fmtTime(g.startTimeUTC) : '';
     const link = `/game/${g.id}`;
-    return `<tr>
-      <td>${start}</td>
-      <td><span class="status-chip">${status}</span></td>
-      <td>
-        <a class="link-row" href="${link}" title="Open game">
-          <div class="team-cell"><img src="${teamLogo(away.abbrev)}" alt="${away.abbrev}"/> ${away.placeName?.default||''} ${away.commonName?.default||away.abbrev||''}</div>
-        </a>
-      </td>
-      <td>${score}</td>
-      <td>
-        <a class="link-row" href="${link}" title="Open game">
-          <div class="team-cell"><img src="${teamLogo(home.abbrev)}" alt="${home.abbrev}"/> ${home.placeName?.default||''} ${home.commonName?.default||home.abbrev||''}</div>
-        </a>
-      </td>
-      <td>${venue}</td>
-    </tr>`;
+    // Boxscore fields
+    const period = g.periodDescriptor?.number ?? '';
+  const timeRem = g.clock?.timeRemaining ?? '';
+  const intermission = (g.clock?.isIntermission ?? g.clock?.inIntermission) ? 'Yes' : 'No';
+    const sogAway = away.sog ?? '';
+    const sogHome = home.sog ?? '';
+    // Away: team name then logo
+    const awayName = `${away.placeName?.default||''} ${away.commonName?.default||away.abbrev||''}`.trim();
+  const awayCell = `<div class=\"team-cell right\">${awayName} <img src=\"${teamLogo(away.abbrev)}\" alt=\"${away.abbrev}\"/></div>`;
+    // Home: logo then team name
+    const homeName = `${home.placeName?.default||''} ${home.commonName?.default||home.abbrev||''}`.trim();
+    const homeCell = `<div class=\"team-cell\"><img src=\"${teamLogo(home.abbrev)}\" alt=\"${home.abbrev}\"/> ${homeName}</div>`;
+    return `
+      <tr onclick=\"window.location='${link}'\">
+  <td class="col-center">${period}</td>
+  <td class="col-center">${timeRem}</td>
+  <td class="col-center">${intermission}</td>
+  <td class="col-center">${sogAway}</td>
+  <td class="col-right">${awayCell}</td>
+  <td class="col-center">${score}</td>
+  <td class="col-left">${homeCell}</td>
+  <td class="col-center">${sogHome}</td>
+  <td class="col-center">${venue}</td>
+      </tr>
+    `;
   }).join('');
-  liveRoot.innerHTML = `<div style="overflow:auto;">
-    <table class="live-table">${header}<tbody>${rows}</tbody></table>
-  </div>`;
+  liveRoot.innerHTML = `<table class="live-table">${header}<tbody>${rows}</tbody></table>`;
 }
-async function loadLive(){
+async function loadLive(forceBoxscore = false){
   try{
     const r = await fetch('/api/live-games');
     const js = await r.json();
     document.getElementById('lastUpdated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
-    if(Array.isArray(js.games)) renderRows(js.games); else renderRows([]);
+    if(Array.isArray(js.games)){
+      const games = js.games;
+      // Always fetch fresh boxscore data for each game
+      const enriched = await Promise.all(games.map(async (g)=>{
+        try{
+          const br = await fetch(`/api/game/${g.id}/boxscore?force=1`);
+          if(!br.ok) return g;
+          const bs = await br.json();
+          const merged = { ...g };
+          if(bs && typeof bs === 'object'){
+            if(bs.clock){ merged.clock = bs.clock; }
+            if(bs.periodDescriptor){ merged.periodDescriptor = bs.periodDescriptor; }
+            if(bs.awayTeam){ merged.awayTeam = { ...(g.awayTeam||{}), sog: bs.awayTeam.sog } }
+            if(bs.homeTeam){ merged.homeTeam = { ...(g.homeTeam||{}), sog: bs.homeTeam.sog } }
+            if(bs.venue){ merged.venue = bs.venue; }
+          }
+          return merged;
+        }catch(e){ return g; }
+      }));
+      renderRows(enriched);
+    } else {
+      renderRows([]);
+    }
   }catch(e){ renderRows([]); }
 }
-loadLive();
+// Always fetch fresh boxscore data on page load
+window.addEventListener('DOMContentLoaded', () => { loadLive(true); });
 // Optional: auto-refresh every 30 seconds
-setInterval(loadLive, 30000);
+setInterval(() => loadLive(true), 30000);
 </script>
 {% endblock %}
