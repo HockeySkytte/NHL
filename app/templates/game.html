@@ -114,6 +114,33 @@ const tabContent = document.getElementById('tabContent');
 const tabs = document.querySelectorAll('.game-tabs button');
 let boxscoreData, pbpData, shiftsData; let headerInitialized=false;
 
+// --- Persist Report tab view and slicer selections per game ---
+const REPORT_STATE_KEY = `game_report_state_${GAME_ID}`;
+let REPORT_STATE = { view: 'shot-map', slicers: {}, zoneBase: null };
+function loadReportState(){
+  try{ const s = sessionStorage.getItem(REPORT_STATE_KEY); if(s){ const obj=JSON.parse(s); if(obj && typeof obj==='object') REPORT_STATE = Object.assign({view:'shot-map', slicers:{}, zoneBase:null}, obj); } }
+  catch(e){}
+}
+function saveReportState(){
+  try{
+    // active sub-view
+    REPORT_STATE.view = document.querySelector('.report-subtabs .subtab-btn.active')?.dataset.view || REPORT_STATE.view || 'shot-map';
+    // slicers
+    const ids=['slicerTeam','slicerPlayer','slicerPeriod','slicerEvent','slicerStrength','slicerOnIce','slicerXg'];
+    const out={};
+    ids.forEach(id=>{
+      const el=document.getElementById(id);
+      if(!el) return;
+      if(el.multiple){ out[id] = Array.from(el.selectedOptions||[]).map(o=>o.value); }
+      else { out[id] = el.value; }
+    });
+    REPORT_STATE.slicers = out;
+    // zone selection
+    try{ REPORT_STATE.zoneBase = (typeof SELECTED_ZONE_BASE!=='undefined' && SELECTED_ZONE_BASE)? SELECTED_ZONE_BASE : null; }catch(_){ REPORT_STATE.zoneBase=null; }
+    sessionStorage.setItem(REPORT_STATE_KEY, JSON.stringify(REPORT_STATE));
+  }catch(e){}
+}
+
 tabs.forEach(btn=> btn.addEventListener('click', ()=>{ tabs.forEach(b=> b.classList.remove('active')); btn.classList.add('active'); showTab(btn.dataset.tab); }));
 
 function showTab(tab){
@@ -146,8 +173,17 @@ async function maybeAutoRefresh(){
       // Re-render current view
       const active = document.querySelector('.game-tabs button.active')?.dataset.tab;
       if(active==='pbp') renderPBP();
-      else if(active==='shifts') renderShifts();
-      else if(active==='report') renderReport();
+        else if(active==='shifts') renderShifts();
+        else if(active==='report'){
+          // Re-render report without resetting subtab or slicers
+          const view = document.querySelector('.report-subtabs .subtab-btn.active')?.dataset.view || REPORT_STATE.view || 'shot-map';
+          // Save current state before re-render
+          saveReportState();
+          renderReport();
+          // renderReport restores state and renders active view; ensure view matches prior
+          try { if(view) { renderReportView(view); } } catch(_){}
+          saveReportState();
+        }
     }
   }catch(e){}
 }
@@ -403,6 +439,7 @@ async function renderReport(){
     return;
   }
   // Build slicers UI similar to PWHL app, focused on current game's PBP data
+  loadReportState();
   const teamOptions = buildTeamPerspectiveOptions();
   const players = shootersFromPbp();
   const periods = [1,2,3,4,5].filter(p=> (pbpData.plays||[]).some(pl=> pl.Period==p)).map(p=>({value:String(p), label:`${p}`}));
@@ -418,6 +455,9 @@ async function renderReport(){
   })();
   const onIce = buildOnIcePlayerList();
 
+  const sel = REPORT_STATE.slicers || {};
+  const activeView = REPORT_STATE.view || 'shot-map';
+
   tabContent.innerHTML = `
     <div class="report-slicers">
       <div class="slicer"><label>Team Perspective</label>
@@ -427,7 +467,11 @@ async function renderReport(){
             ${teamOptions.map(o=>`<label class="dropdown-item"><input type="radio" name="teamOpt_slicerTeam" value="${o.value}" /> <span>${o.label}</span></label>`).join('')}
           </div>
           <select id="slicerTeam" class="hidden-select">
-            ${teamOptions.map((o,i)=>`<option value="${o.value}" ${i===0?'selected':''}>${o.label}</option>`).join('')}
+            ${teamOptions.map((o,i)=>{
+              const v = (sel.slicerTeam!=null? sel.slicerTeam : (teamOptions[0]?.value));
+              const isSel = String(v)===String(o.value) || (!v && i===0);
+              return `<option value="${o.value}" ${isSel?'selected':''}>${o.label}</option>`;
+            }).join('')}
           </select>
         </div>
       </div>
@@ -439,7 +483,11 @@ async function renderReport(){
             ${players.map(p=>`<label class="dropdown-item"><input type="checkbox" value="${p.id}" /> <span>${p.name}</span></label>`).join('')}
           </div>
           <select id="slicerPlayer" class="hidden-select" multiple>
-            ${players.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+            ${players.map(p=>{
+              const vals = Array.isArray(sel.slicerPlayer)? sel.slicerPlayer.map(String) : [];
+              const isSel = vals.includes(String(p.id));
+              return `<option value="${p.id}" ${isSel?'selected':''}>${p.name}</option>`;
+            }).join('')}
           </select>
         </div>
       </div>
@@ -451,7 +499,11 @@ async function renderReport(){
             ${periods.map(p=>`<label class="dropdown-item"><input type="checkbox" value="${p.value}" /> <span>${p.label}</span></label>`).join('')}
           </div>
           <select id="slicerPeriod" class="hidden-select" multiple>
-            ${periods.map(p=>`<option value="${p.value}">${p.label}</option>`).join('')}
+            ${periods.map(p=>{
+              const vals = Array.isArray(sel.slicerPeriod)? sel.slicerPeriod.map(String) : [];
+              const isSel = vals.includes(String(p.value));
+              return `<option value="${p.value}" ${isSel?'selected':''}>${p.label}</option>`;
+            }).join('')}
           </select>
         </div>
       </div>
@@ -463,7 +515,11 @@ async function renderReport(){
             ${events.map(e=>`<label class="dropdown-item"><input type="checkbox" value="${e.value}" /> <span>${e.label}</span></label>`).join('')}
           </div>
           <select id="slicerEvent" class="hidden-select" multiple>
-            ${events.map(e=>`<option value="${e.value}">${e.label}</option>`).join('')}
+            ${events.map(e=>{
+              const vals = Array.isArray(sel.slicerEvent)? sel.slicerEvent.map(String) : [];
+              const isSel = vals.includes(String(e.value));
+              return `<option value="${e.value}" ${isSel?'selected':''}>${e.label}</option>`;
+            }).join('')}
           </select>
         </div>
       </div>
@@ -475,7 +531,11 @@ async function renderReport(){
             ${strengths.map(s=>`<label class="dropdown-item"><input type="checkbox" value="${s.value}" /> <span>${s.label}</span></label>`).join('')}
           </div>
           <select id="slicerStrength" class="hidden-select" multiple>
-            ${strengths.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
+            ${strengths.map(s=>{
+              const vals = Array.isArray(sel.slicerStrength)? sel.slicerStrength.map(String) : [];
+              const isSel = vals.includes(String(s.value));
+              return `<option value="${s.value}" ${isSel?'selected':''}>${s.label}</option>`;
+            }).join('')}
           </select>
         </div>
       </div>
@@ -488,9 +548,11 @@ async function renderReport(){
             <label class="dropdown-item"><input type="radio" name="xgOpt_slicerXg" value="xG_F2" /> <span>Predictive</span></label>
           </div>
           <select id="slicerXg" class="hidden-select">
-            <option value="xG_F" selected>Fenwick based</option>
-            <option value="xG_S">Shot based</option>
-            <option value="xG_F2">Predictive</option>
+            ${['xG_F','xG_S','xG_F2'].map(v=>{
+              const cur = sel.slicerXg ?? 'xG_F';
+              const lbl = v==='xG_F'? 'Fenwick based' : v==='xG_S'? 'Shot based' : 'Predictive';
+              return `<option value="${v}" ${String(cur)===v?'selected':''}>${lbl}</option>`;
+            }).join('')}
           </select>
         </div>
       </div>
@@ -502,25 +564,27 @@ async function renderReport(){
             ${onIce.map(p=>`<label class="dropdown-item"><input type="checkbox" value="${p.id}" /> <span>${p.name}</span></label>`).join('')}
           </div>
           <select id="slicerOnIce" class="hidden-select" multiple>
-            ${onIce.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+            ${onIce.map(p=>{
+              const vals = Array.isArray(sel.slicerOnIce)? sel.slicerOnIce.map(String) : [];
+              const isSel = vals.includes(String(p.id));
+              return `<option value="${p.id}" ${isSel?'selected':''}>${p.name}</option>`;
+            }).join('')}
           </select>
         </div>
       </div>
     </div>
     <div class="report-subtabs">
-      <button class="subtab-btn active" data-view="shot-map">Shot Map</button>
-      <button class="subtab-btn" data-view="heat-map">Heat Map</button>
-      <button class="subtab-btn" data-view="xg-map">xG Map</button>
-      <button class="subtab-btn" data-view="skaters">Skaters</button>
-      <button class="subtab-btn" data-view="goalies">Goalies</button>
-      <button class="subtab-btn" data-view="video">Video</button>
+      ${['shot-map','heat-map','xg-map','skaters','goalies','video'].map(v=> `<button class="subtab-btn ${activeView===v?'active':''}" data-view="${v}">${v==='shot-map'?'Shot Map': v==='heat-map'?'Heat Map': v==='xg-map'?'xG Map': v[0].toUpperCase()+v.slice(1)}</button>`).join('')}
     </div>
     <div id="reportView" style="margin-top:12px;"></div>
   `;
 
+  // If zone selection persisted, reapply before rendering
+  try{ if(typeof SELECTED_ZONE_BASE!=='undefined') SELECTED_ZONE_BASE = REPORT_STATE.zoneBase || null; }catch(_){ /* ignore */ }
   wireReportEvents();
   initDropdownSlicers();
-  renderReportView('shot-map');
+  renderReportView(activeView);
+  saveReportState();
 }
 
 async function fetchJson(url){
@@ -669,10 +733,12 @@ function wireReportEvents(){
     const el=document.getElementById(id); if(!el) return; el.addEventListener('change',()=>{
       if(id==='slicerTeam'){
         // Team change affects strength perspective and options: rebuild slicers
+        saveReportState();
         renderReport();
       } else {
         const active=document.querySelector('.report-subtabs .subtab-btn.active')?.dataset.view||'shot-map';
         renderReportView(active);
+        saveReportState();
       }
     });
   });
@@ -681,6 +747,7 @@ function wireReportEvents(){
       document.querySelectorAll('.report-subtabs .subtab-btn').forEach(b=> b.classList.remove('active'));
       btn.classList.add('active');
       renderReportView(btn.dataset.view);
+      saveReportState();
     });
   });
 }
@@ -897,6 +964,7 @@ function renderReportView(view){
   updateKpiStrip(filterBySelectedZoneIfAny(kpiPlays), filterBySelectedZoneIfAny(corsiUniverse));
     drawLegendIcons();
     wireZoneClicksForView('shot-map');
+    try{ saveReportState(); }catch(_){ }
   } else if(view==='heat-map'){
     wrap.innerHTML = `
       <div class="report-rink-row">
@@ -978,24 +1046,30 @@ function renderReportView(view){
   drawHeatMap(mapPlays);
   updateKpiStrip(filterBySelectedZoneIfAny(kpiPlays), filterBySelectedZoneIfAny(corsiUniverse));
     wireZoneClicksForView('heat-map');
+    try{ saveReportState(); }catch(_){ }
   } else if(view==='xg-map'){
     const kpiPlays = filterPbpForKpis();
     renderTeamsPage(wrap, kpiPlays);
+    try{ saveReportState(); }catch(_){ }
   } else if(view==='skaters'){
     // Build Skaters aggregation
     const kpiPlays = filterPbpForKpis();
     const corsiPlays = filterPbpForCorsi();
     const players = aggregateSkaters(kpiPlays, corsiPlays);
     renderSkatersTable(wrap, players);
+    try{ saveReportState(); }catch(_){ }
   } else if(view==='goalies'){
     const kpiPlays = filterPbpForKpis();
     const rows = aggregateGoalies(kpiPlays);
     renderGoaliesTable(wrap, rows);
+    try{ saveReportState(); }catch(_){ }
   } else if(view==='teams'){
     const kpiPlays = filterPbpForKpis();
     renderTeamsPage(wrap, kpiPlays);
+    try{ saveReportState(); }catch(_){ }
   } else if(view==='video'){
     renderVideoTab(wrap);
+    try{ saveReportState(); }catch(_){ }
   }
 }
 
@@ -1385,7 +1459,7 @@ async function drawZonesHeat(ctx, prefix, totals, minOverride=null, maxOverride=
 function buildZoneScreenPoints(ctx, feature, isOffensive){ const coords=feature.geometry.coordinates[0]; const pts=[]; for(const [x,y] of coords){ const inHalf=isOffensive? x>=25 : x<=-25; if(!inHalf) continue; const [px,py]=projectPoint(x,y,isOffensive); pts.push([px*ctx.canvas.width, py*ctx.canvas.height]); } return pts; }
 function pointInPoly(pts, x, y){ let inside=false; for(let i=0,j=pts.length-1;i<pts.length;j=i++){ const xi=pts[i][0], yi=pts[i][1]; const xj=pts[j][0], yj=pts[j][1]; const intersect = ((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi+1e-9) + xi); if(intersect) inside=!inside; } return inside; }
 function canvasClickToZoneId(canvas, prefix){ return async (evt)=>{ await ensureZones(); const rect=canvas.getBoundingClientRect(); const sx=(evt.clientX-rect.left)*(canvas.width/canvas.clientWidth); const sy=(evt.clientY-rect.top)*(canvas.height/canvas.clientHeight); const ctx=canvas.getContext('2d'); const isOff=prefix==='O'||prefix==='N'; const feats=(HOCKEY_ZONES?.features||[]).filter(f=> f.properties?.id?.startsWith(prefix)); let clicked=null; for(const f of feats){ const pts=buildZoneScreenPoints(ctx,f,isOff); if(pts.length>=3 && pointInPoly(pts,sx,sy)){ clicked=f; break; } } if(clicked){ const base=String(clicked.properties.id).slice(1); SELECTED_ZONE_BASE = (SELECTED_ZONE_BASE===base)? null : base; } else { SELECTED_ZONE_BASE=null; } const active=document.querySelector('.report-subtabs .subtab-btn.active')?.dataset.view||'shot-map'; // re-render; heat map will not be filtered but will highlight, KPIs will filter
-  renderReportView(active); }; }
+                                                 renderReportView(active); try{ saveReportState(); }catch(_){ } }; }
 function wireZoneClicksForView(view){ try{ if(view==='heat-map'){ const d=document.getElementById('defHeat'); const o=document.getElementById('offHeat'); if(d) d.onclick = canvasClickToZoneId(d,'D'); if(o) o.onclick = canvasClickToZoneId(o,'O'); } else if(view==='shot-map'){ const d=document.getElementById('defShots'); const o=document.getElementById('offShots'); if(d) d.onclick = canvasClickToZoneId(d,'D'); if(o) o.onclick = canvasClickToZoneId(o,'O'); } }catch(e){} }
 function getPerspectiveZoneIdForPlay(pl, team){ const isFor = pl.EventTeam===team; const zid = isFor ? (pl.BoxID||null) : (pl.BoxID_rev||pl.BoxID||null); return zid; }
 function filterBySelectedZoneIfAny(plays){ if(!SELECTED_ZONE_BASE) return plays; const team=getSelectedTeam(); return (plays||[]).filter(pl=>{ const zid=getPerspectiveZoneIdForPlay(pl,team); if(!zid) return false; return String(zid).slice(1)===SELECTED_ZONE_BASE; }); }
