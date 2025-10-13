@@ -633,6 +633,10 @@ def api_game_boxscore(game_id: int):
 @main_bp.route('/api/game/<int:game_id>/right-rail')
 def api_game_right_rail(game_id: int):
     """Proxy NHL right-rail endpoint for a game to avoid browser CORS."""
+    try:
+        force = str(request.args.get('force', '')).lower() in ('1', 'true', 'yes', 'y', 'force')
+    except Exception:
+        force = False
     url = f'https://api-web.nhle.com/v1/gamecenter/{game_id}/right-rail'
     try:
         resp = requests.get(url, timeout=20)
@@ -645,33 +649,44 @@ def api_game_right_rail(game_id: int):
     except Exception:
         # Fall back to raw text if upstream is not JSON
         return jsonify({'error': 'Invalid upstream format'}), 502
-    return jsonify(data)
+    j = jsonify(data)
+    if force:
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+    return j
 
 
 @main_bp.route('/api/game/<int:game_id>/play-by-play')
 def api_game_pbp(game_id: int):
     """Fetch NHL play-by-play and map to requested wide schema."""
     # Serve from disk/memory cache when available; for live games use short TTL
+    try:
+        force = str(request.args.get('force', '')).lower() in ('1', 'true', 'yes', 'y', 'force')
+    except Exception:
+        force = False
     live_ttl = 5  # seconds for live
     std_ttl = int(os.getenv('PBP_CACHE_TTL_SECONDS', '600'))
     disk_path = _disk_cache_path_pbp(int(game_id))
-    try:
-        # Try disk cache first (has metadata such as gameState)
-        if os.path.exists(disk_path):
-            import json, time
-            with open(disk_path, 'r', encoding='utf-8') as f:
-                js = json.load(f)
-            ts = float(js.get('_cachedAt', 0.0))
-            gstate = str(js.get('gameState') or '').upper()
-            ttl = live_ttl if gstate in ('LIVE', 'SCHEDULED', 'PREVIEW', 'INPROGRESS') else std_ttl
-            if ts and (time.time() - ts) < ttl:
-                return jsonify({k: v for k, v in js.items() if not k.startswith('_')})
-        # Try in-memory cache if disk miss
-        cached = _cache_get(_PBP_CACHE, int(game_id), std_ttl)
-        if cached:
-            return jsonify(cached)
-    except Exception:
-        pass
+    if not force:
+        try:
+            # Try disk cache first (has metadata such as gameState)
+            if os.path.exists(disk_path):
+                import json, time
+                with open(disk_path, 'r', encoding='utf-8') as f:
+                    js = json.load(f)
+                ts = float(js.get('_cachedAt', 0.0))
+                gstate = str(js.get('gameState') or '').upper()
+                ttl = live_ttl if gstate in ('LIVE', 'SCHEDULED', 'PREVIEW', 'INPROGRESS') else std_ttl
+                if ts and (time.time() - ts) < ttl:
+                    return jsonify({k: v for k, v in js.items() if not k.startswith('_')})
+            # Try in-memory cache if disk miss
+            cached = _cache_get(_PBP_CACHE, int(game_id), std_ttl)
+            if cached:
+                return jsonify(cached)
+        except Exception:
+            pass
     url = f'https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play'
     try:
         resp = requests.get(url, timeout=25)
@@ -1569,7 +1584,13 @@ def api_game_pbp(game_id: int):
             json.dump(js, f)
     except Exception:
         pass
-    return jsonify(out_obj)
+    resp = jsonify(out_obj)
+    if force:
+        try:
+            resp.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+    return resp
 
 
 @main_bp.route('/api/game/<int:game_id>/shifts')
@@ -1578,6 +1599,10 @@ def api_game_shifts(game_id: int):
 
     Output rows: PlayerID, Name, Team, Period, Start (sec), End (sec), Duration (End-Start)
     """
+    try:
+        force = str(request.args.get('force', '')).lower() in ('1', 'true', 'yes', 'y', 'force')
+    except Exception:
+        force = False
     gid = str(game_id)
     if len(gid) < 10:
         return jsonify({'error': 'Invalid gameId'}), 400
@@ -1625,18 +1650,19 @@ def api_game_shifts(game_id: int):
         return jsonify({'error': 'Failed to fetch boxscore'}), 502
 
     # Try disk cache after knowing the gameState
-    try:
-        if os.path.exists(disk_path):
-            import json, time
-            with open(disk_path, 'r', encoding='utf-8') as f:
-                js = json.load(f)
-            ts = float(js.get('_cachedAt', 0.0))
-            gstate = str(js.get('gameState') or '').upper()
-            ttl = live_ttl if gstate in ('LIVE', 'SCHEDULED', 'PREVIEW', 'INPROGRESS') else std_ttl
-            if ts and (time.time() - ts) < ttl:
-                return jsonify({k: v for k, v in js.items() if not k.startswith('_')})
-    except Exception:
-        pass
+    if not force:
+        try:
+            if os.path.exists(disk_path):
+                import json, time
+                with open(disk_path, 'r', encoding='utf-8') as f:
+                    js = json.load(f)
+                ts = float(js.get('_cachedAt', 0.0))
+                gstate = str(js.get('gameState') or '').upper()
+                ttl = live_ttl if gstate in ('LIVE', 'SCHEDULED', 'PREVIEW', 'INPROGRESS') else std_ttl
+                if ts and (time.time() - ts) < ttl:
+                    return jsonify({k: v for k, v in js.items() if not k.startswith('_')})
+        except Exception:
+            pass
 
     def unify_roster(team_stats: Dict) -> List[Dict]:
         res: List[Dict] = []
@@ -2211,7 +2237,13 @@ def api_game_shifts(game_id: int):
             json.dump(js, f)
     except Exception:
         pass
-    return jsonify(out)
+    resp = jsonify(out)
+    if force:
+        try:
+            resp.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+    return resp
     running_away = 0
     running_home = 0
 
