@@ -80,6 +80,12 @@ def index_page():
     return render_template('index.html', teams=TEAM_ROWS, active_tab='Schedule', show_season_state=True)
 
 
+@main_bp.route('/live')
+def live_games_page():
+    """Live Games page."""
+    return render_template('live.html', teams=TEAM_ROWS, active_tab='Live Games', show_season_state=False)
+
+
 @main_bp.route('/standings')
 def standings_page():
     """Standings page."""
@@ -277,6 +283,63 @@ def api_standings(season: int):
         return jsonify({'error': 'Upstream error', 'status': last_status or 502}), 502
     except Exception:
         return jsonify({'error': 'Failed to fetch standings'}), 502
+
+
+@main_bp.route('/api/live-games')
+def api_live_games():
+    """Return list of live games using NHL schedule/now endpoint.
+    Filters to gameState indicating in-progress; if none, returns empty list.
+    Shape: { games: [ { id, gameState, startTimeUTC, venue, awayTeam, homeTeam, periodDescriptor? } ] }
+    """
+    url = 'https://api-web.nhle.com/v1/schedule/now'
+    try:
+        r = requests.get(url, timeout=20)
+    except Exception:
+        return jsonify({'games': [], 'error': 'Fetch failed'}), 502
+    if r.status_code != 200:
+        return jsonify({'games': [], 'error': 'Upstream error', 'status': r.status_code}), 502
+    try:
+        js = r.json()
+    except Exception:
+        return jsonify({'games': []})
+    live_states = {'LIVE', 'INPROGRESS', 'CRIT', 'OT', 'SHOOTOUT'}
+    out = []
+    for wk in (js.get('gameWeek') or []):
+        for g in (wk.get('games') or []):
+            st = str(g.get('gameState') or '').upper()
+            if st in live_states:
+                out.append({
+                    'id': g.get('id'),
+                    'season': g.get('season'),
+                    'gameType': g.get('gameType'),
+                    'startTimeUTC': g.get('startTimeUTC'),
+                    'gameState': g.get('gameState'),
+                    'venue': g.get('venue'),
+                    'awayTeam': g.get('awayTeam'),
+                    'homeTeam': g.get('homeTeam'),
+                    'periodDescriptor': g.get('periodDescriptor'),
+                })
+    return jsonify({'games': out})
+
+
+@main_bp.route('/favicon.png')
+def favicon_png():
+    """Serve favicon.png placed at project root.
+    We look in CWD and repo root for a favicon.png and stream it; fallback 404.
+    """
+    from flask import send_file
+    paths = [
+        os.path.join(os.getcwd(), 'favicon.png'),
+        os.path.join(os.path.dirname(__file__), '..', 'favicon.png'),
+    ]
+    for p in paths:
+        try:
+            p2 = os.path.abspath(p)
+            if os.path.exists(p2):
+                return send_file(p2, mimetype='image/png')
+        except Exception:
+            continue
+    return ('', 404)
 
 
 @main_bp.route('/api/diag/models')

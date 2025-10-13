@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NHL Analytics</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -44,6 +45,11 @@
     .status-chip { position:absolute; bottom:4px; right:6px; font-size:10px; font-weight:600; letter-spacing:.5px; background:rgba(0,0,0,.35); padding:3px 6px; border-radius:5px; backdrop-filter:blur(4px); }
     .skeleton { background:linear-gradient(100deg,#1d2431,#2a3344 40%,#1d2431 60%); background-size:200% 100%; animation:shimmer 1.2s linear infinite; }
     @keyframes shimmer { to { background-position:-200% 0; } }
+    /* Branding block */
+  .brand { display:flex; flex-direction:column; align-items:center; gap:20px; margin-top:8px; padding-top:8px; border-top:1px solid #232a3a; }
+  .brand a { text-decoration:none; }
+  .brand-logo { height:100px; width:auto; object-fit:contain; filter:drop-shadow(0 0 8px rgba(0,0,0,.7)); }
+  .brand-by { font-size:16px; color:var(--text-dim); font-weight:600; letter-spacing:.6px; font-style:italic; margin-top:-15px; }
   </style>
   {% block head %}{% endblock %}
 </head>
@@ -70,13 +76,21 @@
         </label>
         {% endif %}
         <label class="checkbox-row"><input type="checkbox" id="includeHistoric" /> <span>Include Historic Teams</span></label>
+        {% if active_tab in ['Schedule','Standings','Live Games'] %}
+        <div class="brand">
+          <a href="https://hockey-statistics.com/" target="_blank" rel="noopener">
+            <img class="brand-logo" src="{{ url_for('static', filename='Logo.png') }}" alt="Hockey Statistics" />
+          </a>
+          <div class="brand-by">App by Hockey Skytte</div>
+        </div>
+        {% endif %}
       </div>
     </aside>
     <div>
       <nav class="tabs">
-        <a href="/" class="{% if active_tab=='Schedule' %}active{% endif %}">Schedule</a>
-        <a href="/standings" class="{% if active_tab=='Standings' %}active{% endif %}">Standings</a>
-        <a href="#" class="{% if active_tab=='Live Games' %}active{% endif %}">Live Games</a>
+  <a href="/" class="{% if active_tab=='Schedule' %}active{% endif %}">Schedule</a>
+  <a href="/standings" class="{% if active_tab=='Standings' %}active{% endif %}">Standings</a>
+  <a href="/live" class="{% if active_tab=='Live Games' %}active{% endif %}">Live Games</a>
         <a href="#" class="{% if active_tab=='Game Projections' %}active{% endif %}">Game Projections</a>
         <a href="#" class="{% if active_tab=='Skaters' %}active{% endif %}">Skaters</a>
         <a href="#" class="{% if active_tab=='Goalies' %}active{% endif %}">Goalies</a>
