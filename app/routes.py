@@ -1755,9 +1755,16 @@ def api_game_shifts(game_id: int):
         return None
 
     def proper_name(last_upper: str, first_upper: str) -> str:
+        # Use Unicode-aware title-casing while preserving hyphens and apostrophes
         def fix(part: str) -> str:
-            part = part.strip().lower()
-            return ' '.join(w.capitalize() for w in part.split())
+            part = (part or '').strip().replace('\xa0', ' ').replace('\u00a0', ' ')
+            # Split on spaces, then title-case each token; keep hyphens/apostrophes intact
+            tokens = []
+            for tok in part.split():
+                subtoks = re.split(r'([-\'])', tok)
+                subtoks = [st.title() if st.isalpha() else st for st in subtoks]
+                tokens.append(''.join(subtoks))
+            return ' '.join(tokens)
         return f"{fix(first_upper)} {fix(last_upper)}".strip()
 
     def parse_shifts_from_html(html: str, side: str, idx, team_abbrev: str) -> List[Dict]:
@@ -1813,8 +1820,9 @@ def api_game_shifts(game_id: int):
                         continue
                     if len(tds_all) == 1 and tds_all[0].has_attr('colspan'):
                         txt = tds_all[0].get_text(' ', strip=True)
-                        m1 = re.match(r'^(\d{1,2})\s+([A-Z .\'-]+),\s*([A-Z .\'-]+)$', txt)
-                        m2 = re.match(r'^(\d{1,2})\s+([A-Za-z .\'-]+)$', txt)
+                        # Support accented Latin letters (e.g., É, è) in names
+                        m1 = re.match(r'^(\d{1,2})\s+([A-ZÀ-ÖØ-Þ .\'-]+),\s*([A-ZÀ-ÖØ-Þ .\'-]+)$', txt)
+                        m2 = re.match(r'^(\d{1,2})\s+([A-Za-zÀ-ÖØ-öø-ÿ .\'-]+)$', txt)
                         if m1:
                             current_jersey = m1.group(1)
                             last_u = m1.group(2)
@@ -1886,8 +1894,9 @@ def api_game_shifts(game_id: int):
                     return out
 
             # Player-first scan: find header texts and parse the next table
-            pat_comma = re.compile(r'^(\s*)(\d{1,2})\s+([A-Za-z .\'-]+),\s*([A-Za-z .\'-]+)(\s*)$')
-            pat_plain = re.compile(r'^(\s*)(\d{1,2})\s+([A-Za-z][A-Za-z .\'-]+)(\s*)$')
+            # Include Latin-1 accented ranges in character classes
+            pat_comma = re.compile(r'^(\s*)(\d{1,2})\s+([A-Za-zÀ-ÖØ-öø-ÿ .\'-]+),\s*([A-Za-zÀ-ÖØ-öø-ÿ .\'-]+)(\s*)$')
+            pat_plain = re.compile(r'^(\s*)(\d{1,2})\s+([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ .\'-]+)(\s*)$')
             header_nodes = []
             for node in soup.find_all(string=True):
                 txt = (node or '').replace('\xa0', ' ').strip()
@@ -2016,8 +2025,8 @@ def api_game_shifts(game_id: int):
             jersey = None
             disp_name = None
             last_for_idx = None
-            m1 = re.match(r'^(\d{1,2})\s+([A-Z .\'-]+),\s*([A-Z .\'-]+)$', header_text)
-            m2 = re.match(r'^(\d{1,2})\s+([A-Za-z .\'-]+)$', header_text)
+            m1 = re.match(r'^(\d{1,2})\s+([A-ZÀ-ÖØ-Þ .\'-]+),\s*([A-ZÀ-ÖØ-Þ .\'-]+)$', header_text)
+            m2 = re.match(r'^(\d{1,2})\s+([A-Za-zÀ-ÖØ-öø-ÿ .\'-]+)$', header_text)
             if m1:
                 jersey = m1.group(1)
                 last_u = m1.group(2)
