@@ -93,7 +93,7 @@
 {% endblock %}
 {% block content %}
 <div class="game-header">
-  <button onclick="window.location.href='/'" style="background:var(--panel-alt); border:1px solid #2a3343; color:var(--text); padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px; margin-bottom:14px;">← Back to Schedule</button>
+  <button onclick="window.history.back()" style="background:var(--panel-alt); border:1px solid #2a3343; color:var(--text); padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px; margin-bottom:14px;">← Back</button>
   <h2 id="gameTitle">Loading...</h2>
   <div class="subline" id="gameMeta"></div>
   <div class="final-line" id="gameFinal" style="margin-top:4px;"></div>
@@ -392,7 +392,16 @@ async function renderShifts(){
     const xga = xgByShiftAgainst.get(key)||0;
     return Object.assign({}, s, {ZoneStart: zs, xGF: Number(xgf.toFixed(3)), xGA: Number(xga.toFixed(3))});
   });
-  const rows = enrichedRows.map(row=> `<tr>${cols.map(c=>`<td>${row[c]??''}</td>`).join('')}</tr>`).join('');
+  function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+  const rows = enrichedRows.map(row=> `<tr>${cols.map(c=>`<td>${escapeHtml(row[c]??'')}</td>`).join('')}</tr>`).join('');
   const emptyMsg = (shiftsData.shifts||[]).length ? '' : `<div style="color:var(--text-dim); font-size:13px; margin:6px 0 12px;">No shifts found for this game yet.</div>`;
   tabContent.innerHTML = `<div class="panel"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Shifts</h3><button id="exportShiftsBtn" class="btn-export">Export CSV</button></div>
     ${emptyMsg}
