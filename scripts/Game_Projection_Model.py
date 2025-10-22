@@ -189,9 +189,28 @@ def main():
 
 	df = load_dataframe(args.sql)
 
-	# Simplified feature set to reduce overfitting as requested
+	# Build derived features requested: pTOI_F, pTOI_D, piG, pA1, pA2
+	required_for_sums = {
+		'pTOI_F': ["pEV_TOI_F", "pPP_TOI_F", "pSH_TOI_F"],
+		'pTOI_D': ["pEV_TOI_D", "pPP_TOI_D", "pSH_TOI_D"],
+		'piG':    ["pEV_iG", "pPP_iG", "pSH_iG"],
+		'pA1':    ["pEV_A1", "pPP_A1", "pSH_A1"],
+		'pA2':    ["pEV_A2", "pPP_A2", "pSH_A2"],
+	}
+	# Validate presence of columns needed to compute the derived features
+	missing_sum_inputs = [c for cols in required_for_sums.values() for c in cols if c not in df.columns]
+	if missing_sum_inputs:
+		raise SystemExit(f"Missing columns required to compute derived features: {sorted(set(missing_sum_inputs))}")
+
+	# Compute sums with NaNs treated as 0
+	for out_col, cols in required_for_sums.items():
+		df[out_col] = df[cols].fillna(0).sum(axis=1)
+
+	# Requested full feature set with derived columns
 	feature_cols = [
-		"Situation", "pGF", "pxGF", "pxGA", "pPP_GF", "pSH_xGA", "pPEN", "pEV_QoT"
+		"Situation", "Age_F", "Age_D", "pTOI_F", "pTOI_D",
+		"pGF", "pGA", "pxGF", "pxGA", "pPP_GF", "pPP_xGF", "pSH_GA", "pSH_xGA", "pPEN",
+		"piG", "pA1", "pA2", "pEV_QoT", "pEV_ZS"
 	]
 
 	missing = [c for c in feature_cols + [args.target] if c not in df.columns]
