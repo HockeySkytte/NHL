@@ -107,10 +107,57 @@ def build_and_train(df: pd.DataFrame,
 	)
 
 	pipe.fit(X_train, y_train)
-	proba = pipe.predict_proba(X_test)[:, 1]
-	auc = roc_auc_score(y_test, proba)
-	ll = log_loss(y_test, proba)
-	return pipe, dict(auc=auc, logloss=ll, test_size=test_size, features=feature_cols, cat_cols=cat_cols, num_cols=num_cols)
+	# Predictions for test and train
+	proba_test = pipe.predict_proba(X_test)[:, 1]
+	proba_train = pipe.predict_proba(X_train)[:, 1]
+
+	# Metrics
+	metrics = {
+		'test_auc': roc_auc_score(y_test, proba_test),
+		'test_logloss': log_loss(y_test, proba_test),
+		'train_auc': roc_auc_score(y_train, proba_train),
+		'train_logloss': log_loss(y_train, proba_train),
+		'test_size': test_size,
+		'features': feature_cols,
+		'cat_cols': cat_cols,
+		'num_cols': num_cols,
+	}
+
+	# Feature importances (expanded and grouped)
+	pre = pipe.named_steps['pre']
+	model = pipe.named_steps['model']
+	try:
+		out_names = list(pre.get_feature_names_out())
+	except Exception:
+		# Fallback: unknown names, index by position
+		out_names = [f'f{i}' for i in range(len(model.feature_importances_))]
+	importances = model.feature_importances_.tolist()
+
+	# Expanded importances
+	expanded = sorted([
+		{'feature': n, 'importance': float(v)} for n, v in zip(out_names, importances)
+	], key=lambda x: x['importance'], reverse=True)
+
+	# Grouped by original column
+	grouped: dict[str, float] = {}
+	for n, v in zip(out_names, importances):
+		if n.startswith('num__'):
+			base = n.split('__', 1)[1]
+		elif n.startswith('cat__'):
+			tail = n.split('__', 1)[1]
+			base = tail.split('_', 1)[0]  # e.g., Situation_<cat>
+		else:
+			base = n
+		grouped[base] = grouped.get(base, 0.0) + float(v)
+	grouped_sorted = sorted(
+		[{'feature': k, 'importance': v} for k, v in grouped.items()],
+		key=lambda x: x['importance'], reverse=True
+	)
+
+	metrics['feature_importances_expanded'] = expanded
+	metrics['feature_importances_grouped'] = grouped_sorted
+
+	return pipe, metrics
 
 
 def main():
@@ -149,7 +196,16 @@ def main():
 	out_path = args.model_out or os.path.join(MODEL_DIR, default_name)
 	joblib.dump(dict(pipeline=model, metrics=metrics), out_path)
 	print(f"Saved model to: {out_path}")
-	print(f"AUC={metrics['auc']:.4f}  LogLoss={metrics['logloss']:.4f}")
+	print(
+		"Test:  AUC={:.4f}  LogLoss={:.4f}\nTrain: AUC={:.4f}  LogLoss={:.4f}".format(
+			metrics['test_auc'], metrics['test_logloss'], metrics['train_auc'], metrics['train_logloss']
+		)
+	)
+	# Show top 25 grouped importances
+	top_grouped = metrics['feature_importances_grouped'][:25]
+	print("Top grouped importances:")
+	for item in top_grouped:
+		print(f"  {item['feature']:<20} {item['importance']:.6f}")
 
 
 if __name__ == '__main__':
