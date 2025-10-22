@@ -35,8 +35,9 @@ from sklearn.metrics import roc_auc_score, log_loss
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
 import joblib
 
 # Save directory for models
@@ -51,20 +52,13 @@ def build_and_train(df: pd.DataFrame,
 					random_state: int = 42,
 					model_params: dict | None = None):
 	if model_params is None:
-		# More conservative defaults to reduce overfitting
+		# Defaults for Logistic Regression to encourage generalization
 		model_params = dict(
-			n_estimators=300,
-			learning_rate=0.05,
-			subsample=0.8,
-			colsample_bytree=0.7,
-			max_depth=3,
-			min_child_weight=5,
-			reg_lambda=2.0,
-			reg_alpha=0.0,
+			penalty='l2',
+			C=1.0,
+			solver='liblinear',  # robust for smaller datasets
+			max_iter=5000,
 			random_state=random_state,
-			tree_method='hist',
-			eval_metric='logloss',
-			n_jobs=0,
 		)
 
 	# Split features: categorical vs numeric
@@ -90,6 +84,7 @@ def build_and_train(df: pd.DataFrame,
 			return OneHotEncoder(handle_unknown='ignore', sparse=False)
 	numeric_tf = Pipeline(steps=[
 		('imputer', SimpleImputer(strategy='median')),
+		('scaler', StandardScaler()),
 	])
 	categorical_tf = Pipeline(steps=[
 		('imputer', SimpleImputer(strategy='most_frequent')),
@@ -103,7 +98,8 @@ def build_and_train(df: pd.DataFrame,
 		]
 	)
 
-	model = XGBClassifier(**model_params)
+	# Switch to Logistic Regression model as requested
+	model = LogisticRegression(**model_params)
 
 	pipe = Pipeline(steps=[
 		('pre', pre),
@@ -138,8 +134,23 @@ def build_and_train(df: pd.DataFrame,
 		out_names = list(pre.get_feature_names_out())
 	except Exception:
 		# Fallback: unknown names, index by position
-		out_names = [f'f{i}' for i in range(len(model.feature_importances_))]
-	importances = model.feature_importances_.tolist()
+		# We'll infer size from coefficients or set empty list
+		out_names = None
+
+	importances: list[float]
+	if hasattr(model, 'feature_importances_'):
+		importances = model.feature_importances_.tolist()
+		if out_names is None:
+			out_names = [f'f{i}' for i in range(len(importances))]
+	elif hasattr(model, 'coef_'):
+		# Use absolute value of coefficients as importance proxy for LR
+		coef = model.coef_[0]
+		importances = [float(abs(c)) for c in coef]
+		if out_names is None:
+			out_names = [f'f{i}' for i in range(len(importances))]
+	else:
+		importances = []
+		out_names = []
 
 	# Expanded importances
 	expanded = sorted([
@@ -181,7 +192,7 @@ def main():
 
 	# Simplified feature set to reduce overfitting as requested
 	feature_cols = [
-		"Situation", "pxGF", "pxGA", "pPP_GF", "pSH_xGA", "pPEN", "pEV_QoT"
+		"Situation", "pGF", "pxGF", "pxGA", "pPP_GF", "pSH_xGA", "pPEN", "pEV_QoT"
 	]
 
 	missing = [c for c in feature_cols + [args.target] if c not in df.columns]
@@ -211,7 +222,7 @@ def main():
 
 	# Save model pipeline
 	ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-	default_name = f"xgb_game_projection_{ts}.joblib"
+	default_name = f"logreg_game_projection_{ts}.joblib"
 	out_path = args.model_out or os.path.join(MODEL_DIR, default_name)
 	joblib.dump(dict(pipeline=model, metrics=metrics), out_path)
 	print(f"Saved model to: {out_path}")
