@@ -80,12 +80,18 @@ def build_and_train(df: pd.DataFrame,
 	y = df[target_col].astype(int)
 
 	# Preprocess: impute numeric; one-hot encode Situation
+	# sklearn >=1.2 switched from `sparse` to `sparse_output`; support both
+	def make_ohe():
+		try:
+			return OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+		except TypeError:
+			return OneHotEncoder(handle_unknown='ignore', sparse=False)
 	numeric_tf = Pipeline(steps=[
 		('imputer', SimpleImputer(strategy='median')),
 	])
 	categorical_tf = Pipeline(steps=[
 		('imputer', SimpleImputer(strategy='most_frequent')),
-		('onehot', OneHotEncoder(handle_unknown='ignore', sparse=False)),
+		('onehot', make_ohe()),
 	])
 
 	pre = ColumnTransformer(
