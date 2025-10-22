@@ -30,7 +30,6 @@ def load_dataframe(sql: str) -> pd.DataFrame:
 		raise SystemExit(f"Failed to run SQL: {e}")
 
 import numpy as np
-from xgboost import XGBClassifier
 from sklearn.metrics import roc_auc_score, log_loss
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
@@ -180,7 +179,7 @@ def build_and_train(df: pd.DataFrame,
 
 
 def main():
-	parser = argparse.ArgumentParser(description='Train XGBoost game projection model.')
+	parser = argparse.ArgumentParser(description='Train Logistic Regression game projection model.')
 	parser.add_argument('--sql', default='SELECT * FROM Game_Model_Preseason_Away', help='SQL query to load training data')
 	parser.add_argument('--target', default='Win', help='Target column name')
 	parser.add_argument('--test-size', type=float, default=0.2, help='Holdout test size')
@@ -199,25 +198,9 @@ def main():
 	if missing:
 		raise SystemExit(f"Missing columns in data: {missing}")
 
-	# More regularized parameters for this simplified model
-	tuned_params = dict(
-		n_estimators=250,
-		learning_rate=0.05,
-		subsample=0.8,
-		colsample_bytree=0.7,
-		max_depth=3,
-		min_child_weight=5,
-		reg_lambda=3.0,
-		reg_alpha=0.0,
-		random_state=args.seed,
-		tree_method='hist',
-		eval_metric='logloss',
-		n_jobs=0,
-	)
-
 	model, metrics = build_and_train(
 		df, feature_cols=feature_cols, target_col=args.target,
-		test_size=args.test_size, random_state=args.seed, model_params=tuned_params
+		test_size=args.test_size, random_state=args.seed, model_params=None
 	)
 
 	# Save model pipeline
