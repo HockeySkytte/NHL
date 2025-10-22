@@ -175,6 +175,40 @@ def build_and_train(df: pd.DataFrame,
 	metrics['feature_importances_expanded'] = expanded
 	metrics['feature_importances_grouped'] = grouped_sorted
 
+	# Coefficients (for Logistic Regression)
+	coefficients_expanded = []
+	coefficients_grouped: dict[str, list[dict]] = {}
+	intercept = None
+	if hasattr(model, 'coef_') and model.coef_.ndim == 2:
+		coef = model.coef_[0]
+		intercept = float(model.intercept_[0]) if hasattr(model, 'intercept_') else None
+		if out_names is None:
+			out_names = [f'f{i}' for i in range(len(coef))]
+		for name, c in zip(out_names, coef):
+			# Prettify names back to original columns
+			if name.startswith('num__'):
+				base = name.split('__', 1)[1]
+				pretty = base
+			elif name.startswith('cat__'):
+				tail = name.split('__', 1)[1]  # e.g., Situation_value
+				if '_' in tail:
+					base, level = tail.split('_', 1)
+					pretty = f"{base}[{level}]"
+				else:
+					base, pretty = tail, tail
+			else:
+				base = name
+				pretty = name
+			coefficients_expanded.append({'feature': pretty, 'coef': float(c)})
+			coefficients_grouped.setdefault(base, []).append({'feature': pretty, 'coef': float(c)})
+
+	# Sort expanded coefficients by absolute value descending
+	coefficients_expanded = sorted(coefficients_expanded, key=lambda x: abs(x['coef']), reverse=True)
+	metrics['coefficients_expanded'] = coefficients_expanded
+	metrics['coefficients_grouped'] = coefficients_grouped
+	if intercept is not None:
+		metrics['intercept'] = intercept
+
 	return pipe, metrics
 
 
@@ -193,9 +227,10 @@ def main():
 	required_for_sums = {
 		'pTOI_F': ["pEV_TOI_F", "pPP_TOI_F", "pSH_TOI_F"],
 		'pTOI_D': ["pEV_TOI_D", "pPP_TOI_D", "pSH_TOI_D"],
-		'piG':    ["pEV_iG", "pPP_iG", "pSH_iG"],
-		'pA1':    ["pEV_A1", "pPP_A1", "pSH_A1"],
-		'pA2':    ["pEV_A2", "pPP_A2", "pSH_A2"],
+		#'piG':    ["pEV_iG", "pPP_iG", "pSH_iG"],
+		#'pA1':    ["pEV_A1", "pPP_A1", "pSH_A1"],
+		#'pA2':    ["pEV_A2", "pPP_A2", "pSH_A2"],
+		'piP':    ["pEV_iG", "pPP_iG", "pSH_iG", "pEV_A1", "pPP_A1", "pSH_A1", "pEV_A2", "pPP_A2", "pSH_A2"],
 	}
 	# Validate presence of columns needed to compute the derived features
 	missing_sum_inputs = [c for cols in required_for_sums.values() for c in cols if c not in df.columns]
@@ -208,9 +243,17 @@ def main():
 
 	# Requested full feature set with derived columns
 	feature_cols = [
-		"Situation", "Age_F", "Age_D", "pTOI_F", "pTOI_D",
-		"pGF", "pGA", "pxGF", "pxGA", "pPP_GF", "pPP_xGF", "pSH_GA", "pSH_xGA", "pPEN",
-		"piG", "pA1", "pA2", "pEV_QoT", "pEV_ZS"
+		"Situation", 
+		"Age_F", "Age_D", 
+		#"pTOI_F", "pTOI_D",
+		#"pGF", "pGA", 
+		"pxGF", "pxGA", "pPP_GF", 
+		#"pPP_xGF", "pSH_GA", 
+		"pSH_GA", "pPEN",
+		#"piG", "pA1", "pA2", 
+        #"pEV_QoT",
+		"piP"
+		#,"pEV_ZS"
 	]
 
 	missing = [c for c in feature_cols + [args.target] if c not in df.columns]
@@ -238,6 +281,13 @@ def main():
 	print("Top grouped importances:")
 	for item in top_grouped:
 		print(f"  {item['feature']:<20} {item['importance']:.6f}")
+
+	# Print coefficients
+	print("\nCoefficients (sorted by |coef|):")
+	if 'intercept' in metrics:
+		print(f"  Intercept: {metrics['intercept']:.6f}")
+	for item in metrics.get('coefficients_expanded', [])[:100]:  # limit to first 100 for readability
+		print(f"  {item['feature']:<30} {item['coef']:.6f}")
 
 
 if __name__ == '__main__':
