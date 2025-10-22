@@ -206,8 +206,7 @@ def build_and_train(df: pd.DataFrame,
 	coefficients_expanded = sorted(coefficients_expanded, key=lambda x: abs(x['coef']), reverse=True)
 	metrics['coefficients_expanded'] = coefficients_expanded
 	metrics['coefficients_grouped'] = coefficients_grouped
-	if intercept is not None:
-		metrics['intercept'] = intercept
+	# Do not include intercept in metrics
 
 	return pipe, metrics
 
