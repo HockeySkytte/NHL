@@ -58,6 +58,7 @@ def build_and_train(df: pd.DataFrame,
 			solver='liblinear',  # robust for smaller datasets
 			max_iter=5000,
 			random_state=random_state,
+			fit_intercept=False,
 		)
 
 	# Split features: categorical vs numeric
