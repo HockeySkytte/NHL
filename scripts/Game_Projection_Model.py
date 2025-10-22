@@ -51,13 +51,15 @@ def build_and_train(df: pd.DataFrame,
 					random_state: int = 42,
 					model_params: dict | None = None):
 	if model_params is None:
+		# More conservative defaults to reduce overfitting
 		model_params = dict(
-			n_estimators=800,
-			learning_rate=0.03,
-			subsample=0.9,
-			colsample_bytree=0.8,
-			max_depth=5,
-			reg_lambda=1.0,
+			n_estimators=300,
+			learning_rate=0.05,
+			subsample=0.8,
+			colsample_bytree=0.7,
+			max_depth=3,
+			min_child_weight=5,
+			reg_lambda=2.0,
 			reg_alpha=0.0,
 			random_state=random_state,
 			tree_method='hist',
@@ -177,23 +179,34 @@ def main():
 
 	df = load_dataframe(args.sql)
 
-	# Feature set: "Situation" (categorical) + all remaining numerics specified here
+	# Simplified feature set to reduce overfitting as requested
 	feature_cols = [
-		"Situation", "Age_F", "Age_D", "pEV_TOI_F", "pPP_TOI_F", "pSH_TOI_F",
-		"pEV_TOI_D", "pPP_TOI_D", "pSH_TOI_D", "pGF", "pGA", "pxGF", "pxGA",
-		"pPP_GF", "pPP_xGF", "pSH_GA", "pSH_xGA", "pPEN", "pEV_iG", "pEV_A1",
-		"pEV_A2", "pPP_iG", "pPP_A1", "pPP_A2", "pSH_iG", "pSH_A1", "pSH_A2",
-		"pEV_QoT", "pEV_QoC", "pEV_ZS", "pPP_QoT", "pPP_QoC", "pPP_ZS",
-		"pSH_QoT", "pSH_QoC", "pSH_ZS", "pDist_Total", "pSpeed_Bursts", "pZone_Time"
+		"Situation", "pxGF", "pxGA", "pPP_GF", "pSH_xGA", "pPEN", "pEV_QoT"
 	]
 
 	missing = [c for c in feature_cols + [args.target] if c not in df.columns]
 	if missing:
 		raise SystemExit(f"Missing columns in data: {missing}")
 
+	# More regularized parameters for this simplified model
+	tuned_params = dict(
+		n_estimators=250,
+		learning_rate=0.05,
+		subsample=0.8,
+		colsample_bytree=0.7,
+		max_depth=3,
+		min_child_weight=5,
+		reg_lambda=3.0,
+		reg_alpha=0.0,
+		random_state=args.seed,
+		tree_method='hist',
+		eval_metric='logloss',
+		n_jobs=0,
+	)
+
 	model, metrics = build_and_train(
 		df, feature_cols=feature_cols, target_col=args.target,
-		test_size=args.test_size, random_state=args.seed
+		test_size=args.test_size, random_state=args.seed, model_params=tuned_params
 	)
 
 	# Save model pipeline
