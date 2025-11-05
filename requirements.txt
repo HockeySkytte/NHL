@@ -7,3 +7,5 @@ gunicorn
 pandas
 xgboost
 scikit-learn
+SQLAlchemy
+mysql-connector-python

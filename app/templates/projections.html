@@ -1,0 +1,595 @@
+{% extends 'base.html' %}
+{% block head %}
+<style>
+  .proj-toolbar{ display:flex; gap:10px; align-items:center; margin:0 0 16px 0; }
+  .proj-toolbar button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:8px 12px; font-size:14px; border-radius:8px; font-weight:600; cursor:pointer; }
+  .proj-toolbar button.active{ outline:2px solid var(--accent); }
+  .live-table{ width:100%; border-collapse:collapse; font-size:15px; table-layout:auto; }
+  .live-table th{ text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:700; border-bottom:1px solid #222b37; }
+  .live-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; word-break:break-word; }
+  .live-table th.col-right, .live-table td.col-right{ text-align:right; }
+  .live-table th.col-center, .live-table td.col-center{ text-align:center; }
+  .live-table th.col-left, .live-table td.col-left{ text-align:left; }
+  .team-cell{ display:flex; align-items:center; gap:10px; font-weight:650; }
+  .team-cell.right{ justify-content:flex-end; }
+  .team-cell img{ height:40px; width:40px; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+  .status-chip{ font-size:11px; font-weight:700; padding:2px 6px; border-radius:6px; background:#263145; color:#d7deea; }
+  .win-bg{ transition:background 0.2s; }
+  .bet-bg{ transition:background 0.2s; }
+  .odds-input{ width:72px; text-align:center; font-size:15px; border-radius:6px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--text); }
+  .win-duo{ display:inline-flex; gap:6px; align-items:center; justify-content:center; }
+  .win-chip{ display:inline-block; padding:6px 10px; border-radius:8px; min-width:68px; text-align:center; font-weight:700; font-size:16px; }
+  .bet-chip{ display:inline-block; padding:6px 10px; border-radius:8px; min-width:68px; text-align:center; font-weight:700; font-size:16px; color:#0b0f16; }
+  .lineup-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:6px 10px; border-radius:8px; font-weight:650; cursor:pointer; }
+  .proj-title{ text-align:center; margin: 0 0 10px 0; font-size:18px; font-weight:750; color:var(--text); }
+  /* Modal */
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:1000; }
+  .modal{ background:#0f1522 !important; border:1px solid #2a3142; border-radius:12px; width:min(700px, 92vw); max-height:80vh; overflow:auto; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+  .modal header{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid #2a3142; }
+  .modal h3{ margin:0; font-size:18px; font-weight:750; }
+  .modal .body{ padding:12px 16px; background:#0f1522; }
+  .modal .player-list{ display:flex; flex-direction:column; gap:8px; }
+  .modal .footer{ display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; border-top:1px solid #2a3142; background:#0f1522; }
+  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:8px 12px; border-radius:8px; font-weight:650; cursor:pointer; }
+  .btn.primary{ background:var(--accent); color:#0b1017; border-color:var(--accent); }
+  .player-item{ display:grid; grid-template-columns: 1fr 360px; align-items:center; column-gap:10px; padding:6px 8px; border:1px solid transparent; border-radius:8px; }
+  .player-item:hover{ background:rgba(255,255,255,0.03); border-color:#2a3142; }
+  .player-item input{ transform:scale(1.15); }
+  .player-meta{ display:flex; align-items:center; gap:8px; min-width:0; }
+  .player-name{ font-weight:650; }
+  .player-pos{ font-size:11px; color:var(--text-dim); padding:2px 6px; border:1px solid #2a3142; border-radius:6px; }
+  .proj-stack{ display:flex; align-items:center; gap:8px; }
+  .proj-bar{ position:relative; flex:1 1 auto; height:12px; max-height:12px; min-width:160px; background:#0e1726; border-radius:6px; overflow:hidden; border:1px solid #2a3142; display:flex; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); }
+  .proj-bar .half{ height:100%; display:flex; gap:0; flex:0 0 auto; }
+  .proj-bar .seg{ height:100%; display:block; flex:0 0 auto; }
+  .proj-bar .half.left{ flex-direction:row-reverse; }
+  .proj-bar .zero{ position:absolute; left:50%; top:0; bottom:0; width:1px; background:#2a3142; opacity:0.9; }
+  .seg-pos{ background:#4f6cf6; }
+  .seg-neg{ background:#ff6a6a; }
+  .proj-num{ font-size:12px; color:var(--text-dim); min-width:70px; text-align:right; }
+  /* Ensure Win% chips use dark text for red/white/blue backgrounds */
+  .win-chip{ color:#0b0f16; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="proj-toolbar">
+  <button id="btnToday" class="active">Today (ET)</button>
+  <button id="btnYesterday">Yesterday (ET)</button>
+  <div style="flex:1"></div>
+  <div class="odds-toggle">
+    <span style="margin-right:6px;color:var(--text-dim);font-size:12px;letter-spacing:.3px;">Odds:</span>
+    <button id="oddsAmerican" class="active">American</button>
+    <button id="oddsDecimal">Decimal</button>
+  </div>
+</div>
+<h2 id="projDateTitle" class="proj-title"></h2>
+<div id="projRoot"></div>
+<!-- Lineups Modal -->
+<div id="lineupModal" class="modal-backdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="lineupTitle">
+    <header>
+      <h3 id="lineupTitle">Edit Lineup</h3>
+      <button class="btn" id="lineupClose">Close</button>
+    </header>
+    <div class="body">
+      <div id="lineupTeamInfo" style="margin:0 0 8px 0; color:var(--text-dim);"></div>
+      <div id="playerList" class="player-list"></div>
+    </div>
+    <div class="footer">
+      <button class="btn" id="lineupCancel">Cancel</button>
+      <button class="btn primary" id="lineupApply">Apply</button>
+    </div>
+  </div>
+  
+</div>
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+{% endblock %}
+{% block scripts %}
+<script>
+const root = document.getElementById('projRoot');
+const btnToday = document.getElementById('btnToday');
+const btnYesterday = document.getElementById('btnYesterday');
+const dateEl = document.getElementById('projDateTitle');
+const oddsAmericanBtn = document.getElementById('oddsAmerican');
+const oddsDecimalBtn = document.getElementById('oddsDecimal');
+// Modal refs
+const modalBackdrop = document.getElementById('lineupModal');
+const modalClose = document.getElementById('lineupClose');
+const modalCancel = document.getElementById('lineupCancel');
+const modalApply = document.getElementById('lineupApply');
+const playerListEl = document.getElementById('playerList');
+const lineupTeamInfoEl = document.getElementById('lineupTeamInfo');
+
+// Caches and overrides
+window._lineupsCache = window._lineupsCache || null; // contents of lineups_all.json
+window._currentGamesById = window._currentGamesById || {};
+window._winOverrides = window._winOverrides || {}; // { [gameId]: { away: p, home: p } }
+window._projCsvCache = window._projCsvCache || null; // { [playerId:number]: { pos: 'F'|'D'|'G', Age: num, Rookie: num, EVO: num, EVD: num, PP: num, SH: num, GSAx: num } }
+
+let _dialogState = null; // { gameId, side, teamAbbrev, baselineCount }
+
+let oddsMode = 'american'; // 'american' | 'decimal'
+
+// --- Odds helpers (American/Decimal) ---
+function toDecimal(american){
+  if(american==null || american==='') return null;
+  const a = Number(american);
+  if(!Number.isFinite(a)) return null;
+  if(a > 0) return 1 + (a/100);
+  if(a < 0) return 1 + (100/Math.abs(a));
+  return null;
+}
+
+function toAmerican(decimal){
+  if(decimal==null || decimal==='') return null;
+  const d = Number(decimal);
+  if(!Number.isFinite(d) || d <= 1) return null;
+  if(d >= 2){
+    return Math.round((d - 1) * 100);
+  }
+  return Math.round(-100 / (d - 1));
+}
+
+function parseAmerican(val){
+  if(val==null) return null;
+  const s = String(val).trim();
+  if(!s) return null;
+  // If it looks like a decimal (contains a dot or >=1.01 and < 10), convert to American
+  const n = Number(s);
+  if(Number.isFinite(n)){
+    if(n >= 1.01 && n < 10) return toAmerican(n);
+    // Already American-style number
+    return Math.round(n);
+  }
+  // Fallback: try stripping + sign
+  const s2 = s.replace(/^\+/,'');
+  const n2 = Number(s2);
+  if(Number.isFinite(n2)) return Math.round(n2);
+  return null;
+}
+
+function renderPlayerItems(list){
+  // Scale bars by global max positive/negative totals and skew zero accordingly
+  let posMax = 0, negMaxAbs = 0;
+  for(const p of list){
+    const t = Number(p.total);
+    if(!Number.isFinite(t)) continue;
+    if(t > 0 && t > posMax) posMax = t;
+    if(t < 0 && Math.abs(t) > negMaxAbs) negMaxAbs = Math.abs(t);
+  }
+  const denom = posMax + negMaxAbs;
+  const leftPct = denom>0 ? (100 * (negMaxAbs/denom)) : 50;
+  const rightPct = 100 - leftPct;
+  const rows = list.map(p=>{
+    const defaultChecked = (p.pos==='F' || p.pos==='D') ? (String(p.unit||'').toUpperCase()!=='EXT') : (p.pos==='G' ? (String(p.unit||'').toUpperCase()==='G1') : false);
+    const t = Number(p.total);
+    const isPos = Number.isFinite(t) && t>0;
+    const isNeg = Number.isFinite(t) && t<0;
+    const posWidth = (isPos && posMax>0) ? (100 * (t/posMax)) : 0;
+    const negWidth = (isNeg && negMaxAbs>0) ? (100 * (Math.abs(t)/negMaxAbs)) : 0;
+  const negHtml = isNeg ? `<span class="seg seg-neg" style="width:${negWidth}%;"></span>` : '';
+  const posHtml = isPos ? `<span class="seg seg-pos" style="width:${posWidth}%;"></span>` : '';
+    const barHtml = `
+      <span class="proj-bar">
+        <span class="half left" style="width:${leftPct}%;">${negHtml}</span>
+        <span class="half right" style="width:${rightPct}%;">${posHtml}</span>
+        <span class="zero" style="left:${leftPct}%;"></span>
+      </span>`;
+    const totalStr = (p.total!=null) ? Number(p.total).toFixed(3) : 'n/a';
+    return `<label class="player-item">
+      <span class="player-meta"><input type="checkbox" data-id="${p.id??''}" data-name="${p.name.replace(/\"/g,'&quot;')}" data-pos="${p.pos}" data-unit="${p.unit||''}" ${defaultChecked?'checked':''}/> <span class="player-name">${p.name}</span> <span class="player-pos">${p.pos}${p.unit?` • ${p.unit}`:''}</span></span>
+      <span class="proj-stack">${barHtml}<span class="proj-num">${totalStr}</span></span>
+    </label>`;
+  }).join('');
+  playerListEl.innerHTML = rows;
+}
+  function winBgColor(percent){
+    const p = Math.max(20, Math.min(80, percent));
+    let r,g,b;
+    if(p <= 50){
+      const t = p/50;
+      r = Math.round(255*(1-t) + 255*t);
+      g = Math.round(77*(1-t) + 255*t);
+      b = Math.round(77*(1-t) + 255*t);
+    }else{
+      const t = (p-50)/50;
+      r = Math.round(255*(1-t) + 77*t);
+      g = Math.round(255*(1-t) + 163*t);
+      b = Math.round(255*(1-t) + 255*t);
+    }
+    return `rgba(${r},${g},${b},0.85)`;
+  }
+  function betBgColor(val){
+    const v = Math.max(0, Math.min(0.1, val||0));
+    const t = v / 0.1;
+    const r = Math.round(255*(1-t) + 77*t);
+    const g = Math.round(255*(1-t) + 163*t);
+    const b = Math.round(255*(1-t) + 255*t);
+    const a = 0.85;
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  // 0.3 Kelly fraction based on win probability and American moneyline
+  function kelly03(prob, american){
+    if(prob==null || american==null) return null;
+    const p = Number(prob);
+    if(!(p>=0 && p<=1)) return null;
+    const dec = toDecimal(american);
+    if(dec==null) return null;
+    const b = dec - 1;
+    if(!(b>0)) return null;
+    const q = 1 - p;
+    const f = (b*p - q) / b;
+    const fScaled = 0.3 * f;
+    if(!(fScaled>0)) return null;
+    return fScaled;
+  }
+
+function renderTable(games){
+  if(!games || !games.length){ root.innerHTML = '<div class="live-empty">No games.</div>'; return; }
+  const header = `<thead><tr>
+    <th class="col-center">Time</th>
+    <th class="col-center">Lineups</th>
+    <th class="col-center">Bet%</th>
+    <th class="col-center">Odds</th>
+    <th class="col-center">Away</th>
+    <th class="col-center">Win%</th>
+    <th class="col-center">Home</th>
+    <th class="col-center">Odds</th>
+    <th class="col-center">Bet%</th>
+    <th class="col-center">Lineups</th>
+  </tr></thead>`;
+  window._oddsOverrides = window._oddsOverrides || {};
+  const rows = games.map(g=>{
+    const h = g.homeTeam||{}; const a = g.awayTeam||{};
+    const p = g.projections||{};
+    const t = g.startTimeET? new Date(g.startTimeET) : null;
+    const timeStr = (t && !isNaN(t)) ? t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+    const awayCell = `<div class="team-cell right">${a.abbrev||''} <img src="${a.logo||''}" alt="${a.abbrev||''}"/></div>`;
+    const homeCell = `<div class="team-cell"><img src="${h.logo||''}" alt="${h.abbrev||''}"/> ${h.abbrev||''}</div>`;
+    const pAwayBase = (p.winProbAway!=null) ? Number(p.winProbAway) : null;
+    const pHomeBase = (p.winProbHome!=null) ? Number(p.winProbHome) : null;
+    const over = window._winOverrides[g.id];
+    const pAway = over?.away ?? pAwayBase;
+    const pHome = over?.home ?? pHomeBase;
+    const winA = (pAway!=null) ? (pAway*100).toFixed(1)+'%' : '';
+    const winH = (pHome!=null) ? (pHome*100).toFixed(1)+'%' : '';
+    const baseOddsA = parseAmerican(g?.odds?.away);
+    const baseOddsH = parseAmerican(g?.odds?.home);
+    const rawOddsA = window._oddsOverrides[g.id]?.away ?? baseOddsA;
+    const rawOddsH = window._oddsOverrides[g.id]?.home ?? baseOddsH;
+    const displayOddsA = (oddsMode==='american') ? (rawOddsA ?? '') : (rawOddsA!=null ? toDecimal(rawOddsA).toFixed(2) : '');
+    const displayOddsH = (oddsMode==='american') ? (rawOddsH ?? '') : (rawOddsH!=null ? toDecimal(rawOddsH).toFixed(2) : '');
+    const betA = kelly03(pAway, rawOddsA);
+    const betH = kelly03(pHome, rawOddsH);
+    const winAVal = (p.winProbAway!=null) ? (p.winProbAway*100) : null;
+    const winHVal = (p.winProbHome!=null) ? (p.winProbHome*100) : null;
+    const winBgA = winAVal!=null ? winBgColor(winAVal) : '';
+    const winBgH = winHVal!=null ? winBgColor(winHVal) : '';
+    const betBgA = betA!=null ? betBgColor(betA) : '';
+    const betBgH = betH!=null ? betBgColor(betH) : '';
+    const step = (oddsMode==='american') ? '1' : '0.01';
+    const minAttr = (oddsMode==='american') ? '' : ' min="1.01"';
+    const oddsAInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsA}" data-game="${g.id}" data-side="away" />`;
+    const oddsHInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsH}" data-game="${g.id}" data-side="home" />`;
+    return `<tr>
+      <td class="col-center">${timeStr}</td>
+      <td class="col-center"><button class="lineup-btn" data-game="${g.id}" data-side="away" data-team="${a.abbrev||''}">Edit</button></td>
+      <td class="col-center">${betA!=null ? `<span class=\"bet-chip\" style=\"background:${betBgA}\">${(betA*100).toFixed(1)}%</span>` : ''}</td>
+      <td class="col-center">${oddsAInput}</td>
+      <td class="col-right">${awayCell}</td>
+      <td class="col-center">
+        <div class="win-duo">
+          <span class="win-chip" style="background:${winBgA}">${winA}</span>
+          <span class="win-chip" style="background:${winBgH}">${winH}</span>
+        </div>
+      </td>
+      <td class="col-left">${homeCell}</td>
+      <td class="col-center">${oddsHInput}</td>
+      <td class="col-center">${betH!=null ? `<span class=\"bet-chip\" style=\"background:${betBgH}\">${(betH*100).toFixed(1)}%</span>` : ''}</td>
+      <td class="col-center"><button class="lineup-btn" data-game="${g.id}" data-side="home" data-team="${h.abbrev||''}">Edit</button></td>
+    </tr>`;
+  }).join('');
+  root.innerHTML = `<table class="live-table">${header}<tbody>${rows}</tbody></table>`;
+  root.querySelectorAll('.odds-input').forEach(inp=>{
+    inp.addEventListener('change', e=>{
+      const gameId = inp.getAttribute('data-game');
+      const side = inp.getAttribute('data-side');
+      const val = inp.value;
+      if(!gameId || !side) return;
+      window._oddsOverrides[gameId] = window._oddsOverrides[gameId] || {};
+      const num = Number(val);
+      let americanVal = null;
+      if(oddsMode === 'decimal'){
+        americanVal = toAmerican(num);
+      }else{
+        americanVal = parseAmerican(num);
+      }
+      window._oddsOverrides[gameId][side] = americanVal;
+      renderTable(games);
+    });
+  });
+  root.querySelectorAll('.lineup-btn').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const gameId = btn.getAttribute('data-game');
+      const side = btn.getAttribute('data-side');
+      const team = btn.getAttribute('data-team');
+      if(!gameId || !side || !team) return;
+      await openLineupDialog(gameId, side, team);
+    });
+  });
+}
+
+btnToday.addEventListener('click', ()=>{ btnToday.classList.add('active'); btnYesterday.classList.remove('active'); loadGames('today'); });
+btnYesterday.addEventListener('click', ()=>{ btnYesterday.classList.add('active'); btnToday.classList.remove('active'); loadGames('yesterday'); });
+
+// Restore preferred odds mode
+const savedMode = localStorage.getItem('oddsMode');
+if(savedMode === 'decimal' || savedMode === 'american'){
+  oddsMode = savedMode;
+  if(oddsMode==='decimal'){
+    oddsDecimalBtn.classList.add('active');
+    oddsAmericanBtn.classList.remove('active');
+  }else{
+    oddsAmericanBtn.classList.add('active');
+    oddsDecimalBtn.classList.remove('active');
+  }
+}
+
+// Load games and render table (restored helper)
+async function loadGames(which='today'){
+  try{
+    root.innerHTML = '<div class="live-empty">Loading…</div>';
+    const r = await fetch(`/api/projections/games?which=${encodeURIComponent(which)}`);
+    const js = await r.json();
+    dateEl.textContent = js.date || '';
+    const games = js.games||[];
+    window._currentGamesById = Object.fromEntries((games||[]).map(g=>[g.id, g]));
+    try{
+      renderTable(games);
+    }catch(err){
+      console.error('[renderTable] failed:', err);
+      root.innerHTML = '<div class="game-card"><div>Error loading games</div></div>';
+    }
+  }catch(e){ console.error('[loadGames] failed:', e); root.innerHTML = '<div class="game-card"><div>Error loading games</div></div>'; }
+}
+
+oddsAmericanBtn?.addEventListener('click', ()=>{
+  oddsMode = 'american';
+  localStorage.setItem('oddsMode', oddsMode);
+  oddsAmericanBtn.classList.add('active');
+  oddsDecimalBtn.classList.remove('active');
+  const active = btnToday.classList.contains('active') ? 'today' : 'yesterday';
+  loadGames(active);
+});
+oddsDecimalBtn?.addEventListener('click', ()=>{
+  oddsMode = 'decimal';
+  localStorage.setItem('oddsMode', oddsMode);
+  oddsDecimalBtn.classList.add('active');
+  oddsAmericanBtn.classList.remove('active');
+  const active = btnToday.classList.contains('active') ? 'today' : 'yesterday';
+  loadGames(active);
+});
+
+loadGames('today');
+
+// ------- Lineups dialog + Win% adjustment -------
+async function ensureLineupsCache(){
+  if(window._lineupsCache) return window._lineupsCache;
+  try{
+    const r = await fetch('/static/lineups_all.json');
+    if(r.ok){ 
+      window._lineupsCache = await r.json(); 
+      try{ console.log('[lineups] loaded keys:', Object.keys(window._lineupsCache||{}).length); }catch(_){/* noop */}
+    }
+  }catch(e){ /* ignore */ }
+  return window._lineupsCache;
+}
+
+async function ensureProjectionsCsv(){
+  if(window._projCsvCache) return window._projCsvCache;
+  try{
+    const r = await fetch('/static/player_projections.csv', { cache:'no-store' });
+    if(!r.ok) return null;
+    const txt = await r.text();
+    const lines = txt.split(/\r?\n/).filter(s=>s.trim().length>0);
+    if(lines.length < 2) return null;
+    const header = lines[0].split(',').map(s=>s.trim());
+    const idx = Object.fromEntries(header.map((h,i)=>[h,i]));
+    const map = {};
+    for(let i=1;i<lines.length;i++){
+      const parts = lines[i].split(',');
+      const id = Number(parts[idx['PlayerID']]);
+      if(!id) continue;
+      const pos = (parts[idx['Position']]||'').trim().toUpperCase();
+      const getNum = (k)=>{ const v = parts[idx[k]]; const n = Number(v); return Number.isFinite(n)? n: 0; };
+      map[id] = {
+        pos: (pos||'F')[0],
+        Age: getNum('Age'), Rookie: getNum('Rookie'), EVO: getNum('EVO'), EVD: getNum('EVD'), PP: getNum('PP'), SH: getNum('SH'), GSAx: getNum('GSAx')
+      };
+    }
+    window._projCsvCache = map;
+    try{ console.log('[projections] CSV loaded:', Object.keys(map).length, 'players'); }catch(_){/* ignore */}
+    return map;
+  }catch(e){ return null; }
+}
+
+function extractPlayerName(p){
+  if(!p) return '';
+  // Attempt to support API variations
+  if(p.firstName && p.lastName){
+    const fn = typeof p.firstName === 'object' ? (p.firstName.default || Object.values(p.firstName)[0] || '') : p.firstName;
+    const ln = typeof p.lastName === 'object' ? (p.lastName.default || Object.values(p.lastName)[0] || '') : p.lastName;
+    return `${fn} ${ln}`.trim();
+  }
+  return p.fullName || p.person?.fullName || p.name || '';
+}
+
+// Roster API is not used in the editor; players come exclusively from lineups_all.json
+
+function getTeamLineup(teamAbbrev){
+  const cache = window._lineupsCache || {};
+  return cache?.[String(teamAbbrev||'').toUpperCase()] || {};
+}
+
+function playerIdOf(p){
+  if(!p) return null;
+  const tryFields = [p.playerId, p.id, p.personId, p.person?.id, p.person?.link?.split('/')?.pop?.()];
+  for(const t of tryFields){ const n = Number(t); if(Number.isInteger(n) && n>0) return n; }
+  return null;
+}
+
+function posOf(p){
+  const raw = (p.pos || p.position || p.primaryPosition?.type || p.primaryPosition?.abbreviation || '').toString().toUpperCase();
+  if(raw.startsWith('F') || raw==='C' || raw==='LW' || raw==='RW') return 'F';
+  if(raw.startsWith('D')) return 'D';
+  if(raw.startsWith('G')) return 'G';
+  return 'F';
+}
+
+function unitOf(p){
+  return (p.unit||'').toString().toUpperCase();
+}
+
+function projValueFromMetrics(m){
+  if(!m) return 0;
+  return (m.Age||0)+(m.Rookie||0)+(m.EVO||0)+(m.EVD||0)+(m.PP||0)+(m.SH||0)+(m.GSAx||0);
+}
+
+function buildPlayerList(teamAbbrev, projMap){
+  // Use ONLY players from lineups_all.json (no roster merge)
+  const lu = getTeamLineup(teamAbbrev);
+  const out = [];
+  const pushItem = (it, posCode)=>{
+    const id0 = (Number(it.playerId)||null);
+    const name = String(it.name||'');
+    const unit = String(it.unit||'').toUpperCase();
+    const pos = posCode;
+    const metrics = (id0 && projMap) ? projMap[id0] : null;
+    const total = metrics ? projValueFromMetrics(metrics) : null;
+    out.push({ id: id0, name, pos, unit, metrics, total });
+  };
+  // Order: Goalies first, then Forwards, then Defense
+  for(const it of (lu.goalies||[])) pushItem(it, 'G');
+  for(const it of (lu.forwards||[])) pushItem(it, 'F');
+  for(const it of (lu.defense||[])) pushItem(it, 'D');
+  // Keep original order from lineup; no re-sort to preserve lines/pairs
+  return out;
+}
+
+function clearModal(){
+  playerListEl.innerHTML = '';
+  lineupTeamInfoEl.textContent = '';
+}
+
+async function openLineupDialog(gameId, side, teamAbbrev){
+  clearModal();
+  const [_, projMap] = await Promise.all([
+    ensureLineupsCache(), ensureProjectionsCsv()
+  ]);
+  const list = buildPlayerList(teamAbbrev, projMap||{});
+  try{ console.log('[modal] open for', teamAbbrev, 'players:', list.length); }catch(_){/* noop */}
+  lineupTeamInfoEl.textContent = `${teamAbbrev} — Select lineup (non-EXT skaters preselected, only G1 preselected)`;
+  renderPlayerItems(list);
+  _dialogState = { gameId, side, teamAbbrev, baselineCount: null, rosterCount: list.length };
+  modalBackdrop.style.display = 'flex';
+}
+
+function closeLineupDialog(){
+  modalBackdrop.style.display = 'none';
+  _dialogState = null;
+  clearModal();
+}
+
+modalClose?.addEventListener('click', closeLineupDialog);
+modalCancel?.addEventListener('click', closeLineupDialog);
+modalBackdrop?.addEventListener('click', (e)=>{
+  if(e.target === modalBackdrop) closeLineupDialog();
+});
+
+modalApply?.addEventListener('click', ()=>{
+  if(!_dialogState) return;
+  const { gameId, side } = _dialogState;
+  const checks = [...playerListEl.querySelectorAll('input[type="checkbox"]')];
+  // Build selection per pos; for goalies include only one (prefer unit G1 if selected)
+  const sel = checks.filter(c=>c.checked).map(c=>({
+    id: Number(c.getAttribute('data-id'))||null,
+    name: c.getAttribute('data-name')||'',
+    pos: c.getAttribute('data-pos')||'F',
+    unit: (c.getAttribute('data-unit')||'').toUpperCase()
+  }));
+  recomputeWinWithSelection(gameId, side, sel);
+  closeLineupDialog();
+});
+
+function adjustWinForSelection(gameId, side, ratioDelta){
+  const g = window._currentGamesById[gameId];
+  if(!g || !g.projections) return;
+  const pA0 = Number(g.projections.winProbAway);
+  const pH0 = Number(g.projections.winProbHome);
+  if(!(pA0>0 && pA0<1 && pH0>0 && pH0<1)) return;
+  const K = 1.0; // sensitivity factor
+  const clamp = (x,min,max)=>Math.max(min,Math.min(max,x));
+  const logit = p=>Math.log(p/(1-p));
+  const invlogit = z=>1/(1+Math.exp(-z));
+  let zA = logit(pA0);
+  let zH = logit(pH0);
+  const delta = clamp(ratioDelta, -0.5, 0.5) * K; // bound influence
+  if(side==='away'){
+    zA = zA + delta;
+  }else{
+    zH = zH + delta;
+  }
+  let pA = invlogit(zA);
+  let pH = invlogit(zH);
+  // Normalize to sum to 1
+  const s = pA + pH;
+  pA = pA / s; pH = pH / s;
+  window._winOverrides[gameId] = { away: pA, home: pH };
+  // Re-render with current table games when available
+  const tableGames = Object.values(window._currentGamesById);
+  renderTable(tableGames);
+}
+
+function recomputeWinWithSelection(gameId, side, selected){
+  const g = window._currentGamesById[gameId];
+  if(!g || !g.projections) return;
+  const projBaseAway = Number(g.projections.projAway) || 0;
+  const projBaseHome = Number(g.projections.projHome) || 0;
+  const sVal = Number(g.projections.situationValue) || 0;
+  const team = side==='away' ? (g.awayTeam?.abbrev||'') : (g.homeTeam?.abbrev||'');
+  const projMap = window._projCsvCache || {};
+  const ROOKIE_FALLBACK = { 'D': -0.031768511, 'F': -0.024601581, 'G': -0.12 };
+  const sumTeam = ()=>{
+    let total = 0;
+    // Non-goalies: sum all
+    for(const p of selected){
+      const POS = (p.pos||'F').toUpperCase()[0];
+      // Exclude EXT from calculations
+      if(String(p.unit||'').toUpperCase()==='EXT') continue;
+      if(POS==='G') continue;
+      const m = (p.id && projMap[p.id]) ? projMap[p.id] : null;
+      if(m) total += projValueFromMetrics(m); else total += (ROOKIE_FALLBACK[POS] ?? ROOKIE_FALLBACK['F']);
+    }
+    // Goalies: include only one, prefer unit G1
+    const goalies = selected.filter(p=> (p.pos||'F').toUpperCase().startsWith('G') && String(p.unit||'').toUpperCase()!=='EXT');
+    let gPick = goalies.find(p=> String(p.unit||'').toUpperCase()==='G1') || goalies[0] || null;
+    if(gPick){
+      const m = (gPick.id && projMap[gPick.id]) ? projMap[gPick.id] : null;
+      total += m ? projValueFromMetrics(m) : ROOKIE_FALLBACK['G'];
+    }
+    return total;
+  };
+  const teamSum = sumTeam();
+  let projAway = projBaseAway;
+  let projHome = projBaseHome;
+  if(side==='away') projAway = teamSum; else projHome = teamSum;
+  const dproj = projAway - projHome;
+  const winAway = 1.0/(1.0 + Math.exp(-(dproj) - sVal));
+  const winHome = 1.0 - winAway;
+  window._winOverrides[gameId] = { away: winAway, home: winHome };
+  const tableGames = Object.values(window._currentGamesById);
+  renderTable(tableGames);
+}
+</script>
+{% endblock %}

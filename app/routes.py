@@ -5,13 +5,18 @@ import csv
 import re
 import math
 import bisect
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Any
 
 import requests
 import numpy as np  # for numeric handling in model inference
 import joblib       # to load pickled models
 from flask import Blueprint, jsonify, render_template, request
+try:
+    # Python 3.9+: IANA timezones
+    from zoneinfo import ZoneInfo  # type: ignore
+except Exception:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 
 try:
     from bs4 import BeautifulSoup  # type: ignore
@@ -104,6 +109,262 @@ def standings_page():
     return render_template('standings.html', teams=TEAM_ROWS, seasons=season_objs, active_tab='Standings', show_season_state=False)
 
 
+@main_bp.route('/projections')
+def game_projections_page():
+    """Game Projections page showing today's games by Eastern Time, with toggle to yesterday."""
+    return render_template('projections.html', teams=TEAM_ROWS, active_tab='Game Projections', show_season_state=False)
+
+
+@main_bp.route('/api/projections/games')
+def api_projections_games():
+    """Return list of games for 'today' or 'yesterday' based on Eastern Time.
+    Query params:
+      - which: 'today' (default) or 'yesterday'
+    """
+    which = str(request.args.get('which', 'today')).lower().strip()
+    # Determine ET date
+    try:
+        if ZoneInfo is None:
+            raise RuntimeError('zoneinfo_unavailable')
+        now_et = datetime.now(ZoneInfo('America/New_York'))
+    except Exception:
+        # Fallback to UTC if ET tz not available
+        now_et = datetime.utcnow()
+    date_et = now_et.date() if which != 'yesterday' else (now_et - timedelta(days=1)).date()
+    date_str = date_et.isoformat()
+    # Fetch schedule for ET date
+    url = f'https://api-web.nhle.com/v1/schedule/{date_str}'
+    try:
+        r = requests.get(url, timeout=20)
+        if r.status_code != 200:
+            return jsonify({'games': [], 'date': date_str, 'error': 'upstream_error', 'status': r.status_code}), 502
+        js = r.json() or {}
+    except Exception:
+        return jsonify({'games': [], 'date': date_str, 'error': 'fetch_failed'}), 502
+
+    # Build output
+    def to_et(iso_utc: Optional[str]) -> Optional[str]:
+        if not iso_utc:
+            return None
+        try:
+            # Parse ISO with Z
+            s = iso_utc.replace('Z', '+00:00')
+            dt = datetime.fromisoformat(s)
+            if ZoneInfo is not None:
+                et = dt.astimezone(ZoneInfo('America/New_York'))
+            else:
+                et = dt  # best effort
+            return et.isoformat()
+        except Exception:
+            return iso_utc
+
+    logo_by_abbrev: Dict[str, str] = {}
+    try:
+        for tr in TEAM_ROWS:
+            ab = (tr.get('Team') or '').upper()
+            logo_by_abbrev[ab] = tr.get('Logo') or ''
+    except Exception:
+        pass
+
+    out: List[Dict[str, Any]] = []
+    # The API nests games inside gameWeek -> [ { date, games: [...] } ]
+    for wk in (js.get('gameWeek') or []):
+        day_date = (wk.get('date') or '')[:10]
+        if day_date != date_str:
+            continue
+        for g in (wk.get('games') or []):
+            home = (g.get('homeTeam') or {})
+            away = (g.get('awayTeam') or {})
+            ha = (home.get('abbrev') or '').upper()
+            aa = (away.get('abbrev') or '').upper()
+            out.append({
+                'id': g.get('id'),
+                'season': g.get('season'),
+                'gameType': g.get('gameType'),
+                'startTimeUTC': g.get('startTimeUTC'),
+                'startTimeET': to_et(g.get('startTimeUTC')),
+                'gameState': g.get('gameState') or g.get('gameStatus'),
+                'venue': g.get('venue'),
+                'homeTeam': { 'abbrev': ha, 'score': home.get('score'), 'logo': logo_by_abbrev.get(ha, '') },
+                'awayTeam': { 'abbrev': aa, 'score': away.get('score'), 'logo': logo_by_abbrev.get(aa, '') },
+                'periodDescriptor': g.get('periodDescriptor'),
+            })
+    # Fallback: some variants include a flat 'games' array
+    if not out and isinstance(js, dict):
+        for g in (js.get('games') or []):
+            st = g.get('startTimeUTC') or g.get('gameDate')
+            if not isinstance(st, str):
+                continue
+            if st.replace('Z', '').strip()[:10] != date_str:
+                continue
+            home = (g.get('homeTeam') or {})
+            away = (g.get('awayTeam') or {})
+            ha = (home.get('abbrev') or '').upper()
+            aa = (away.get('abbrev') or '').upper()
+            out.append({
+                'id': g.get('id') or g.get('gamePk') or g.get('gameId'),
+                'season': g.get('season'),
+                'gameType': g.get('gameType') or g.get('gameTypeId'),
+                'startTimeUTC': st,
+                'startTimeET': to_et(st),
+                'gameState': g.get('gameState') or g.get('gameStatus'),
+                'venue': g.get('venue'),
+                'homeTeam': { 'abbrev': ha, 'score': home.get('score'), 'logo': logo_by_abbrev.get(ha, '') },
+                'awayTeam': { 'abbrev': aa, 'score': away.get('score'), 'logo': logo_by_abbrev.get(aa, '') },
+                'periodDescriptor': g.get('periodDescriptor'),
+            })
+    # Compute B2B status using the previous ET date
+    prev_date_et = (date_et - timedelta(days=1)).isoformat()
+    prev_url = f'https://api-web.nhle.com/v1/schedule/{prev_date_et}'
+    prev_set: set[str] = set()
+    try:
+        r2 = requests.get(prev_url, timeout=20)
+        if r2.status_code == 200:
+            js2 = r2.json() or {}
+            for wk in (js2.get('gameWeek') or []):
+                if (wk.get('date') or '')[:10] != prev_date_et:
+                    continue
+                for g2 in (wk.get('games') or []):
+                    home2 = (g2.get('homeTeam') or {})
+                    away2 = (g2.get('awayTeam') or {})
+                    if home2.get('abbrev'):
+                        prev_set.add(str(home2.get('abbrev')).upper())
+                    if away2.get('abbrev'):
+                        prev_set.add(str(away2.get('abbrev')).upper())
+            if not prev_set and isinstance(js2, dict):
+                for g2 in (js2.get('games') or []):
+                    st2 = g2.get('startTimeUTC') or g2.get('gameDate') or ''
+                    if str(st2).replace('Z','').strip()[:10] != prev_date_et:
+                        continue
+                    home2 = (g2.get('homeTeam') or {})
+                    away2 = (g2.get('awayTeam') or {})
+                    if home2.get('abbrev'):
+                        prev_set.add(str(home2.get('abbrev')).upper())
+                    if away2.get('abbrev'):
+                        prev_set.add(str(away2.get('abbrev')).upper())
+    except Exception:
+        prev_set = set()
+
+    # Load lineups and player projections once
+    lineups_all = _load_lineups_all()
+    proj_map = _load_player_projections_csv()
+    # Situation mapping values
+    SITUATION = {
+        'Away-B2B-B2B': -0.126602018,
+        'Away-B2B-Rested': -0.400515738,
+        'Away-Rested-B2B': 0.174538991,
+        'Away-Rested-Rested': -0.153396566,
+    }
+
+    def situation_for(away_abbrev: str, home_abbrev: str) -> tuple[str, float, bool, bool]:
+        a_b2b = (away_abbrev.upper() in prev_set)
+        h_b2b = (home_abbrev.upper() in prev_set)
+        if a_b2b and h_b2b:
+            key = 'Away-B2B-B2B'
+        elif a_b2b and not h_b2b:
+            key = 'Away-B2B-Rested'
+        elif (not a_b2b) and h_b2b:
+            key = 'Away-Rested-B2B'
+        else:
+            key = 'Away-Rested-Rested'
+        return key, SITUATION.get(key, 0.0), a_b2b, h_b2b
+
+    # Compute projections per game
+    for g in out:
+        aa = (g.get('awayTeam') or {}).get('abbrev') or ''
+        ha = (g.get('homeTeam') or {}).get('abbrev') or ''
+        try:
+            proj_away = _team_proj_from_lineup(str(aa), lineups_all, proj_map)
+            proj_home = _team_proj_from_lineup(str(ha), lineups_all, proj_map)
+            dproj = proj_away - proj_home
+            key, sval, a_b2b, h_b2b = situation_for(str(aa), str(ha))
+            import math
+            win_away = 1.0 / (1.0 + math.exp(-(dproj) - sval))
+            win_home = 1.0 - win_away
+            g['b2bAway'] = bool(a_b2b)
+            g['b2bHome'] = bool(h_b2b)
+            g['projections'] = {
+                'projAway': round(float(proj_away), 6),
+                'projHome': round(float(proj_home), 6),
+                'dProj': round(float(dproj), 6),
+                'situationKey': key,
+                'situationValue': round(float(sval), 9),
+                'winProbAway': round(float(win_away), 6),
+                'winProbHome': round(float(win_home), 6),
+            }
+        except Exception:
+            # If anything fails, still return the game
+            continue
+
+    # Attach odds for not-started games only
+    try:
+        odds_map = _fetch_partner_odds_map(date_str)
+    except Exception:
+        odds_map = {}
+    try:
+        # Determine not-started strictly by comparing schedule startTimeUTC to current UTC
+        from datetime import timezone as _tz
+        now_utc = datetime.now(_tz.utc)
+        for g in out:
+            not_started = False
+            try:
+                st_raw = g.get('startTimeUTC')
+                if isinstance(st_raw, str):
+                    se_utc = datetime.fromisoformat(st_raw.replace('Z', '+00:00'))
+                    # If parsed datetime is naive, force UTC
+                    if se_utc.tzinfo is None:
+                        se_utc = se_utc.replace(tzinfo=_tz.utc)
+                    not_started = now_utc < se_utc
+            except Exception:
+                not_started = False
+            val_id = g.get('id')
+            gid = None
+            try:
+                if val_id is not None:
+                    gid = int(val_id)
+            except Exception:
+                gid = None
+            if not_started and gid is not None and gid in odds_map:
+                g['odds'] = odds_map.get(gid)
+    except Exception:
+        pass
+
+    return jsonify({ 'date': date_str, 'timezone': 'ET', 'games': out })
+
+
+@main_bp.route('/api/roster/<team_code>/current')
+def api_roster_current(team_code: str):
+    """Proxy NHL roster endpoint to bypass browser CORS.
+    Example upstream: https://api-web.nhle.com/v1/roster/TBL/current
+    """
+    team = (team_code or '').upper().strip()
+    if not team:
+        return jsonify({'forwards': [], 'defensemen': [], 'goalies': []})
+    url = f'https://api-web.nhle.com/v1/roster/{team}/current'
+    try:
+        r = requests.get(url, timeout=20, allow_redirects=True)
+    except Exception:
+        return jsonify({'forwards': [], 'defensemen': [], 'goalies': [], 'error': 'fetch_failed'}), 502
+    if r.status_code != 200:
+        return jsonify({'forwards': [], 'defensemen': [], 'goalies': [], 'error': 'upstream_error', 'status': r.status_code}), 502
+    try:
+        data = r.json()
+    except Exception:
+        return jsonify({'forwards': [], 'defensemen': [], 'goalies': [], 'error': 'invalid_upstream'}), 502
+    # Normalize expected keys
+    out = {
+        'forwards': data.get('forwards') or [],
+        'defensemen': data.get('defensemen') or [],
+        'goalies': data.get('goalies') or [],
+    }
+    j = jsonify(out)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
 @main_bp.route('/api/seasons/<team_code>')
 def api_seasons(team_code: str):
     """Return seasons for a given team using NHL club-stats-season endpoint.
@@ -112,6 +373,14 @@ def api_seasons(team_code: str):
     team = (team_code or '').upper().strip()
     if not team:
         return jsonify([])
+    def _strip_parentheticals(s: Optional[str]) -> str:
+        if not s:
+            return ''
+        try:
+            return re.sub(r"\s*\([^)]*\)", '', s).strip()
+        except Exception:
+            return s or ''
+
     url = f'https://api-web.nhle.com/v1/club-stats-season/{team}'
     try:
         r = requests.get(url, timeout=20)
@@ -140,6 +409,13 @@ def api_seasons(team_code: str):
     except Exception:
         return jsonify([])
 
+    def _strip_parentheticals(s: Optional[str]) -> str:
+        if not s:
+            return ''
+        try:
+            return re.sub(r"\s*\([^)]*\)", '', s).strip()
+        except Exception:
+            return s
 
 @main_bp.route('/api/standings/<int:season>')
 def api_standings(season: int):
@@ -487,6 +763,257 @@ def _get_boxid_map() -> Dict[Tuple[int, int], Tuple[str, str, int]]:
             continue
     _BOXID_MAP = mapping
     return mapping
+
+
+# --- Projections helpers ---
+def _static_path(*parts: str) -> str:
+    try:
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), 'static'))
+        return os.path.join(base, *parts)
+    except Exception:
+        return os.path.join(os.getcwd(), *parts)
+
+def _load_lineups_all() -> Dict[str, Any]:
+    path = _static_path('lineups_all.json')
+    try:
+        if os.path.exists(path):
+            import json
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f) or {}
+    except Exception:
+        return {}
+    return {}
+
+def _load_player_projections_csv() -> Dict[int, Dict[str, Any]]:
+    """Load app/static/player_projections.csv into a dict keyed by playerId (int).
+    Accepts flexible column casing/names for 'playerId'.
+    """
+    path = _static_path('player_projections.csv')
+    out: Dict[int, Dict[str, Any]] = {}
+    try:
+        if not os.path.exists(path):
+            return {}
+        with open(path, 'r', encoding='utf-8', newline='') as f:
+            rdr = csv.DictReader(f)
+            # Find id column flexibly
+            id_col = None
+            cols = [c for c in (rdr.fieldnames or [])]
+            lowers = { (c or '').lower(): (c or '') for c in cols }
+            for cand in ('playerid', 'player_id', 'playerid', 'id'):
+                if cand in lowers:
+                    id_col = lowers[cand]
+                    break
+            # If not found, try exact 'playerId'
+            if id_col is None and 'playerId' in cols:
+                id_col = 'playerId'
+            for row in rdr:
+                try:
+                    pid_raw = row.get(id_col) if id_col else None
+                    if pid_raw is None:
+                        continue
+                    pid = int(str(pid_raw).strip())
+                except Exception:
+                    continue
+                out[pid] = row
+    except Exception:
+        return {}
+    return out
+
+def _proj_value_for_player(row: Optional[Dict[str, Any]]) -> float:
+    """Sum of (Age + Rookie + EVO + EVD + PP + SH + GSAx) for a projections row.
+    Non-numeric values are treated as 0.
+    """
+    if not row:
+        return 0.0
+    def f(k: str) -> float:
+        try:
+            v = row.get(k)
+            if v is None:
+                return 0.0
+            return float(v)
+        except Exception:
+            # try case-insensitive
+            try:
+                for key in row.keys():
+                    if str(key).lower() == k.lower():
+                        vv = row.get(key)
+                        return float(vv) if vv is not None else 0.0
+            except Exception:
+                pass
+            return 0.0
+    return (
+        f('Age') + f('Rookie') + f('EVO') + f('EVD') + f('PP') + f('SH') + f('GSAx')
+    )
+
+_ROOKIE_FALLBACK = { 'D': -0.031768511, 'F': -0.024601581, 'G': -0.12 }
+
+def _team_proj_from_lineup(team_abbrev: str, lineups_all: Dict[str, Any], proj_map: Dict[int, Dict[str, Any]]) -> float:
+    t = (team_abbrev or '').upper()
+    li = lineups_all.get(t) or {}
+    total = 0.0
+    for sec in ('forwards', 'defense', 'goalies'):
+        arr = li.get(sec) or []
+        if not isinstance(arr, list):
+            continue
+        for it in arr:
+            try:
+                # Exclude all EXT players from projections
+                unit_val = str(it.get('unit') or '').upper()
+                if unit_val == 'EXT':
+                    continue
+                pid = it.get('playerId')
+                pos = (it.get('pos') or '').upper()[:1]
+                # For goalies, include only G1 explicitly (others should be EXT already)
+                if pos == 'G':
+                    if unit_val and unit_val != 'G1':
+                        continue
+                if isinstance(pid, int) and pid in proj_map:
+                    total += _proj_value_for_player(proj_map.get(pid))
+                else:
+                    total += _ROOKIE_FALLBACK.get(pos or 'F', _ROOKIE_FALLBACK['F'])
+            except Exception:
+                continue
+    return float(total)
+
+def _fetch_partner_odds_map(date_hint: Optional[str] = None) -> Dict[int, Dict[str, Any]]:
+    """Fetch odds from NHL partner endpoint and map by game id to {'away': <odds>, 'home': <odds>}.
+    Parsing is best-effort to tolerate upstream shape changes.
+    """
+    out: Dict[int, Dict[str, Any]] = {}
+    # Try date-specific endpoint first if provided, then fallback to 'now'
+    urls: List[str] = []
+    if date_hint:
+        urls.append(f'https://api-web.nhle.com/v1/partner-game/US/{date_hint}')
+    urls.append('https://api-web.nhle.com/v1/partner-game/US/now')
+    js = None
+    for u in urls:
+        try:
+            r = requests.get(u, timeout=15)
+            if r.status_code == 200:
+                js = r.json()
+                break
+        except Exception:
+            continue
+    if js is None:
+        return {}
+
+    def extract_odds_from_node(node: Any) -> Tuple[Optional[Any], Optional[Any]]:
+        """Return (away, home) odds from a node if present, else (None, None)."""
+        away = None
+        home = None
+        if isinstance(node, dict):
+            # Direct keys
+            away = node.get('away') or node.get('awayPrice') or node.get('oddsAway') or node.get('priceAway') or node.get('A')
+            home = node.get('home') or node.get('homePrice') or node.get('oddsHome') or node.get('priceHome') or node.get('H')
+            # outcomes variants
+            if away is None and home is None:
+                outcomes = node.get('outcomes') or node.get('selections') or node.get('lines') or []
+                if isinstance(outcomes, list):
+                    for oc in outcomes:
+                        if not isinstance(oc, dict):
+                            continue
+                        lbl = str(oc.get('label') or oc.get('name') or oc.get('type') or oc.get('outcome') or '').lower()
+                        val = oc.get('americanOdds') or oc.get('oddsAmerican') or oc.get('price') or oc.get('american') or oc.get('odds')
+                        # Some shapes might use side indicators
+                        side = (oc.get('side') or oc.get('team') or oc.get('participant') or '').lower()
+                        if 'away' in lbl or side == 'away' or side == 'visitor':
+                            away = away if away is not None else val
+                        elif 'home' in lbl or side == 'home':
+                            home = home if home is not None else val
+        return away, home
+
+    def extract_ml_from_team_odds(team_obj: Any) -> Optional[Any]:
+        """Given a team object that may contain an 'odds' list as in partner API, pick MONEY_LINE_2_WAY value.
+        Fallback to MONEY_LINE_2_WAY_TNB if needed.
+        """
+        if not isinstance(team_obj, dict):
+            return None
+        lst = team_obj.get('odds')
+        if not isinstance(lst, list):
+            return None
+        val_ml = None
+        try:
+            # Prefer exact MONEY_LINE_2_WAY
+            for it in lst:
+                if not isinstance(it, dict):
+                    continue
+                desc = str(it.get('description') or '').upper().strip()
+                if desc == 'MONEY_LINE_2_WAY':
+                    val_ml = it.get('value')
+                    break
+            # Fallback to MONEY_LINE_2_WAY_TNB
+            if val_ml is None:
+                for it in lst:
+                    if not isinstance(it, dict):
+                        continue
+                    desc = str(it.get('description') or '').upper().strip()
+                    if desc == 'MONEY_LINE_2_WAY_TNB':
+                        val_ml = it.get('value')
+                        break
+        except Exception:
+            return None
+        return val_ml
+
+    def try_add(gid_val, ml_node):
+        if not ml_node:
+            return
+        try:
+            gid = int(gid_val)
+        except Exception:
+            return
+        away, home = extract_odds_from_node(ml_node)
+        if away is None and home is None:
+            return
+        out[gid] = {'away': away, 'home': home}
+
+    # Case 1: top-level list of games
+    if isinstance(js, dict) and isinstance(js.get('games'), list):
+        for g in (js.get('games') or []):
+            gid = g.get('id') or g.get('gameId') or g.get('eventId')
+            # First, support partner format where odds are inside team objects
+            h = g.get('homeTeam') or {}
+            a = g.get('awayTeam') or {}
+            h_ml = extract_ml_from_team_odds(h)
+            a_ml = extract_ml_from_team_odds(a)
+            if h_ml is not None or a_ml is not None:
+                try:
+                    gid2 = g.get('gameId') or gid
+                    try_add(gid2, {'home': h_ml, 'away': a_ml})
+                except Exception:
+                    pass
+            # Also fall back to legacy bets/markets shapes if present
+            bets = g.get('bets') or g.get('markets') or g.get('sportsbook') or g.get('sportsbookLines') or {}
+            if isinstance(bets, dict):
+                ml = bets.get('MONEY_LINE_2_WAY')
+                if not ml:
+                    for v in bets.values():
+                        if isinstance(v, list):
+                            for it in v:
+                                if isinstance(it, dict) and str(it.get('market') or it.get('type')).upper() == 'MONEY_LINE_2_WAY':
+                                    try_add(gid, it)
+                        elif isinstance(v, dict) and str(v.get('market') or v.get('type')).upper() == 'MONEY_LINE_2_WAY':
+                            try_add(gid, v)
+                else:
+                    try_add(gid, ml)
+            elif isinstance(bets, list):
+                for it in bets:
+                    if isinstance(it, dict) and str(it.get('market') or it.get('type')).upper() == 'MONEY_LINE_2_WAY':
+                        try_add(gid, it)
+    # Fallback: recursive search for MONEY_LINE_2_WAY under any node with an id context
+    if not out:
+        def walk(node, ctx_id=None):
+            if isinstance(node, dict):
+                gid = node.get('id') or node.get('gameId') or node.get('eventId') or ctx_id
+                for k, v in node.items():
+                    if k == 'MONEY_LINE_2_WAY':
+                        try_add(gid, v if isinstance(v, dict) else None)
+                    else:
+                        walk(v, gid)
+            elif isinstance(node, list):
+                for it in node:
+                    walk(it, ctx_id)
+        walk(js)
+    return out
 
 
 # --- Model utilities ---
@@ -1690,31 +2217,90 @@ def api_game_shifts(game_id: int):
     pbg = box.get('playerByGameStats') or {}
     roster_home = unify_roster(pbg.get('homeTeam') or {})
     roster_away = unify_roster(pbg.get('awayTeam') or {})
+    # Canonical display name by playerId from lineups/boxscore
+    name_by_id: Dict[int, str] = {}
+    try:
+        for p in roster_home + roster_away:
+            pid = p.get('playerId')
+            nm = p.get('name')
+            if isinstance(pid, int) and nm:
+                name_by_id[pid] = str(nm)
+    except Exception:
+        name_by_id = {}
+
+    def canonical_name_for(pid: Optional[int], fallback: Optional[str]) -> Optional[str]:
+        try:
+            if isinstance(pid, int) and pid in name_by_id:
+                return name_by_id[pid]
+        except Exception:
+            pass
+        return fallback
+
+    def _strip_diacritics(text: str) -> str:
+        try:
+            import unicodedata as _ud
+            nfkd = _ud.normalize('NFKD', text)
+            return ''.join([c for c in nfkd if not _ud.combining(c)])
+        except Exception:
+            return text
+
+    def _normalize_jersey(s: Optional[str]) -> str:
+        if not s:
+            return ''
+        # Keep only digits; drop leading zeros for stable compare
+        digits = ''.join(ch for ch in str(s) if ch.isdigit())
+        return str(int(digits)) if digits.isdigit() else ''
+
+    def _strip_parentheticals_local(s: Optional[str]) -> str:
+        if not s:
+            return ''
+        try:
+            return re.sub(r"\s*\([^)]*\)", '', s).strip()
+        except Exception:
+            return s or ''
 
     def norm_name(s: Optional[str]) -> str:
         if not s:
             return ''
         t = s.replace('\xa0', ' ').replace('\u00a0', ' ').strip()
+        t = _strip_parentheticals_local(t)
         if ',' in t:
             parts = [x.strip() for x in t.split(',', 1)]
             if len(parts) == 2:
                 t = parts[1] + ' ' + parts[0]
         t = t.replace('.', ' ').replace("'", '').replace('-', ' ')
         t = ' '.join(t.split())
+        t = _strip_diacritics(t)
         return t.lower()
+
+    def last_token_norm(name: Optional[str]) -> str:
+        """Return a normalized last-name token: diacritics removed, suffixes stripped.
+        E.g., "McDavid Jr." -> "mcdavid"; "Smith III" -> "smith".
+        """
+        base = norm_name(name)
+        if not base:
+            return ''
+        toks = base.split(' ')
+        if not toks:
+            return ''
+        # Strip common suffixes from the tail
+        suffixes = {'jr', 'sr', 'ii', 'iii', 'iv', 'v'}
+        while toks and toks[-1].strip('.').lower() in suffixes:
+            toks.pop()
+        return toks[-1] if toks else ''
 
     def build_indices(roster: List[Dict]):
         by_num: Dict[str, Dict] = {}
         by_name: Dict[str, Dict] = {}
         by_last: Dict[str, List[Dict]] = {}
         for p in roster:
-            num = (p.get('sweaterNumber') or '').lstrip('#')
+            num = _normalize_jersey(p.get('sweaterNumber') or '')
             if num:
-                by_num[str(num)] = p
+                by_num[num] = p
             nm = norm_name(p.get('name'))
             if nm:
                 by_name[nm] = p
-                last = nm.split(' ')[-1]
+                last = last_token_norm(nm)
                 by_last.setdefault(last, []).append(p)
         return by_num, by_name, by_last
 
@@ -1820,17 +2406,19 @@ def api_game_shifts(game_id: int):
                         continue
                     if len(tds_all) == 1 and tds_all[0].has_attr('colspan'):
                         txt = tds_all[0].get_text(' ', strip=True)
+                        # Allow parenthetical nicknames (e.g., JOHN (JACK)) by stripping them first
+                        txt2 = _strip_parentheticals_local(txt)
                         # Support accented Latin letters (e.g., É, è) in names
-                        m1 = re.match(r'^(\d{1,2})\s+([A-ZÀ-ÖØ-Þ .\'-]+),\s*([A-ZÀ-ÖØ-Þ .\'-]+)$', txt)
-                        m2 = re.match(r'^(\d{1,2})\s+([A-Za-zÀ-ÖØ-öø-ÿ .\'-]+)$', txt)
+                        m1 = re.match(r'^(\d{1,2})\s+([A-ZÀ-ÖØ-Þ .\'-]+),\s*([A-ZÀ-ÖØ-Þ .\'-]+)$', txt2)
+                        m2 = re.match(r'^(\d{1,2})\s+([A-Za-zÀ-ÖØ-öø-ÿ .\'-]+)$', txt2)
                         if m1:
                             current_jersey = m1.group(1)
                             last_u = m1.group(2)
-                            first_u = m1.group(3)
+                            first_u = _strip_parentheticals_local(m1.group(3))
                             current_name = proper_name(last_u, first_u)
                         elif m2:
                             current_jersey = m2.group(1)
-                            name_plain = m2.group(2)
+                            name_plain = _strip_parentheticals_local(m2.group(2))
                             parts = name_plain.strip().split()
                             current_name = ' '.join(p.capitalize() for p in parts)
                         else:
@@ -1850,7 +2438,7 @@ def api_game_shifts(game_id: int):
                                 current_pid = p.get('playerId')
                                 current_pos = p.get('pos')
                         if not current_pid and current_name:
-                            last_tok = norm_name(current_name).split(' ')[-1]
+                            last_tok = last_token_norm(current_name)
                             cands = by_last.get(last_tok, [])
                             if cands:
                                 if len(cands) == 1:
@@ -1858,7 +2446,7 @@ def api_game_shifts(game_id: int):
                                     current_pos = cands[0].get('pos')
                                 else:
                                     for cand in cands:
-                                        if str(cand.get('sweaterNumber')).lstrip('#') == str(current_jersey):
+                                        if _normalize_jersey(cand.get('sweaterNumber')) == _normalize_jersey(current_jersey):
                                             current_pid = cand.get('playerId')
                                             current_pos = cand.get('pos')
                                             break
@@ -1880,9 +2468,11 @@ def api_game_shifts(game_id: int):
                     end_sec = to_seconds(end_txt)
                     if start_sec is None or end_sec is None:
                         continue
+                    # Prefer canonical name from lineups if we have a playerId
+                    name_out = canonical_name_for(current_pid, current_name)
                     out.append({
                         'PlayerID': current_pid,
-                        'Name': current_name,
+                        'Name': name_out,
                         'Position': current_pos,
                         'Team': team_abbrev or ('Away' if side == 'away' else 'Home'),
                         'Period': int(per_val),
@@ -1902,25 +2492,27 @@ def api_game_shifts(game_id: int):
                 txt = (node or '').replace('\xa0', ' ').strip()
                 if not txt:
                     continue
-                if pat_comma.match(txt) or pat_plain.match(txt):
+                txt2 = _strip_parentheticals_local(txt)
+                if pat_comma.match(txt2) or pat_plain.match(txt2):
                     header_nodes.append(node)
 
             for node in header_nodes:
                 raw = (node or '').replace('\xa0', ' ').strip()
-                m1 = pat_comma.match(raw)
-                m2 = pat_plain.match(raw) if not m1 else None
+                raw2 = _strip_parentheticals_local(raw)
+                m1 = pat_comma.match(raw2)
+                m2 = pat_plain.match(raw2) if not m1 else None
                 if m1:
                     jersey = m1.group(2)
                     last_u = m1.group(3)
-                    first_u = m1.group(4)
+                    first_u = _strip_parentheticals_local(m1.group(4))
                     disp_name = proper_name(last_u, first_u)
-                    last_for_idx = norm_name(last_u).split(' ')[-1]
+                    last_for_idx = last_token_norm(last_u)
                 elif m2:
                     jersey = m2.group(2)
-                    name_plain = m2.group(3)
+                    name_plain = _strip_parentheticals_local(m2.group(3))
                     parts = name_plain.strip().split()
                     disp_name = ' '.join(p.capitalize() for p in parts)
-                    last_for_idx = norm_name(parts[-1]) if parts else ''
+                    last_for_idx = last_token_norm(parts[-1]) if parts else ''
                 else:
                     continue
 
@@ -1977,7 +2569,7 @@ def api_game_shifts(game_id: int):
                             pos_val = cands[0].get('pos')
                         else:
                             for cand in cands:
-                                if str(cand.get('sweaterNumber')).lstrip('#') == str(jersey):
+                                if _normalize_jersey(cand.get('sweaterNumber')) == _normalize_jersey(jersey):
                                     pid = cand.get('playerId')
                                     pos_val = cand.get('pos')
                                     break
@@ -1994,9 +2586,10 @@ def api_game_shifts(game_id: int):
                     end_sec = to_seconds(tds[i_end])
                     if start_sec is None or end_sec is None:
                         continue
+                    name_out2 = canonical_name_for(pid, disp_name)
                     soup_results.append({
                         'PlayerID': pid,
-                        'Name': disp_name,
+                        'Name': name_out2,
                         'Position': pos_val,
                         'Team': team_abbrev or ('Away' if side == 'away' else 'Home'),
                         'Period': per,
@@ -2022,23 +2615,24 @@ def api_game_shifts(game_id: int):
             start, end, header_html = positions[i]
             next_start = positions[i + 1][0]
             header_text = strip_tags(header_html)
+            header_text2 = _strip_parentheticals_local(header_text)
             jersey = None
             disp_name = None
             last_for_idx = None
-            m1 = re.match(r'^(\d{1,2})\s+([A-ZÀ-ÖØ-Þ .\'-]+),\s*([A-ZÀ-ÖØ-Þ .\'-]+)$', header_text)
-            m2 = re.match(r'^(\d{1,2})\s+([A-Za-zÀ-ÖØ-öø-ÿ .\'-]+)$', header_text)
+            m1 = re.match(r'^(\d{1,2})\s+([A-ZÀ-ÖØ-Þ .\'-]+),\s*([A-ZÀ-ÖØ-Þ .\'-]+)$', header_text2)
+            m2 = re.match(r'^(\d{1,2})\s+([A-Za-zÀ-ÖØ-öø-ÿ .\'-]+)$', header_text2)
             if m1:
                 jersey = m1.group(1)
                 last_u = m1.group(2)
-                first_u = m1.group(3)
+                first_u = _strip_parentheticals_local(m1.group(3))
                 disp_name = proper_name(last_u, first_u)
-                last_for_idx = norm_name(last_u).split(' ')[-1]
+                last_for_idx = last_token_norm(last_u)
             elif m2:
                 jersey = m2.group(1)
-                name_plain = m2.group(2)
+                name_plain = _strip_parentheticals_local(m2.group(2))
                 parts = name_plain.strip().split()
                 disp_name = ' '.join(p.capitalize() for p in parts)
-                last_for_idx = norm_name(parts[-1]) if parts else ''
+                last_for_idx = last_token_norm(parts[-1]) if parts else ''
             else:
                 continue
 
@@ -2046,7 +2640,7 @@ def api_game_shifts(game_id: int):
             pid = None
             pos_val = None
             if jersey:
-                p = by_num.get(jersey)
+                p = by_num.get(_normalize_jersey(jersey))
                 if p:
                     pid = p.get('playerId')
                     pos_val = p.get('pos')
@@ -2063,7 +2657,7 @@ def api_game_shifts(game_id: int):
                         pos_val = cands[0].get('pos')
                     else:
                         for cand in cands:
-                            if str(cand.get('sweaterNumber')).lstrip('#') == str(jersey):
+                            if _normalize_jersey(cand.get('sweaterNumber')) == _normalize_jersey(jersey):
                                 pid = cand.get('playerId')
                                 pos_val = cand.get('pos')
                                 break
@@ -2090,9 +2684,10 @@ def api_game_shifts(game_id: int):
                 end_sec = to_seconds(end_txt)
                 if start_sec is None or end_sec is None:
                     continue
+                name_out3 = canonical_name_for(pid, disp_name)
                 out.append({
                     'PlayerID': pid,
-                    'Name': disp_name,
+                    'Name': name_out3,
                     'Position': pos_val,
                     'Team': team_abbrev or ('Away' if side == 'away' else 'Home'),
                     'Period': int(per_val),

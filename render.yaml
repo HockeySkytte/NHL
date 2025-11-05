@@ -6,3 +6,12 @@ services:
     startCommand: "gunicorn --bind 0.0.0.0:$PORT wsgi:app"
     autoDeploy: true
     plan: free
+cronJobs:
+  - name: update-lineups-30m
+    schedule: "*/30 * * * *"
+    command: "python -u scripts/lineups.py --all --quiet --out-all app/static/lineups_all.json"
+    timezone: UTC
+  - name: daily-update-data
+    schedule: "15 9 * * *"
+    command: "python -u scripts/update_data.py --date $(python -c 'from datetime import datetime, timedelta, timezone; import sys; sys.stdout.write((datetime.now(timezone.utc)-timedelta(days=1)).strftime("%Y-%m-%d"))') --export --season 20252026 --replace-date --no-xg"
+    timezone: UTC
