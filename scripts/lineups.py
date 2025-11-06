@@ -1,25 +1,27 @@
-"""
-lineups.py
+"""lineups.py
 
-Standalone lineup scraper and mapper.
+DailyFaceoff lineup scraper (HTML only) + mapper to NHL playerIds via current roster.
+
+We intentionally do NOT backfill from the roster when scraping fails – empty sections remain empty
+so downstream consumers can detect scrape issues. Units (LW1/C1/RW1, LD1/RD1, G1/G2) are assigned
+purely by the order we encounter player anchors in the DailyFaceoff HTML near the section headings.
 
 Features:
-- Build Daily Faceoff lineup URL from team abbrev using Teams.csv, or accept a URL directly
-- Scrape expected lines (Forwards/Defense/Goalies)
-- Fetch a recent roster (jerseys + playerIds) from NHL boxscore API
-- Map names/jerseys to playerIds (jersey-first, then full-name, then last-name fallback)
-- Optional: save mapped JSON to app/static/lineup_<TEAM>.json or custom path
+    * Build Daily Faceoff lineup URL from team abbrev using Teams.csv, or accept a URL directly
+    * Scrape expected lines (Forwards / Defense / Goalies) from DF HTML only (no NHL API inference)
+    * Map scraped names to playerIds using current roster endpoint (strict match; no roster autofill)
+    * Optional: save mapped JSON to app/static/lineup_<TEAM>.json or combined file
 
 Usage (PowerShell):
-  pwsh> & .\.venv\Scripts\python.exe .\scripts\lineups.py --team ANA --save
-  pwsh> & .\.venv\Scripts\python.exe .\scripts\lineups.py --url https://www.dailyfaceoff.com/teams/anaheim-ducks/line-combinations --season 20252026 --save
+    pwsh> & .\\.venv\\Scripts\\python.exe .\\scripts\\lineups.py --team ANA --save
+    pwsh> & .\\.venv\\Scripts\\python.exe .\\scripts\\lineups.py --url https://www.dailyfaceoff.com/teams/anaheim-ducks/line-combinations --season 20252026 --save
 """
 from __future__ import annotations
 
 import os
 import sys
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 import json
 import re
@@ -44,6 +46,13 @@ except Exception:
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+
+# Default headers for NHL API calls (avoid 403/empty responses)
+REQUEST_HEADERS_JSON = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Referer': 'https://www.nhl.com/',
+}
 
 
 def _load_teams_csv_local() -> List[Dict[str, str]]:
@@ -169,7 +178,7 @@ def fetch_recent_roster(team_abbrev: str, season: Optional[int]) -> List[Dict]:
         season = (d.year if d.month >= 9 else d.year - 1) * 10000 + (d.year + 1 if d.month >= 9 else d.year)
     sched_url = f"https://api-web.nhle.com/v1/club-schedule-season/{team}/{season}"
     try:
-        rs = requests.get(sched_url, timeout=20)
+        rs = requests.get(sched_url, timeout=20, headers=REQUEST_HEADERS_JSON)
         rs.raise_for_status()
         data = rs.json()
     except Exception as e:
@@ -189,7 +198,7 @@ def fetch_recent_roster(team_abbrev: str, season: Optional[int]) -> List[Dict]:
         return []
     # Fetch boxscore roster
     try:
-        rb = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{last_game_id}/boxscore", timeout=20)
+        rb = requests.get(f"https://api-web.nhle.com/v1/gamecenter/{last_game_id}/boxscore", timeout=20, headers=REQUEST_HEADERS_JSON)
         rb.raise_for_status()
         box = rb.json()
     except Exception as e:
@@ -229,7 +238,7 @@ def fetch_current_roster(team_abbrev: str) -> List[Dict]:
         return []
     url = f"https://api-web.nhle.com/v1/roster/{team}/current"
     try:
-        r = requests.get(url, timeout=20)
+        r = requests.get(url, timeout=20, headers=REQUEST_HEADERS_JSON)
         r.raise_for_status()
         js = r.json() or {}
     except Exception:
@@ -246,10 +255,21 @@ def fetch_current_roster(team_abbrev: str) -> List[Dict]:
     groups = [
         ('forwards', 'F'), ('forward', 'F'),
         ('defensemen', 'D'), ('defencemen', 'D'), ('defense', 'D'), ('defence', 'D'),
-        ('goalies', 'G'), ('goalie', 'G')
+        ('goalies', 'G'), ('goalie', 'G'),
+        # Some payloads nest under "roster": { forwards:[], defense:[], goalies:[] }
+        ('roster.forwards', 'F'), ('roster.defense', 'D'), ('roster.defence', 'D'), ('roster.goalies', 'G')
     ]
     for key, pos in groups:
-        arr = js.get(key) or []
+        # Support dotted key paths
+        cur = js
+        if '.' in key:
+            parts = key.split('.')
+            for p in parts:
+                if isinstance(cur, dict):
+                    cur = cur.get(p) or {}
+            arr = cur if isinstance(cur, list) else []
+        else:
+            arr = js.get(key) or []
         if not isinstance(arr, list):
             continue
         for p in arr:
@@ -274,7 +294,8 @@ def _team_id_from_csv(team_abbrev: str) -> Optional[int]:
     if not row:
         return None
     try:
-        return int(row.get('TeamID')) if row.get('TeamID') else None
+        tid = row.get('TeamID')
+        return int(tid) if (tid is not None and tid.strip()) else None
     except Exception:
         return None
 
@@ -283,540 +304,480 @@ def _team_id_from_csv(team_abbrev: str) -> Optional[int]:
 
 
 def scrape_dailyfaceoff_lineup(url: str, team_abbrev: Optional[str] = None) -> Dict[str, List[Dict]]:
-    """Scrape DailyFaceoff lineup page for a single team.
-    Returns dict with keys: forwards (list of lines), defense (list of pairs), goalies (list).
-    Each entry is a dict: { name, jersey (optional), pos (F/D/G), unit (e.g., L1/D1) }.
+    """Scrape DailyFaceoff lineup HTML and return ONLY the ordered player lists.
+
+    Returned structure (UNMAPPED):
+      { 'forwards': [ {name,pos,unit}, ... ], 'defense': [...], 'goalies': [...] }
+
+    Units are assigned purely by encounter order inside each section:
+      Forwards: LWn,Cn,RWn for the first 4 lines (max 12 players) else EXT
+      Defense: LDn,RDn for first 3 pairs (max 6 players) else EXT
+      Goalies: G1 for first goalie, G2 for second, extras EXT
+
+    Team/roster/playerId resolution is performed later by map_lineup_to_player_ids.
+    This function must NOT consult NHL API data nor invent players.
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Referer': 'https://www.dailyfaceoff.com/'
     }
     try:
-        r = requests.get(url, timeout=25, headers=headers)
-        r.raise_for_status()
-        html = r.text
+        resp = requests.get(url, timeout=25, headers=headers)
+        resp.raise_for_status()
+        html = resp.text
     except Exception as e:
         raise RuntimeError(f"Failed to fetch lineup page: {e}")
 
-    out = {'forwards': [], 'defense': [], 'goalies': []}
+    out: Dict[str, List[Dict]] = {'forwards': [], 'defense': [], 'goalies': []}
+
+    if BeautifulSoup is None:
+        return out  # Without parser we can't scrape
+
+    soup = BeautifulSoup(html, 'html.parser')
 
     def norm_text(s: str) -> str:
         return ' '.join((s or '').replace('\xa0', ' ').strip().split())
 
-    def parse_name_and_jersey(text: str) -> Tuple[str, Optional[str]]:
-        t = norm_text(text)
-        # Patterns like "11 Trevor Zegras" or "#11 Trevor Zegras"
-        m = re.match(r'^(?:#?\s*(\d{1,2})\s+)?(.+?)$', t)
-        if m:
-            num = m.group(1)
-            name = m.group(2)
-            return name.strip(), (num.strip() if num else None)
-        return t, None
+    def find_heading(tokens: List[str]) -> Optional[object]:
+        toks = [t.lower() for t in tokens]
+        for tag in soup.find_all(['h1','h2','h3','h4','div','span']):
+            txt = norm_text(tag.get_text(' ', strip=True)).lower()
+            if any(t in txt for t in toks):
+                return tag
+        return None
 
-    if BeautifulSoup is not None:
-        soup = BeautifulSoup(html, 'html.parser')
+    h_f = find_heading(['forwards'])
+    h_d = find_heading(['defense','defence'])
+    h_g = find_heading(['goalies','goalie'])
 
-        def collect_players(container, unit_label_prefix: str, pos_code: str):
-            items = []
-            if not container:
-                return items
-            # Broaden to all candidate nodes; don't restrict to string-only matches
-            candidates = container.find_all(['a', 'div', 'span'])
-            for node in candidates:
-                try:
-                    txt = norm_text(node.get_text(' ', strip=True))
-                except Exception:
-                    txt = ''
-                if not txt or len(txt) < 2:
-                    continue
-                # Filter out generic words/section labels
-                lowered = txt.lower()
-                if lowered in ('forwards', 'defense', 'defence', 'defense pairings', 'goalies', 'goalie', 'line combinations'):
-                    continue
-                # Prefer likely player anchors or bold name spans
-                href = node.get('href') if hasattr(node, 'get') else None
-                cls = ' '.join((node.get('class') or [])) if hasattr(node, 'get') else ''
-                is_playerish = False
-                if isinstance(href, str) and '/players/' in href:
-                    is_playerish = True
-                if ('font-bold' in cls) or ('uppercase' in cls) or ('text-xs' in cls) or ('xl:text-base' in cls):
-                    is_playerish = True
-                # Parse name and optional jersey from text
-                name, j = parse_name_and_jersey(txt)
-                # crude name filter
-                if is_playerish and any(c.isalpha() for c in name) and len(name) <= 60:
-                    items.append({'name': name, 'jersey': j, 'pos': pos_code, 'unit': unit_label_prefix})
-            return items
+    def _extract_player_name(card) -> Optional[str]:
+        # Prefer anchor span text, fallback to image alt
+        anchor_name = card.select_one('div.flex.flex-row.justify-center a span')
+        if anchor_name:
+            nm_txt = norm_text(anchor_name.get_text(' ', strip=True))
+            if nm_txt:
+                return nm_txt
+        img = card.find('img')
+        if img:
+            alt = norm_text(img.get('alt') or '')
+            if alt:
+                return alt
+        return None
 
-        def find_section_by_heading(soup, heading_texts: List[str]):
-            for htag in soup.find_all(['h2', 'h3', 'h4', 'h5', 'div', 'span']):
-                txt = norm_text(htag.get_text(' ', strip=True)).lower()
-                if any(ht in txt for ht in heading_texts):
-                    cont = htag.find_next()
-                    parent = htag.parent
-                    return cont or parent
-            return None
+    def parse_forwards_section() -> List[List[str]]:
+        """Return list of forward lines (each line list of 1-3 names) and extras as last list if present.
 
-        # Locate containers by headings (best-effort; we'll prefer extracting within these containers)
-        fwd_cont = find_section_by_heading(soup, ['forwards', 'forward lines'])
-        d_cont = find_section_by_heading(soup, ['defense', 'defence', 'defensive pairings'])
-        g_cont = find_section_by_heading(soup, ['goalies', 'goalie'])
+        HTML pattern observed:
+          span#forwards heading
+          ... header row containing span#lw-forwards span#c-forwards span#rw-forwards
+          subsequent rows: <div class="mb-4 flex flex-row flex-wrap justify-evenly border-b"> with 3 player cards
+          final row (no border-b) contains extras.
+        """
+        lines: List[List[str]] = []
+        extras: List[str] = []
+        span_fw = soup.select_one('span#forwards')
+        if not span_fw:
+            return []
+        # Locate header row (contains lw-forwards/c-forwards/rw-forwards spans)
+        header_row = soup.select_one('span#lw-forwards')
+        sibling_iter = []
+        if header_row:
+            header_container = header_row.find_parent('div')  # inner div for LW
+            if header_container:
+                header_row_container = header_container.find_parent('div')  # row containing LW/C/RW
+                if header_row_container:
+                    sibling_iter = list(header_row_container.find_next_siblings('div'))
+        if not sibling_iter:  # fallback: iterate siblings after span#forwards parent
+            candidate_parent = span_fw.parent
+            if candidate_parent:
+                sibling_iter = [sib for sib in candidate_parent.find_next_siblings('div')]
+        # Acquire defense heading element to know when to stop
+        defense_span = soup.select_one('span#defense') or soup.select_one('span#defence')
+        for sib in sibling_iter:
+            if defense_span and defense_span in sib.descendants:
+                break
+            if getattr(sib, 'name', None) != 'div':
+                continue
+            cls_tokens = sib.get('class') or []
+            cls_join = ' '.join(cls_tokens)
+            if 'flex-row' not in cls_join or 'flex-wrap' not in cls_join:
+                continue
+            # Player cards are children with class containing text-center
+            cards = sib.find_all('div', class_=lambda c: c and (('text-center' in ' '.join(c)) if isinstance(c, list) else 'text-center' in c))
+            row_names: List[str] = []
+            for card in cards:
+                nm = _extract_player_name(card)
+                if nm and nm.lower() not in {'lw','c','rw','forwards'} and nm not in row_names:
+                    row_names.append(nm)
+            if not row_names:
+                continue
+            # Distinguish lines vs extras: lines have 'border-b' class, extras lack it OR beyond 4 lines
+            is_line = 'border-b' in cls_tokens and len(lines) < 4
+            if is_line:
+                lines.append(row_names)
+            else:
+                # treat everything else as extras
+                extras.extend(row_names)
+        # If we have extras, append them as last list (for unit EXT assignment later)
+        if extras:
+            lines.append(extras)  # extras combined at end
+        return lines
 
-        # Helper: extract players with jerseys from a specific container only
-        def extract_from_container(container, sec: str):
-            items: List[Dict] = []
-            if not container:
-                return items
-            
-            def find_next_player_name(start_node) -> Optional[str]:
-                # Scan forward until next jersey image or reasonable limit, and pick the next plausible player name
-                limit = 200
-                steps = 0
-                for node in start_node.next_elements:
-                    steps += 1
-                    if steps > limit:
-                        break
-                    if getattr(node, 'name', None) == 'img':
-                        # Stop at next jersey image to avoid crossing into next player block
-                        src = (node.get('src') or '') + ' ' + (node.get('srcset') or '')
-                        if 'uploads/player/jersey' in src:
-                            break
-                    # Look for spans/anchors that look like player name blocks
-                    if getattr(node, 'name', None) in ('span', 'a', 'div'):
-                        txt = norm_text(getattr(node, 'get_text', lambda *a, **k: '')(' ', strip=True))
-                        if not txt:
-                            continue
-                        # Heuristics: typical classes include font-bold/uppercase; name should have letters/spaces and not be generic
-                        cls = ' '.join((node.get('class') or [])) if hasattr(node, 'get') else ''
-                        if (('font-bold' in cls) or ('uppercase' in cls) or ('players' in (node.get('href') or ''))):
-                            # Basic name sanity
-                            if any(c.isalpha() for c in txt) and len(txt.split()) <= 4 and len(txt) <= 40:
-                                bad = {'forwards','defense','defence','goalies','goalie','line combinations'}
-                                if txt.lower() not in bad:
-                                    return txt
-                return None
+    def parse_defense_section() -> List[List[str]]:
+        """Return list of defense pairs (each list size 1-2) and extras as last list if present.
 
-            imgs = container.find_all('img')
-            for img in imgs:
-                alt = norm_text(img.get('alt') or '')
-                if not alt:
-                    continue
-                full = decode_next_image_src(img)
-                if 'uploads/player/jersey' not in full:
-                    continue
-                jersey = None
-                team_code = None
-                m = re.search(r'/([A-Z]{2,3})_([0-9]{1,2})_', full)
-                if m:
-                    team_code = m.group(1)
-                    jersey = m.group(2)
-                # Enforce team match when provided. If we cannot determine team_code, skip to avoid cross-team bleed.
-                if team_abbrev:
-                    if (not team_code) or (team_code.upper() != team_abbrev.upper()):
-                        continue
-                # Try to find the next explicit player name block; fallback to alt if not found
-                name_near = find_next_player_name(img) or alt
-                items.append({'name': name_near, 'jersey': jersey, 'teamCode': team_code, 'pos': ('F' if sec=='forwards' else 'D' if sec=='defense' else 'G')})
-            return items
+        Pattern:
+          span#defense heading ("Defensive Pairings")
+          subsequent rows: <div class="mb-4 flex flex-row flex-wrap justify-evenly border-b"> (two player cards)
+          final row (no border-b) -> extras.
+        """
+        pairs: List[List[str]] = []
+        extras: List[str] = []
+        span_def = soup.select_one('span#defense') or soup.select_one('span#defence')
+        if not span_def:
+            return []
+        sibling_iter = [sib for sib in span_def.parent.find_next_siblings('div')]
+        # Stop at goalies heading
+        goalies_span = soup.select_one('span#goalies') or soup.select_one('span#goalie')
+        for sib in sibling_iter:
+            if goalies_span and goalies_span in sib.descendants:
+                break
+            if getattr(sib, 'name', None) != 'div':
+                continue
+            cls_tokens = sib.get('class') or []
+            cls_join = ' '.join(cls_tokens)
+            if 'flex-row' not in cls_join or 'flex-wrap' not in cls_join:
+                continue
+            cards = sib.find_all('div', class_=lambda c: c and (('text-center' in ' '.join(c)) if isinstance(c, list) else 'text-center' in c))
+            row_names: List[str] = []
+            for card in cards:
+                nm = _extract_player_name(card)
+                if nm and nm.lower() not in {'defensive pairings','defense','defence'} and nm not in row_names:
+                    row_names.append(nm)
+            if not row_names:
+                continue
+            is_pair = 'border-b' in cls_tokens and len(pairs) < 3
+            if is_pair:
+                pairs.append(row_names)
+            else:
+                extras.extend(row_names)
+        if extras:
+            pairs.append(extras)
+        return pairs
 
-        # NEW: Prefer extracting strictly within sections to avoid sidebar/global widgets
-        def decode_next_image_src(img_tag) -> str:
-            src = img_tag.get('src') or ''
-            srcset = img_tag.get('srcset') or ''
-            cand = src or srcset
-            if not cand:
-                return ''
-            try:
-                from urllib.parse import urlparse, parse_qs, unquote
-                # src may be like "/_next/image?url=https%3A%2F%2Fapi.dailyfaceoff.com%2Fuploads%2Fplayer%2Fjersey%2F...png&w=3840&q=60"
-                u = urlparse(cand.split(' ')[0])
-                qs = parse_qs(u.query)
-                if 'url' in qs and qs['url']:
-                    return unquote(qs['url'][0])
-                # or cand itself may already be a full URL
-                if cand.startswith('http'):
-                    return cand
-            except Exception:
-                pass
-            return cand
+    forward_lines = parse_forwards_section()  # list of lists
+    defense_pairs = parse_defense_section()   # list of lists
 
-        # Attempt strict extraction from the identified containers
-        forwards_list: List[Dict] = extract_from_container(fwd_cont, 'forwards')
-        defense_list: List[Dict]  = extract_from_container(d_cont, 'defense')
-        goalies_list: List[Dict]  = extract_from_container(g_cont, 'goalies')
+    # Flatten with unit assignments
+    # Build raw name and preliminary unit lists preserving structure
+    f_raw: List[str] = []
+    f_units: List[str] = []
+    for line_index, line_names in enumerate(forward_lines):
+        if line_index < 4:
+            for i, nm in enumerate(line_names):
+                pos_label = ['LW','C','RW'][i] if i < 3 else 'EXT'
+                unit = f"{pos_label}{line_index+1}" if i < 3 else 'EXT'
+                f_raw.append(nm); f_units.append(unit)
+        else:
+            for nm in line_names:
+                f_raw.append(nm); f_units.append('EXT')
 
-        # NEW: Fallback to text-based names if some players have no jersey images
-        def merge_text_candidates(container, sec: str, target_list: List[Dict]):
-            if not container:
-                return
-            try:
-                txt_items = collect_players(container, unit_label_prefix=sec, pos_code=('F' if sec=='forwards' else 'D' if sec=='defense' else 'G'))
-            except Exception:
-                txt_items = []
-            existing_names = { (it.get('name') or '').strip().lower() for it in target_list }
-            for ti in txt_items:
-                nm = (ti.get('name') or '').strip()
-                if not nm:
-                    continue
-                if nm.strip().lower() in existing_names:
-                    continue
-                # Add as name-only candidate; assign teamCode to current team to allow name-based mapping later
-                target_list.append({
-                    'name': nm,
-                    'jersey': ti.get('jersey'),
-                    'teamCode': (team_abbrev or '').upper() if team_abbrev else None,
-                    'pos': ('F' if sec=='forwards' else 'D' if sec=='defense' else 'G')
-                })
+    d_raw: List[str] = []
+    d_units: List[str] = []
+    for pair_index, pair_names in enumerate(defense_pairs):
+        if pair_index < 3:
+            for i, nm in enumerate(pair_names):
+                side = ['LD','RD'][i] if i < 2 else 'EXT'
+                unit = f"{side}{pair_index+1}" if i < 2 else 'EXT'
+                d_raw.append(nm); d_units.append(unit)
+        else:
+            for nm in pair_names:
+                d_raw.append(nm); d_units.append('EXT')
 
-        merge_text_candidates(fwd_cont, 'forwards', forwards_list)
-        merge_text_candidates(d_cont, 'defense', defense_list)
-        merge_text_candidates(g_cont, 'goalies', goalies_list)
-
-        # Augment: Walk the document in section order and add name-only candidates
-        # This helps capture players rendered without jersey images inside the section content
-        try:
-            from bs4 import Tag  # type: ignore
-            current_section: Optional[str] = None
-            def maybe_add_name(sec: str, nm: str):
-                nm2 = norm_text(nm)
-                if not nm2:
-                    return
-                # crude filter
-                bad = {'forwards','defense','defence','defense pairings','goalies','goalie','line combinations'}
-                if nm2.lower() in bad:
-                    return
-                target = forwards_list if sec == 'forwards' else defense_list if sec == 'defense' else goalies_list
-                keyset = { ((it.get('name') or '').strip().lower(), (it.get('jersey') or ''), (it.get('teamCode') or '')) for it in target }
-                key = (nm2.strip().lower(), '', (team_abbrev or '').upper())
-                if key in keyset:
-                    return
-                target.append({
-                    'name': nm2,
-                    'jersey': None,
-                    'teamCode': (team_abbrev or '').upper() if team_abbrev else None,
-                    'pos': ('F' if sec=='forwards' else 'D' if sec=='defense' else 'G')
-                })
-
-            for node in soup.descendants:
-                if not isinstance(node, Tag):
-                    continue
-                # Track section via headings encountered in order
-                if node.name in ('h1','h2','h3','h4','h5','div','span'):
-                    txt = norm_text(node.get_text(' ', strip=True)).lower()
-                    if 'goalies' in txt:
-                        current_section = 'goalies'
-                    elif ('defensive pairings' in txt) or ('defence' in txt) or ('defense' in txt):
-                        current_section = 'defense'
-                    elif 'forwards' in txt:
-                        current_section = 'forwards'
-                if current_section and node.name in ('a','span','div'):
-                    # Favor player links and bold/uppercase markers
-                    href = node.get('href') if hasattr(node, 'get') else None
-                    cls = ' '.join((node.get('class') or [])) if hasattr(node, 'get') else ''
-                    is_playerish = False
-                    if isinstance(href, str) and '/players/' in href:
-                        is_playerish = True
-                    if ('font-bold' in cls) or ('uppercase' in cls) or ('text-xs' in cls) or ('xl:text-base' in cls):
-                        is_playerish = True
-                    if not is_playerish:
-                        continue
-                    nm_txt = norm_text(node.get_text(' ', strip=True))
+    # Specialized goalie extraction: structure differs from simple anchors sequence.
+    def extract_goalies_section(head) -> List[str]:
+        names: List[str] = []
+        if not head:
+            return names
+        # Use span#goalies as anchor if present
+        span_goalies = soup.select_one('span#goalies') or soup.select_one('span#goalie')
+        root = (span_goalies.find_parent('div') if span_goalies else None) or head
+        # Iterate through subsequent sibling rows until next section heading
+        stop_spans = [s for s in [soup.select_one('span#forwards'), soup.select_one('span#defense'), soup.select_one('span#defence')] if s]
+        for sib in root.find_next_siblings('div'):
+            # Stop when we reach another major section
+            if any(sp in sib.descendants for sp in stop_spans):
+                break
+            if getattr(sib, 'name', None) != 'div':
+                continue
+            cls = ' '.join(sib.get('class') or [])
+            if 'flex-row' not in cls or 'flex-wrap' not in cls:
+                continue
+            # Extract from all card blocks within this row
+            cards = sib.find_all('div', class_=lambda c: c and (('text-center' in ' '.join(c)) if isinstance(c, list) else 'text-center' in c))
+            for card in cards:
+                # Try centered anchor span text first
+                anchor_name = card.select_one('div.flex.flex-row.justify-center a span')
+                nm = None
+                if anchor_name:
+                    nm_txt = norm_text(anchor_name.get_text(' ', strip=True))
                     if nm_txt:
-                        maybe_add_name(current_section, nm_txt)
-        except Exception:
-            pass
+                        nm = nm_txt
+                if not nm:
+                    # Fallback to jersey image alt (covers blinking image variant)
+                    img = card.find('img')
+                    if img:
+                        alt = norm_text(img.get('alt') or '')
+                        if alt:
+                            nm = alt
+                if nm and any(c.isalpha() for c in nm):
+                    low = nm.lower()
+                    if low not in {'goalies','goalie'} and nm not in names:
+                        names.append(nm)
+                if len(names) >= 3:
+                    break
+            if len(names) >= 3:
+                break
+        return names
 
-        # Fallback: If any section is empty, perform a conservative global scan with team filter
-        if not forwards_list or not defense_list or not goalies_list:
-            from bs4 import Tag  # type: ignore
-            current_section: Optional[str] = None
-            def to_item(name: str, jersey: Optional[str], sec: str, team_code: Optional[str]) -> Dict:
-                return {
-                    'name': name,
-                    'jersey': jersey,
-                    'teamCode': team_code,
-                    'pos': ('F' if sec == 'forwards' else 'D' if sec == 'defense' else 'G'),
-                }
-            for node in soup.descendants:
-                if not isinstance(node, Tag):
-                    continue
-                if node.name in ('h1','h2','h3','h4','h5','div','span'):
-                    txt = norm_text(node.get_text(' ', strip=True)).lower()
-                    if 'goalies' in txt:
-                        current_section = 'goalies'
-                    elif ('defensive pairings' in txt) or ('defence' in txt) or ('defense' in txt):
-                        current_section = 'defense'
-                    elif 'forwards' in txt:
-                        current_section = 'forwards'
-                if node.name == 'img':
-                    alt = norm_text(node.get('alt') or '')
-                    if not alt:
-                        continue
-                    full = decode_next_image_src(node)
-                    if 'uploads/player/jersey' not in full:
-                        continue
-                    jersey = None
-                    team_code = None
-                    m = re.search(r'/([A-Z]{2,3})_([0-9]{1,2})_', full)
-                    if m:
-                        team_code = m.group(1)
-                        jersey = m.group(2)
-                    # Enforce team match strictly; if team_code is missing or mismatched, skip.
-                    if team_abbrev:
-                        if (not team_code) or (team_code.upper() != team_abbrev.upper()):
-                            continue
-                    sec = current_section or 'forwards'
-                    item = to_item(alt, jersey, sec, team_code)
-                    if sec == 'forwards':
-                        forwards_list.append(item)
-                    elif sec == 'defense':
-                        defense_list.append(item)
-                    elif sec == 'goalies':
-                        if len(goalies_list) < 2:
-                            goalies_list.append(item)
+    g_raw = extract_goalies_section(h_g)
 
-        # Remove duplicates across sections (favor earlier sections)
-        seen = set()
-        def dedup(lst: List[Dict]) -> List[Dict]:
-            res = []
-            for it in lst:
-                key = (it.get('name') or '', it.get('jersey') or '', it.get('teamCode') or '')
-                if key in seen:
-                    continue
-                seen.add(key)
-                res.append(it)
-            return res
-
-        forwards_list = dedup(forwards_list)
-        defense_list = dedup(defense_list)
-        goalies_list = dedup(goalies_list)
-
-        # Assign units based on order
-        # Forwards: LW1, C1, RW1, LW2, C2, RW2, LW3, C3, RW3, LW4, C4, RW4, then EXT
-        f_cols = ['LW', 'C', 'RW']
-        for i, it in enumerate(forwards_list):
-            if i < 12:
-                col = f_cols[i % 3]
-                line_no = (i // 3) + 1
-                it['unit'] = f"{col}{line_no}"
-            else:
-                it['unit'] = 'EXT'
-
-        # Defense: LD1, RD1, LD2, RD2, LD3, RD3, then EXT
-        d_cols = ['LD', 'RD']
-        for i, it in enumerate(defense_list):
-            if i < 6:
-                side = d_cols[i % 2]
-                pair_no = (i // 2) + 1
-                it['unit'] = f"{side}{pair_no}"
-            else:
-                it['unit'] = 'EXT'
-
-        # Goalies: G1, G2 (extras -> EXT)
-        for i, it in enumerate(goalies_list):
-            it['unit'] = f"G{i+1}" if i < 2 else 'EXT'
-
-        # Replace out with classified lists (avoid duplicates)
-        out['forwards'] = forwards_list
-        out['defense'] = defense_list
-        out['goalies'] = goalies_list
-    else:
-        # Fallback: regex-based extraction
-        lines = [l.strip() for l in html.splitlines() if l.strip()]
-        for ln in lines:
-            m = re.findall(r'(?:#?\s*(\d{1,2})\s+)?([A-Z][a-z]+\s+[A-Z][a-z\-\']+)', ln)
-            for num, nm in m:
-                nm2 = nm.strip()
-                num2 = num.strip() if num else None
-                if nm2:
-                    out['forwards'].append({'name': nm2, 'jersey': num2, 'pos': 'F', 'unit': 'L'})
-
-    # Deduplicate by (name, jersey)
-    def dedup(lst: List[Dict]) -> List[Dict]:
-        seen = set(); res = []
-        for it in lst:
-            key = (it.get('name') or '', it.get('jersey') or '', it.get('teamCode') or '')
+    def dedup_preserve(names: List[str]) -> List[str]:
+        seen = set(); outn: List[str] = []
+        for nm in names:
+            key = nm.lower()
             if key in seen:
                 continue
             seen.add(key)
-            res.append(it)
-        return res
+            # Normalize shouting (ALL CAPS) to title case
+            words = nm.split()
+            if words and all(w.isupper() for w in words):
+                nm = ' '.join(w.capitalize() for w in words)
+            outn.append(nm)
+        return outn
 
-    out['forwards'] = dedup(out['forwards'])
-    out['defense'] = dedup(out['defense'])
-    out['goalies'] = dedup(out['goalies'])
-    return out
+    f_names = dedup_preserve(f_raw)
+    d_names = dedup_preserve(d_raw)
+    g_names = dedup_preserve(g_raw)
 
+    # Build first-occurrence unit maps so units align with deduped names
+    def first_unit_map(names: List[str], units: List[str]) -> Dict[str, str]:
+        m: Dict[str, str] = {}
+        for nm, u in zip(names, units):
+            key = (nm or '').lower()
+            if key and key not in m:
+                m[key] = u
+        return m
 
-def map_lineup_to_player_ids(lineup: Dict[str, List[Dict]], roster: List[Dict], team_abbrev: str) -> Dict[str, List[Dict]]:
-    """Map scraped lineup entries to playerIds using jersey-first, then name fallback.
-    Strict mode: keep ONLY players that (a) were scraped from Daily Faceoff and
-    (b) are present on the team's roster. Do NOT auto-fill extra players from
-    the roster to hit counts, as that can introduce wrong players when the
-    roster API has noise or off-season artifacts.
+    f_unit_map = first_unit_map(f_raw, f_units)
+    d_unit_map = first_unit_map(d_raw, d_units)
 
-    roster: list of { playerId, name, sweaterNumber, pos }
-    Returns the lineup dict with an added 'playerId' key where matched.
-    Units are preserved from scrape when present, else assigned by order.
-    """
-    def norm(s: Optional[str]) -> str:
-        if not s:
-            return ''
+    # Assign units with special cases: 13th forward -> F5, 7th defender -> D4; rest beyond -> EXT
+    for idx, nm in enumerate(f_names):
+        base = f_unit_map.get(nm.lower(), 'EXT')
+        unit = 'F5' if idx == 12 else ('EXT' if idx > 12 else base)
+        out['forwards'].append({'name': nm, 'pos': 'F', 'unit': unit})
+    for idx, nm in enumerate(d_names):
+        base = d_unit_map.get(nm.lower(), 'EXT')
+        unit = 'D4' if idx == 6 else ('EXT' if idx > 6 else base)
+        out['defense'].append({'name': nm, 'pos': 'D', 'unit': unit})
+    # Only take the first goalie as G1 (starter); ignore the rest
+    if g_names:
+        out['goalies'].append({'name': g_names[0], 'pos': 'G', 'unit': 'G1'})
+
+    # Fallback: if nothing was captured from anchors near headings, try parsing Next.js __NEXT_DATA__ for structured lineup
+    if not (out['forwards'] or out['defense'] or out['goalies']):
         try:
-            import unicodedata as _ud
-            s2 = _ud.normalize('NFKD', s)
-            s2 = ''.join([c for c in s2 if not _ud.combining(c)])
-        except Exception:
-            s2 = s
-        s2 = s2.replace('.', ' ').replace('-', ' ').replace("'", '').strip().lower()
-        s2 = ' '.join(s2.split())
-        return s2
+            next_tag = soup.find('script', id='__NEXT_DATA__')
+            if next_tag and (next_tag.string or '').strip():
+                data = json.loads(next_tag.string)
 
-    def jersey_norm(s: Optional[str]) -> str:
-        digits = ''.join(ch for ch in str(s or '') if ch.isdigit())
-        return str(int(digits)) if digits.isdigit() else ''
+                def extract_names_from_obj(obj) -> Dict[str, List[str]]:
+                    acc = {'forwards': [], 'defense': [], 'goalies': []}
+                    locked = {'forwards': False, 'defense': False}
 
-    by_num: Dict[str, Dict] = {}
-    by_name: Dict[str, Dict] = {}
-    by_last: Dict[str, List[Dict]] = {}
-    roster_ids: set[int] = set()
-    for p in roster:
-        num = jersey_norm(p.get('sweaterNumber'))
-        if num:
-            by_num[num] = p
-        nm = norm(p.get('name'))
-        if nm:
-            by_name[nm] = p
-            last = nm.split(' ')[-1]
-            by_last.setdefault(last, []).append(p)
-        try:
-            pid = int(p.get('playerId')) if p.get('playerId') is not None else None
-            if pid:
-                roster_ids.add(pid)
+                    def full_name(d: Dict) -> Optional[str]:
+                        keys_pairs = [
+                            ('name', None), ('playerName', None), ('fullName', None),
+                            ('firstName', 'lastName'), ('first', 'last'), ('first_name', 'last_name'),
+                            ('first_name', 'surname'), ('givenName', 'familyName'), ('displayName', None)
+                        ]
+                        for k1, k2 in keys_pairs:
+                            if k2 is None and k1 in d and isinstance(d[k1], str) and any(c.isalpha() for c in d[k1]):
+                                return d[k1]
+                            if k2 and (k1 in d) and (k2 in d):
+                                a = d.get(k1); b = d.get(k2)
+                                if isinstance(a, str) and isinstance(b, str):
+                                    nm = f"{a} {b}".strip()
+                                    if any(c.isalpha() for c in nm):
+                                        return nm
+                        return None
+
+                    def is_player_like(d: Dict) -> bool:
+                        if not isinstance(d, dict):
+                            return False
+                        fn = full_name(d)
+                        return bool(fn)
+
+                    def walk(o, path_keys: List[str]):
+                        # Look for arrays of arrays with player-like dicts
+                        if isinstance(o, dict):
+                            for k, v in o.items():
+                                walk(v, path_keys + [str(k).lower()])
+                        elif isinstance(o, list):
+                            # list of lists (forward lines/pairs)
+                            if o and all(isinstance(x, list) for x in o):
+                                # Determine section strictly by path tokens to avoid global noise
+                                path_txt = ' '.join(path_keys)
+                                section = None
+                                if any(tok in path_txt for tok in ['forward','forwards','line-combinations','lines']):
+                                    section = 'forwards'
+                                elif any(tok in path_txt for tok in ['defense','defence','pairs']):
+                                    section = 'defense'
+                                # Single-pass lock-in: only fill forwards/defense once
+                                if section in ('forwards','defense') and locked.get(section):
+                                    return
+                                if section:
+                                    for sub in o:
+                                        if not isinstance(sub, list):
+                                            continue
+                                        for ent in sub:
+                                            if is_player_like(ent):
+                                                nm = full_name(ent)
+                                                if nm:
+                                                    acc[section].append(nm)
+                                if section in ('forwards','defense'):
+                                    locked[section] = True
+                            else:
+                                # flat list of player-like dicts (e.g., goalies)
+                                if o and all(isinstance(x, dict) for x in o) and any(is_player_like(x) for x in o):
+                                    path_txt = ' '.join(path_keys)
+                                    # Only consider arrays explicitly tied to goalies
+                                    if any(tok in path_txt for tok in ['goalie','goalies','tandem','starter','net']):
+                                        # Collect names but we will filter and dedupe later
+                                        for ent in o:
+                                            if is_player_like(ent):
+                                                nm = full_name(ent)
+                                                if nm:
+                                                    acc['goalies'].append(nm)
+                        # Other types ignored
+
+                    # Limit search to pageProps subtree to avoid cross-site noise
+                    root = obj
+                    if isinstance(obj, dict):
+                        root = obj.get('props', {}).get('pageProps', obj)
+                    walk(root, [])
+                    return acc
+
+                names_acc = extract_names_from_obj(data)
+
+                # Deduplicate across sections (E): remove names already assigned to forwards from defense/goalies; and from defense to goalies
+                f_set = {n.lower() for n in names_acc['forwards']}
+                names_acc['defense'] = [n for n in names_acc['defense'] if n.lower() not in f_set]
+                used_set = f_set.union({n.lower() for n in names_acc['defense']})
+                names_acc['goalies'] = [n for n in names_acc['goalies'] if n.lower() not in used_set]
+
+                # Goalie isolation (D): if goalie list suspiciously long (>5), drop it
+                if len(names_acc['goalies']) > 5:
+                    names_acc['goalies'] = []
+
+                # If we found anything, assign units using the same rules
+                if names_acc['forwards'] or names_acc['defense'] or names_acc['goalies']:
+                    out = {'forwards': [], 'defense': [], 'goalies': []}
+                    for i, nm in enumerate(names_acc['forwards']):
+                        unit = ['LW','C','RW'][i % 3] + str(i//3 + 1) if i < 12 else 'EXT'
+                        out['forwards'].append({'name': nm, 'pos': 'F', 'unit': unit})
+                    for i, nm in enumerate(names_acc['defense']):
+                        unit = ['LD','RD'][i % 2] + str(i//2 + 1) if i < 6 else 'EXT'
+                        out['defense'].append({'name': nm, 'pos': 'D', 'unit': unit})
+                    if names_acc['goalies']:
+                        out['goalies'].append({'name': names_acc['goalies'][0], 'pos': 'G', 'unit': 'G1'})
         except Exception:
             pass
 
-    def match_player(name: Optional[str], jersey: Optional[str]) -> Optional[int]:
-        j = jersey_norm(jersey)
-        if j and j in by_num:
-            return by_num[j].get('playerId')
-        nm = norm(name)
-        if nm and nm in by_name:
-            return by_name[nm].get('playerId')
-        last = (nm.split(' ')[-1] if nm else '')
+    return out
+
+
+def map_lineup_to_player_ids(lineup: Dict[str, List[Dict]], roster: List[Dict], team_abbrev: Optional[str]) -> Dict[str, object]:
+    """Map scraped lineup entries to NHL playerIds using ONLY the provided current roster.
+
+    Strict rules:
+      * No roster backfill: players not scraped are not added.
+      * A name is matched case-insensitively to full roster name first.
+      * If full name fails, try last-name-only when it yields exactly ONE roster candidate.
+      * Ambiguous or unmatched entries are dropped.
+    Returned structure mirrors lineup but each item gains playerId.
+    """
+    def norm_name(s: str) -> str:
+        return ' '.join(re.sub(r"[^a-zA-Z\s\-']", '', (s or '')).strip().split()).lower()
+
+    # Build lookup maps
+    by_full: Dict[str, Dict] = {}
+    by_last: Dict[str, List[Dict]] = {}
+    for p in roster:
+        nm = p.get('name') or ''
+        nm_norm = norm_name(nm)
+        if nm_norm:
+            by_full[nm_norm] = p
+        last = nm_norm.split(' ')[-1]
+        if last:
+            by_last.setdefault(last, []).append(p)
+
+    def resolve_pid(scraped_name: str) -> Optional[int]:
+        nm_norm = norm_name(scraped_name)
+        if not nm_norm:
+            return None
+        p = by_full.get(nm_norm)
+        if p and p.get('playerId') is not None:
+            return p.get('playerId')
+        last = nm_norm.split(' ')[-1]
         cands = by_last.get(last, [])
-        if len(cands) == 1:
+        if len(cands) == 1 and cands[0].get('playerId') is not None:
             return cands[0].get('playerId')
         return None
 
-    # External suggest/StatsAPI lookups removed; only map to players present on current roster.
+    def map_section(items: List[Dict]) -> List[Dict]:
+        out_items: List[Dict] = []
+        for it in items:
+            pid = resolve_pid(it.get('name') or '')
+            if pid is None:
+                continue  # strict: skip unmatched
+            out_items.append({'name': it.get('name'), 'playerId': pid, 'unit': it.get('unit'), 'pos': it.get('pos')})
+        return out_items
 
-    # Build helpers for roster position lookup (playerId -> F/D/G)
-    roster_pos_by_pid: Dict[int, str] = {}
-    roster_jersey_by_pid: Dict[int, str] = {}
+    starters_forwards = map_section(lineup.get('forwards', []))
+    starters_defense = map_section(lineup.get('defense', []))
+    starters_goalies = map_section(lineup.get('goalies', []))
+
+    included_ids = {it['playerId'] for it in starters_forwards + starters_defense + starters_goalies if it.get('playerId') is not None}
+
+    # Append EXT players from roster not already included
+    ext_forwards: List[Dict] = []
+    ext_defense: List[Dict] = []
+    ext_goalies: List[Dict] = []
     for p in roster:
-        try:
-            pid = int(p.get('playerId')) if p.get('playerId') is not None else None
-        except Exception:
-            pid = None
-        if pid is None:
+        pid = p.get('playerId')
+        if pid is None or pid in included_ids:
             continue
-        # Record jersey from roster for optional backfill
-        jn = jersey_norm(p.get('sweaterNumber'))
-        if jn:
-            roster_jersey_by_pid[pid] = jn
-        pos_raw = (p.get('pos') or '').strip().upper()
-        pos_final = 'F' if pos_raw.startswith(('C','L','R','F')) else ('D' if pos_raw.startswith('D') else ('G' if pos_raw.startswith('G') else ''))
-        if pos_final:
-            roster_pos_by_pid[pid] = pos_final
+        pos = (p.get('pos') or '').upper()[:1]
+        name = p.get('name') or ''
+        if pos == 'F':
+            ext_forwards.append({'name': name, 'playerId': pid, 'unit': 'EXT', 'pos': 'F'})
+        elif pos == 'D':
+            ext_defense.append({'name': name, 'playerId': pid, 'unit': 'EXT', 'pos': 'D'})
+        elif pos == 'G':
+            # Only non-starter goalies added as EXT
+            ext_goalies.append({'name': name, 'playerId': pid, 'unit': 'EXT', 'pos': 'G'})
 
-    # Step 1: Consider all scraped items together (order preserved approximately)
-    def is_valid_name(name: Optional[str]) -> bool:
-        n = (name or '').strip()
-        if not n:
-            return False
-        # Drop obvious noise from DF widgets
-        bad_tokens = {'games stats', 'game stats', 'stats', 'lines', 'pairs'}
-        if n.lower() in bad_tokens:
-            return False
-        return any(c.isalpha() for c in n)
-
-    all_items: List[Dict] = []
-    for key in ('forwards', 'defense', 'goalies'):
-        all_items.extend(list(lineup.get(key, [])))
-    # Prefer entries with an explicit jersey so they win ahead of name-only candidates
-    def _has_jersey(it: Dict) -> bool:
-        j = jersey_norm(it.get('jersey'))
-        return bool(j)
-    try:
-        all_items.sort(key=lambda it: (0 if _has_jersey(it) else 1))
-    except Exception:
-        pass
-
-    # Step 2: Map to roster playerIds, enforce membership, then reclassify using roster positions
-    f_items: List[Dict] = []
-    d_items: List[Dict] = []
-    g_items: List[Dict] = []
-    seen_pid: set[int] = set()
-    for it in all_items:
-        # Strictly enforce team code from scrape if available; skip if missing or mismatched
-        tc = (it.get('teamCode') or '').strip().upper()
-        if team_abbrev and tc != team_abbrev.strip().upper():
-            continue
-        # Basic name sanity
-        if not is_valid_name(it.get('name')):
-            continue
-        # Resolve strictly against current roster by jersey and name
-        pid = match_player(it.get('name'), it.get('jersey'))
-        if pid is None:
-            continue
-        try:
-            pid_int = int(pid)
-        except Exception:
-            pid_int = None
-        if (pid_int is None) or (pid_int in seen_pid):
-            continue
-        # Require membership on current roster; otherwise skip
-        if pid_int not in roster_ids:
-            continue
-        pos_final = roster_pos_by_pid.get(pid_int, '')
-        it2 = {
-            'name': it.get('name') or '',
-            'jersey': (jersey_norm(it.get('jersey')) or roster_jersey_by_pid.get(pid_int, '')),
-            'playerId': pid_int,
-        }
-        # Classify: roster-derived pos wins; otherwise use scraped pos hint
-        scraped_pos = (it.get('pos') or '').strip().upper()
-        if pos_final == 'F' or (not pos_final and scraped_pos[:1] in ('F','C','L','R')):
-            f_items.append(it2)
-        elif pos_final == 'D' or (not pos_final and scraped_pos.startswith('D')):
-            d_items.append(it2)
-        elif pos_final == 'G' or (not pos_final and scraped_pos.startswith('G')):
-            g_items.append(it2)
-        seen_pid.add(pid_int)
-
-    # No additional team verification needed; roster membership guarantees correctness.
-
-    # Step 3: Assign units by order (overwrite any existing unit field)
-    def assign_units(lst: List[Dict], unit_patterns: List[str]) -> List[Dict]:
-        out: List[Dict] = []
-        for i, it in enumerate(lst):
-            it2 = dict(it)
-            if unit_patterns:
-                it2['unit'] = unit_patterns[i] if i < len(unit_patterns) else 'EXT'
-            else:
-                it2['unit'] = 'EXT'
-            out.append(it2)
-        return out
-
-    f_units = [f"{c}{n}" for n in range(1,5) for c in ('LW','C','RW')]  # LW1,C1,RW1,...,LW4,C4,RW4
-    d_units = [f"{c}{n}" for n in range(1,4) for c in ('LD','RD')]       # LD1,RD1,LD2,RD2,LD3,RD3
-    # Per requirement: treat the backup goalie as EXT
-    g_units = ['G1','EXT']
-
-    mapped = {'team': team_abbrev, 'forwards': assign_units(f_items, f_units), 'defense': assign_units(d_items, d_units), 'goalies': assign_units(g_items, g_units)}
-
-    return mapped
+    result: Dict[str, object] = {
+        'team': (team_abbrev or '').upper() if team_abbrev else None,
+        'forwards': starters_forwards + ext_forwards,
+        'defense': starters_defense + ext_defense,
+        'goalies': starters_goalies + ext_goalies,
+        # metadata keys like generated_at added by caller
+    }
+    return result
 
 
 def _validate_season(s: str) -> str:
@@ -862,35 +823,29 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"[warn] scrape failed for {t}: {e}")
                 lineup = {'forwards': [], 'defense': [], 'goalies': []}
             try:
-                # roster: use current roster endpoint only (source of truth for playerIds)
                 roster = fetch_current_roster(t)
-                # goalie fallback if needed
-                if (not lineup.get('goalies')) and roster:
-                    def jersey_norm(s: Optional[str]) -> str:
-                        digits = ''.join(ch for ch in str(s or '') if ch.isdigit())
-                        return str(int(digits)) if digits.isdigit() else ''
-                    gl = [p for p in roster if (p.get('pos') == 'G')][:2]
-                    lineup['goalies'] = [
-                        {'name': (p.get('name') or ''), 'jersey': jersey_norm(p.get('sweaterNumber')), 'pos': 'G', 'unit': f'G{i+1}'}
-                        for i, p in enumerate(gl)
-                    ]
                 mapped = map_lineup_to_player_ids(lineup, roster, t)
                 # Attach generation timestamp for downstream consumers
                 try:
-                    mapped['generated_at'] = datetime.utcnow().isoformat() + 'Z'
+                    mapped['generated_at'] = datetime.now(timezone.utc).isoformat()
                 except Exception:
                     pass
             except Exception as e:
                 print(f"[warn] mapping failed for {t}: {e}")
                 mapped = {'team': t, 'forwards': [], 'defense': [], 'goalies': []}
                 try:
-                    mapped['generated_at'] = datetime.utcnow().isoformat() + 'Z'
+                    mapped['generated_at'] = datetime.now(timezone.utc).isoformat()
                 except Exception:
                     pass
             combined[t] = mapped
             if not args.quiet:
-                fct = len(mapped.get('forwards', [])); dct = len(mapped.get('defense', [])); gct = len(mapped.get('goalies', []))
-                print(f"  -> F:{fct} D:{dct} G:{gct}")
+                f_obj = mapped.get('forwards')
+                d_obj = mapped.get('defense')
+                g_obj = mapped.get('goalies')
+                f_list: List[Dict] = f_obj if isinstance(f_obj, list) else []
+                d_list: List[Dict] = d_obj if isinstance(d_obj, list) else []
+                g_list: List[Dict] = g_obj if isinstance(g_obj, list) else []
+                print(f"  -> F:{len(f_list)} D:{len(d_list)} G:{len(g_list)}")
 
         with open(out_all_path, 'w', encoding='utf-8') as f:
             f.write(json.dumps(combined, ensure_ascii=False))
@@ -927,40 +882,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         season_int = int(args.season)
         # Use current roster endpoint only
         roster = fetch_current_roster(team)
-        # If goalies section came back empty, fallback to roster (top 2 goalies)
-        if (not lineup.get('goalies')) and roster:
-            def jersey_norm(s: Optional[str]) -> str:
-                digits = ''.join(ch for ch in str(s or '') if ch.isdigit())
-                return str(int(digits)) if digits.isdigit() else ''
-            gl = [p for p in roster if (p.get('pos') == 'G')]
-            gl = gl[:2]
-            lineup['goalies'] = [
-                {'name': (p.get('name') or ''), 'jersey': jersey_norm(p.get('sweaterNumber')), 'pos': 'G', 'unit': f'G{i+1}'}
-                for i, p in enumerate(gl)
-            ]
+        # No roster-based goalies fill; rely strictly on scraped content.
         mapped = map_lineup_to_player_ids(lineup, roster, team)
     except Exception as e:
         print(f"[error] roster/map failed: {e}", file=sys.stderr)
         return 4
 
-    # Fallback: if the page was JS-rendered and yielded no names, populate from roster groups
-    if (not mapped.get('forwards')) and (not mapped.get('defense')) and (not mapped.get('goalies')) and roster:
-        def jersey_norm(s: Optional[str]) -> str:
-            digits = ''.join(ch for ch in str(s or '') if ch.isdigit())
-            return str(int(digits)) if digits.isdigit() else ''
-        f = [
-            {'name': (p.get('name') or ''), 'jersey': jersey_norm(p.get('sweaterNumber')), 'pos': 'F', 'unit': 'F', 'playerId': p.get('playerId')}
-            for p in roster if (p.get('pos') == 'F')
-        ]
-        d = [
-            {'name': (p.get('name') or ''), 'jersey': jersey_norm(p.get('sweaterNumber')), 'pos': 'D', 'unit': 'D', 'playerId': p.get('playerId')}
-            for p in roster if (p.get('pos') == 'D')
-        ]
-        g = [
-            {'name': (p.get('name') or ''), 'jersey': jersey_norm(p.get('sweaterNumber')), 'pos': 'G', 'unit': 'G', 'playerId': p.get('playerId')}
-            for p in roster if (p.get('pos') == 'G')
-        ]
-        mapped = {'team': team, 'forwards': f, 'defense': d, 'goalies': g}
+    # No roster fallback; leave empty if scrape produced nothing.
 
     # Print compact summary
     print("\nExpected lineup (mapped to PlayerIDs):")
@@ -976,7 +904,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             # Attach generation timestamp
             try:
                 mapped_out = dict(mapped)
-                mapped_out['generated_at'] = datetime.utcnow().isoformat() + 'Z'
+                mapped_out['generated_at'] = datetime.now(timezone.utc).isoformat()
             except Exception:
                 mapped_out = mapped
             with open(out_path, 'w', encoding='utf-8') as f:
