@@ -250,21 +250,24 @@ function renderTable(games){
     const timeStr = (t && !isNaN(t)) ? t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
     const awayCell = `<div class="team-cell right">${a.abbrev||''} <img src="${a.logo||''}" alt="${a.abbrev||''}"/></div>`;
     const homeCell = `<div class="team-cell"><img src="${h.logo||''}" alt="${h.abbrev||''}"/> ${h.abbrev||''}</div>`;
-    const pAwayBase = (p.winProbAway!=null) ? Number(p.winProbAway) : null;
-    const pHomeBase = (p.winProbHome!=null) ? Number(p.winProbHome) : null;
+  // Prefer prestart values for started games
+  const started = g.started === true;
+  const pre = g.prestart || null;
+  const pAwayBase = started && pre && pre.winAwayPct!=null ? (Number(pre.winAwayPct)/100) : ((p.winProbAway!=null) ? Number(p.winProbAway) : null);
+  const pHomeBase = started && pre && pre.winHomePct!=null ? (Number(pre.winHomePct)/100) : ((p.winProbHome!=null) ? Number(p.winProbHome) : null);
     const over = window._winOverrides[g.id];
     const pAway = over?.away ?? pAwayBase;
     const pHome = over?.home ?? pHomeBase;
     const winA = (pAway!=null) ? (pAway*100).toFixed(1)+'%' : '';
     const winH = (pHome!=null) ? (pHome*100).toFixed(1)+'%' : '';
-    const baseOddsA = parseAmerican(g?.odds?.away);
-    const baseOddsH = parseAmerican(g?.odds?.home);
-    const rawOddsA = window._oddsOverrides[g.id]?.away ?? baseOddsA;
-    const rawOddsH = window._oddsOverrides[g.id]?.home ?? baseOddsH;
+  const baseOddsA = started && pre && pre.oddsAway!=null ? parseAmerican(pre.oddsAway) : parseAmerican(g?.odds?.away);
+  const baseOddsH = started && pre && pre.oddsHome!=null ? parseAmerican(pre.oddsHome) : parseAmerican(g?.odds?.home);
+  const rawOddsA = started ? baseOddsA : (window._oddsOverrides[g.id]?.away ?? baseOddsA);
+  const rawOddsH = started ? baseOddsH : (window._oddsOverrides[g.id]?.home ?? baseOddsH);
     const displayOddsA = (oddsMode==='american') ? (rawOddsA ?? '') : (rawOddsA!=null ? toDecimal(rawOddsA).toFixed(2) : '');
     const displayOddsH = (oddsMode==='american') ? (rawOddsH ?? '') : (rawOddsH!=null ? toDecimal(rawOddsH).toFixed(2) : '');
-    const betA = kelly03(pAway, rawOddsA);
-    const betH = kelly03(pHome, rawOddsH);
+  const betA = started && pre && pre.betAwayPct!=null ? (Number(pre.betAwayPct)/100) : kelly03(pAway, rawOddsA);
+  const betH = started && pre && pre.betHomePct!=null ? (Number(pre.betHomePct)/100) : kelly03(pHome, rawOddsH);
     const winAVal = (p.winProbAway!=null) ? (p.winProbAway*100) : null;
     const winHVal = (p.winProbHome!=null) ? (p.winProbHome*100) : null;
     const winBgA = winAVal!=null ? winBgColor(winAVal) : '';
@@ -273,8 +276,9 @@ function renderTable(games){
     const betBgH = betH!=null ? betBgColor(betH) : '';
     const step = (oddsMode==='american') ? '1' : '0.01';
     const minAttr = (oddsMode==='american') ? '' : ' min="1.01"';
-    const oddsAInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsA}" data-game="${g.id}" data-side="away" />`;
-    const oddsHInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsH}" data-game="${g.id}" data-side="home" />`;
+  const disAttr = started ? ' disabled' : '';
+  const oddsAInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsA}" data-game="${g.id}" data-side="away"${disAttr} />`;
+  const oddsHInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsH}" data-game="${g.id}" data-side="home"${disAttr} />`;
     return `<tr>
       <td class="col-center">${timeStr}</td>
       <td class="col-center"><button class="lineup-btn" data-game="${g.id}" data-side="away" data-team="${a.abbrev||''}">Edit</button></td>

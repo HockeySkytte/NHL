@@ -645,17 +645,20 @@ def api_projections_games():
             # If anything fails, still return the game
             continue
 
-    # Attach odds for not-started games only
+    # Attach odds for not-started games only, and attach prestart for started games
     try:
         odds_map = _fetch_partner_odds_map(date_str)
     except Exception:
         odds_map = {}
+    # Load prestart snapshots (append-only CSV) and index by GameID
+    prestart_map = _load_prestart_snapshots_map()
     try:
         # Determine not-started strictly by comparing schedule startTimeUTC to current UTC
         from datetime import timezone as _tz
         now_utc = datetime.now(_tz.utc)
         for g in out:
             not_started = False
+            started = False
             try:
                 st_raw = g.get('startTimeUTC')
                 if isinstance(st_raw, str):
@@ -664,17 +667,23 @@ def api_projections_games():
                     if se_utc.tzinfo is None:
                         se_utc = se_utc.replace(tzinfo=_tz.utc)
                     not_started = now_utc < se_utc
+                    started = now_utc >= se_utc
             except Exception:
                 not_started = False
-            val_id = g.get('id')
+                started = False
+            g['started'] = bool(started)
             gid = None
             try:
+                val_id = g.get('id')
                 if val_id is not None:
                     gid = int(val_id)
             except Exception:
                 gid = None
             if not_started and gid is not None and gid in odds_map:
                 g['odds'] = odds_map.get(gid)
+            # When started, attach prestart snapshot if available
+            if started and gid is not None and gid in prestart_map:
+                g['prestart'] = prestart_map.get(gid)
     except Exception:
         pass
 
@@ -1167,6 +1176,53 @@ def _load_player_projections_csv() -> Dict[int, Dict[str, Any]]:
     except Exception:
         return {}
     return out
+
+def _load_prestart_snapshots_map() -> Dict[int, Dict[str, Any]]:
+    """Load prestart_snapshots.csv into a map keyed by GameID (int) keeping the latest row per game.
+    Expected columns: TimestampUTC,DateET,GameID,StartTimeET,Away,Home,WinAway,WinHome,OddsAway,OddsHome,BetAway,BetHome
+    """
+    path = _prestart_csv_path()
+    latest: Dict[int, Dict[str, Any]] = {}
+    if not os.path.exists(path):
+        return latest
+    try:
+        with open(path, 'r', encoding='utf-8', newline='') as f:
+            rdr = csv.DictReader(f)
+            for row in rdr:
+                try:
+                    gid_raw = row.get('GameID')
+                    if gid_raw is None:
+                        continue
+                    gid = int(str(gid_raw).strip())
+                except Exception:
+                    continue
+                ts = row.get('TimestampUTC') or ''
+                # Keep the last seen row per GameID (file is append-only)
+                latest[gid] = {
+                    'TimestampUTC': ts,
+                    'DateET': row.get('DateET'),
+                    'StartTimeET': row.get('StartTimeET'),
+                    'Away': row.get('Away'),
+                    'Home': row.get('Home'),
+                    # Store numeric percents as floats
+                    'winAwayPct': _safe_float(row.get('WinAway')),
+                    'winHomePct': _safe_float(row.get('WinHome')),
+                    'oddsAway': row.get('OddsAway'),
+                    'oddsHome': row.get('OddsHome'),
+                    'betAwayPct': _safe_float(row.get('BetAway')),
+                    'betHomePct': _safe_float(row.get('BetHome')),
+                }
+    except Exception:
+        return latest
+    return latest
+
+def _safe_float(v: Any) -> Optional[float]:
+    try:
+        if v is None or v == '':
+            return None
+        return float(v)
+    except Exception:
+        return None
 
 def _proj_value_for_player(row: Optional[Dict[str, Any]]) -> float:
     """Sum of (Age + Rookie + EVO + EVD + PP + SH + GSAx) for a projections row.
