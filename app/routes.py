@@ -6,6 +6,8 @@ import re
 import math
 import bisect
 from datetime import datetime, timedelta
+import threading
+import time
 from typing import Dict, List, Tuple, Optional, Any
 
 import requests
@@ -33,6 +35,348 @@ _FEATURE_COLS_CACHE: Dict[str, List[str]] = {}
 _PBP_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 _SHIFTS_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 _BOX_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+
+# --- Prestart snapshot config/state ---
+_PRESTART_THREAD_STARTED = False
+_PRESTART_LOGGED: set[int] = set()  # gameIds captured this process
+_PRESTART_CSV_NAME = os.getenv('PRESTART_CSV', 'prestart_snapshots.csv')
+
+def _prestart_csv_path() -> str:
+    try:
+        return os.path.join(_project_root(), _PRESTART_CSV_NAME)
+    except Exception:
+        return os.path.join(os.getcwd(), _PRESTART_CSV_NAME)
+
+def _to_decimal_odds(american: Optional[Any]) -> Optional[float]:
+    try:
+        if american is None:
+            return None
+        a = float(american)
+        if a > 0:
+            return 1.0 + (a / 100.0)
+        if a < 0:
+            return 1.0 + (100.0 / abs(a))
+        return None
+    except Exception:
+        return None
+
+def _bet_fraction_kelly03(prob: Optional[float], american: Optional[Any]) -> Optional[float]:
+    try:
+        if prob is None:
+            return None
+        p = float(prob)
+        if not (0.0 <= p <= 1.0):
+            return None
+        dec = _to_decimal_odds(american)
+        if dec is None or dec <= 1.0:
+            return None
+        b = dec - 1.0
+        q = 1.0 - p
+        f = (b * p - q) / b
+        f_scaled = 0.3 * f
+        return f_scaled if f_scaled > 0 else 0.0
+    except Exception:
+        return None
+
+def _append_prestart_row(row: Dict[str, Any]) -> None:
+    path = _prestart_csv_path()
+    fields = [
+        'TimestampUTC','DateET','GameID','StartTimeET',
+        'Away','Home',
+        'WinAway','WinHome',
+        'OddsAway','OddsHome',
+        'BetAway','BetHome'
+    ]
+    try:
+        file_exists = os.path.exists(path)
+        # Ensure directory exists
+        try:
+            os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        except Exception:
+            pass
+        with open(path, 'a', encoding='utf-8', newline='') as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            if not file_exists:
+                w.writeheader()
+            # coerce missing keys
+            rec = {k: row.get(k) for k in fields}
+            w.writerow(rec)
+    except Exception:
+        # best-effort; do not crash app
+        pass
+
+def _build_games_for_date(date_et) -> List[Dict[str, Any]]:
+    """Internal helper to construct games with projections and odds for a given ET date (date object)."""
+    date_str = str(date_et)
+    url = f'https://api-web.nhle.com/v1/schedule/{date_str}'
+    try:
+        r = requests.get(url, timeout=20)
+        js = r.json() if r.status_code == 200 else {}
+    except Exception:
+        js = {}
+
+    def to_et(iso_utc: Optional[str]) -> Optional[str]:
+        if not iso_utc:
+            return None
+        try:
+            s = iso_utc.replace('Z', '+00:00')
+            dt = datetime.fromisoformat(s)
+            if ZoneInfo is not None:
+                et = dt.astimezone(ZoneInfo('America/New_York'))
+            else:
+                et = dt
+            return et.isoformat()
+        except Exception:
+            return iso_utc
+
+    logo_by_abbrev: Dict[str, str] = {}
+    try:
+        for tr in TEAM_ROWS:
+            ab = (tr.get('Team') or '').upper()
+            logo_by_abbrev[ab] = tr.get('Logo') or ''
+    except Exception:
+        pass
+
+    out: List[Dict[str, Any]] = []
+    for wk in (js.get('gameWeek') or []):
+        if (wk.get('date') or '')[:10] != date_str:
+            continue
+        for g in (wk.get('games') or []):
+            home = (g.get('homeTeam') or {})
+            away = (g.get('awayTeam') or {})
+            ha = (home.get('abbrev') or '').upper()
+            aa = (away.get('abbrev') or '').upper()
+            out.append({
+                'id': g.get('id'),
+                'season': g.get('season'),
+                'gameType': g.get('gameType'),
+                'startTimeUTC': g.get('startTimeUTC'),
+                'startTimeET': to_et(g.get('startTimeUTC')),
+                'gameState': g.get('gameState') or g.get('gameStatus'),
+                'venue': g.get('venue'),
+                'homeTeam': { 'abbrev': ha, 'score': home.get('score'), 'logo': logo_by_abbrev.get(ha, '') },
+                'awayTeam': { 'abbrev': aa, 'score': away.get('score'), 'logo': logo_by_abbrev.get(aa, '') },
+                'periodDescriptor': g.get('periodDescriptor'),
+            })
+    if not out and isinstance(js, dict):
+        for g in (js.get('games') or []):
+            st = g.get('startTimeUTC') or g.get('gameDate')
+            if not isinstance(st, str):
+                continue
+            if st.replace('Z', '').strip()[:10] != date_str:
+                continue
+            home = (g.get('homeTeam') or {})
+            away = (g.get('awayTeam') or {})
+            ha = (home.get('abbrev') or '').upper()
+            aa = (away.get('abbrev') or '').upper()
+            out.append({
+                'id': g.get('id') or g.get('gamePk') or g.get('gameId'),
+                'season': g.get('season'),
+                'gameType': g.get('gameType') or g.get('gameTypeId'),
+                'startTimeUTC': st,
+                'startTimeET': to_et(st),
+                'gameState': g.get('gameState') or g.get('gameStatus'),
+                'venue': g.get('venue'),
+                'homeTeam': { 'abbrev': ha, 'score': home.get('score'), 'logo': logo_by_abbrev.get(ha, '') },
+                'awayTeam': { 'abbrev': aa, 'score': away.get('score'), 'logo': logo_by_abbrev.get(aa, '') },
+                'periodDescriptor': g.get('periodDescriptor'),
+            })
+
+    # Compute B2B set for previous day (reused from API)
+    prev_date_et = (date_et - timedelta(days=1)).isoformat()
+    prev_set: set[str] = set()
+    try:
+        r2 = requests.get(f'https://api-web.nhle.com/v1/schedule/{prev_date_et}', timeout=20)
+        if r2.status_code == 200:
+            js2 = r2.json() or {}
+            for wk in (js2.get('gameWeek') or []):
+                if (wk.get('date') or '')[:10] != prev_date_et:
+                    continue
+                for g2 in (wk.get('games') or []):
+                    home2 = (g2.get('homeTeam') or {})
+                    away2 = (g2.get('awayTeam') or {})
+                    if home2.get('abbrev'):
+                        prev_set.add(str(home2.get('abbrev')).upper())
+                    if away2.get('abbrev'):
+                        prev_set.add(str(away2.get('abbrev')).upper())
+            if not prev_set and isinstance(js2, dict):
+                for g2 in (js2.get('games') or []):
+                    st2 = g2.get('startTimeUTC') or g2.get('gameDate') or ''
+                    if str(st2).replace('Z','').strip()[:10] != prev_date_et:
+                        continue
+                    home2 = (g2.get('homeTeam') or {})
+                    away2 = (g2.get('awayTeam') or {})
+                    if home2.get('abbrev'):
+                        prev_set.add(str(home2.get('abbrev')).upper())
+                    if away2.get('abbrev'):
+                        prev_set.add(str(away2.get('abbrev')).upper())
+    except Exception:
+        prev_set = set()
+
+    # Load lineups and player projections
+    lineups_all = _load_lineups_all()
+    proj_map = _load_player_projections_csv()
+    SITUATION = {
+        'Away-B2B-B2B': -0.126602018,
+        'Away-B2B-Rested': -0.400515738,
+        'Away-Rested-B2B': 0.174538991,
+        'Away-Rested-Rested': -0.153396566,
+    }
+    def situation_for(away_abbrev: str, home_abbrev: str) -> float:
+        a_b2b = (away_abbrev.upper() in prev_set)
+        h_b2b = (home_abbrev.upper() in prev_set)
+        if a_b2b and h_b2b:
+            key = 'Away-B2B-B2B'
+        elif a_b2b and not h_b2b:
+            key = 'Away-B2B-Rested'
+        elif (not a_b2b) and h_b2b:
+            key = 'Away-Rested-B2B'
+        else:
+            key = 'Away-Rested-Rested'
+        return SITUATION.get(key, 0.0)
+
+    for g in out:
+        aa = (g.get('awayTeam') or {}).get('abbrev') or ''
+        ha = (g.get('homeTeam') or {}).get('abbrev') or ''
+        try:
+            proj_away = _team_proj_from_lineup(str(aa), lineups_all, proj_map)
+            proj_home = _team_proj_from_lineup(str(ha), lineups_all, proj_map)
+            dproj = proj_away - proj_home
+            sval = situation_for(str(aa), str(ha))
+            win_away = 1.0 / (1.0 + math.exp(-(dproj) - sval))
+            win_home = 1.0 - win_away
+            g['projections'] = {
+                'projAway': round(float(proj_away), 6),
+                'projHome': round(float(proj_home), 6),
+                'dProj': round(float(dproj), 6),
+                'situationValue': round(float(sval), 9),
+                'winProbAway': round(float(win_away), 6),
+                'winProbHome': round(float(win_home), 6),
+            }
+        except Exception:
+            continue
+
+    try:
+        odds_map = _fetch_partner_odds_map(date_str)
+    except Exception:
+        odds_map = {}
+    try:
+        from datetime import timezone as _tz
+        now_utc = datetime.now(_tz.utc)
+        for g in out:
+            not_started = False
+            try:
+                st_raw = g.get('startTimeUTC')
+                if isinstance(st_raw, str):
+                    se_utc = datetime.fromisoformat(st_raw.replace('Z', '+00:00'))
+                    if se_utc.tzinfo is None:
+                        se_utc = se_utc.replace(tzinfo=_tz.utc)
+                    not_started = now_utc < se_utc
+            except Exception:
+                not_started = False
+            gid = None
+            try:
+                if g.get('id') is not None:
+                    gid = int(g.get('id'))
+            except Exception:
+                gid = None
+            if not_started and gid is not None and gid in odds_map:
+                g['odds'] = odds_map.get(gid)
+    except Exception:
+        pass
+
+    return out
+
+def _start_prestart_logger_thread_once():
+    global _PRESTART_THREAD_STARTED
+    if _PRESTART_THREAD_STARTED:
+        return
+    _PRESTART_THREAD_STARTED = True
+
+    def _runner():
+        # Respect optional window seconds (how many seconds before start qualifies)
+        window_secs = 120
+        try:
+            window_secs = max(10, int(os.getenv('PRESTART_WINDOW_SECONDS', '120')))
+        except Exception:
+            window_secs = 120
+        while True:
+            try:
+                # Determine ET date now
+                try:
+                    if ZoneInfo is None:
+                        raise RuntimeError('zoneinfo_unavailable')
+                    now_et = datetime.now(ZoneInfo('America/New_York'))
+                except Exception:
+                    now_et = datetime.utcnow()
+                date_et = now_et.date()
+                games = _build_games_for_date(date_et)
+                # Current time in UTC
+                from datetime import timezone as _tz
+                now_utc = datetime.now(_tz.utc)
+                for g in games:
+                    try:
+                        gid = int(g.get('id')) if g.get('id') is not None else None
+                    except Exception:
+                        gid = None
+                    if gid is None or gid in _PRESTART_LOGGED:
+                        continue
+                    st_raw = g.get('startTimeUTC')
+                    if not isinstance(st_raw, str):
+                        continue
+                    try:
+                        se_utc = datetime.fromisoformat(st_raw.replace('Z', '+00:00'))
+                        if se_utc.tzinfo is None:
+                            se_utc = se_utc.replace(tzinfo=_tz.utc)
+                    except Exception:
+                        continue
+                    # Only capture if within window before start and not past start
+                    delta = (se_utc - now_utc).total_seconds()
+                    if 0 <= delta <= window_secs:
+                        # Prepare row
+                        away_ab = (g.get('awayTeam') or {}).get('abbrev') or ''
+                        home_ab = (g.get('homeTeam') or {}).get('abbrev') or ''
+                        win_away = (g.get('projections') or {}).get('winProbAway')
+                        win_home = (g.get('projections') or {}).get('winProbHome')
+                        odds_away = (g.get('odds') or {}).get('away') if isinstance(g.get('odds'), dict) else None
+                        odds_home = (g.get('odds') or {}).get('home') if isinstance(g.get('odds'), dict) else None
+                        bet_away = _bet_fraction_kelly03(win_away, odds_away)
+                        bet_home = _bet_fraction_kelly03(win_home, odds_home)
+                        # Timestamp in UTC ISO
+                        ts_utc = datetime.utcnow().isoformat() + 'Z'
+                        # DateET and StartTimeET already in record
+                        row = {
+                            'TimestampUTC': ts_utc,
+                            'DateET': str(date_et),
+                            'GameID': gid,
+                            'StartTimeET': g.get('startTimeET'),
+                            'Away': away_ab,
+                            'Home': home_ab,
+                            'WinAway': round(float(win_away)*100.0, 3) if isinstance(win_away, (int, float)) else None,
+                            'WinHome': round(float(win_home)*100.0, 3) if isinstance(win_home, (int, float)) else None,
+                            'OddsAway': odds_away,
+                            'OddsHome': odds_home,
+                            'BetAway': round(float(bet_away)*100.0, 3) if isinstance(bet_away, (int, float)) else None,
+                            'BetHome': round(float(bet_home)*100.0, 3) if isinstance(bet_home, (int, float)) else None,
+                        }
+                        _append_prestart_row(row)
+                        _PRESTART_LOGGED.add(gid)
+                time.sleep(30)
+            except Exception:
+                # Never crash; sleep and retry
+                try:
+                    time.sleep(30)
+                except Exception:
+                    pass
+
+    t = threading.Thread(target=_runner, name='prestart-logger', daemon=True)
+    t.start()
+
+def start_prestart_logger():
+    """Public entry to start the background prestart logger thread.
+    Safe to call multiple times; only starts once per process.
+    """
+    _start_prestart_logger_thread_once()
 
 def _cache_get(cache: Dict, key, ttl: int) -> Optional[Any]:
     try:

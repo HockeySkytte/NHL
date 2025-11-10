@@ -4,7 +4,7 @@ from flask import Flask
 def create_app():
     app = Flask(__name__)
 
-    from .routes import main_bp, preload_common_models
+    from .routes import main_bp, preload_common_models, start_prestart_logger
     app.register_blueprint(main_bp)
 
     # Eager-load common xG models at startup to reduce first-request latency (toggle via XG_PRELOAD=1)
@@ -14,6 +14,13 @@ def create_app():
             preload_common_models()
     except Exception:
         # Never block app startup on preload issues
+        pass
+
+    # Start background prestart snapshot logger (safe to call multiple times)
+    try:
+        start_prestart_logger()
+    except Exception:
+        # Never block app startup on background thread issues
         pass
 
     return app
