@@ -956,6 +956,63 @@ def api_live_games():
     return jsonify({'games': out})
 
 
+@main_bp.route('/admin/prestart-snapshots')
+def admin_prestart_snapshots():
+    """Admin endpoint to preview or download the prestart snapshots CSV.
+    Query params:
+      - mode: 'preview' (default) | 'download'
+      - limit: number of rows to return for preview (default: 100, returns last N rows)
+      - gameId: optional filter for a specific GameID (int) for preview
+    """
+    mode = str(request.args.get('mode', 'preview')).strip().lower()
+    path = _prestart_csv_path()
+    # Download mode
+    if mode == 'download':
+        try:
+            from flask import send_file  # local import to avoid top-level issues
+            if not os.path.exists(path):
+                return jsonify({'error': 'file_not_found', 'path': path}), 404
+            resp = send_file(path, as_attachment=True, download_name=os.path.basename(path))
+            try:
+                resp.headers['Cache-Control'] = 'no-store'
+            except Exception:
+                pass
+            return resp
+        except Exception:
+            return jsonify({'error': 'download_failed'}), 500
+    # Preview mode
+    try:
+        limit = int(request.args.get('limit', '100'))
+    except Exception:
+        limit = 100
+    try:
+        game_id_filter = request.args.get('gameId')
+        game_id_val = int(game_id_filter) if game_id_filter is not None else None
+    except Exception:
+        game_id_val = None
+    if not os.path.exists(path):
+        return jsonify({'exists': False, 'path': path, 'rows': [], 'total': 0})
+    rows: List[Dict[str, Any]] = []
+    try:
+        with open(path, 'r', encoding='utf-8', newline='') as f:
+            rdr = csv.DictReader(f)
+            for r in rdr:
+                if game_id_val is not None:
+                    try:
+                        gid = int(str(r.get('GameID') or '').strip())
+                        if gid != game_id_val:
+                            continue
+                    except Exception:
+                        continue
+                rows.append(r)
+    except Exception:
+        return jsonify({'exists': True, 'path': path, 'rows': [], 'total': 0, 'error': 'read_failed'}), 500
+    total = len(rows)
+    if limit > 0 and total > limit:
+        rows = rows[-limit:]
+    return jsonify({'exists': True, 'path': path, 'total': total, 'limit': limit, 'rows': rows})
+
+
 @main_bp.route('/favicon.png')
 def favicon_png():
     """Serve favicon.png placed at project root.
