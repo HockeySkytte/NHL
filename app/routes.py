@@ -117,9 +117,9 @@ def game_projections_page():
 
 @main_bp.route('/api/projections/games')
 def api_projections_games():
-    """Return list of games for 'today' or 'yesterday' based on Eastern Time.
+    """Return list of games for 'today', 'yesterday', or 'tomorrow' based on Eastern Time.
     Query params:
-      - which: 'today' (default) or 'yesterday'
+      - which: 'today' (default) | 'yesterday' | 'tomorrow'
     """
     which = str(request.args.get('which', 'today')).lower().strip()
     # Determine ET date
@@ -130,7 +130,12 @@ def api_projections_games():
     except Exception:
         # Fallback to UTC if ET tz not available
         now_et = datetime.utcnow()
-    date_et = now_et.date() if which != 'yesterday' else (now_et - timedelta(days=1)).date()
+    if which == 'yesterday':
+        date_et = (now_et - timedelta(days=1)).date()
+    elif which == 'tomorrow':
+        date_et = (now_et + timedelta(days=1)).date()
+    else:
+        date_et = now_et.date()
     date_str = date_et.isoformat()
     # Fetch schedule for ET date
     url = f'https://api-web.nhle.com/v1/schedule/{date_str}'

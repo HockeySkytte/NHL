@@ -53,8 +53,9 @@
 {% endblock %}
 {% block content %}
 <div class="proj-toolbar">
-  <button id="btnToday" class="active">Today (ET)</button>
   <button id="btnYesterday">Yesterday (ET)</button>
+  <button id="btnToday" class="active">Today (ET)</button>
+  <button id="btnTomorrow">Tomorrow (ET)</button>
   <div style="flex:1"></div>
   <div class="odds-toggle">
     <span style="margin-right:6px;color:var(--text-dim);font-size:12px;letter-spacing:.3px;">Odds:</span>
@@ -89,6 +90,7 @@
 const root = document.getElementById('projRoot');
 const btnToday = document.getElementById('btnToday');
 const btnYesterday = document.getElementById('btnYesterday');
+const btnTomorrow = document.getElementById('btnTomorrow');
 const dateEl = document.getElementById('projDateTitle');
 const oddsAmericanBtn = document.getElementById('oddsAmerican');
 const oddsDecimalBtn = document.getElementById('oddsDecimal');
@@ -107,6 +109,7 @@ window._winOverrides = window._winOverrides || {}; // { [gameId]: { away: p, hom
 window._projCsvCache = window._projCsvCache || null; // { [playerId:number]: { pos: 'F'|'D'|'G', Age: num, Rookie: num, EVO: num, EVD: num, PP: num, SH: num, GSAx: num } }
 
 let _dialogState = null; // { gameId, side, teamAbbrev, baselineCount }
+let _currentWhich = 'today';
 
 let oddsMode = 'american'; // 'american' | 'decimal'
 
@@ -148,7 +151,7 @@ function parseAmerican(val){
   return null;
 }
 
-function renderPlayerItems(list){
+function renderPlayerItems(list, preselectIds){
   // Scale bars by global max positive/negative totals and skew zero accordingly
   let posMax = 0, negMaxAbs = 0;
   for(const p of list){
@@ -161,7 +164,7 @@ function renderPlayerItems(list){
   const leftPct = denom>0 ? (100 * (negMaxAbs/denom)) : 50;
   const rightPct = 100 - leftPct;
   const rows = list.map(p=>{
-    const defaultChecked = (p.pos==='F' || p.pos==='D') ? (String(p.unit||'').toUpperCase()!=='EXT') : (p.pos==='G' ? (String(p.unit||'').toUpperCase()==='G1') : false);
+  const defaultChecked = preselectIds ? preselectIds.has(p.id) : ((p.pos==='F' || p.pos==='D') ? (String(p.unit||'').toUpperCase()!=='EXT') : (p.pos==='G' ? (String(p.unit||'').toUpperCase()==='G1') : false));
     const t = Number(p.total);
     const isPos = Number.isFinite(t) && t>0;
     const isNeg = Number.isFinite(t) && t<0;
@@ -320,8 +323,16 @@ function renderTable(games){
   });
 }
 
-btnToday.addEventListener('click', ()=>{ btnToday.classList.add('active'); btnYesterday.classList.remove('active'); loadGames('today'); });
-btnYesterday.addEventListener('click', ()=>{ btnYesterday.classList.add('active'); btnToday.classList.remove('active'); loadGames('yesterday'); });
+function setActiveWhich(which){
+  _currentWhich = which;
+  btnToday.classList.toggle('active', which==='today');
+  btnYesterday.classList.toggle('active', which==='yesterday');
+  btnTomorrow.classList.toggle('active', which==='tomorrow');
+}
+
+btnToday.addEventListener('click', ()=>{ setActiveWhich('today'); loadGames('today'); });
+btnYesterday.addEventListener('click', ()=>{ setActiveWhich('yesterday'); loadGames('yesterday'); });
+btnTomorrow.addEventListener('click', ()=>{ setActiveWhich('tomorrow'); loadGames('tomorrow'); });
 
 // Restore preferred odds mode
 const savedMode = localStorage.getItem('oddsMode');
@@ -359,18 +370,17 @@ oddsAmericanBtn?.addEventListener('click', ()=>{
   localStorage.setItem('oddsMode', oddsMode);
   oddsAmericanBtn.classList.add('active');
   oddsDecimalBtn.classList.remove('active');
-  const active = btnToday.classList.contains('active') ? 'today' : 'yesterday';
-  loadGames(active);
+  loadGames(_currentWhich);
 });
 oddsDecimalBtn?.addEventListener('click', ()=>{
   oddsMode = 'decimal';
   localStorage.setItem('oddsMode', oddsMode);
   oddsDecimalBtn.classList.add('active');
   oddsAmericanBtn.classList.remove('active');
-  const active = btnToday.classList.contains('active') ? 'today' : 'yesterday';
-  loadGames(active);
+  loadGames(_currentWhich);
 });
 
+setActiveWhich('today');
 loadGames('today');
 
 // ------- Lineups dialog + Win% adjustment -------
@@ -432,6 +442,18 @@ function getTeamLineup(teamAbbrev){
   return cache?.[String(teamAbbrev||'').toUpperCase()] || {};
 }
 
+function getTeamUpdatedAt(teamAbbrev){
+  const cache = window._lineupsCache || {};
+  const info = cache?.[String(teamAbbrev||'').toUpperCase()] || {};
+  const iso = info.generated_at || info.generatedAt || null;
+  if(!iso) return '';
+  try{
+    const d = new Date(String(iso).replace('Z','+00:00'));
+    if(isNaN(d)) return String(iso);
+    return d.toLocaleString();
+  }catch(_){ return String(iso); }
+}
+
 function playerIdOf(p){
   if(!p) return null;
   const tryFields = [p.playerId, p.id, p.personId, p.person?.id, p.person?.link?.split('/')?.pop?.()];
@@ -489,8 +511,13 @@ async function openLineupDialog(gameId, side, teamAbbrev){
   ]);
   const list = buildPlayerList(teamAbbrev, projMap||{});
   try{ console.log('[modal] open for', teamAbbrev, 'players:', list.length); }catch(_){/* noop */}
-  lineupTeamInfoEl.textContent = `${teamAbbrev} — Select lineup (non-EXT skaters preselected, only G1 preselected)`;
-  renderPlayerItems(list);
+  const updated = getTeamUpdatedAt(teamAbbrev);
+  lineupTeamInfoEl.textContent = `${teamAbbrev} — Select lineup (Lineup from DailyFaceoff preselected - Updated: ${updated})`;
+  // Preselect from any saved selection for this game/side
+  window._lineupSelections = window._lineupSelections || {};
+  const saved = window._lineupSelections[gameId]?.[side] || null;
+  const preIds = saved ? new Set(saved.map(s=>Number(s.id)||null).filter(Boolean)) : null;
+  renderPlayerItems(list, preIds);
   _dialogState = { gameId, side, teamAbbrev, baselineCount: null, rosterCount: list.length };
   modalBackdrop.style.display = 'flex';
 }
@@ -518,6 +545,10 @@ modalApply?.addEventListener('click', ()=>{
     pos: c.getAttribute('data-pos')||'F',
     unit: (c.getAttribute('data-unit')||'').toUpperCase()
   }));
+  // Save selection until page refresh
+  window._lineupSelections = window._lineupSelections || {};
+  window._lineupSelections[gameId] = window._lineupSelections[gameId] || {};
+  window._lineupSelections[gameId][side] = sel;
   recomputeWinWithSelection(gameId, side, sel);
   closeLineupDialog();
 });
