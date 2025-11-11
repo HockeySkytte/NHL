@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Update Data & Lineups</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        .section { margin-bottom: 2em; }
+        label { display: block; margin-bottom: 0.5em; }
+        input[type="date"] { margin-right: 1em; }
+        button { margin-top: 1em; }
+        .output { margin-top: 1em; background: #f4f4f4; padding: 1em; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Update Scripts</h1>
+    <div class="section">
+        <h2>Run update_data.py</h2>
+        <form id="update-data-form">
+            <label for="update-date">Date (YYYY-MM-DD):</label>
+            <input type="date" id="update-date" name="date" required>
+            <button type="submit">Run update_data.py</button>
+        </form>
+        <div id="update-data-output" class="output"></div>
+    </div>
+    <div class="section">
+        <h2>Run lineups.py (All Teams)</h2>
+        <button id="run-lineups">Run lineups.py --all</button>
+        <div id="lineups-output" class="output"></div>
+    </div>
+    <script>
+    document.getElementById('update-data-form').onsubmit = async function(e) {
+        e.preventDefault();
+        const date = document.getElementById('update-date').value;
+        const output = document.getElementById('update-data-output');
+        output.textContent = 'Running...';
+        const res = await fetch('/admin/run-update-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date })
+        });
+        const data = await res.json();
+        output.textContent = data.output || data.error || 'Done.';
+    };
+    document.getElementById('run-lineups').onclick = async function() {
+        const output = document.getElementById('lineups-output');
+        output.textContent = 'Running...';
+        const res = await fetch('/admin/run-lineups', { method: 'POST' });
+        const data = await res.json();
+        output.textContent = data.output || data.error || 'Done.';
+    };
+    </script>
+</body>
+</html>

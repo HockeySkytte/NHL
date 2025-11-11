@@ -14,6 +14,8 @@ import requests
 import numpy as np  # for numeric handling in model inference
 import joblib       # to load pickled models
 from flask import Blueprint, jsonify, render_template, request
+import subprocess
+import sys
 try:
     # Python 3.9+: IANA timezones
     from zoneinfo import ZoneInfo  # type: ignore
@@ -26,8 +28,37 @@ except Exception:
     BeautifulSoup = None  # type: ignore
 
 
-# Blueprint
 main_bp = Blueprint('main', __name__)
+# Update page (no link in app)
+@main_bp.route('/admin/update', methods=['GET'])
+def update_page():
+    return render_template('update.html')
+
+# Run update_data.py with date
+@main_bp.route('/admin/run-update-data', methods=['POST'])
+def run_update_data():
+    data = request.get_json()
+    date = data.get('date')
+    if not date:
+        return jsonify({'error': 'Missing date'}), 400
+    try:
+        result = subprocess.run([
+            sys.executable, 'scripts/update_data.py', '--date', date, '--export'
+        ], cwd=os.path.join(os.path.dirname(__file__), '../..'), capture_output=True, text=True, timeout=120)
+        return jsonify({'output': result.stdout or result.stderr})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Run lineups.py for all teams
+@main_bp.route('/admin/run-lineups', methods=['POST'])
+def run_lineups():
+    try:
+        result = subprocess.run([
+            sys.executable, 'scripts/lineups.py', '--all'
+        ], cwd=os.path.join(os.path.dirname(__file__), '../..'), capture_output=True, text=True, timeout=120)
+        return jsonify({'output': result.stdout or result.stderr})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # --- Module-level caches for performance ---
 _MODEL_CACHE: Dict[str, Any] = {}
