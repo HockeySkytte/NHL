@@ -29,25 +29,70 @@
         <div id="lineups-output" class="output"></div>
     </div>
     <script>
+    async function pollJob(jobId, outputEl) {
+        try {
+            const res = await fetch(`/admin/job/${jobId}`);
+            if (!res.ok) {
+                outputEl.textContent = `Error fetching job status (${res.status})`;
+                return;
+            }
+            const data = await res.json();
+            if (data.status === 'running') {
+                outputEl.textContent = 'Running...';
+                setTimeout(() => pollJob(jobId, outputEl), 1500);
+            } else {
+                outputEl.textContent = data.output || `Status: ${data.status}`;
+            }
+        } catch (err) {
+            outputEl.textContent = `Error: ${err}`;
+        }
+    }
+
     document.getElementById('update-data-form').onsubmit = async function(e) {
         e.preventDefault();
         const date = document.getElementById('update-date').value;
         const output = document.getElementById('update-data-output');
-        output.textContent = 'Running...';
-        const res = await fetch('/admin/run-update-data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ date })
-        });
-        const data = await res.json();
-        output.textContent = data.output || data.error || 'Done.';
+        output.textContent = 'Starting...';
+        try {
+            const res = await fetch('/admin/run-update-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date })
+            });
+            if (!res.ok) {
+                const txt = await res.text();
+                output.textContent = `Error (${res.status}): ${txt}`;
+                return;
+            }
+            const data = await res.json();
+            if (data.jobId) {
+                pollJob(data.jobId, output);
+            } else {
+                output.textContent = data.output || data.error || 'Done.';
+            }
+        } catch (err) {
+            output.textContent = `Error: ${err}`;
+        }
     };
     document.getElementById('run-lineups').onclick = async function() {
         const output = document.getElementById('lineups-output');
-        output.textContent = 'Running...';
-        const res = await fetch('/admin/run-lineups', { method: 'POST' });
-        const data = await res.json();
-        output.textContent = data.output || data.error || 'Done.';
+        output.textContent = 'Starting...';
+        try {
+            const res = await fetch('/admin/run-lineups', { method: 'POST' });
+            if (!res.ok) {
+                const txt = await res.text();
+                output.textContent = `Error (${res.status}): ${txt}`;
+                return;
+            }
+            const data = await res.json();
+            if (data.jobId) {
+                pollJob(data.jobId, output);
+            } else {
+                output.textContent = data.output || data.error || 'Done.';
+            }
+        } catch (err) {
+            output.textContent = `Error: ${err}`;
+        }
     };
     </script>
 </body>

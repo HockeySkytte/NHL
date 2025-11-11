@@ -16,6 +16,7 @@ import joblib       # to load pickled models
 from flask import Blueprint, jsonify, render_template, request, current_app
 import subprocess
 import sys
+import uuid
 try:
     # Python 3.9+: IANA timezones
     from zoneinfo import ZoneInfo  # type: ignore
@@ -34,7 +35,40 @@ main_bp = Blueprint('main', __name__)
 def update_page():
     return render_template('update.html')
 
-# Run update_data.py with date
+# Lightweight in-memory job tracker for admin runs
+_ADMIN_JOBS: Dict[str, Dict[str, Any]] = {}
+
+def _start_admin_job(command: List[str], cwd: str) -> str:
+    job_id = str(uuid.uuid4())
+    _ADMIN_JOBS[job_id] = {
+        'status': 'running',
+        'output': '',
+        'startedAt': datetime.utcnow().isoformat() + 'Z',
+        'command': command,
+    }
+    def _runner():
+        try:
+            res = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+            out = (res.stdout or '') + ("\n" + res.stderr if res.stderr else '')
+            _ADMIN_JOBS[job_id]['output'] = out
+            _ADMIN_JOBS[job_id]['status'] = 'done' if res.returncode == 0 else 'error'
+        except Exception as e:
+            _ADMIN_JOBS[job_id]['output'] = str(e)
+            _ADMIN_JOBS[job_id]['status'] = 'error'
+        finally:
+            _ADMIN_JOBS[job_id]['finishedAt'] = datetime.utcnow().isoformat() + 'Z'
+    t = threading.Thread(target=_runner, name=f'admin-job-{job_id}', daemon=True)
+    t.start()
+    return job_id
+
+@main_bp.route('/admin/job/<job_id>', methods=['GET'])
+def get_admin_job(job_id: str):
+    job = _ADMIN_JOBS.get(job_id)
+    if not job:
+        return jsonify({'error': 'job_not_found'}), 404
+    return jsonify({'jobId': job_id, **job})
+
+# Run update_data.py with date (async job)
 @main_bp.route('/admin/run-update-data', methods=['POST'])
 def run_update_data():
     data = request.get_json()
@@ -45,23 +79,21 @@ def run_update_data():
         # Resolve project root reliably in both local and Render environments
         project_root = os.path.abspath(os.path.join(current_app.root_path, '..'))
         script_path = os.path.join(project_root, 'scripts', 'update_data.py')
-        result = subprocess.run([
-            sys.executable, script_path, '--date', date, '--export'
-        ], cwd=project_root, capture_output=True, text=True, timeout=300)
-        return jsonify({'output': (result.stdout or '') + ("\n" + result.stderr if result.stderr else '')})
+        cmd = [sys.executable, script_path, '--date', date, '--export']
+        job_id = _start_admin_job(cmd, cwd=project_root)
+        return jsonify({'jobId': job_id})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Run lineups.py for all teams
+# Run lineups.py for all teams (async job)
 @main_bp.route('/admin/run-lineups', methods=['POST'])
 def run_lineups():
     try:
         project_root = os.path.abspath(os.path.join(current_app.root_path, '..'))
         script_path = os.path.join(project_root, 'scripts', 'lineups.py')
-        result = subprocess.run([
-            sys.executable, script_path, '--all'
-        ], cwd=project_root, capture_output=True, text=True, timeout=300)
-        return jsonify({'output': (result.stdout or '') + ("\n" + result.stderr if result.stderr else '')})
+        cmd = [sys.executable, script_path, '--all']
+        job_id = _start_admin_job(cmd, cwd=project_root)
+        return jsonify({'jobId': job_id})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
