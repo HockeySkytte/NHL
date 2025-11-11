@@ -148,6 +148,26 @@ _PRESTART_LOGGED: set[int] = set()  # gameIds captured this process
 _PRESTART_CSV_NAME = os.getenv('PRESTART_CSV', 'prestart_snapshots.csv')
 
 def _prestart_csv_path() -> str:
+    """Return a writable path for the prestart CSV across environments.
+    Priority:
+      1) PRESTART_DIR env var
+      2) XG_CACHE_DIR (used elsewhere for writable cache on Render)
+      3) OS temp dir via _disk_cache_base()
+      4) Fallback to project root (may be read-only on some platforms)
+    """
+    base = os.getenv('PRESTART_DIR') or os.getenv('XG_CACHE_DIR')
+    if not base:
+        try:
+            base = _disk_cache_base()
+        except Exception:
+            base = None
+    if base:
+        try:
+            os.makedirs(base, exist_ok=True)
+        except Exception:
+            pass
+        return os.path.join(base, _PRESTART_CSV_NAME)
+    # Fallbacks
     try:
         return os.path.join(_project_root(), _PRESTART_CSV_NAME)
     except Exception:
@@ -401,11 +421,18 @@ def _start_prestart_logger_thread_once():
 
     def _runner():
         # Respect optional window seconds (how many seconds before start qualifies)
-        window_secs = 120
+        # Default prestart window widened to 3600s (1h) to improve chance of capture
+        window_secs = 3600
         try:
-            window_secs = max(10, int(os.getenv('PRESTART_WINDOW_SECONDS', '120')))
+            window_secs = max(30, int(os.getenv('PRESTART_WINDOW_SECONDS', str(window_secs))))
         except Exception:
-            window_secs = 120
+            pass
+        # Also capture a "grace" period after start to avoid missing games if app boots late.
+        # PRESTART_GRACE_SECONDS overrides default of 300 (5 minutes)
+        try:
+            grace_secs = max(0, int(os.getenv('PRESTART_GRACE_SECONDS', '300')))
+        except Exception:
+            grace_secs = 300
         while True:
             try:
                 # Determine ET date now
@@ -422,7 +449,8 @@ def _start_prestart_logger_thread_once():
                 now_utc = datetime.now(_tz.utc)
                 for g in games:
                     try:
-                        gid = int(g.get('id')) if g.get('id') is not None else None
+                        raw_id = g.get('id')
+                        gid = int(raw_id) if raw_id is not None else None
                     except Exception:
                         gid = None
                     if gid is None or gid in _PRESTART_LOGGED:
@@ -436,9 +464,10 @@ def _start_prestart_logger_thread_once():
                             se_utc = se_utc.replace(tzinfo=_tz.utc)
                     except Exception:
                         continue
-                    # Only capture if within window before start and not past start
-                    delta = (se_utc - now_utc).total_seconds()
-                    if 0 <= delta <= window_secs:
+                    # Capture if within prestart window before start OR within grace window after start
+                    delta_before = (se_utc - now_utc).total_seconds()
+                    delta_after = (now_utc - se_utc).total_seconds()
+                    if (0 <= delta_before <= window_secs) or (0 <= delta_after <= grace_secs):
                         # Prepare row
                         away_ab = (g.get('awayTeam') or {}).get('abbrev') or ''
                         home_ab = (g.get('homeTeam') or {}).get('abbrev') or ''
@@ -467,7 +496,10 @@ def _start_prestart_logger_thread_once():
                         }
                         _append_prestart_row(row)
                         _PRESTART_LOGGED.add(gid)
-                time.sleep(30)
+                # Sleep shorter if there are still games not captured; else back off
+                remaining = [g for g in games if isinstance(g.get('id'), int) and g.get('id') not in _PRESTART_LOGGED]
+                sleep_secs = 20 if remaining else 120
+                time.sleep(sleep_secs)
             except Exception:
                 # Never crash; sleep and retry
                 try:
