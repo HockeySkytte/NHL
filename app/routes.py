@@ -13,7 +13,7 @@ from typing import Dict, List, Tuple, Optional, Any
 import requests
 import numpy as np  # for numeric handling in model inference
 import joblib       # to load pickled models
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, render_template, request, current_app
 import subprocess
 import sys
 try:
@@ -42,10 +42,13 @@ def run_update_data():
     if not date:
         return jsonify({'error': 'Missing date'}), 400
     try:
+        # Resolve project root reliably in both local and Render environments
+        project_root = os.path.abspath(os.path.join(current_app.root_path, '..'))
+        script_path = os.path.join(project_root, 'scripts', 'update_data.py')
         result = subprocess.run([
-            sys.executable, 'scripts/update_data.py', '--date', date, '--export'
-        ], cwd=os.path.join(os.path.dirname(__file__), '../..'), capture_output=True, text=True, timeout=120)
-        return jsonify({'output': result.stdout or result.stderr})
+            sys.executable, script_path, '--date', date, '--export'
+        ], cwd=project_root, capture_output=True, text=True, timeout=300)
+        return jsonify({'output': (result.stdout or '') + ("\n" + result.stderr if result.stderr else '')})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -53,10 +56,12 @@ def run_update_data():
 @main_bp.route('/admin/run-lineups', methods=['POST'])
 def run_lineups():
     try:
+        project_root = os.path.abspath(os.path.join(current_app.root_path, '..'))
+        script_path = os.path.join(project_root, 'scripts', 'lineups.py')
         result = subprocess.run([
-            sys.executable, 'scripts/lineups.py', '--all'
-        ], cwd=os.path.join(os.path.dirname(__file__), '../..'), capture_output=True, text=True, timeout=120)
-        return jsonify({'output': result.stdout or result.stderr})
+            sys.executable, script_path, '--all'
+        ], cwd=project_root, capture_output=True, text=True, timeout=300)
+        return jsonify({'output': (result.stdout or '') + ("\n" + result.stderr if result.stderr else '')})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
