@@ -17,6 +17,8 @@ from flask import Blueprint, jsonify, render_template, request, current_app
 import subprocess
 import sys
 import uuid
+import json
+import tempfile
 try:
     # Python 3.9+: IANA timezones
     from zoneinfo import ZoneInfo  # type: ignore
@@ -38,6 +40,40 @@ def update_page():
 # Lightweight in-memory job tracker for admin runs
 _ADMIN_JOBS: Dict[str, Dict[str, Any]] = {}
 
+def _jobs_dir() -> str:
+    try:
+        base = os.getenv('XG_CACHE_DIR') or tempfile.gettempdir()
+        d = os.path.join(base, 'nhl_admin_jobs')
+        os.makedirs(d, exist_ok=True)
+        return d
+    except Exception:
+        return tempfile.gettempdir()
+
+def _job_status_path(job_id: str) -> str:
+    return os.path.join(_jobs_dir(), f'{job_id}.json')
+
+def _persist_job(job_id: str, data: Dict[str, Any]) -> None:
+    try:
+        with open(_job_status_path(job_id), 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+def _read_job(job_id: str) -> Optional[Dict[str, Any]]:
+    # Try memory first
+    job = _ADMIN_JOBS.get(job_id)
+    if job:
+        return job
+    # Fallback to disk so other workers can see it
+    try:
+        p = _job_status_path(job_id)
+        if os.path.exists(p):
+            with open(p, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        return None
+    return None
+
 def _start_admin_job(command: List[str], cwd: str) -> str:
     job_id = str(uuid.uuid4())
     _ADMIN_JOBS[job_id] = {
@@ -46,6 +82,7 @@ def _start_admin_job(command: List[str], cwd: str) -> str:
         'startedAt': datetime.utcnow().isoformat() + 'Z',
         'command': command,
     }
+    _persist_job(job_id, _ADMIN_JOBS[job_id])
     def _runner():
         try:
             res = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
@@ -57,13 +94,14 @@ def _start_admin_job(command: List[str], cwd: str) -> str:
             _ADMIN_JOBS[job_id]['status'] = 'error'
         finally:
             _ADMIN_JOBS[job_id]['finishedAt'] = datetime.utcnow().isoformat() + 'Z'
+            _persist_job(job_id, _ADMIN_JOBS[job_id])
     t = threading.Thread(target=_runner, name=f'admin-job-{job_id}', daemon=True)
     t.start()
     return job_id
 
 @main_bp.route('/admin/job/<job_id>', methods=['GET'])
 def get_admin_job(job_id: str):
-    job = _ADMIN_JOBS.get(job_id)
+    job = _read_job(job_id)
     if not job:
         return jsonify({'error': 'job_not_found'}), 404
     return jsonify({'jobId': job_id, **job})
