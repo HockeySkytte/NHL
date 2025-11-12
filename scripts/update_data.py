@@ -483,20 +483,37 @@ def fetch_day(date_str: str, with_xg: bool = True) -> Tuple[pd.DataFrame, pd.Dat
     return df_pbp, df_shifts, df_gamedata
 
 
-def _create_mysql_engine() -> Optional[Engine]:
+def _create_mysql_engine(desired: str = 'rw') -> Optional[Engine]:
     """Create a SQLAlchemy engine for MySQL using env overrides.
-    Supports either DATABASE_URL or discrete DB_* env vars.
-    SSL can be configured with DB_SSL_CA, DB_SSL_CERT, DB_SSL_KEY.
+    Precedence (URLs):
+      desired=='rw': DATABASE_URL_RW, DB_URL_RW, DATABASE_URL
+      desired=='ro': DATABASE_URL_RO, DB_URL_RO, DATABASE_URL
+      else: DATABASE_URL
+    If URL missing, build from discrete vars (DB_*_RW / DB_*_RO / DB_*).
+    SSL: DB_SSL_CA / DB_SSL_CERT / DB_SSL_KEY
     """
-    # 1) Prefer full SQLAlchemy URL if provided (e.g., mysql+mysqlconnector://user:pass@host:3306/db)
-    db_url = os.getenv('DATABASE_URL')
+    def _first_env(*names: str) -> Optional[str]:
+        for n in names:
+            v = os.getenv(n)
+            if v:
+                return v
+        return None
+
+    # Pick URL based on desired access level
+    db_url = None
+    if desired == 'rw':
+        db_url = _first_env('DATABASE_URL_RW', 'DB_URL_RW', 'DATABASE_URL')
+    elif desired == 'ro':
+        db_url = _first_env('DATABASE_URL_RO', 'DB_URL_RO', 'DATABASE_URL')
+    else:
+        db_url = _first_env('DATABASE_URL')
+
+    # SSL args
     connect_args = {}
-    # Optional SSL
     ssl_ca = os.getenv('DB_SSL_CA')
     ssl_cert = os.getenv('DB_SSL_CERT')
     ssl_key = os.getenv('DB_SSL_KEY')
     if ssl_ca or ssl_cert or ssl_key:
-        # mysql-connector-python SSL params
         ssl_args = {}
         if ssl_ca:
             ssl_args['ssl_ca'] = ssl_ca
@@ -505,15 +522,31 @@ def _create_mysql_engine() -> Optional[Engine]:
         if ssl_key:
             ssl_args['ssl_key'] = ssl_key
         connect_args.update(ssl_args)
+
     try:
         if db_url:
             return create_engine(db_url, connect_args=connect_args if connect_args else None)
-        # 2) Build URL from parts
-        username = os.getenv('DB_USER', 'root')
-        password = os.getenv('DB_PASSWORD', 'Sunesen1')
-        host = os.getenv('DB_HOST', 'localhost')
-        port = os.getenv('DB_PORT', '3306')
-        database = os.getenv('DB_NAME', 'public')
+        # Build from parts with suffix-specific variables
+        def _part(base: str, fallback: Optional[str] = None) -> str:
+            return os.getenv(base, fallback or '')
+        if desired == 'rw':
+            username = _first_env('DB_USER_RW') or _part('DB_USER', 'root')
+            password = _first_env('DB_PASSWORD_RW') or _part('DB_PASSWORD', 'Sunesen1')
+            host = _first_env('DB_HOST_RW') or _part('DB_HOST', 'localhost')
+            port = _first_env('DB_PORT_RW') or _part('DB_PORT', '3306')
+            database = _first_env('DB_NAME_RW') or _part('DB_NAME', 'public')
+        elif desired == 'ro':
+            username = _first_env('DB_USER_RO') or _part('DB_USER', 'root')
+            password = _first_env('DB_PASSWORD_RO') or _part('DB_PASSWORD', 'Sunesen1')
+            host = _first_env('DB_HOST_RO') or _part('DB_HOST', 'localhost')
+            port = _first_env('DB_PORT_RO') or _part('DB_PORT', '3306')
+            database = _first_env('DB_NAME_RO') or _part('DB_NAME', 'public')
+        else:
+            username = _part('DB_USER', 'root')
+            password = _part('DB_PASSWORD', 'Sunesen1')
+            host = _part('DB_HOST', 'localhost')
+            port = _part('DB_PORT', '3306')
+            database = _part('DB_NAME', 'public')
         url = f"mysql+mysqlconnector://{username}:{password}@{host}:{port}/{database}"
         return create_engine(url, connect_args=connect_args if connect_args else None)
     except Exception as e:
@@ -803,7 +836,7 @@ def export_to_mysql(
     - df_shifts -> nhl_{season}_shifts
     Creates tables if they don't exist; appends otherwise.
     """
-    eng = _create_mysql_engine()
+    eng = _create_mysql_engine('rw')
     if eng is None:
         raise RuntimeError("MySQL engine not available")
 
@@ -870,7 +903,7 @@ def run_player_projections_and_write_csv(csv_path: Optional[str] = None) -> str:
 
     Returns the absolute path to the written CSV.
     """
-    eng = _create_mysql_engine()
+    eng = _create_mysql_engine('rw')
     if eng is None:
         raise RuntimeError("MySQL engine not available for projections")
 

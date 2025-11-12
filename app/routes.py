@@ -46,7 +46,13 @@ def admin_db_check():
             from sqlalchemy import create_engine, text  # type: ignore
         except Exception as e:
             return jsonify({'ok': False, 'error': f'sqlalchemy_import_failed: {e}'}), 500
-        db_url = os.getenv('DATABASE_URL')
+        # Allow ?mode=ro to test read-only connection
+        mode = str(request.args.get('mode','rw')).lower().strip()
+        db_url = None
+        if mode == 'ro':
+            db_url = os.getenv('DATABASE_URL_RO') or os.getenv('DB_URL_RO') or os.getenv('DATABASE_URL')
+        else:
+            db_url = os.getenv('DATABASE_URL_RW') or os.getenv('DB_URL_RW') or os.getenv('DATABASE_URL')
         if not db_url:
             user = os.getenv('DB_USER', 'root')
             pwd = os.getenv('DB_PASSWORD', '')
