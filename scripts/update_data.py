@@ -525,7 +525,7 @@ def _create_mysql_engine(desired: str = 'rw') -> Optional[Engine]:
 
     try:
         if db_url:
-            return create_engine(db_url, connect_args=connect_args if connect_args else None)
+            return create_engine(db_url, connect_args=connect_args)
         # Build from parts with suffix-specific variables
         def _part(base: str, fallback: Optional[str] = None) -> str:
             return os.getenv(base, fallback or '')
@@ -548,7 +548,7 @@ def _create_mysql_engine(desired: str = 'rw') -> Optional[Engine]:
             port = _part('DB_PORT', '3306')
             database = _part('DB_NAME', 'public')
         url = f"mysql+mysqlconnector://{username}:{password}@{host}:{port}/{database}"
-        return create_engine(url, connect_args=connect_args if connect_args else None)
+        return create_engine(url, connect_args=connect_args)
     except Exception as e:
         print(f"[error] failed to create MySQL engine: {e}", file=sys.stderr)
         return None

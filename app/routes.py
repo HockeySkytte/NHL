@@ -68,7 +68,10 @@ def admin_db_check():
             connect_args['ssl_cert'] = os.getenv('DB_SSL_CERT')
         if os.getenv('DB_SSL_KEY'):
             connect_args['ssl_key'] = os.getenv('DB_SSL_KEY')
-        eng = create_engine(db_url, connect_args=connect_args if connect_args else None)
+        if connect_args:
+            eng = create_engine(db_url, connect_args=connect_args)
+        else:
+            eng = create_engine(db_url)
         with eng.connect() as conn:
             conn.execute(text('SELECT 1'))
         return jsonify({'ok': True, 'url': db_url.split('@')[-1] if '@' in db_url else db_url})
