@@ -485,17 +485,37 @@ def fetch_day(date_str: str, with_xg: bool = True) -> Tuple[pd.DataFrame, pd.Dat
 
 def _create_mysql_engine() -> Optional[Engine]:
     """Create a SQLAlchemy engine for MySQL using env overrides.
-    Defaults mirror the project's existing xG scripts.
+    Supports either DATABASE_URL or discrete DB_* env vars.
+    SSL can be configured with DB_SSL_CA, DB_SSL_CERT, DB_SSL_KEY.
     """
-    # Defaults (allow env override)
-    username = os.getenv('DB_USER', 'root')
-    password = os.getenv('DB_PASSWORD', 'Sunesen1')
-    host = os.getenv('DB_HOST', 'localhost')
-    port = os.getenv('DB_PORT', '3306')
-    database = os.getenv('DB_NAME', 'public')
+    # 1) Prefer full SQLAlchemy URL if provided (e.g., mysql+mysqlconnector://user:pass@host:3306/db)
+    db_url = os.getenv('DATABASE_URL')
+    connect_args = {}
+    # Optional SSL
+    ssl_ca = os.getenv('DB_SSL_CA')
+    ssl_cert = os.getenv('DB_SSL_CERT')
+    ssl_key = os.getenv('DB_SSL_KEY')
+    if ssl_ca or ssl_cert or ssl_key:
+        # mysql-connector-python SSL params
+        ssl_args = {}
+        if ssl_ca:
+            ssl_args['ssl_ca'] = ssl_ca
+        if ssl_cert:
+            ssl_args['ssl_cert'] = ssl_cert
+        if ssl_key:
+            ssl_args['ssl_key'] = ssl_key
+        connect_args.update(ssl_args)
     try:
-        eng = create_engine(f"mysql+mysqlconnector://{username}:{password}@{host}:{port}/{database}")
-        return eng
+        if db_url:
+            return create_engine(db_url, connect_args=connect_args if connect_args else None)
+        # 2) Build URL from parts
+        username = os.getenv('DB_USER', 'root')
+        password = os.getenv('DB_PASSWORD', 'Sunesen1')
+        host = os.getenv('DB_HOST', 'localhost')
+        port = os.getenv('DB_PORT', '3306')
+        database = os.getenv('DB_NAME', 'public')
+        url = f"mysql+mysqlconnector://{username}:{password}@{host}:{port}/{database}"
+        return create_engine(url, connect_args=connect_args if connect_args else None)
     except Exception as e:
         print(f"[error] failed to create MySQL engine: {e}", file=sys.stderr)
         return None

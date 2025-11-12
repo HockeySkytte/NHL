@@ -37,6 +37,38 @@ main_bp = Blueprint('main', __name__)
 def update_page():
     return render_template('update.html')
 
+# Optional DB connectivity check for admin use
+@main_bp.route('/admin/db-check', methods=['GET'])
+def admin_db_check():
+    try:
+        # Lazy import to avoid app start failures if missing
+        try:
+            from sqlalchemy import create_engine, text  # type: ignore
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'sqlalchemy_import_failed: {e}'}), 500
+        db_url = os.getenv('DATABASE_URL')
+        if not db_url:
+            user = os.getenv('DB_USER', 'root')
+            pwd = os.getenv('DB_PASSWORD', '')
+            host = os.getenv('DB_HOST', 'localhost')
+            port = os.getenv('DB_PORT', '3306')
+            name = os.getenv('DB_NAME', 'public')
+            db_url = f"mysql+mysqlconnector://{user}:{pwd}@{host}:{port}/{name}"
+        # Optional SSL
+        connect_args = {}
+        if os.getenv('DB_SSL_CA'):
+            connect_args['ssl_ca'] = os.getenv('DB_SSL_CA')
+        if os.getenv('DB_SSL_CERT'):
+            connect_args['ssl_cert'] = os.getenv('DB_SSL_CERT')
+        if os.getenv('DB_SSL_KEY'):
+            connect_args['ssl_key'] = os.getenv('DB_SSL_KEY')
+        eng = create_engine(db_url, connect_args=connect_args if connect_args else None)
+        with eng.connect() as conn:
+            conn.execute(text('SELECT 1'))
+        return jsonify({'ok': True, 'url': db_url.split('@')[-1] if '@' in db_url else db_url})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 # Lightweight in-memory job tracker for admin runs
 _ADMIN_JOBS: Dict[str, Dict[str, Any]] = {}
 
