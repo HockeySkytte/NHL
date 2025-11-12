@@ -117,7 +117,13 @@ def run_update_data():
         # Resolve project root reliably in both local and Render environments
         project_root = os.path.abspath(os.path.join(current_app.root_path, '..'))
         script_path = os.path.join(project_root, 'scripts', 'update_data.py')
-        cmd = [sys.executable, script_path, '--date', date, '--export']
+        export_flag = data.get('export', True)
+        replace_flag = data.get('replace_date', False)
+        cmd = [sys.executable, script_path, '--date', date]
+        if export_flag:
+            cmd.append('--export')
+        if replace_flag:
+            cmd.append('--replace-date')
         job_id = _start_admin_job(cmd, cwd=project_root)
         return jsonify({'jobId': job_id})
     except Exception as e:

@@ -19,6 +19,10 @@
         <form id="update-data-form">
             <label for="update-date">Date (YYYY-MM-DD):</label>
             <input type="date" id="update-date" name="date" required>
+            <div style="margin-top:0.5em">
+                <label><input type="checkbox" id="export-db" checked> Export to MySQL (default)</label>
+                <label style="margin-left:1em"><input type="checkbox" id="replace-date"> Replace rows for date</label>
+            </div>
             <button type="submit">Run update_data.py</button>
         </form>
         <div id="update-data-output" class="output"></div>
@@ -51,13 +55,15 @@
     document.getElementById('update-data-form').onsubmit = async function(e) {
         e.preventDefault();
         const date = document.getElementById('update-date').value;
+        const exportDb = document.getElementById('export-db').checked;
+        const replaceDate = document.getElementById('replace-date').checked;
         const output = document.getElementById('update-data-output');
         output.textContent = 'Starting...';
         try {
             const res = await fetch('/admin/run-update-data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date })
+                body: JSON.stringify({ date, export: exportDb, replace_date: replaceDate })
             });
             if (!res.ok) {
                 const txt = await res.text();
