@@ -60,6 +60,15 @@ def admin_db_check():
             port = os.getenv('DB_PORT', '3306')
             name = os.getenv('DB_NAME', 'public')
             db_url = f"mysql+mysqlconnector://{user}:{pwd}@{host}:{port}/{name}"
+        else:
+            # If DATABASE_URL_* uses localhost but a host override is provided, swap it
+            host_override = None
+            if mode == 'ro':
+                host_override = os.getenv('DB_HOST_RO') or os.getenv('DB_HOST')
+            else:
+                host_override = os.getenv('DB_HOST_RW') or os.getenv('DB_HOST')
+            if host_override and '@localhost' in db_url:
+                db_url = db_url.replace('@localhost', f'@{host_override}')
         # Optional SSL
         connect_args = {}
         if os.getenv('DB_SSL_CA'):

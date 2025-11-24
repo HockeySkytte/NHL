@@ -525,6 +525,16 @@ def _create_mysql_engine(desired: str = 'rw') -> Optional[Engine]:
 
     try:
         if db_url:
+            # Replace '@localhost' with LAN/public IP if DB_HOST(_RW/_RO) is set
+            host_env = None
+            if desired == 'rw':
+                host_env = _first_env('DB_HOST_RW') or os.getenv('DB_HOST')
+            elif desired == 'ro':
+                host_env = _first_env('DB_HOST_RO') or os.getenv('DB_HOST')
+            else:
+                host_env = os.getenv('DB_HOST')
+            if host_env and '@localhost' in db_url:
+                db_url = db_url.replace('@localhost', f'@{host_env}')
             return create_engine(db_url, connect_args=connect_args)
         # Build from parts with suffix-specific variables
         def _part(base: str, fallback: Optional[str] = None) -> str:
