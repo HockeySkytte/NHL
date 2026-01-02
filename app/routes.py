@@ -489,8 +489,9 @@ def _build_games_for_date(date_et) -> List[Dict[str, Any]]:
                 not_started = False
             gid = None
             try:
-                if g.get('id') is not None:
-                    gid = int(g.get('id'))
+                raw_id = g.get('id')
+                if raw_id is not None:
+                    gid = int(str(raw_id).strip())
             except Exception:
                 gid = None
             if not_started and gid is not None and gid in odds_map:
@@ -682,6 +683,234 @@ def standings_page():
 def game_projections_page():
     """Game Projections page showing today's games by Eastern Time, with toggle to yesterday."""
     return render_template('projections.html', teams=TEAM_ROWS, active_tab='Game Projections', show_season_state=False)
+
+
+@main_bp.route('/odds/<int:game_id>')
+def odds_page(game_id: int):
+    """Odds page showing ML history for a game (from Sheet1)."""
+    # Keep the primary nav highlighted on Game Projections.
+    return render_template('odds.html', teams=TEAM_ROWS, game_id=game_id, active_tab='Game Projections', show_season_state=False)
+
+
+_SHEET_ROWS_CACHE: Dict[Tuple[str, str], Tuple[float, List[Dict[str, Any]]]] = {}
+
+
+def _load_sheet_rows_cached(sheet_id: str, worksheet: str, ttl_env: str = 'SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl: int = 30) -> List[Dict[str, Any]]:
+    """Fetch worksheet rows via Google Sheets API with a short in-memory TTL cache."""
+    global _SHEET_ROWS_CACHE
+    try:
+        ttl_s = max(1, int(os.getenv(ttl_env, str(default_ttl)) or str(default_ttl)))
+    except Exception:
+        ttl_s = default_ttl
+    now = time.time()
+    key = (sheet_id or '', worksheet or '')
+    cached = _SHEET_ROWS_CACHE.get(key)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
+    try:
+        import gspread  # type: ignore
+        from google.oauth2.service_account import Credentials  # type: ignore
+    except Exception:
+        _SHEET_ROWS_CACHE[key] = (now, [])
+        return []
+
+    info = _load_google_service_account_info_from_env()
+    scopes = [
+        'https://www.googleapis.com/auth/spreadsheets.readonly',
+        'https://www.googleapis.com/auth/drive.readonly',
+    ]
+    creds = Credentials.from_service_account_info(info, scopes=scopes)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(sheet_id)
+    ws = sh.worksheet(worksheet)
+    # Avoid gspread numericisation so we can safely parse locale-specific numbers
+    # (e.g., decimal commas in Win_Prop).
+    try:
+        rows = ws.get_all_records(numericise_ignore=['all']) or []
+    except Exception:
+        rows = ws.get_all_records() or []
+    _SHEET_ROWS_CACHE[key] = (now, rows)
+    return rows
+
+
+@main_bp.route('/api/odds/history/<int:game_id>')
+def api_odds_history(game_id: int):
+    """Return ML history time series for both teams for a given game id.
+
+    Data source: Google Sheets worksheet (default Sheet1) with columns like:
+      Timestamp, gameId, Team (abbrev), ML
+    """
+    sheet_id = (os.getenv('STARTED_OVERRIDES_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    worksheet = (os.getenv('STARTED_OVERRIDES_WORKSHEET') or 'Sheet1').strip()
+    if not sheet_id:
+        j = jsonify({'error': 'missing_sheet_id', 'hint': 'Set PROJECTIONS_SHEET_ID (or STARTED_OVERRIDES_SHEET_ID)'})
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j, 500
+
+    # Team colors from Teams.csv
+    color_by_team: Dict[str, str] = {}
+    try:
+        for row in TEAM_ROWS:
+            t = (row.get('Team') or '').strip().upper()
+            c = (row.get('Color') or '').strip()
+            if t and c:
+                color_by_team[t] = c
+    except Exception:
+        color_by_team = {}
+
+    try:
+        rows = _load_sheet_rows_cached(sheet_id, worksheet)
+    except Exception as e:
+        msg = str(e or '')
+        code = 'odds_history_load_failed'
+        if 'Missing Google credentials' in msg:
+            code = 'missing_google_credentials'
+        elif 'Invalid GOOGLE_SERVICE_ACCOUNT' in msg or 'Invalid Google service account JSON' in msg:
+            code = 'invalid_google_credentials'
+        elif 'SpreadsheetNotFound' in msg:
+            code = 'sheet_not_found_or_no_access'
+        elif 'WorksheetNotFound' in msg:
+            code = 'worksheet_not_found'
+        j = jsonify({'error': code, 'hint': 'Check GOOGLE_SERVICE_ACCOUNT_JSON_* and sheet sharing', 'sheet_id': sheet_id, 'worksheet': worksheet})
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j, 500
+
+    def norm_row(r: Dict[str, Any]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for k, v in (r or {}).items():
+            try:
+                kk = str(k).strip().lower()
+            except Exception:
+                continue
+            out[kk] = v
+        return out
+
+    def pick(rn: Dict[str, Any], keys: List[str]) -> Any:
+        for k in keys:
+            if k in rn:
+                return rn.get(k)
+        return None
+
+    def parse_int(v: Any) -> Optional[int]:
+        if v is None:
+            return None
+        try:
+            s = str(v).strip()
+            if not s:
+                return None
+            return int(s)
+        except Exception:
+            return None
+
+    def parse_float(v: Any) -> Optional[float]:
+        if v is None:
+            return None
+        try:
+            s = str(v).strip()
+            if not s:
+                return None
+            # Sheets often contain percent strings like "52.4%".
+            s = s.replace('%', '').strip()
+            # Handle decimal comma locales: "52,3" => 52.3
+            if ',' in s and '.' not in s:
+                s = s.replace(',', '.')
+            else:
+                s = s.replace(',', '')
+            return float(s)
+        except Exception:
+            return None
+
+    want_debug = str(request.args.get('debug', '')).strip() in ('1', 'true', 'yes', 'y')
+
+    series: Dict[str, Dict[str, float]] = {}  # team -> {timestamp -> ml}
+    win_series: Dict[str, Dict[str, float]] = {}  # team -> {timestamp -> winProb (0..1)}
+    order: Dict[str, List[str]] = {}          # team -> ordered timestamps (for stable ordering)
+
+    debug_sample_raw: Optional[Dict[str, Any]] = None
+    debug_sample_norm: Optional[Dict[str, Any]] = None
+    for r in rows:
+        rn = norm_row(r)
+        # Compact key map to handle header variations like "Win Prop" vs "Win_Prop".
+        try:
+            import re as _re
+            rn_compact = {_re.sub(r'[^a-z0-9]+', '', str(k)): v for k, v in rn.items()}
+        except Exception:
+            rn_compact = {}
+        gid = parse_int(pick(rn, ['gameid', 'game_id', 'gamepk', 'game', 'id']))
+        if gid != int(game_id):
+            continue
+        ts = pick(rn, ['timestamp', 'time', 'datetime'])
+        ts_s = (str(ts).strip() if ts is not None else '')
+        if not ts_s:
+            continue
+        team = pick(rn, ['team (abbrev)', 'team', 'abbrev', 'team_abbrev'])
+        team_s = (str(team).strip().upper() if team is not None else '')
+        if not team_s:
+            continue
+
+        if want_debug and debug_sample_raw is None:
+            try:
+                debug_sample_raw = dict(r)
+                debug_sample_norm = dict(rn)
+            except Exception:
+                debug_sample_raw = None
+                debug_sample_norm = None
+        ml = parse_float(pick(rn, ['ml', 'moneyline', 'odds', 'line']))
+        if ml is None:
+            continue
+        series.setdefault(team_s, {})[ts_s] = ml
+        # Optional Win_Prop from sheet. Normalize to 0..1 (accept 0..1 or 0..100).
+        wp_raw = pick(rn, ['win_prop', 'win prop', 'winprop', 'win probability', 'win_prob', 'winprobability'])
+        if wp_raw is None:
+            wp_raw = rn_compact.get('winprop')
+        wp = parse_float(wp_raw)
+        if wp is not None:
+            try:
+                if wp > 1.5:
+                    wp = wp / 100.0
+                if 0.0 <= wp <= 1.0:
+                    win_series.setdefault(team_s, {})[ts_s] = wp
+            except Exception:
+                pass
+        order.setdefault(team_s, []).append(ts_s)
+
+    teams_out: List[Dict[str, Any]] = []
+    for team_s, ts_map in series.items():
+        # Keep stable order but sort timestamps lexically (ISO timestamps sort correctly).
+        uniq_ts = list(dict.fromkeys(order.get(team_s, [])))
+        try:
+            uniq_ts.sort()
+        except Exception:
+            pass
+        wp_map = win_series.get(team_s) or {}
+        points = [{'t': ts, 'ml': ts_map[ts], 'winProp': wp_map.get(ts)} for ts in uniq_ts if ts in ts_map]
+        teams_out.append({
+            'abbrev': team_s,
+            'color': color_by_team.get(team_s) or None,
+            'points': points,
+        })
+
+    payload: Dict[str, Any] = {'gameId': int(game_id), 'teams': teams_out}
+    if want_debug:
+        payload['debug'] = {
+            'sample_row_keys': sorted(list((debug_sample_raw or {}).keys())),
+            'sample_row': debug_sample_raw,
+            'sample_row_norm_keys': sorted(list((debug_sample_norm or {}).keys())),
+            'sample_row_norm': debug_sample_norm,
+        }
+    j = jsonify(payload)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
 
 
 @main_bp.route('/api/lineups/all')
@@ -932,7 +1161,17 @@ def api_projections_games():
         odds_map = _fetch_partner_odds_map(date_str)
     except Exception:
         odds_map = {}
-    # Load prestart snapshots (append-only CSV) and index by GameID
+    # Started-game overrides from Google Sheets (latest ML + Win_Prop in Sheet1)
+    started_sheet_id = (os.getenv('STARTED_OVERRIDES_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    started_ws = (os.getenv('STARTED_OVERRIDES_WORKSHEET') or 'Sheet1').strip()
+    started_overrides: Dict[int, Dict[str, Any]] = {}
+    if started_sheet_id:
+        try:
+            started_overrides = _load_started_game_overrides_from_sheet(started_sheet_id, started_ws)
+        except Exception:
+            started_overrides = {}
+
+    # Fallback prestart snapshots (append-only CSV) and index by GameID
     prestart_map = _load_prestart_snapshots_map()
     try:
         # Determine not-started strictly by comparing schedule startTimeUTC to current UTC
@@ -963,9 +1202,34 @@ def api_projections_games():
                 gid = None
             if not_started and gid is not None and gid in odds_map:
                 g['odds'] = odds_map.get(gid)
-            # When started, attach prestart snapshot if available
-            if started and gid is not None and gid in prestart_map:
-                g['prestart'] = prestart_map.get(gid)
+            # When started, prefer the latest Sheet1 overrides; else fallback to CSV snapshot
+            if started and gid is not None:
+                ov = started_overrides.get(gid)
+                if isinstance(ov, dict) and ov:
+                    # Direct away/home fields
+                    if 'oddsAway' in ov or 'oddsHome' in ov or 'winAwayPct' in ov or 'winHomePct' in ov:
+                        g['prestart'] = {
+                            'oddsAway': ov.get('oddsAway'),
+                            'oddsHome': ov.get('oddsHome'),
+                            # If Win_Prop is blank, keep None so UI falls back to calculated probability
+                            'winAwayPct': ov.get('winAwayPct'),
+                            'winHomePct': ov.get('winHomePct'),
+                        }
+                    # Team-row shape: map Team->(ml, winPct) to away/home using the schedule abbrev
+                    elif isinstance(ov.get('_by_team'), dict):
+                        tm = ov.get('_by_team') or {}
+                        aa = ((g.get('awayTeam') or {}).get('abbrev') or '').upper()
+                        ha = ((g.get('homeTeam') or {}).get('abbrev') or '').upper()
+                        a_rec = tm.get(aa) if aa else None
+                        h_rec = tm.get(ha) if ha else None
+                        g['prestart'] = {
+                            'oddsAway': a_rec.get('ml') if isinstance(a_rec, dict) else None,
+                            'oddsHome': h_rec.get('ml') if isinstance(h_rec, dict) else None,
+                            'winAwayPct': a_rec.get('winPct') if isinstance(a_rec, dict) else None,
+                            'winHomePct': h_rec.get('winPct') if isinstance(h_rec, dict) else None,
+                        }
+                elif gid in prestart_map:
+                    g['prestart'] = prestart_map.get(gid)
     except Exception:
         pass
 
@@ -1681,6 +1945,195 @@ def _load_prestart_snapshots_map() -> Dict[int, Dict[str, Any]]:
     except Exception:
         return latest
     return latest
+
+
+_STARTED_GAME_SHEET_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
+
+def _load_started_game_overrides_from_sheet(sheet_id: str, worksheet: str) -> Dict[int, Dict[str, Any]]:
+    """Load latest ML (moneyline) and Win_Prop overrides for started games from Google Sheets.
+
+    This is used only for games already started. If Win_Prop is empty, the client should
+    fall back to the calculated probability.
+
+    Expected (best-effort) columns in worksheet (supports multiple naming styles):
+      - GameID / gameId / id
+      - ML_Away / ML_Home (or OddsAway/OddsHome)
+      - Win_Prop_Away / Win_Prop_Home (or WinAway/WinHome)
+      - OR rows per team with: GameID + Team + ML + Win_Prop
+
+    Config:
+      - STARTED_OVERRIDES_SHEET_CACHE_TTL_SECONDS (default 30)
+    """
+    global _STARTED_GAME_SHEET_CACHE
+    try:
+        ttl_s = max(1, int(os.getenv('STARTED_OVERRIDES_SHEET_CACHE_TTL_SECONDS', '30') or '30'))
+    except Exception:
+        ttl_s = 30
+    now = time.time()
+    if _STARTED_GAME_SHEET_CACHE and (now - _STARTED_GAME_SHEET_CACHE[0]) < ttl_s:
+        return _STARTED_GAME_SHEET_CACHE[1]
+
+    if not sheet_id or not worksheet:
+        _STARTED_GAME_SHEET_CACHE = (now, {})
+        return {}
+
+    try:
+        import gspread  # type: ignore
+        from google.oauth2.service_account import Credentials  # type: ignore
+    except Exception:
+        _STARTED_GAME_SHEET_CACHE = (now, {})
+        return {}
+
+    info = _load_google_service_account_info_from_env()
+    scopes = [
+        'https://www.googleapis.com/auth/spreadsheets.readonly',
+        'https://www.googleapis.com/auth/drive.readonly',
+    ]
+    creds = Credentials.from_service_account_info(info, scopes=scopes)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(sheet_id)
+    ws = sh.worksheet(worksheet)
+    rows = ws.get_all_records() or []
+
+    def norm_row(r: Dict[str, Any]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for k, v in (r or {}).items():
+            try:
+                kk = str(k).strip().lower()
+            except Exception:
+                continue
+            out[kk] = v
+        return out
+
+    def first_val(rn: Dict[str, Any], keys: List[str]) -> Any:
+        for k in keys:
+            if k in rn:
+                v = rn.get(k)
+                if v is None:
+                    continue
+                s = str(v).strip()
+                if s == '':
+                    continue
+                return v
+        return None
+
+    def parse_game_id(rn: Dict[str, Any]) -> Optional[int]:
+        v = first_val(rn, ['gameid', 'game_id', 'gamepk', 'game', 'gameid#', 'id', 'gameid '])
+        if v is None:
+            return None
+        try:
+            return int(str(v).strip())
+        except Exception:
+            return None
+
+    def parse_prob_pct(v: Any) -> Optional[float]:
+        if v is None:
+            return None
+        try:
+            s = str(v).strip()
+            if s == '':
+                return None
+            x = float(s)
+            if not math.isfinite(x):
+                return None
+            # If it's 0..1, treat as probability; if 1..100 treat as percent.
+            if 0.0 <= x <= 1.0:
+                return x * 100.0
+            if 1.0 < x <= 100.0:
+                return x
+            return None
+        except Exception:
+            return None
+
+    def parse_ts(rn: Dict[str, Any]) -> str:
+        # Use a timestamp-ish field if present; else empty string (row order will win).
+        v = first_val(rn, ['timestamputc', 'timestamp', 'updated', 'updatedutc', 'lastupdated', 'time'])
+        return str(v).strip() if v is not None else ''
+
+    def prefer_newer(prev: Optional[Dict[str, Any]], ts: str, row_idx: int) -> bool:
+        """Return True if (ts,row_idx) should replace prev based on recency."""
+        if prev is None:
+            return True
+        prev_ts = str(prev.get('_ts') or '')
+        prev_row = int(prev.get('_row', -1) or -1)
+        # Prefer lexicographically-later timestamp (ISO-8601 sorts correctly)
+        if ts and ts > prev_ts:
+            return True
+        if ts and ts == prev_ts and row_idx >= prev_row:
+            return True
+        # If no timestamps, prefer later row
+        if not ts and not prev_ts and row_idx >= prev_row:
+            return True
+        return False
+
+    # Two supported shapes:
+    #  1) One row per game with Away/Home ML and Win_Prop
+    #  2) One row per team with Team + ML + Win_Prop (we later map to away/home)
+    by_game: Dict[int, Dict[str, Any]] = {}
+    by_game_team: Dict[int, Dict[str, Dict[str, Any]]] = {}
+
+    for idx, r in enumerate(rows):
+        rn = norm_row(r)
+        gid = parse_game_id(rn)
+        if gid is None:
+            continue
+        ts = parse_ts(rn)
+        # Shape 1
+        away_ml = first_val(rn, ['ml_away', 'away_ml', 'oddsaway', 'odds_away', 'moneyline_away', 'awaymoneyline'])
+        home_ml = first_val(rn, ['ml_home', 'home_ml', 'oddshome', 'odds_home', 'moneyline_home', 'homemoneyline'])
+        win_away = first_val(rn, ['win_prop_away', 'away_win_prop', 'winaway', 'win_away', 'winprobaway', 'win_prob_away'])
+        win_home = first_val(rn, ['win_prop_home', 'home_win_prop', 'winhome', 'win_home', 'winprobhome', 'win_prob_home'])
+        if away_ml is not None or home_ml is not None or win_away is not None or win_home is not None:
+            prev = by_game.get(gid)
+            prev_ts = str(prev.get('_ts') or '') if prev else ''
+            # prefer lexicographically-later timestamp; if none, prefer later row
+            choose = (ts and ts >= prev_ts) or (not prev_ts and not ts and prev is not None and idx >= int(prev.get('_row', -1)))
+            if prev is None or choose:
+                by_game[gid] = {
+                    '_ts': ts,
+                    '_row': idx,
+                    'oddsAway': away_ml,
+                    'oddsHome': home_ml,
+                    'winAwayPct': parse_prob_pct(win_away),
+                    'winHomePct': parse_prob_pct(win_home),
+                }
+            continue
+
+        # Shape 2 (team row)
+        team = first_val(rn, ['team (abbrev)', 'team_abbrev', 'teamabbrev', 'team', 'abbrev', 'club', 'clubabbrev'])
+        if team is None:
+            continue
+        team_ab = str(team).strip().upper()
+        ml = first_val(rn, ['ml', 'moneyline', 'odds', 'price'])
+        wp = first_val(rn, ['win_prop', 'winprop', 'win%', 'winpct', 'winprob', 'win_probability'])
+        if ml is None and wp is None:
+            continue
+        team_map = by_game_team.setdefault(gid, {})
+        prev_team = team_map.get(team_ab)
+        next_team = {
+            '_ts': ts,
+            '_row': idx,
+            'ml': ml,
+            'winPct': parse_prob_pct(wp),
+        }
+        if prefer_newer(prev_team, ts, idx):
+            team_map[team_ab] = next_team
+
+    # Build final map (prefer shape 1 when present)
+    out: Dict[int, Dict[str, Any]] = {}
+    for gid, rec in by_game.items():
+        out[gid] = {k: v for k, v in rec.items() if not str(k).startswith('_')}
+
+    # Keep team-row data for any games not covered by shape 1
+    for gid, team_map in by_game_team.items():
+        if gid in out:
+            continue
+        out[gid] = {
+            '_by_team': team_map,
+        }
+
+    _STARTED_GAME_SHEET_CACHE = (now, out)
+    return out
 
 def _safe_float(v: Any) -> Optional[float]:
     try:

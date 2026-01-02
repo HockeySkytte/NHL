@@ -280,7 +280,7 @@ function renderTable(games){
   const disAttr = started ? ' disabled' : '';
   const oddsAInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsA}" data-game="${g.id}" data-side="away"${disAttr} />`;
   const oddsHInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsH}" data-game="${g.id}" data-side="home"${disAttr} />`;
-    return `<tr>
+    return `<tr class="proj-row" data-href="/odds/${g.id}" style="cursor:pointer;">
       <td class="col-center">${timeStr}</td>
       <td class="col-center"><button class="lineup-btn" data-game="${g.id}" data-side="away" data-team="${a.abbrev||''}">Edit</button></td>
       <td class="col-center">${betA!=null ? `<span class=\"bet-chip\" style=\"background:${betBgA}\">${(betA*100).toFixed(1)}%</span>` : ''}</td>
@@ -299,6 +299,15 @@ function renderTable(games){
     </tr>`;
   }).join('');
   root.innerHTML = `<table class="live-table">${header}<tbody>${rows}</tbody></table>`;
+  root.querySelectorAll('.proj-row').forEach(tr=>{
+    tr.addEventListener('click', (e)=>{
+      const t = e && e.target ? e.target : null;
+      // Don't navigate when interacting with controls inside the row
+      if(t && (t.closest('button') || t.closest('input') || t.closest('select') || t.closest('label') || t.closest('a'))) return;
+      const href = tr.getAttribute('data-href');
+      if(href) window.location.href = href;
+    });
+  });
   root.querySelectorAll('.odds-input').forEach(inp=>{
     inp.addEventListener('change', e=>{
       const gameId = inp.getAttribute('data-game');

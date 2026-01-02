@@ -1,0 +1,651 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+  .odds-wrap{ max-width:1100px; margin:0 auto; }
+  .odds-title{ text-align:center; margin:0 0 6px 0; font-size:18px; font-weight:750; color:var(--text); }
+  .odds-meta{ text-align:center; color:var(--text-dim); margin:0 0 14px 0; font-size:13px; }
+  .chart-row{ display:flex; align-items:center; gap:10px; margin:0 0 8px 0; }
+  .chart-title{ margin:0; font-size:18px; font-weight:800; color:var(--text); letter-spacing:.2px; }
+  .toggle-wrap{ display:flex; align-items:center; gap:10px; }
+  .toggle-label{ color:var(--text-dim); font-size:12px; letter-spacing:.3px; }
+  .segmented{ display:inline-flex; padding:4px; border-radius:14px; border:1px solid #2a3142; background:rgba(0,0,0,.22); }
+  .segmented button{ border:2px solid transparent; background:transparent; color:var(--text); padding:6px 14px; font-size:14px; border-radius:12px; font-weight:800; cursor:pointer; }
+  .segmented button.active{ background:var(--panel-alt); border-color:rgba(255,255,255,.15); box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+  .segmented button:not(.active){ border-color:rgba(255,255,255,.20); }
+  .odds-card{ background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:14px; }
+  #oddsChart{ width:100%; height:280px; }
+  #winChart{ width:100%; height:240px; }
+  .odds-error{ margin-top:12px; color:#ff6a6a; display:none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="odds-wrap" id="oddsWrap" data-game-id="{{ game_id }}">
+  <h2 class="odds-title" id="pageTitle">Game {{ game_id }}</h2>
+  <div id="pageMeta" class="odds-meta"></div>
+  <div class="chart-row">
+    <div class="chart-title">Odds History</div>
+    <div style="flex:1"></div>
+    <div class="toggle-wrap">
+      <span class="toggle-label">Odds:</span>
+      <div class="segmented" role="group" aria-label="Odds format">
+        <button id="oddsAmerican" class="active" type="button">American</button>
+        <button id="oddsDecimal" type="button">Decimal</button>
+      </div>
+    </div>
+  </div>
+  <div class="odds-card">
+    <canvas id="oddsChart" height="140"></canvas>
+  </div>
+
+  <div style="height:14px"></div>
+
+  <div class="chart-row">
+    <div class="chart-title">Win Probability</div>
+    <div style="flex:1"></div>
+    <div class="toggle-wrap">
+      <span class="toggle-label">Win% team:</span>
+      <div class="segmented" role="group" aria-label="Win% team">
+        <button id="winTeamA" class="active" type="button">A</button>
+        <button id="winTeamB" type="button">B</button>
+      </div>
+    </div>
+  </div>
+  <div class="odds-card">
+    <canvas id="winChart" height="140"></canvas>
+  </div>
+
+  <div id="oddsError" class="odds-error"></div>
+</div>
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  const wrap = document.getElementById('oddsWrap');
+  const GAME_ID = Number(wrap && wrap.getAttribute('data-game-id'));
+  const titleEl = document.getElementById('pageTitle');
+  const metaEl = document.getElementById('pageMeta');
+  const errEl = document.getElementById('oddsError');
+  const canvas = document.getElementById('oddsChart');
+  const winCanvas = document.getElementById('winChart');
+  const oddsAmericanBtn = document.getElementById('oddsAmerican');
+  const oddsDecimalBtn = document.getElementById('oddsDecimal');
+  const winTeamABtn = document.getElementById('winTeamA');
+  const winTeamBBtn = document.getElementById('winTeamB');
+
+  let oddsMode = 'american'; // 'american' | 'decimal'
+  let _chart = null;
+  let _winChart = null;
+  let _raw = null; // { teams:[{abbrev,color,points:[{t,ml,winProp}]}] }
+  let _teams = []; // ordered team abbrevs for win selector
+  let _selectedTeam = null;
+
+  function cssVar(name, fallback){
+    try{
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return v || fallback;
+    }catch(e){
+      return fallback;
+    }
+  }
+
+  function showError(msg){
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+  }
+
+  function toDecimal(american){
+    if(american==null || american==='') return null;
+    const a = Number(american);
+    if(!Number.isFinite(a) || a === 0) return null;
+    if(a > 0) return 1 + (a/100);
+    return 1 + (100/Math.abs(a));
+  }
+
+  function isVeryDark(hex){
+    try{
+      if(!hex) return false;
+      let h = String(hex).trim();
+      if(!h.startsWith('#')) return false;
+      h = h.slice(1);
+      if(h.length === 3) h = h.split('').map(c=>c+c).join('');
+      if(h.length !== 6) return false;
+      const r = parseInt(h.slice(0,2),16);
+      const g = parseInt(h.slice(2,4),16);
+      const b = parseInt(h.slice(4,6),16);
+      const lum = 0.299*r + 0.587*g + 0.114*b;
+      return lum < 55;
+    }catch(e){
+      return false;
+    }
+  }
+
+  function lightenHex(hex, factor){
+    // factor: 0..1 -> blend toward white by factor
+    try{
+      let h = String(hex).trim();
+      if(!h.startsWith('#')) return hex;
+      h = h.slice(1);
+      if(h.length === 3) h = h.split('').map(c=>c+c).join('');
+      if(h.length !== 6) return hex;
+      const r0 = parseInt(h.slice(0,2),16);
+      const g0 = parseInt(h.slice(2,4),16);
+      const b0 = parseInt(h.slice(4,6),16);
+      const r = Math.round(r0 + (255 - r0) * factor);
+      const g = Math.round(g0 + (255 - g0) * factor);
+      const b = Math.round(b0 + (255 - b0) * factor);
+      return '#' + r.toString(16).padStart(2,'0') + g.toString(16).padStart(2,'0') + b.toString(16).padStart(2,'0');
+    }catch(e){
+      return hex;
+    }
+  }
+
+  function mlToAxisVal(ml){
+    // Compress American odds by removing the impossible (-100..+99) region.
+    // Baseline is +/-100 mapped to 0.
+    const a = Number(ml);
+    if(!Number.isFinite(a) || a === 0) return null;
+    if(a > 0) return a - 100;
+    return - (Math.abs(a) - 100);
+  }
+
+  function axisValToMlLabel(v){
+    const n = Number(v);
+    if(!Number.isFinite(n)) return '';
+    if(n === 0) return '+100';
+    if(n > 0) return '+' + String(Math.round(n + 100));
+    return '-' + String(Math.round(Math.abs(n) + 100));
+  }
+
+  function loadSavedMode(){
+    const saved = localStorage.getItem('oddsChartMode');
+    if(saved === 'decimal' || saved === 'american') oddsMode = saved;
+    oddsAmericanBtn.classList.toggle('active', oddsMode==='american');
+    oddsDecimalBtn.classList.toggle('active', oddsMode==='decimal');
+  }
+
+  function setMode(next){
+    oddsMode = next;
+    localStorage.setItem('oddsChartMode', oddsMode);
+    oddsAmericanBtn.classList.toggle('active', oddsMode==='american');
+    oddsDecimalBtn.classList.toggle('active', oddsMode==='decimal');
+    if(_raw) renderChart(_raw);
+  }
+
+  function parseTs(ts){
+    // Timestamp is expected to be ISO-ish; Date can parse most formats.
+    const d = new Date(ts);
+    return isNaN(d) ? null : d;
+  }
+
+  function fmtTime(ts){
+    const d = parseTs(ts);
+    if(!d) return String(ts ?? '');
+    try{
+      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    }catch(e){
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+  }
+
+  function fmtDateETFromIso(iso){
+    const d = parseTs(iso);
+    if(!d) return null;
+    try{
+      const et = new Date(d.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      if(isNaN(et)) return null;
+      return et.toISOString().slice(0,10);
+    }catch(e){
+      return d.toISOString().slice(0,10);
+    }
+  }
+
+  function buildChartData(payload){
+    const teams = Array.isArray(payload.teams) ? payload.teams : [];
+
+    // Build a unified, sorted label list across all teams.
+    const allTs = new Set();
+    for(const t of teams){
+      for(const p of (t.points || [])){
+        if(p && p.t) allTs.add(String(p.t));
+      }
+    }
+    const labels = Array.from(allTs);
+    labels.sort((a,b)=>{
+      const da = parseTs(a); const db = parseTs(b);
+      if(da && db) return da - db;
+      return String(a).localeCompare(String(b));
+    });
+
+    const labelIndex = new Map(labels.map((l,i)=>[l,i]));
+    const datasets = teams.map(t=>{
+      const data = new Array(labels.length).fill(null);
+      const raw = new Array(labels.length).fill(null);
+      for(const p of (t.points || [])){
+        if(!p || p.t==null) continue;
+        const idx = labelIndex.get(String(p.t));
+        if(idx==null) continue;
+        const ml = Number(p.ml);
+        if(!Number.isFinite(ml) || ml === 0) { data[idx] = null; continue; }
+        raw[idx] = ml;
+        if(oddsMode === 'decimal'){
+          const dec = toDecimal(ml);
+          data[idx] = (dec!=null && Number.isFinite(dec)) ? dec : null;
+        }else{
+          // American axis uses a compressed, signed scale centered at +100.
+          data[idx] = mlToAxisVal(ml);
+        }
+      }
+      const baseColor = t.color || cssVar('--accent', '#4da3ff');
+      const stroke = isVeryDark(baseColor) ? lightenHex(baseColor, 0.35) : baseColor;
+      return {
+        label: t.abbrev || 'Team',
+        data,
+        borderColor: stroke,
+        backgroundColor: 'transparent',
+        borderWidth: 3,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        pointBackgroundColor: stroke,
+        pointBorderColor: stroke,
+        tension: 0.2,
+        spanGaps: true,
+        _rawMl: raw,
+      };
+    });
+
+    return { labels, datasets };
+  }
+
+  function renderChart(payload){
+    const tickColor = cssVar('--text-dim', '#9aa4b1');
+    const gridColor = 'rgba(154,164,177,0.18)';
+    const chartBg = 'rgba(0,0,0,0.22)';
+
+    const built = buildChartData(payload);
+    const allY = [];
+    for(const ds of built.datasets){
+      for(const v of ds.data){ if(Number.isFinite(v)) allY.push(Number(v)); }
+    }
+
+    // For American (compressed) view: baseline (0) is the midline.
+    let suggestedMin = undefined;
+    let suggestedMax = undefined;
+    if(oddsMode === 'american' && allY.length){
+      const maxDev = Math.max(...allY.map(v=>Math.abs(v)));
+      const span = Math.max(10, maxDev);
+      suggestedMin = -span;
+      suggestedMax = span;
+    }
+
+    const chartConfig = {
+      type: 'line',
+      data: { labels: built.labels, datasets: built.datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: tickColor } },
+          tooltip: {
+            callbacks: {
+              title: (items)=>{
+                try{
+                  const it = Array.isArray(items) ? items[0] : null;
+                  const lbl = it ? it.label : '';
+                  return fmtTime(lbl);
+                }catch(e){
+                  return '';
+                }
+              },
+              label: (ctx)=>{
+                if(!ctx || !ctx.dataset) return '';
+                const idx = ctx.dataIndex;
+                if(oddsMode === 'decimal'){
+                  const y = ctx.parsed.y;
+                  return `${ctx.dataset.label}: ${Number.isFinite(y) ? Number(y).toFixed(2) : ''}`;
+                }
+                const raw = Array.isArray(ctx.dataset._rawMl) ? ctx.dataset._rawMl[idx] : null;
+                if(raw == null || raw === '') return `${ctx.dataset.label}: `;
+                const a = Number(raw);
+                if(!Number.isFinite(a) || a === 0) return `${ctx.dataset.label}: `;
+                return `${ctx.dataset.label}: ${a > 0 ? '+' : ''}${Math.round(a)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: tickColor,
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 8,
+              callback: function(val){
+                return fmtTime(this.getLabelForValue(val));
+              }
+            },
+            grid: { color: gridColor },
+          },
+          y: {
+            suggestedMin,
+            suggestedMax,
+            ticks: {
+              color: tickColor,
+              callback: (val)=>{
+                const n = Number(val);
+                if(!Number.isFinite(n)) return '';
+                if(oddsMode === 'decimal') return n.toFixed(2);
+                // Baseline centered at +100.
+                return axisValToMlLabel(n);
+              }
+            },
+            grid: { color: gridColor },
+            title: {
+              display: true,
+              text: 'Betting line',
+              color: tickColor,
+            },
+          }
+        }
+      },
+      plugins: [{
+        id: 'chartAreaBackground',
+        beforeDraw(chart){
+          const {ctx, chartArea} = chart;
+          if(!chartArea) return;
+          ctx.save();
+          ctx.fillStyle = chartBg;
+          ctx.fillRect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
+          ctx.restore();
+        }
+      }]
+    };
+
+    if(_chart){
+      _chart.destroy();
+      _chart = null;
+    }
+    _chart = new Chart(canvas.getContext('2d'), chartConfig);
+  }
+
+  function setWinTeam(team){
+    _selectedTeam = team;
+    if(_teams.length >= 2){
+      winTeamABtn.textContent = _teams[0];
+      winTeamBBtn.textContent = _teams[1];
+      winTeamABtn.classList.toggle('active', _selectedTeam === _teams[0]);
+      winTeamBBtn.classList.toggle('active', _selectedTeam === _teams[1]);
+    }
+    if(_raw) renderWinChart(_raw);
+  }
+
+  function impliedWinProbPctAt(ts, team){
+    // implied = dec(opponent) / (dec(team) + dec(opponent))
+    if(!_raw || !_raw.teams) return null;
+    const teams = Array.isArray(_raw.teams) ? _raw.teams : [];
+    const tRow = teams.find(x=>String(x.abbrev||'').toUpperCase() === String(team||'').toUpperCase());
+    const oRow = teams.find(x=>String(x.abbrev||'').toUpperCase() !== String(team||'').toUpperCase());
+    if(!tRow || !oRow) return null;
+    const tp = (tRow.points || []).find(p=>String(p.t)===String(ts));
+    const op = (oRow.points || []).find(p=>String(p.t)===String(ts));
+    if(!tp || !op) return null;
+    const dt = toDecimal(tp.ml);
+    const do2 = toDecimal(op.ml);
+    if(dt==null || do2==null) return null;
+    const p = do2 / (dt + do2);
+    if(!Number.isFinite(p)) return null;
+    return p * 100;
+  }
+
+  function bettingLineWinProbPctAt(ts, team){
+    // Betting-line probability from the team's own decimal odds: p = 1 / dec(team)
+    if(!_raw || !_raw.teams) return null;
+    const teams = Array.isArray(_raw.teams) ? _raw.teams : [];
+    const tRow = teams.find(x=>String(x.abbrev||'').toUpperCase() === String(team||'').toUpperCase());
+    if(!tRow) return null;
+    const tp = (tRow.points || []).find(p=>String(p.t)===String(ts));
+    if(!tp) return null;
+    const dt = toDecimal(tp.ml);
+    if(dt==null || !(dt>1)) return null;
+    const p = 1 / dt;
+    if(!Number.isFinite(p)) return null;
+    return p * 100;
+  }
+
+  function sheetWinProbPctAt(ts, team){
+    if(!_raw || !_raw.teams) return null;
+    const teams = Array.isArray(_raw.teams) ? _raw.teams : [];
+    const tRow = teams.find(x=>String(x.abbrev||'').toUpperCase() === String(team||'').toUpperCase());
+    if(!tRow) return null;
+    const tp = (tRow.points || []).find(p=>String(p.t)===String(ts));
+    if(!tp) return null;
+    const wp = tp.winProp;
+    if(wp==null || wp==='') return null;
+    const n = Number(wp);
+    if(!Number.isFinite(n)) return null;
+    // API normalizes to 0..1
+    if(n < 0 || n > 1) return null;
+    return n * 100;
+  }
+
+  function renderWinChart(payload){
+    const tickColor = cssVar('--text-dim', '#9aa4b1');
+    const gridColor = 'rgba(154,164,177,0.18)';
+    const chartBg = 'rgba(0,0,0,0.22)';
+    const teams = Array.isArray(payload.teams) ? payload.teams : [];
+    if(teams.length < 1) return;
+    const team = _selectedTeam || (teams[0] && teams[0].abbrev);
+
+    // unify labels
+    const allTs = new Set();
+    for(const t of teams){
+      for(const p of (t.points || [])){
+        if(p && p.t) allTs.add(String(p.t));
+      }
+    }
+    const labels = Array.from(allTs);
+    labels.sort((a,b)=>{
+      const da = parseTs(a); const db = parseTs(b);
+      if(da && db) return da - db;
+      return String(a).localeCompare(String(b));
+    });
+
+    const baseColor = (teams.find(t=>t.abbrev===team)?.color) || cssVar('--accent', '#4da3ff');
+    const stroke = isVeryDark(baseColor) ? lightenHex(baseColor, 0.35) : baseColor;
+    const impliedStroke = cssVar('--text', '#e6e8ec');
+    const lineStroke = cssVar('--accent', '#4da3ff');
+
+    const sheetData = labels.map(ts=> sheetWinProbPctAt(ts, team));
+    const impliedData = labels.map(ts=> impliedWinProbPctAt(ts, team));
+    const lineData = labels.map(ts=> bettingLineWinProbPctAt(ts, team));
+
+    // Auto-scale y-axis around the visible data to make differences readable.
+    const yVals = [];
+    for(const v of sheetData){ if(Number.isFinite(v)) yVals.push(Number(v)); }
+    for(const v of impliedData){ if(Number.isFinite(v)) yVals.push(Number(v)); }
+    for(const v of lineData){ if(Number.isFinite(v)) yVals.push(Number(v)); }
+    let yMin = 0;
+    let yMax = 100;
+    if(yVals.length){
+      yMin = Math.min(...yVals);
+      yMax = Math.max(...yVals);
+      const span = Math.max(0.5, yMax - yMin);
+      const pad = Math.max(1.5, span * 0.12);
+      yMin = Math.max(0, yMin - pad);
+      yMax = Math.min(100, yMax + pad);
+      if(yMax - yMin < 6){
+        const mid = (yMin + yMax) / 2;
+        yMin = Math.max(0, mid - 3);
+        yMax = Math.min(100, mid + 3);
+      }
+    }
+
+    const config = {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Win%',
+            data: sheetData,
+            borderColor: stroke,
+            backgroundColor: 'transparent',
+            borderWidth: 3,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            pointBackgroundColor: stroke,
+            pointBorderColor: stroke,
+            tension: 0.2,
+            spanGaps: true,
+          },
+          {
+            label: 'Implied Win%',
+            data: impliedData,
+            borderColor: impliedStroke,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            pointBackgroundColor: impliedStroke,
+            pointBorderColor: impliedStroke,
+            tension: 0.2,
+            spanGaps: true,
+          },
+          {
+            label: 'Betting Line',
+            data: lineData,
+            borderColor: lineStroke,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            pointBackgroundColor: lineStroke,
+            pointBorderColor: lineStroke,
+            tension: 0.2,
+            spanGaps: true,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: tickColor } },
+          tooltip: {
+            callbacks: {
+              title: (items)=>{
+                try{ return fmtTime(items[0].label); }catch(e){ return ''; }
+              },
+              label: (ctx)=>{
+                const y = ctx.parsed.y;
+                return `${ctx.dataset.label}: ${Number.isFinite(y) ? Number(y).toFixed(1) + '%' : ''}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: tickColor,
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 8,
+              callback: function(val){
+                return fmtTime(this.getLabelForValue(val));
+              }
+            },
+            grid: { color: gridColor },
+          },
+          y: {
+            ticks: { color: tickColor, callback: (v)=> Number(v).toFixed(0) + '%' },
+            grid: { color: gridColor },
+            title: { display: true, text: 'Win Probability', color: tickColor },
+            suggestedMin: yMin,
+            suggestedMax: yMax,
+          }
+        }
+      },
+      plugins: [{
+        id: 'chartAreaBackground',
+        beforeDraw(chart){
+          const {ctx, chartArea} = chart;
+          if(!chartArea) return;
+          ctx.save();
+          ctx.fillStyle = chartBg;
+          ctx.fillRect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
+          ctx.restore();
+        }
+      }]
+    };
+
+    if(_winChart){ _winChart.destroy(); _winChart = null; }
+    _winChart = new Chart(winCanvas.getContext('2d'), config);
+  }
+
+  async function load(){
+    try{
+      const r = await fetch(`/api/odds/history/${GAME_ID}`, { cache: 'no-store' });
+      const js = await r.json().catch(()=> ({}));
+      if(!r.ok || js.error){
+        const code = js && js.error ? String(js.error) : `http_${r.status}`;
+        const hint = js && js.hint ? ` (${js.hint})` : '';
+        showError(`Failed to load odds history: ${code}${hint}`);
+        return;
+      }
+
+      const teams = Array.isArray(js.teams) ? js.teams : [];
+      const ab = teams.map(t=>String(t.abbrev||'').toUpperCase()).filter(Boolean);
+      _teams = ab.slice(0,2);
+      if(_teams.length >= 2){
+        winTeamABtn.textContent = _teams[0];
+        winTeamBBtn.textContent = _teams[1];
+      }
+
+      // Fetch boxscore to determine away/home + date
+      try{
+        const br = await fetch(`/api/game/${GAME_ID}/boxscore`, { cache: 'no-store' });
+        const b = await br.json().catch(()=> ({}));
+        const away = (b.awayTeam && (b.awayTeam.abbrev || b.awayTeam.abbreviation)) || (b.awayTeam && b.awayTeam.teamAbbrev) || (b.awayTeam && b.awayTeam.teamAbbreviation);
+        const home = (b.homeTeam && (b.homeTeam.abbrev || b.homeTeam.abbreviation)) || (b.homeTeam && b.homeTeam.teamAbbrev) || (b.homeTeam && b.homeTeam.teamAbbreviation);
+        const startUtc = b.startTimeUTC || b.startTimeUtc || b.startTime || null;
+        const dateEt = startUtc ? fmtDateETFromIso(startUtc) : (b.gameDate || null);
+        const awayS = away ? String(away).toUpperCase() : (_teams[0] || '');
+        const homeS = home ? String(home).toUpperCase() : (_teams[1] || '');
+        const dateS = dateEt || '';
+        if(dateS && awayS && homeS){
+          titleEl.textContent = `${dateS} — ${awayS} at ${homeS}`;
+          metaEl.textContent = `GameID ${GAME_ID}`;
+        }else{
+          titleEl.textContent = `Game ${GAME_ID}`;
+          metaEl.textContent = `${awayS && homeS ? (awayS + ' at ' + homeS) : ''}`;
+        }
+      }catch(e){
+        titleEl.textContent = `Game ${GAME_ID}`;
+        metaEl.textContent = '';
+      }
+
+      _raw = js;
+      renderChart(js);
+      if(_teams.length){
+        if(!_selectedTeam) _selectedTeam = _teams[0];
+        setWinTeam(_selectedTeam);
+      }
+    }catch(e){
+      showError('Failed to load odds history.');
+    }
+  }
+
+  loadSavedMode();
+  oddsAmericanBtn.addEventListener('click', ()=> setMode('american'));
+  oddsDecimalBtn.addEventListener('click', ()=> setMode('decimal'));
+  winTeamABtn.addEventListener('click', ()=> _teams[0] && setWinTeam(_teams[0]));
+  winTeamBBtn.addEventListener('click', ()=> _teams[1] && setWinTeam(_teams[1]));
+
+  load();
+})();
+</script>
+{% endblock %}
