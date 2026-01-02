@@ -690,16 +690,55 @@ def api_lineups_all():
 
     Source is Google Sheets (see _load_lineups_all()).
     """
+    # If sheet id is not configured, fail loudly so the browser/dev logs show a clear signal.
+    sheet_id = (os.getenv('LINEUPS_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    worksheet = (os.getenv('LINEUPS_WORKSHEET') or 'Sheets2').strip()
+    if not sheet_id:
+        j = jsonify({
+            'error': 'missing_sheet_id',
+            'hint': 'Set LINEUPS_SHEET_ID or PROJECTIONS_SHEET_ID',
+        })
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j, 500
+
     try:
         data = _load_lineups_all()
-    except Exception:
-        data = {}
-    j = jsonify(data)
-    try:
-        j.headers['Cache-Control'] = 'no-store'
-    except Exception:
-        pass
-    return j
+        j = jsonify(data)
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j
+    except Exception as e:
+        # Log full error server-side, but return only a safe, actionable code to clients.
+        try:
+            print('[api_lineups_all] load failed:', repr(e))
+        except Exception:
+            pass
+        msg = str(e or '')
+        code = 'lineups_load_failed'
+        if 'Missing Google credentials' in msg:
+            code = 'missing_google_credentials'
+        elif 'Invalid GOOGLE_SERVICE_ACCOUNT' in msg or 'Invalid Google service account JSON' in msg:
+            code = 'invalid_google_credentials'
+        elif 'SpreadsheetNotFound' in msg:
+            code = 'sheet_not_found_or_no_access'
+        elif 'WorksheetNotFound' in msg:
+            code = 'worksheet_not_found'
+        j = jsonify({
+            'error': code,
+            'hint': 'Check GOOGLE_SERVICE_ACCOUNT_JSON_* env vars and that the service account has access to the sheet',
+            'sheet_id': sheet_id,
+            'worksheet': worksheet,
+        })
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j, 500
 
 
 @main_bp.route('/api/projections/games')

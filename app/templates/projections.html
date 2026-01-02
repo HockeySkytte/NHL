@@ -393,9 +393,13 @@ async function ensureLineupsCache(){
   if(window._lineupsCache) return window._lineupsCache;
   try{
     const r = await fetch('/api/lineups/all', { cache:'no-store' });
-    if(r.ok){ 
-      window._lineupsCache = await r.json(); 
+    if(r.ok){
+      window._lineupsCache = await r.json();
       try{ console.log('[lineups] loaded keys:', Object.keys(window._lineupsCache||{}).length); }catch(_){/* noop */}
+    }else{
+      let detail = null;
+      try{ detail = await r.json(); }catch(_){ detail = null; }
+      try{ console.error('[lineups] failed:', r.status, detail || '(no json)'); }catch(_){/* noop */}
     }
   }catch(e){ /* ignore */ }
   return window._lineupsCache;
