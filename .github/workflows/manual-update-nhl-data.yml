@@ -1,0 +1,91 @@
+name: Manual NHL data update (xG + projections to Sheets)
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date to update (YYYY-MM-DD)"
+        required: true
+      season:
+        description: "Season code for table names (e.g., 20252026)"
+        required: true
+        default: "20252026"
+      replace_date:
+        description: "Replace existing rows for this date (recommended)"
+        required: true
+        default: "true"
+      projections_worksheet:
+        description: "Worksheet/tab name to overwrite with player projections"
+        required: true
+        default: "Sheets3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-update-nhl-data
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      # MySQL connection (set one of these in repo secrets)
+      DATABASE_URL_RW: ${{ secrets.DATABASE_URL_RW }}
+      DB_URL_RW: ${{ secrets.DB_URL_RW }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DB_HOST_RW: ${{ secrets.DB_HOST_RW }}
+      DB_USER_RW: ${{ secrets.DB_USER_RW }}
+      DB_PASSWORD_RW: ${{ secrets.DB_PASSWORD_RW }}
+      DB_PORT_RW: ${{ secrets.DB_PORT_RW }}
+      DB_NAME_RW: ${{ secrets.DB_NAME_RW }}
+
+      # Google Sheets auth (service account) + destination
+      GOOGLE_SERVICE_ACCOUNT_JSON_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_B64 }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      PROJECTIONS_SHEET_ID: ${{ secrets.PROJECTIONS_SHEET_ID }}
+      PROJECTIONS_WORKSHEET: ${{ inputs.projections_worksheet }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Optional deps for Sheets export
+          pip install gspread google-auth
+
+      - name: Update date (xG enabled) and write projections to Sheets
+        run: |
+          DATE='${{ inputs.date }}'
+          SEASON='${{ inputs.season }}'
+
+          if [ -z "${PROJECTIONS_SHEET_ID}" ]; then
+            echo "Missing PROJECTIONS_SHEET_ID secret" >&2
+            exit 2
+          fi
+
+          EXTRA_ARGS=""
+          if [ "${{ inputs.replace_date }}" = "true" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS --replace-date"
+          fi
+
+          # If PROJECTIONS_WORKSHEET secret not set, update_data.py defaults to 'player_projections'
+          if [ -n "${PROJECTIONS_WORKSHEET}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS --projections-worksheet ${PROJECTIONS_WORKSHEET}"
+          fi
+
+          python -u scripts/update_data.py \
+            --date "$DATE" \
+            --season "$SEASON" \
+            --export \
+            --projections-sheets-id "$PROJECTIONS_SHEET_ID" \
+            $EXTRA_ARGS

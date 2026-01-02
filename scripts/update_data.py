@@ -18,8 +18,8 @@ from __future__ import annotations
 import os
 import sys
 import argparse
-from datetime import datetime
-from typing import List, Tuple, Optional, Dict
+from datetime import datetime, date
+from typing import List, Tuple, Optional, Dict, Any
 import json
 import re
 
@@ -948,6 +948,143 @@ def run_player_projections_and_write_csv(csv_path: Optional[str] = None) -> str:
         raise RuntimeError(f"Failed to write projections CSV: {e}")
 
 
+def _load_google_service_account_info() -> Dict[str, Any]:
+    """Load Google service account JSON from environment.
+
+    Supports either:
+      - GOOGLE_SERVICE_ACCOUNT_JSON_PATH: path to a JSON key file
+      - GOOGLE_SERVICE_ACCOUNT_JSON: raw JSON string
+      - GOOGLE_SERVICE_ACCOUNT_JSON_B64: base64-encoded JSON string
+    """
+    path = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')
+    if path:
+        try:
+            p = str(path).strip()
+            if (p.startswith('"') and p.endswith('"')) or (p.startswith("'") and p.endswith("'")):
+                p = p[1:-1]
+            p = os.path.expandvars(os.path.expanduser(p))
+            with open(p, 'r', encoding='utf-8') as f:
+                raw = f.read()
+        except Exception as e:
+            raise RuntimeError(f"Invalid GOOGLE_SERVICE_ACCOUNT_JSON_PATH: {e}")
+    else:
+        raw = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+    raw_b64 = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_B64')
+    if raw_b64:
+        try:
+            import base64
+            s = str(raw_b64).strip()
+            # Some shells/UI flows add surrounding quotes or newlines.
+            if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+                s = s[1:-1]
+            s = ''.join(s.split())  # drop all whitespace
+            # Fix missing base64 padding (length must be multiple of 4)
+            pad = (-len(s)) % 4
+            if pad:
+                s = s + ('=' * pad)
+            try:
+                raw = base64.b64decode(s.encode('utf-8'), validate=False).decode('utf-8')
+            except Exception:
+                # Some users paste URL-safe base64; try that too.
+                raw = base64.urlsafe_b64decode(s.encode('utf-8')).decode('utf-8')
+        except Exception as e:
+            raise RuntimeError(f"Invalid GOOGLE_SERVICE_ACCOUNT_JSON_B64: {e}")
+    if not raw:
+        raise RuntimeError(
+            "Missing Google credentials. Set GOOGLE_SERVICE_ACCOUNT_JSON_PATH, GOOGLE_SERVICE_ACCOUNT_JSON_B64, or GOOGLE_SERVICE_ACCOUNT_JSON."
+        )
+    try:
+        return json.loads(raw)
+    except Exception as e:
+        raise RuntimeError(f"Invalid Google service account JSON: {e}")
+
+
+def _write_dataframe_to_google_sheet(df: pd.DataFrame, *, sheet_id: str, worksheet: str) -> None:
+    """Overwrite a worksheet with the contents of df (header + rows)."""
+    # Optional dependency: only required when using Sheets export
+    try:
+        import gspread  # type: ignore
+        from google.oauth2.service_account import Credentials  # type: ignore
+    except Exception as e:
+        raise RuntimeError(
+            f"Google Sheets dependencies missing: {e}. Install: pip install gspread google-auth"
+        )
+
+    info = _load_google_service_account_info()
+    scopes = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive',
+    ]
+    creds = Credentials.from_service_account_info(info, scopes=scopes)
+    gc = gspread.authorize(creds)
+
+    sh = gc.open_by_key(sheet_id)
+    try:
+        ws = sh.worksheet(worksheet)
+    except Exception:
+        # Create if missing
+        rows = max(2, int(len(df) + 1))
+        cols = max(1, int(len(df.columns)))
+        ws = sh.add_worksheet(title=worksheet, rows=rows, cols=cols)
+
+    # Prepare values
+    df_out = df.copy()
+    # Replace NaN/NaT with empty string for Sheets
+    df_out = df_out.where(pd.notnull(df_out), '')
+
+    def _cell(v: Any) -> Any:
+        try:
+            # Convert numpy scalars to python
+            if hasattr(v, 'item'):
+                v = v.item()
+        except Exception:
+            pass
+        # Make datetimes readable
+        if isinstance(v, (datetime, date)):
+            return v.isoformat()
+        return v
+
+    values = [list(df_out.columns)]
+    for row in df_out.itertuples(index=False, name=None):
+        values.append([_cell(v) for v in row])
+
+    # Overwrite worksheet
+    ws.clear()
+    update_fn = getattr(ws, 'update')
+    try:
+        update_fn(range_name='A1', values=values)
+    except TypeError:
+        # Older gspread signature
+        update_fn('A1', values)
+
+
+def run_player_projections_and_write_google_sheet(
+    *, sheet_id: str, worksheet: str = 'player_projections'
+) -> None:
+    """Run Player_Projections() and overwrite a Google Sheet worksheet."""
+    eng = _create_mysql_engine('rw')
+    if eng is None:
+        raise RuntimeError("MySQL engine not available for projections")
+
+    # Execute stored procedure
+    try:
+        with eng.begin() as conn:
+            conn.execute(text("CALL Player_Projections()"))
+        print("[mysql] executed stored procedure Player_Projections()")
+    except SQLAlchemyError as e:
+        raise RuntimeError(f"Failed to execute Player_Projections(): {e}")
+
+    # Load table
+    try:
+        df_proj = pd.read_sql("SELECT * FROM nhl_player_projections", con=eng)
+        print(f"[mysql] loaded {len(df_proj)} rows from nhl_player_projections")
+    except SQLAlchemyError as e:
+        raise RuntimeError(f"Failed to query nhl_player_projections: {e}")
+
+    _write_dataframe_to_google_sheet(df_proj, sheet_id=sheet_id, worksheet=worksheet)
+    print(f"[sheets] wrote projections to sheetId={sheet_id} worksheet={worksheet}")
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Fetch PBP and Shifts dataframes for a date')
     parser.add_argument('--date', required=True, type=_validate_date, help='Date in YYYY-MM-DD')
@@ -955,6 +1092,9 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument('--no-xg', action='store_true', help='Do not compute xG (faster)')
     parser.add_argument('--season', default='20252026', help='Season code for table names, e.g., 20252026')
     parser.add_argument('--replace-date', action='store_true', help='Pre-delete rows for this date before insert (idempotent loads)')
+    # Projections output options
+    parser.add_argument('--projections-sheets-id', help='Google Sheets document id to write nhl_player_projections into')
+    parser.add_argument('--projections-worksheet', default='player_projections', help='Worksheet/tab name for projections output')
     # Lineup scraping options
     parser.add_argument('--lineup-url', help='DailyFaceoff line combinations URL for a team (e.g., https://www.dailyfaceoff.com/teams/anaheim-ducks/line-combinations)')
     parser.add_argument('--lineup-save', action='store_true', help='When using --lineup-url, save mapped lineup JSON to app/static/lineup_<TEAM>.json')
@@ -983,10 +1123,16 @@ def main(argv: List[str] | None = None) -> int:
         except Exception as e:
             print(f"[error] export failed: {e}", file=sys.stderr)
             return 3
-        # After exporting, run projections and write CSV
+        # After exporting, run projections and write either to Google Sheets or CSV
         try:
-            out_csv = run_player_projections_and_write_csv()
-            print(f"Projections updated and saved to: {out_csv}")
+            if args.projections_sheets_id:
+                run_player_projections_and_write_google_sheet(
+                    sheet_id=str(args.projections_sheets_id).strip(),
+                    worksheet=str(args.projections_worksheet or 'player_projections').strip(),
+                )
+            else:
+                out_csv = run_player_projections_and_write_csv()
+                print(f"Projections updated and saved to: {out_csv}")
         except Exception as e:
             print(f"[error] projections post-step failed: {e}", file=sys.stderr)
             return 4

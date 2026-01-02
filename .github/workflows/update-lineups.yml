@@ -1,0 +1,13 @@
+name: (Disabled) Update lineups_all.json
+
+on:
+  workflow_dispatch:
+
+# Disabled: lineups will be sourced elsewhere (e.g. Google Sheets).
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disabled
+        run: echo "Lineup automation disabled in this repo."

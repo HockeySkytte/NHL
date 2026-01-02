@@ -20,10 +20,18 @@
             <label for="update-date">Date (YYYY-MM-DD):</label>
             <input type="date" id="update-date" name="date" required>
             <div style="margin-top:0.5em">
-                <label><input type="checkbox" id="export-db" checked> Export to MySQL (default)</label>
-                <label style="margin-left:1em"><input type="checkbox" id="replace-date"> Replace rows for date</label>
+                <label for="season">Season (table suffix, e.g. 20252026):</label>
+                <input type="text" id="season" name="season" value="20252026" style="width: 10em;">
+            </div>
+            <div style="margin-top:0.5em">
+                <label><input type="checkbox" id="export-db" checked> Export to MySQL</label>
+                <label style="margin-left:1em"><input type="checkbox" id="replace-date" checked> Replace rows for date</label>
+                <label style="margin-left:1em"><input type="checkbox" id="projections-to-sheets" checked> Write player projections to Google Sheets (Sheets3)</label>
             </div>
             <button type="submit">Run update_data.py</button>
+            <div style="margin-top:0.5em; font-size: 0.9em; color: #444;">
+                Requires env vars on the machine running Flask: <code>GOOGLE_SERVICE_ACCOUNT_JSON_B64</code> (or <code>GOOGLE_SERVICE_ACCOUNT_JSON</code>), and optionally <code>PROJECTIONS_SHEET_ID</code> / <code>PROJECTIONS_WORKSHEET</code>.
+            </div>
         </form>
         <div id="update-data-output" class="output"></div>
     </div>
@@ -55,15 +63,24 @@
     document.getElementById('update-data-form').onsubmit = async function(e) {
         e.preventDefault();
         const date = document.getElementById('update-date').value;
+        const season = document.getElementById('season').value;
         const exportDb = document.getElementById('export-db').checked;
         const replaceDate = document.getElementById('replace-date').checked;
+        const projectionsToSheets = document.getElementById('projections-to-sheets').checked;
         const output = document.getElementById('update-data-output');
         output.textContent = 'Starting...';
         try {
             const res = await fetch('/admin/run-update-data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ date, export: exportDb, replace_date: replaceDate })
+                body: JSON.stringify({
+                    date,
+                    season,
+                    export: exportDb,
+                    replace_date: replaceDate,
+                    projections_to_sheets: projectionsToSheets,
+                    projections_worksheet: 'Sheets3'
+                })
             });
             if (!res.ok) {
                 const txt = await res.text();

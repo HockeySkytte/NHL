@@ -104,6 +104,7 @@ const lineupTeamInfoEl = document.getElementById('lineupTeamInfo');
 
 // Caches and overrides
 window._lineupsCache = window._lineupsCache || null; // contents of lineups_all.json
+window._rosterCache = window._rosterCache || {}; // { [TEAM]: roster json from /api/roster/<TEAM>/current }
 window._currentGamesById = window._currentGamesById || {};
 window._winOverrides = window._winOverrides || {}; // { [gameId]: { away: p, home: p } }
 window._projCsvCache = window._projCsvCache || null; // { [playerId:number]: { pos: 'F'|'D'|'G', Age: num, Rookie: num, EVO: num, EVD: num, PP: num, SH: num, GSAx: num } }
@@ -391,13 +392,29 @@ loadGames('today');
 async function ensureLineupsCache(){
   if(window._lineupsCache) return window._lineupsCache;
   try{
-    const r = await fetch('/static/lineups_all.json');
+    const r = await fetch('/api/lineups/all', { cache:'no-store' });
     if(r.ok){ 
       window._lineupsCache = await r.json(); 
       try{ console.log('[lineups] loaded keys:', Object.keys(window._lineupsCache||{}).length); }catch(_){/* noop */}
     }
   }catch(e){ /* ignore */ }
   return window._lineupsCache;
+}
+
+async function ensureRosterCache(teamAbbrev){
+  const t = String(teamAbbrev||'').toUpperCase();
+  if(!t) return null;
+  if(window._rosterCache && window._rosterCache[t]) return window._rosterCache[t];
+  try{
+    const r = await fetch(`/api/roster/${encodeURIComponent(t)}/current`, { cache:'no-store' });
+    if(!r.ok) return null;
+    const js = await r.json();
+    window._rosterCache = window._rosterCache || {};
+    window._rosterCache[t] = js;
+    return js;
+  }catch(_){
+    return null;
+  }
 }
 
 async function ensureProjectionsCsv(){
@@ -438,8 +455,6 @@ function extractPlayerName(p){
   }
   return p.fullName || p.person?.fullName || p.name || '';
 }
-
-// Roster API is not used in the editor; players come exclusively from lineups_all.json
 
 function getTeamLineup(teamAbbrev){
   const cache = window._lineupsCache || {};
@@ -482,25 +497,49 @@ function projValueFromMetrics(m){
   return (m.Age||0)+(m.Rookie||0)+(m.EVO||0)+(m.EVD||0)+(m.PP||0)+(m.SH||0)+(m.GSAx||0);
 }
 
-function buildPlayerList(teamAbbrev, projMap){
-  // Use ONLY players from lineups_all.json (no roster merge)
+function buildPlayerList(teamAbbrev, projMap, roster){
+  // Base list from Sheets lineups; then append missing roster players as EXT.
   const lu = getTeamLineup(teamAbbrev);
-  const out = [];
-  const pushItem = (it, posCode)=>{
+  const goalies = [];
+  const forwards = [];
+  const defense = [];
+  const pushItem = (arr, it, posCode)=>{
     const id0 = (Number(it.playerId)||null);
     const name = String(it.name||'');
     const unit = String(it.unit||'').toUpperCase();
     const pos = posCode;
     const metrics = (id0 && projMap) ? projMap[id0] : null;
     const total = metrics ? projValueFromMetrics(metrics) : null;
-    out.push({ id: id0, name, pos, unit, metrics, total });
+    arr.push({ id: id0, name, pos, unit, metrics, total });
   };
-  // Order: Goalies first, then Forwards, then Defense
-  for(const it of (lu.goalies||[])) pushItem(it, 'G');
-  for(const it of (lu.forwards||[])) pushItem(it, 'F');
-  for(const it of (lu.defense||[])) pushItem(it, 'D');
   // Keep original order from lineup; no re-sort to preserve lines/pairs
-  return out;
+  for(const it of (lu.goalies||[])) pushItem(goalies, it, 'G');
+  for(const it of (lu.forwards||[])) pushItem(forwards, it, 'F');
+  for(const it of (lu.defense||[])) pushItem(defense, it, 'D');
+
+  const existingIds = new Set();
+  for(const p of [...goalies, ...forwards, ...defense]){
+    if(p.id) existingIds.add(Number(p.id));
+  }
+
+  const pushExt = (arr, r, posCode)=>{
+    const id0 = playerIdOf(r);
+    if(!id0 || existingIds.has(id0)) return;
+    const name = extractPlayerName(r);
+    if(!name) return;
+    existingIds.add(id0);
+    const metrics = (id0 && projMap) ? projMap[id0] : null;
+    const total = metrics ? projValueFromMetrics(metrics) : null;
+    arr.push({ id: id0, name, pos: posCode, unit: 'EXT', metrics, total });
+  };
+
+  if(roster){
+    for(const r of (roster.goalies||[])) pushExt(goalies, r, 'G');
+    for(const r of (roster.forwards||[])) pushExt(forwards, r, 'F');
+    for(const r of (roster.defensemen||[])) pushExt(defense, r, 'D');
+  }
+
+  return [...goalies, ...forwards, ...defense];
 }
 
 function clearModal(){
@@ -510,10 +549,10 @@ function clearModal(){
 
 async function openLineupDialog(gameId, side, teamAbbrev){
   clearModal();
-  const [_, projMap] = await Promise.all([
-    ensureLineupsCache(), ensureProjectionsCsv()
+  const [_, projMap, roster] = await Promise.all([
+    ensureLineupsCache(), ensureProjectionsCsv(), ensureRosterCache(teamAbbrev)
   ]);
-  const list = buildPlayerList(teamAbbrev, projMap||{});
+  const list = buildPlayerList(teamAbbrev, projMap||{}, roster||null);
   try{ console.log('[modal] open for', teamAbbrev, 'players:', list.length); }catch(_){/* noop */}
   const updated = getTeamUpdatedAt(teamAbbrev);
   lineupTeamInfoEl.textContent = `${teamAbbrev} — Select lineup (Lineup from DailyFaceoff preselected - Updated: ${updated})`;

@@ -169,11 +169,42 @@ def run_update_data():
         script_path = os.path.join(project_root, 'scripts', 'update_data.py')
         export_flag = data.get('export', True)
         replace_flag = data.get('replace_date', False)
+        season = str(data.get('season') or os.getenv('NHL_SEASON') or '20252026').strip()
+
+        # Projections -> Google Sheets (local-only friendly)
+        projections_to_sheets = bool(data.get('projections_to_sheets', True))
+        projections_sheet_id = str(
+            data.get('projections_sheet_id')
+            or os.getenv('PROJECTIONS_SHEET_ID')
+            or ''
+        ).strip()
+        projections_worksheet = str(
+            data.get('projections_worksheet')
+            or os.getenv('PROJECTIONS_WORKSHEET')
+            or 'Sheets3'
+        ).strip()
+
+        if projections_to_sheets and not export_flag:
+            return jsonify({'error': 'projections_to_sheets requires export=true'}), 400
+
         cmd = [sys.executable, script_path, '--date', date]
         if export_flag:
             cmd.append('--export')
         if replace_flag:
             cmd.append('--replace-date')
+
+        # Ensure we write projections to Google Sheets instead of app/static/player_projections.csv
+        if export_flag and projections_to_sheets:
+            if not projections_sheet_id:
+                return jsonify({'error': 'Missing projections sheet id (set PROJECTIONS_SHEET_ID env var)'}), 400
+            cmd.extend(['--projections-sheets-id', projections_sheet_id])
+            if projections_worksheet:
+                cmd.extend(['--projections-worksheet', projections_worksheet])
+
+        # Explicit season for table names
+        if season:
+            cmd.extend(['--season', season])
+
         job_id = _start_admin_job(cmd, cwd=project_root)
         return jsonify({'jobId': job_id})
     except Exception as e:
@@ -651,6 +682,24 @@ def standings_page():
 def game_projections_page():
     """Game Projections page showing today's games by Eastern Time, with toggle to yesterday."""
     return render_template('projections.html', teams=TEAM_ROWS, active_tab='Game Projections', show_season_state=False)
+
+
+@main_bp.route('/api/lineups/all')
+def api_lineups_all():
+    """Return lineup data used by the projections lineup selector.
+
+    Source is Google Sheets (see _load_lineups_all()).
+    """
+    try:
+        data = _load_lineups_all()
+    except Exception:
+        data = {}
+    j = jsonify(data)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
 
 
 @main_bp.route('/api/projections/games')
@@ -1382,16 +1431,143 @@ def _static_path(*parts: str) -> str:
     except Exception:
         return os.path.join(os.getcwd(), *parts)
 
-def _load_lineups_all() -> Dict[str, Any]:
-    path = _static_path('lineups_all.json')
+_LINEUPS_ALL_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
+
+def _load_google_service_account_info_from_env() -> Dict[str, Any]:
+    """Load Google service account JSON.
+
+    Supports (in priority order):
+      - GOOGLE_SERVICE_ACCOUNT_JSON_PATH: path to a JSON key file
+      - GOOGLE_SERVICE_ACCOUNT_JSON_B64: base64-encoded JSON string
+      - GOOGLE_SERVICE_ACCOUNT_JSON: raw JSON string
+    """
+    raw: Optional[str] = None
+    path = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')
+    if path:
+        try:
+            p = str(path).strip()
+            if (p.startswith('"') and p.endswith('"')) or (p.startswith("'") and p.endswith("'")):
+                p = p[1:-1]
+            p = os.path.expandvars(os.path.expanduser(p))
+            with open(p, 'r', encoding='utf-8') as f:
+                raw = f.read()
+        except Exception as e:
+            raise RuntimeError(f"Invalid GOOGLE_SERVICE_ACCOUNT_JSON_PATH: {e}")
+    raw_b64 = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_B64')
+    if raw is None and raw_b64:
+        try:
+            import base64
+            s = str(raw_b64).strip()
+            if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+                s = s[1:-1]
+            s = ''.join(s.split())
+            pad = (-len(s)) % 4
+            if pad:
+                s = s + ('=' * pad)
+            try:
+                raw = base64.b64decode(s.encode('utf-8'), validate=False).decode('utf-8')
+            except Exception:
+                raw = base64.urlsafe_b64decode(s.encode('utf-8')).decode('utf-8')
+        except Exception as e:
+            raise RuntimeError(f"Invalid GOOGLE_SERVICE_ACCOUNT_JSON_B64: {e}")
+    if raw is None:
+        raw = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+    if not raw:
+        raise RuntimeError(
+            'Missing Google credentials. Set GOOGLE_SERVICE_ACCOUNT_JSON_PATH, GOOGLE_SERVICE_ACCOUNT_JSON_B64, or GOOGLE_SERVICE_ACCOUNT_JSON.'
+        )
     try:
-        if os.path.exists(path):
-            import json
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f) or {}
-    except Exception:
+        return json.loads(raw)
+    except Exception as e:
+        raise RuntimeError(f"Invalid Google service account JSON: {e}")
+
+def _load_lineups_all() -> Dict[str, Any]:
+    """Load lineups from Google Sheets.
+
+    Expected columns in the worksheet:
+      Timestamp, Team, Unit, Pos, PlayerName, playerId
+
+    Config:
+      - LINEUPS_SHEET_ID (defaults to PROJECTIONS_SHEET_ID)
+      - LINEUPS_WORKSHEET (default 'Sheets2')
+      - LINEUPS_SHEET_CACHE_TTL_SECONDS (default 300)
+    """
+    global _LINEUPS_ALL_CACHE
+    ttl_s = int(os.getenv('LINEUPS_SHEET_CACHE_TTL_SECONDS', '300') or '300')
+    now = time.time()
+    if _LINEUPS_ALL_CACHE and (now - _LINEUPS_ALL_CACHE[0]) < max(1, ttl_s):
+        return _LINEUPS_ALL_CACHE[1]
+
+    sheet_id = (os.getenv('LINEUPS_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    worksheet = (os.getenv('LINEUPS_WORKSHEET') or 'Sheets2').strip()
+    if not sheet_id:
+        # No sheet configured; return empty rather than reading from local JSON.
+        _LINEUPS_ALL_CACHE = (now, {})
         return {}
-    return {}
+
+    try:
+        import gspread  # type: ignore
+        from google.oauth2.service_account import Credentials  # type: ignore
+    except Exception:
+        _LINEUPS_ALL_CACHE = (now, {})
+        return {}
+
+    info = _load_google_service_account_info_from_env()
+    scopes = [
+        'https://www.googleapis.com/auth/spreadsheets.readonly',
+        'https://www.googleapis.com/auth/drive.readonly',
+    ]
+    creds = Credentials.from_service_account_info(info, scopes=scopes)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(sheet_id)
+    ws = sh.worksheet(worksheet)
+    rows = ws.get_all_records() or []
+
+    out: Dict[str, Any] = {}
+    latest_ts_by_team: Dict[str, str] = {}
+
+    def _ensure_team(t: str) -> Dict[str, Any]:
+        if t not in out:
+            out[t] = {'team': t, 'forwards': [], 'defense': [], 'goalies': [], 'generated_at': None}
+        return out[t]
+
+    for r in rows:
+        try:
+            team = str(r.get('Team') or '').strip().upper()
+            if not team:
+                continue
+            unit = str(r.get('Unit') or '').strip().upper()
+            pos = str(r.get('Pos') or '').strip().upper()[:1]
+            name = str(r.get('PlayerName') or r.get('Name') or '').strip()
+            pid_raw = r.get('playerId') if 'playerId' in r else r.get('PlayerId')
+            pid = int(str(pid_raw).strip())
+            ts = str(r.get('Timestamp') or '').strip()
+        except Exception:
+            continue
+
+        rec = {'name': name, 'playerId': pid, 'unit': unit, 'pos': ('G' if unit.startswith('G') else pos)}
+
+        bucket = 'forwards'
+        if rec['pos'] == 'G' or unit.startswith('G'):
+            bucket = 'goalies'
+            rec['pos'] = 'G'
+        elif rec['pos'] == 'D' or unit.startswith('LD') or unit.startswith('RD'):
+            bucket = 'defense'
+            rec['pos'] = 'D'
+        else:
+            rec['pos'] = 'F'
+
+        tnode = _ensure_team(team)
+        tnode[bucket].append(rec)
+        if ts:
+            latest_ts_by_team[team] = max(latest_ts_by_team.get(team, ''), ts)
+
+    # Set generated_at per team
+    for t, node in out.items():
+        node['generated_at'] = latest_ts_by_team.get(t)
+
+    _LINEUPS_ALL_CACHE = (now, out)
+    return out
 
 def _load_player_projections_csv() -> Dict[int, Dict[str, Any]]:
     """Load app/static/player_projections.csv into a dict keyed by playerId (int).
