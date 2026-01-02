@@ -433,6 +433,11 @@ def fetch_day(date_str: str, with_xg: bool = True) -> Tuple[pd.DataFrame, pd.Dat
 
                     # Merge indiv stats into agg and fill NA with zeros for numeric
                     if not indiv.empty:
+                        # Ensure expected columns exist even if the first merge (iG/A1/A2) created a partial frame
+                        # and/or no penalties occurred in the game.
+                        for c in indiv_cols:
+                            if c not in indiv.columns:
+                                indiv[c] = 0
                         agg = agg.merge(indiv, on=['GameID','PlayerID'], how='left')
                     else:
                         for c in indiv_cols:
@@ -854,19 +859,30 @@ def export_to_mysql(
     tbl_sh = f"nhl_{season}_shifts"
     tbl_gd = f"nhl_{season}_gamedata"
 
+    # Optional: pre-delete by date for idempotent loads (even if today's fetch is empty)
+    if replace_date and date_str is not None:
+        try:
+            with eng.begin() as conn:
+                conn.execute(text(f"DELETE FROM {tbl_pbp} WHERE Date = :d"), {"d": date_str})
+        except Exception:
+            # Table may not exist on first run; ignore
+            pass
+        try:
+            with eng.begin() as conn:
+                conn.execute(text(f"DELETE FROM {tbl_sh} WHERE Date = :d"), {"d": date_str})
+        except Exception:
+            pass
+        try:
+            with eng.begin() as conn:
+                conn.execute(text(f"DELETE FROM {tbl_gd} WHERE Date = :d"), {"d": date_str})
+        except Exception:
+            pass
+
     try:
         if not df_pbp.empty:
             # Drop lowercase x/y to avoid case-insensitive collisions with X/Y in MySQL
             dfp = df_pbp.copy()
             dfp = dfp.drop(columns=['x', 'y'], errors='ignore')
-            # Optional: pre-delete by date for idempotent loads
-            if replace_date and date_str is not None:
-                try:
-                    with eng.begin() as conn:
-                        conn.execute(text(f"DELETE FROM {tbl_pbp} WHERE Date = :d"), {"d": date_str})
-                except Exception:
-                    # Table may not exist on first run; ignore
-                    pass
             dfp.to_sql(tbl_pbp, con=eng, if_exists='append', index=False, method='multi', chunksize=1000)
             print(f"[mysql] wrote {len(df_pbp)} rows to {tbl_pbp}")
         else:
@@ -876,12 +892,6 @@ def export_to_mysql(
 
     try:
         if not df_shifts.empty:
-            if replace_date and date_str is not None:
-                try:
-                    with eng.begin() as conn:
-                        conn.execute(text(f"DELETE FROM {tbl_sh} WHERE Date = :d"), {"d": date_str})
-                except Exception:
-                    pass
             df_shifts.to_sql(tbl_sh, con=eng, if_exists='append', index=False, method='multi', chunksize=1000)
             print(f"[mysql] wrote {len(df_shifts)} rows to {tbl_sh}")
         else:
@@ -892,13 +902,6 @@ def export_to_mysql(
     # GameData export
     try:
         if df_gamedata is not None and not df_gamedata.empty:
-            if replace_date and date_str is not None:
-                try:
-                    with eng.begin() as conn:
-                        conn.execute(text(f"DELETE FROM {tbl_gd} WHERE Date = :d"), {"d": date_str})
-                except Exception:
-                    # table may not exist yet
-                    pass
             df_gd = df_gamedata.copy()
             df_gd.to_sql(tbl_gd, con=eng, if_exists='append', index=False, method='multi', chunksize=1000)
             print(f"[mysql] wrote {len(df_gd)} rows to {tbl_gd}")
