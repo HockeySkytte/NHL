@@ -75,6 +75,7 @@
         <label>Season
           <select id="seasonSelect"></select>
         </label>
+        {% block extra_filters %}{% endblock %}
         {% if show_season_state %}
         <label>Season State
           <select id="seasonStateSelect">
@@ -83,7 +84,9 @@
           </select>
         </label>
         {% endif %}
+        {% if show_include_historic is not defined or show_include_historic %}
         <label class="checkbox-row"><input type="checkbox" id="includeHistoric" /> <span>Include Historic Teams</span></label>
+        {% endif %}
         {% if active_tab in ['Schedule','Standings','Live Games'] %}
         <div class="brand">
           <a href="https://hockey-statistics.com/" target="_blank" rel="noopener">
@@ -100,7 +103,7 @@
   <a href="/standings" class="{% if active_tab=='Standings' %}active{% endif %}">Standings</a>
   <a href="/live" class="{% if active_tab=='Live Games' %}active{% endif %}">Live Games</a>
     <a href="/projections" class="{% if active_tab=='Game Projections' %}active{% endif %}">Game Projections</a>
-        <a href="#" class="{% if active_tab=='Skaters' %}active{% endif %}">Skaters</a>
+        <a href="/skaters" class="{% if active_tab=='Skaters' %}active{% endif %}">Skaters</a>
         <a href="#" class="{% if active_tab=='Goalies' %}active{% endif %}">Goalies</a>
         <a href="#" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
         <a href="#" class="{% if active_tab=='About' %}active{% endif %}">About</a>
@@ -144,7 +147,8 @@
       root.style.setProperty('--panel-alt', base);
       const valueColor = isLight(base)? '#0f141b' : '#f1f5f9';
       const viewModeSelect = document.getElementById('viewMode');
-      [teamSelect, seasonSelect, seasonStateSelect, viewModeSelect].filter(Boolean).forEach(sel=> sel.style.color = valueColor);
+      const playerSelect = document.getElementById('playerSelect');
+      [teamSelect, seasonSelect, seasonStateSelect, viewModeSelect, playerSelect].filter(Boolean).forEach(sel=> sel.style.color = valueColor);
     }
     function populateTeams(){
       const showHistoric = includeHistoric && includeHistoric.checked;

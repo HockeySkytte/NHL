@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import sys
 import argparse
+import subprocess
 from datetime import datetime, date
 from typing import List, Tuple, Optional, Dict, Any
 import json
@@ -859,6 +860,42 @@ def export_to_mysql(
     tbl_sh = f"nhl_{season}_shifts"
     tbl_gd = f"nhl_{season}_gamedata"
 
+    def _apply_xg_nulling_rule(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+        """Ensure xG columns are NULL when reason indicates invalid/short xG.
+
+        Rule: if reason in {'short','failed-bank-attempt'} then xG_F/xG_F2/xG_S must be NULL.
+        Applies case-insensitively and only when the needed columns exist.
+        """
+        if df is None or df.empty:
+            return df
+
+        # Find reason column (case-insensitive)
+        reason_col = None
+        for c in df.columns:
+            if str(c).lower() == 'reason':
+                reason_col = c
+                break
+        if not reason_col:
+            return df
+
+        reasons = (
+            df[reason_col]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+        )
+        bad = reasons.isin({'short', 'failed-bank-attempt'})
+        if not bool(bad.any()):
+            return df
+
+        # Map xG columns case-insensitively
+        col_by_lower = {str(c).lower(): c for c in df.columns}
+        for key in ('xg_f', 'xg_f2', 'xg_s'):
+            real = col_by_lower.get(key)
+            if real is not None:
+                df.loc[bad, real] = float('nan')
+        return df
+
     # Optional: pre-delete by date for idempotent loads (even if today's fetch is empty)
     if replace_date and date_str is not None:
         try:
@@ -882,6 +919,7 @@ def export_to_mysql(
         if not df_pbp.empty:
             # Drop lowercase x/y to avoid case-insensitive collisions with X/Y in MySQL
             dfp = df_pbp.copy()
+            _apply_xg_nulling_rule(dfp)
             dfp = dfp.drop(columns=['x', 'y'], errors='ignore')
             dfp.to_sql(tbl_pbp, con=eng, if_exists='append', index=False, method='multi', chunksize=1000)
             print(f"[mysql] wrote {len(df_pbp)} rows to {tbl_pbp}")
@@ -903,6 +941,7 @@ def export_to_mysql(
     try:
         if df_gamedata is not None and not df_gamedata.empty:
             df_gd = df_gamedata.copy()
+            _apply_xg_nulling_rule(df_gd)
             df_gd.to_sql(tbl_gd, con=eng, if_exists='append', index=False, method='multi', chunksize=1000)
             print(f"[mysql] wrote {len(df_gd)} rows to {tbl_gd}")
         else:
@@ -1095,6 +1134,11 @@ def main(argv: List[str] | None = None) -> int:
     # Projections output options
     parser.add_argument('--projections-sheets-id', help='Google Sheets document id to write nhl_player_projections into')
     parser.add_argument('--projections-worksheet', default='player_projections', help='Worksheet/tab name for projections output')
+    # RAPM/context post-step options (requires --export)
+    parser.add_argument('--run-rapm', action='store_true', help='After export, rebuild RAPM + context and write to MySQL + Google Sheets')
+    parser.add_argument('--rapm-sheets-id', help='Google Sheets document id to write RAPM/context into (Sheets4/Sheets5)')
+    parser.add_argument('--rapm-worksheet', default='Sheets4', help='Worksheet/tab name for RAPM output')
+    parser.add_argument('--context-worksheet', default='Sheets5', help='Worksheet/tab name for context output')
     # Lineup scraping options
     parser.add_argument('--lineup-url', help='DailyFaceoff line combinations URL for a team (e.g., https://www.dailyfaceoff.com/teams/anaheim-ducks/line-combinations)')
     parser.add_argument('--lineup-save', action='store_true', help='When using --lineup-url, save mapped lineup JSON to app/static/lineup_<TEAM>.json')
@@ -1136,6 +1180,36 @@ def main(argv: List[str] | None = None) -> int:
         except Exception as e:
             print(f"[error] projections post-step failed: {e}", file=sys.stderr)
             return 4
+
+        # Optional: run RAPM + context refresh as a post-step.
+        if bool(args.run_rapm):
+            if not args.rapm_sheets_id:
+                print('[error] --run-rapm requires --rapm-sheets-id', file=sys.stderr)
+                return 6
+            try:
+                rapm_script = os.path.join(REPO_ROOT, 'scripts', 'rapm.py')
+                rapm_cmd = [
+                    sys.executable,
+                    rapm_script,
+                    '--season',
+                    str(args.season).strip(),
+                    '--sheets-id',
+                    str(args.rapm_sheets_id).strip(),
+                    '--worksheet',
+                    str(args.rapm_worksheet or 'Sheets4').strip(),
+                    '--context-worksheet',
+                    str(args.context_worksheet or 'Sheets5').strip(),
+                ]
+                print('[rapm] starting RAPM + context refresh...')
+                res = subprocess.run(rapm_cmd, cwd=REPO_ROOT, capture_output=True, text=True)
+                out = (res.stdout or '') + ("\n" + res.stderr if res.stderr else '')
+                print(out)
+                if res.returncode != 0:
+                    print(f'[error] rapm post-step failed with code {res.returncode}', file=sys.stderr)
+                    return 7
+            except Exception as e:
+                print(f'[error] rapm post-step failed: {e}', file=sys.stderr)
+                return 7
 
     # Optional: scrape DailyFaceoff lineup and map to PlayerIDs
     if args.lineup_url:

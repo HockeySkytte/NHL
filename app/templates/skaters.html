@@ -1,0 +1,1098 @@
+{% extends 'base.html' %}
+
+{% block extra_filters %}
+<label>Player
+  <select id="playerSelect"></select>
+</label>
+{% endblock %}
+
+{% block head %}
+<style>
+  .skater-wrap{ width:100%; margin-left:-10px; }
+  .skater-card{ width:100%; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:24px 26px 18px; }
+  .skater-top{ display:flex; gap:22px; align-items:center; }
+  .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
+  .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
+  .skater-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
+  .kv{ display:flex; gap:6px; align-items:baseline; }
+  .k{ text-transform:uppercase; font-size:12px; letter-spacing:1px; color:var(--text-dim); font-weight:750; }
+  .v{ font-weight:750; color:var(--text); }
+  .skater-empty{ text-align:center; color:var(--text-dim); padding:30px 10px; }
+  .err{ color:#ff8f8f; font-weight:650; }
+
+  .subtabs{ display:flex; gap:12px; align-items:center; margin-top:18px; }
+  .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
+  .subtab-btn.active{ outline:2px solid var(--accent); }
+  .panel{ margin-top:14px; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:16px 16px 12px; }
+  .mini-table{ width:100%; border-collapse:collapse; font-size:14px; }
+  .mini-table th{ text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; }
+  .mini-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; }
+
+  .rapm-controls{ display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; margin-bottom:14px; }
+  .rapm-controls label{ min-width:160px; }
+  .rapm-controls select{ color:var(--text); }
+
+  .rapm-split{ display:grid; grid-template-columns: 1.4fr 0.8fr 0.8fr; gap:14px; max-width:1150px; margin:0 auto; }
+  .rapm-sect{ --rapmBarH: 340px; border:1px solid #232a3a; border-radius:12px; padding:12px 12px 10px; background:rgba(255,255,255,0.01); }
+  .rapm-sect h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .toi{ margin-top:8px; font-size:12px; color:rgba(255,255,255,0.90); text-align:center; font-weight:750; }
+
+  .rapm-row{ display:flex; gap:3px; align-items:flex-start; justify-content:center; }
+  .rapm-axis{ width:40px; height:var(--rapmBarH); position:relative; }
+  .rapm-axis .lbl{ position:absolute; left:0; font-size:11px; color:var(--text-dim); }
+  .rapm-axis .top{ top:0; }
+  .rapm-axis .mid{ transform:translateY(-50%); }
+  .rapm-axis .bot{ bottom:0; }
+
+  .bars{ display:flex; gap:12px; align-items:flex-end; justify-content:center; flex:0; }
+  .bar-col{ width:112px; }
+  .bar-label{ text-align:center; font-size:12px; color:var(--text-dim); margin-top:8px; }
+  .bar-value{ text-align:center; font-size:12px; font-weight:750; margin-top:6px; }
+  .bar-area{ position:relative; height:var(--rapmBarH); border-radius:10px; background:rgba(255,255,255,0.02); border:1px solid #1f2734; overflow:hidden; }
+  .bar-line{ position:absolute; left:0; right:0; height:1px; background:#273246; }
+  .bar{ position:absolute; left:14%; width:72%; border-radius:8px; background:var(--accent); opacity:1; }
+  .bar.neg{ background:#ff6a6a; opacity:1; }
+
+  .rapm-career{ max-width:1150px; margin:0 auto; }
+  .rapm-career .career-area{ width:100%; flex:1; min-width:0; }
+  .rapm-career svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .rapm-career-legend{ display:flex; gap:22px; align-items:center; justify-content:center; margin-top:10px; color:rgba(255,255,255,0.90); font-size:14px; letter-spacing:.2px; font-weight:750; }
+  .rapm-career-legend .sw{ width:12px; height:12px; border-radius:3px; display:inline-block; margin-right:8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="skater-wrap">
+  <div class="skater-card">
+    <div class="skater-top">
+      <img id="skaterImg" class="skater-img" alt="Player" />
+      <div style="min-width:0;">
+        <h2 id="skaterName" class="skater-name">Select a player</h2>
+        <div id="skaterInfo" class="skater-sub"></div>
+      </div>
+    </div>
+
+    <div class="subtabs" role="tablist" aria-label="Skater tabs">
+      <button id="tabRAPM" class="subtab-btn active" type="button" role="tab" aria-selected="true">RAPM</button>
+      <button id="tabProjections" class="subtab-btn" type="button" role="tab" aria-selected="false">Projections</button>
+    </div>
+
+    <div id="tabPanelRAPM" class="panel" role="tabpanel">
+      <div id="rapmPanelInner" class="skater-empty">Select a player to view RAPM.</div>
+    </div>
+    <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
+      <div id="projPanelInner" class="skater-empty">Select a player to view projections.</div>
+    </div>
+
+    <div id="skaterMsg" class="skater-empty" style="margin-top:10px;">Choose Team, Season, and Player.</div>
+  </div>
+</div>
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const teamSelect = document.getElementById('teamSelect');
+const seasonSelect = document.getElementById('seasonSelect');
+const playerSelect = document.getElementById('playerSelect');
+
+const skaterImg = document.getElementById('skaterImg');
+const skaterName = document.getElementById('skaterName');
+const skaterInfo = document.getElementById('skaterInfo');
+const skaterMsg = document.getElementById('skaterMsg');
+
+const tabRAPM = document.getElementById('tabRAPM');
+const tabProjections = document.getElementById('tabProjections');
+const tabPanelRAPM = document.getElementById('tabPanelRAPM');
+const tabPanelProjections = document.getElementById('tabPanelProjections');
+const rapmPanelInner = document.getElementById('rapmPanelInner');
+const projPanelInner = document.getElementById('projPanelInner');
+
+let __rapmCache = null;
+let __ctxCache = null;
+let __rapmKey = '';
+let __scaleCache = null;
+let __scaleKey = '';
+
+const teams = JSON.parse(document.getElementById('teams-data').textContent);
+
+function seasonToStartYear(season){
+  const s = String(season||'').trim();
+  if(s.length >= 4) return parseInt(s.slice(0,4),10);
+  return null;
+}
+
+function calcAgeOnOct1(birthDateStr, season){
+  if(!birthDateStr) return null;
+  const startYear = seasonToStartYear(season);
+  if(!startYear) return null;
+  const birth = new Date(birthDateStr + 'T00:00:00Z');
+  if(isNaN(birth)) return null;
+  const ref = new Date(Date.UTC(startYear, 9, 1));
+  let age = ref.getUTCFullYear() - birth.getUTCFullYear();
+  const m = ref.getUTCMonth() - birth.getUTCMonth();
+  if(m < 0 || (m === 0 && ref.getUTCDate() < birth.getUTCDate())) age--;
+  return age;
+}
+
+function inchesToFeetIn(inches){
+  const n = Number(inches);
+  if(!Number.isFinite(n)) return null;
+  const ft = Math.floor(n/12);
+  const inch = n % 12;
+  return `${ft}'${inch}"`;
+}
+
+function setMsg(text, isError=false){
+  if(!skaterMsg) return;
+  skaterMsg.textContent = text || '';
+  skaterMsg.className = 'skater-empty' + (isError ? ' err' : '');
+}
+
+function setHeadshot(team, season, playerId){
+  const s = String(season||'').trim();
+  const t = String(team||'').trim();
+  const pid = String(playerId||'').trim();
+  const primary = `https://assets.nhle.com/mugs/nhl/${s}/${t}/${pid}.png`;
+  const fallback = `https://assets.nhle.com/mugs/nhl/latest/${pid}.png`;
+  skaterImg.onerror = () => {
+    if(skaterImg.dataset.fallbackDone === '1') return;
+    skaterImg.dataset.fallbackDone = '1';
+    skaterImg.src = fallback;
+  };
+  skaterImg.dataset.fallbackDone = '0';
+  skaterImg.src = primary;
+}
+
+function renderPlayerLanding(landing){
+  const first = landing?.firstName?.default || '';
+  const last = landing?.lastName?.default || '';
+  const full = (first + ' ' + last).trim() || 'Unknown player';
+  skaterName.textContent = full;
+
+  const season = seasonSelect?.value;
+  const age = calcAgeOnOct1(landing?.birthDate, season);
+
+  const height = inchesToFeetIn(landing?.heightInInches);
+  const heightCm = landing?.heightInCentimeters;
+  const weightLb = landing?.weightInPounds;
+  const weightKg = landing?.weightInKilograms;
+
+  const draft = landing?.draftDetails || {};
+  const draftYear = draft?.year;
+  const overallPick = draft?.overallPick;
+
+  const parts = [];
+  if(height || heightCm) parts.push({k:'Height', v: [height, heightCm?`${heightCm} cm`:null].filter(Boolean).join(' • ')});
+  if(weightLb || weightKg) parts.push({k:'Weight', v: [weightLb?`${weightLb} lb`:null, weightKg?`${weightKg} kg`:null].filter(Boolean).join(' • ')});
+  if(age != null) parts.push({k:'Age', v: `${age}`});
+  if(draftYear) parts.push({k:'Draft', v: overallPick?`${draftYear} • #${overallPick}`:`${draftYear}`});
+
+  skaterInfo.innerHTML = parts.map(p=>`<div class="kv"><span class="k">${p.k}</span><span class="v">${p.v}</span></div>`).join('');
+}
+
+function setActiveTab(which){
+  const isR = which === 'rapm';
+  tabRAPM?.classList.toggle('active', isR);
+  tabProjections?.classList.toggle('active', !isR);
+  if(tabRAPM) tabRAPM.setAttribute('aria-selected', isR ? 'true' : 'false');
+  if(tabProjections) tabProjections.setAttribute('aria-selected', !isR ? 'true' : 'false');
+  if(tabPanelRAPM) tabPanelRAPM.style.display = isR ? '' : 'none';
+  if(tabPanelProjections) tabPanelProjections.style.display = !isR ? '' : 'none';
+}
+
+function projectionsEnabled(){
+  return String(seasonSelect?.value || '') === '20252026';
+}
+
+function updateTabsVisibility(){
+  const enabled = projectionsEnabled();
+  if(tabProjections) tabProjections.style.display = enabled ? '' : 'none';
+  if(!enabled) setActiveTab('rapm');
+}
+
+function parseLocaleNumber(x){
+  if(x == null) return NaN;
+  if(typeof x === 'number') return x;
+  let s = String(x).trim();
+  if(!s) return NaN;
+  s = s.replace(/\u00A0/g, ' ').replace(/\s+/g, '');
+  // If both '.' and ',' exist, treat the last separator as the decimal separator.
+  const lastDot = s.lastIndexOf('.');
+  const lastComma = s.lastIndexOf(',');
+  if(lastDot !== -1 && lastComma !== -1){
+    if(lastComma > lastDot){
+      // Danish-like: 1.234,56
+      s = s.replace(/\./g, '').replace(/,/g, '.');
+    }else{
+      // US-like: 1,234.56
+      s = s.replace(/,/g, '');
+    }
+  }else if(lastComma !== -1 && lastDot === -1){
+    // Only comma present -> assume decimal comma.
+    s = s.replace(/,/g, '.');
+  }else{
+    // Only dot present (or neither) -> Number() can handle.
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function zToPercentile(z){
+  const n = Number(z);
+  if(!Number.isFinite(n)) return NaN;
+  // Normal CDF approximation via erf
+  const t = n / Math.sqrt(2);
+  // Abramowitz-Stegun approximation for erf
+  const sign = t < 0 ? -1 : 1;
+  const a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429, p=0.3275911;
+  const x = Math.abs(t);
+  const u = 1 / (1 + p*x);
+  const y = 1 - (((((a5*u + a4)*u) + a3)*u + a2)*u + a1)*u*Math.exp(-x*x);
+  const erf = sign * y;
+  const cdf = 0.5 * (1 + erf);
+  return cdf * 100;
+}
+
+function getAccentColor(){
+  try{
+    return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4da3ff';
+  }catch(e){
+    return '#4da3ff';
+  }
+}
+
+function hexToRgb(hex){
+  const s = String(hex||'').trim().replace('#','');
+  if(s.length !== 6) return null;
+  const r = parseInt(s.slice(0,2),16);
+  const g = parseInt(s.slice(2,4),16);
+  const b = parseInt(s.slice(4,6),16);
+  if(!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return null;
+  return {r,g,b};
+}
+
+function lerp(a,b,t){ return a + (b-a)*t; }
+
+function percentileToColor(pct){
+  const p = clamp(Number(pct), 0, 100);
+  const red = hexToRgb('#ff6a6a');
+  const white = hexToRgb('#f1f5f9');
+  const blue = hexToRgb('#4da3ff');
+  if(!red || !white || !blue) return getAccentColor();
+  if(p <= 50){
+    const t = p / 50;
+    const r = Math.round(lerp(red.r, white.r, t));
+    const g = Math.round(lerp(red.g, white.g, t));
+    const b = Math.round(lerp(red.b, white.b, t));
+    return `rgb(${r},${g},${b})`;
+  }
+  const t = (p - 50) / 50;
+  const r = Math.round(lerp(white.r, blue.r, t));
+  const g = Math.round(lerp(white.g, blue.g, t));
+  const b = Math.round(lerp(white.b, blue.b, t));
+  return `rgb(${r},${g},${b})`;
+}
+
+function normRatesTotals(v){
+  const s = String(v || '').trim().toLowerCase();
+  if(s.startsWith('tot')) return 'Totals';
+  if(s.startsWith('rate')) return 'Rates';
+  return v;
+}
+
+function pickRow(rows, ratesTotals){
+  const want = normRatesTotals(ratesTotals);
+  // Prefer 5v5 row since it carries PP/SH columns too
+  let r = rows.find(x => String(x.StrengthState||'') === '5v5' && normRatesTotals(x.Rates_Totals) === want);
+  if(!r) r = rows.find(x => normRatesTotals(x.Rates_Totals) === want);
+  if(!r) r = rows[0];
+  return r || null;
+}
+
+function pickStrengthRow(rows, strength, ratesTotals){
+  const want = normRatesTotals(ratesTotals);
+  return rows.find(x => String(x.StrengthState||'') === strength && normRatesTotals(x.Rates_Totals) === want) || null;
+}
+
+function pickCtxRow(rows, strength){
+  return rows.find(x => String(x.StrengthState||'') === strength) || null;
+}
+
+function applyRAPMSelectTextColor(){
+  if(!teamSelect) return;
+  const c = getComputedStyle(teamSelect).color;
+  ['rapmPeriod','rapmCareerStrength','rapmMetric','rapmRatesTotals','rapmOutput','rapmZRange'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.style.color = c;
+  });
+}
+
+function clamp(v, lo, hi){
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function buildBarsFromRows(row5, rowPP, rowSH, opts){
+  const metric = opts.metric;
+  const output = opts.output;
+  const pct = opts.percentiles || null;
+
+  if(output === 'pct' && pct){
+    return {
+      fivev5: [
+        { key: '5v5_off', label: 'Off', value: pct['5v5_off'] },
+        { key: '5v5_def', label: 'Def', value: pct['5v5_def'] },
+        { key: '5v5_diff', label: 'Diff', value: pct['5v5_diff'] },
+      ],
+      pp: [
+        { key: 'pp_off', label: 'Off', value: pct['pp_off'] },
+      ],
+      sh: [
+        { key: 'sh_def', label: 'Def', value: pct['sh_def'] },
+      ],
+    };
+  }
+
+  function getValue(row, colOrCols, invert=false){
+    const cols = Array.isArray(colOrCols) ? colOrCols : [colOrCols];
+    for(const col of cols){
+      const n = parseLocaleNumber(row?.[col]);
+      if(Number.isFinite(n)) return invert ? -n : n;
+    }
+    return NaN;
+  }
+  function getZ(row, colOrCols, invert=false){
+    const cols = Array.isArray(colOrCols) ? colOrCols : [colOrCols];
+    for(const col of cols){
+      const n = parseLocaleNumber(row?.[col]);
+      if(Number.isFinite(n)) return invert ? -n : n;
+    }
+    return NaN;
+  }
+
+  const map = {
+    corsi: {
+      off: ['CF', 'CF_zscore', false],
+      def: ['CA', 'CA_zscore', true],
+      diff: ['C_plusminus', 'C_plusminus_zscore', false],
+      pp: [['PP_CF', 'CF'], ['PP_CF_zscore', 'CF_zscore'], false],
+      sh: [['SH_CA', 'CA'], ['SH_CA_zscore', 'CA_zscore'], true],
+    },
+    xg: {
+      off: ['xGF', 'xGF_zscore', false],
+      def: ['xGA', 'xGA_zscore', true],
+      diff: ['xG_plusminus', 'xG_plusminus_zscore', false],
+      pp: [['PP_xGF', 'xGF'], ['PP_xGF_zscore', 'xGF_zscore'], false],
+      sh: [['SH_xGA', 'xGA'], ['SH_xGA_zscore', 'xGA_zscore'], true],
+    },
+    goals: {
+      off: ['GF', 'GF_zscore', false],
+      def: ['GA', 'GA_zscore', true],
+      diff: ['G_plusminus', 'G_plusminus_zscore', false],
+      pp: [['PP_GF', 'GF'], ['PP_GF_zscore', 'GF_zscore'], false],
+      sh: [['SH_GA', 'GA'], ['SH_GA_zscore', 'GA_zscore'], true],
+    }
+  };
+  const m = map[metric] || map.corsi;
+
+  function get(row, col, zcol, invert){
+    if(output === 'z') return getZ(row, zcol, invert);
+    if(output === 'pct'){
+      const z = getZ(row, zcol, invert);
+      const p = zToPercentile(z);
+      return p;
+    }
+    return getValue(row, col, invert);
+  }
+
+  return {
+    fivev5: [
+      { key: '5v5_off', label: 'Off', value: get(row5, ...m.off) },
+      { key: '5v5_def', label: 'Def', value: get(row5, ...m.def) },
+      { key: '5v5_diff', label: 'Diff', value: get(row5, ...m.diff) },
+    ],
+    pp: [
+      { key: 'pp_off', label: 'Off', value: get(rowPP, ...m.pp) },
+    ],
+    sh: [
+      { key: 'sh_def', label: 'Def', value: get(rowSH, ...m.sh) },
+    ],
+  };
+}
+
+function renderBarSection(title, bars, scale){
+  const axis = (()=>{
+    if(scale.mode === 'pct'){
+      return { min: 0, max: 100, midPct: 50, topLabel: '100', midLabel: '50', botLabel: '0' };
+    }
+    const min = Number(scale.min);
+    const max = Number(scale.max);
+    if(!Number.isFinite(min) || !Number.isFinite(max) || min === max){
+      const r = Number.isFinite(scale.range) ? Number(scale.range) : 2;
+      return { min: -r, max: r, zeroPct: 50, topLabel: fmtNum(r, 2), midLabel: '0', botLabel: fmtNum(-r, 2) };
+    }
+    const denom = (max - min) || 1;
+    let zeroPct = ((max - 0) / denom) * 100;
+    zeroPct = clamp(zeroPct, 0, 100);
+    return { min, max, zeroPct, topLabel: fmtNum(max, 3), midLabel: '0', botLabel: fmtNum(min, 3) };
+  })();
+
+  const axisHtml = `
+    <div class="rapm-axis">
+      <div class="lbl top">${axis.topLabel}</div>
+      <div class="lbl mid" style="top:${scale.mode === 'pct' ? axis.midPct : axis.zeroPct}%;">${axis.midLabel}</div>
+      <div class="lbl bot">${axis.botLabel}</div>
+    </div>
+  `;
+
+  const cols = bars.map(b => {
+    const raw = Number(b.value);
+    const ok = Number.isFinite(raw);
+    const v = ok ? raw : 0;
+
+    let topPct = 50;
+    let heightPct = 0;
+    let neg = false;
+    let color = '#4da3ff';
+
+    if(scale.mode === 'pct'){
+      const p = clamp(v, 0, 100);
+      topPct = 100 - p;
+      heightPct = p;
+      color = percentileToColor(p);
+    }else{
+      const min = axis.min;
+      const max = axis.max;
+      const denom = (max - min) || 1;
+      const y = (val)=> ((max - val) / denom) * 100;
+      const z0 = axis.zeroPct;
+      const yv = y(v);
+      topPct = Math.min(yv, z0);
+      heightPct = Math.abs(yv - z0);
+      neg = v < 0;
+      color = neg ? '#ff6a6a' : '#4da3ff';
+    }
+
+    const label = ok ? (scale.mode === 'pct' ? `${fmtNum(v, 1)}%` : fmtNum(v, 3)) : '';
+
+    return `
+      <div class="bar-col">
+        <div class="bar-area">
+          ${scale.mode === 'pct'
+            ? `<div class="bar-line" style="top:${axis.midPct}%;"></div>`
+            : `<div class="bar-line" style="top:${axis.zeroPct}%;"></div>`
+          }
+          <div class="bar ${neg ? 'neg' : ''}" style="top:${topPct}%; height:${heightPct}%; background:${color};"></div>
+        </div>
+        <div class="bar-label">${b.label}</div>
+        <div class="bar-value">${label}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="rapm-sect">
+      <h3>${title}</h3>
+      <div class="rapm-row">${axisHtml}<div class="bars">${cols}</div></div>
+      <div class="toi" data-toi="${title}"></div>
+    </div>
+  `;
+}
+
+function renderNotEnoughSection(title, minsStr, threshold){
+  return `
+    <div class="rapm-sect">
+      <h3>${title}</h3>
+      <div class="skater-empty" style="padding:18px 8px;">Not enough data</div>
+      <div class="toi">${minsStr ? `TOI: ${minsStr} min` : 'TOI: -'}${threshold ? ` (min ${threshold})` : ''}</div>
+    </div>
+  `;
+}
+
+function renderRAPMUI(){
+  if(!rapmPanelInner) return;
+  rapmPanelInner.className = '';
+  rapmPanelInner.innerHTML = `
+    <div class="rapm-controls">
+      <label>Period
+        <select id="rapmPeriod">
+          <option value="season">Season</option>
+          <option value="career">Career</option>
+        </select>
+      </label>
+      <label id="rapmCareerStrengthWrap" style="display:none;">Strength
+        <select id="rapmCareerStrength">
+          <option value="5v5">5v5</option>
+          <option value="PP">PP</option>
+          <option value="SH">SH</option>
+        </select>
+      </label>
+      <label>Metric
+        <select id="rapmMetric">
+          <option value="corsi">Corsi</option>
+          <option value="xg">xG</option>
+          <option value="goals">Goals</option>
+        </select>
+      </label>
+      <label>Rates/Totals
+        <select id="rapmRatesTotals">
+          <option value="Rates">Rates</option>
+          <option value="Totals">Totals</option>
+        </select>
+      </label>
+      <label>Output
+        <select id="rapmOutput">
+          <option value="value">Value</option>
+          <option value="pct">Percentile</option>
+          <option value="z">Z-Score</option>
+        </select>
+      </label>
+      <label id="rapmRangeWrap" style="display:none;">Range
+        <select id="rapmZRange">
+          <option value="1">±1</option>
+          <option value="2" selected>±2</option>
+          <option value="3">±3</option>
+          <option value="4">±4</option>
+          <option value="5">±5</option>
+        </select>
+      </label>
+    </div>
+    <div id="rapmChart"></div>
+    <div id="rapmCareer" class="rapm-career" style="display:none;"></div>
+  `;
+
+  const periodSel = document.getElementById('rapmPeriod');
+  const careerStrengthWrap = document.getElementById('rapmCareerStrengthWrap');
+  const careerStrengthSel = document.getElementById('rapmCareerStrength');
+  const metricSel = document.getElementById('rapmMetric');
+  const rtSel = document.getElementById('rapmRatesTotals');
+  const outSel = document.getElementById('rapmOutput');
+  const rangeWrap = document.getElementById('rapmRangeWrap');
+  const rangeSel = document.getElementById('rapmZRange');
+
+  function prefKey(k){ return `skaters_rapm_${k}`; }
+  function loadPrefs(){
+    try{
+      const p = localStorage.getItem(prefKey('period'));
+      const cs = localStorage.getItem(prefKey('careerStrength'));
+      const m = localStorage.getItem(prefKey('metric'));
+      const rt = localStorage.getItem(prefKey('ratesTotals'));
+      const o = localStorage.getItem(prefKey('output'));
+      const zr = localStorage.getItem(prefKey('zRange'));
+      if(p && periodSel && Array.from(periodSel.options).some(x=>x.value===p)) periodSel.value = p;
+      if(cs && careerStrengthSel && Array.from(careerStrengthSel.options).some(x=>x.value===cs)) careerStrengthSel.value = cs;
+      if(m && metricSel && Array.from(metricSel.options).some(x=>x.value===m)) metricSel.value = m;
+      if(rt && rtSel && Array.from(rtSel.options).some(x=>x.value===rt)) rtSel.value = rt;
+      if(o && outSel && Array.from(outSel.options).some(x=>x.value===o)) outSel.value = o;
+      if(zr && rangeSel && Array.from(rangeSel.options).some(x=>x.value===zr)) rangeSel.value = zr;
+    }catch(e){/* ignore */}
+  }
+  function savePrefs(){
+    try{
+      if(periodSel) localStorage.setItem(prefKey('period'), String(periodSel.value||''));
+      if(careerStrengthSel) localStorage.setItem(prefKey('careerStrength'), String(careerStrengthSel.value||''));
+      if(metricSel) localStorage.setItem(prefKey('metric'), String(metricSel.value||''));
+      if(rtSel) localStorage.setItem(prefKey('ratesTotals'), String(rtSel.value||''));
+      if(outSel) localStorage.setItem(prefKey('output'), String(outSel.value||''));
+      if(rangeSel) localStorage.setItem(prefKey('zRange'), String(rangeSel.value||''));
+    }catch(e){/* ignore */}
+  }
+
+  loadPrefs();
+  applyRAPMSelectTextColor();
+
+  function update(){
+    savePrefs();
+    if(!__rapmCache) return;
+    const rows = Array.isArray(__rapmCache?.rows) ? __rapmCache.rows : [];
+    const ctxRows = Array.isArray(__ctxCache?.rows) ? __ctxCache.rows : [];
+    if(!rows.length){
+      const chart = document.getElementById('rapmChart');
+      if(chart) chart.innerHTML = '<div class="skater-empty">No RAPM data.</div>';
+      return;
+    }
+
+    const output = String(outSel?.value || 'value');
+    const mode = output === 'pct' ? 'pct' : (output === 'z' ? 'z' : 'value');
+    const zRange = parseLocaleNumber(rangeSel?.value || '2');
+    if(rangeWrap) rangeWrap.style.display = (output === 'z') ? '' : 'none';
+
+    const period = String(periodSel?.value || 'season');
+    const chart = document.getElementById('rapmChart');
+    const career = document.getElementById('rapmCareer');
+    if(careerStrengthWrap) careerStrengthWrap.style.display = (period === 'career') ? '' : 'none';
+    if(chart) chart.style.display = (period === 'career') ? 'none' : '';
+    if(career) career.style.display = (period === 'career') ? '' : 'none';
+    applyRAPMSelectTextColor();
+
+    if(period === 'career'){
+      renderRAPMCareer({
+        playerId: String(playerSelect?.value || ''),
+        ratesTotals: String(rtSel?.value || 'Rates'),
+        metric: String(metricSel?.value || 'corsi'),
+        output,
+        zRange,
+        strength: String(careerStrengthSel?.value || '5v5'),
+      });
+      return;
+    }
+
+    const opts = {
+      metric: String(metricSel?.value || 'corsi'),
+      ratesTotals: String(rtSel?.value || 'Rates'),
+      output: output,
+      zRange: zRange,
+    };
+    const row5 = pickStrengthRow(rows, '5v5', opts.ratesTotals) || pickRow(rows, opts.ratesTotals);
+    const rowPP = pickStrengthRow(rows, 'PP', opts.ratesTotals) || row5;
+    const rowSH = pickStrengthRow(rows, 'SH', opts.ratesTotals) || row5;
+    const mins5 = parseLocaleNumber(pickCtxRow(ctxRows, '5v5')?.Minutes);
+    const minsp = parseLocaleNumber(pickCtxRow(ctxRows, 'PP')?.Minutes);
+    const minss = parseLocaleNumber(pickCtxRow(ctxRows, 'SH')?.Minutes);
+    const elig5 = Number.isFinite(mins5) && mins5 >= 100;
+    const eligp = Number.isFinite(minsp) && minsp >= 40;
+    const eligs = Number.isFinite(minss) && minss >= 40;
+
+    if(!chart) return;
+
+    if(!elig5 && !eligp && !eligs){
+      chart.innerHTML = '<div class="skater-empty">Not enough data.</div>';
+      return;
+    }
+
+    const season = String(seasonSelect?.value || '');
+    const scaleKey = `${season}|${opts.ratesTotals}|${opts.metric}`;
+    if(mode === 'value' || mode === 'pct'){
+      if(__scaleKey !== scaleKey){ __scaleKey = scaleKey; __scaleCache = null; }
+    }
+
+    const renderWithScale = (scale)=>{
+      const thresholds = scale?.thresholds || { fivev5: 100, pp: 40, sh: 40 };
+      const playerPct = scale?.player?.percentiles || null;
+      const bars = buildBarsFromRows(row5, rowPP, rowSH, { metric: opts.metric, output: output, percentiles: playerPct });
+
+      const five = scale?.fivev5 || {};
+      const pp = scale?.pp || {};
+      const sh = scale?.sh || {};
+
+      const mins5s = fmtNum(mins5, 1);
+      const minsps = fmtNum(minsp, 1);
+      const minsss = fmtNum(minss, 1);
+
+      const sect5 = elig5
+        ? renderBarSection('5v5', bars.fivev5, {mode, min: five.min, max: five.max, range: zRange})
+        : renderNotEnoughSection('5v5', mins5s, thresholds.fivev5);
+      const sectP = eligp
+        ? renderBarSection('PP', bars.pp, {mode, min: pp.min, max: pp.max, range: zRange})
+        : renderNotEnoughSection('PP', minsps, thresholds.pp);
+      const sectS = eligs
+        ? renderBarSection('SH', bars.sh, {mode, min: sh.min, max: sh.max, range: zRange})
+        : renderNotEnoughSection('SH', minsss, thresholds.sh);
+
+      chart.innerHTML = `<div class="rapm-split">${sect5}${sectP}${sectS}</div>`;
+
+      // Fill TOI labels for eligible sections
+      try{
+        const map = {
+          '5v5': mins5s ? `TOI: ${mins5s} min` : 'TOI: -',
+          'PP':  minsps ? `TOI: ${minsps} min` : 'TOI: -',
+          'SH':  minsss ? `TOI: ${minsss} min` : 'TOI: -',
+        };
+        chart.querySelectorAll('.toi[data-toi]').forEach(el=>{
+          const k = String(el.getAttribute('data-toi') || '').trim();
+          if(map[k]) el.textContent = map[k];
+        });
+      }catch(e){ /* ignore */ }
+    };
+
+    if(mode === 'value' || mode === 'pct'){
+      if(!__scaleCache){
+        chart.innerHTML = '<div class="skater-empty">Loading scale...</div>';
+        const pid = String(playerSelect?.value || '');
+        const pidQ = pid ? `&playerId=${encodeURIComponent(pid)}` : '';
+        fetch(`/api/rapm/scale?season=${encodeURIComponent(season)}&rates=${encodeURIComponent(opts.ratesTotals)}&metric=${encodeURIComponent(opts.metric)}${pidQ}`)
+          .then(r=>r.json())
+          .then(j=>{ __scaleCache = j; renderWithScale(j); })
+          .catch(()=>{ __scaleCache = {}; renderWithScale({}); });
+        return;
+      }
+      renderWithScale(__scaleCache);
+      return;
+    }
+
+    if(mode === 'pct'){
+      renderWithScale({ fivev5:{min:0,max:100}, pp:{min:0,max:100}, sh:{min:0,max:100} });
+      return;
+    }
+
+    renderWithScale({ fivev5:{min:-zRange,max:zRange}, pp:{min:-zRange,max:zRange}, sh:{min:-zRange,max:zRange} });
+    return;
+  }
+
+  periodSel?.addEventListener('change', update);
+  careerStrengthSel?.addEventListener('change', update);
+  metricSel?.addEventListener('change', update);
+  rtSel?.addEventListener('change', update);
+  outSel?.addEventListener('change', update);
+  rangeSel?.addEventListener('change', update);
+  update();
+}
+
+async function renderRAPMCareer(opts){
+  const wrap = document.getElementById('rapmCareer');
+  if(!wrap) return;
+  wrap.innerHTML = '<div class="skater-empty">Loading career RAPM...</div>';
+
+  const playerId = String(opts?.playerId || '').trim();
+  if(!playerId){
+    wrap.innerHTML = '<div class="skater-empty">Select a player to view RAPM.</div>';
+    return;
+  }
+
+  const metric = String(opts?.metric || 'corsi');
+  const ratesTotals = String(opts?.ratesTotals || 'Rates');
+  const output = String(opts?.output || 'value');
+  const mode = output === 'pct' ? 'pct' : (output === 'z' ? 'z' : 'value');
+  const zRange = parseLocaleNumber(opts?.zRange || 2);
+  const strength = String(opts?.strength || '5v5');
+
+  try{
+    const url = `/api/rapm/career?playerId=${encodeURIComponent(playerId)}&rates=${encodeURIComponent(ratesTotals)}&metric=${encodeURIComponent(metric)}&strength=${encodeURIComponent(strength)}`;
+    const r = await fetch(url, { cache: 'no-store' });
+    const data = await r.json();
+    const points = Array.isArray(data?.points) ? data.points.slice() : [];
+    points.sort((a,b)=>parseInt(a?.Season||0,10) - parseInt(b?.Season||0,10));
+
+    const title = strength === '5v5' ? '5v5' : (strength === 'PP' ? 'PP' : 'SH');
+
+    function num(x){
+      const n = parseLocaleNumber(x);
+      return Number.isFinite(n) ? n : null;
+    }
+    function fmtSigned(x){
+      const n = num(x);
+      if(n == null) return '';
+      const s = (n > 0) ? '+' : '';
+      return s + n.toFixed(3);
+    }
+    function pickValue(p, key){
+      if(title === 'PP'){
+        if(mode === 'pct') return num(p?.pp_off_pct);
+        if(mode === 'z') return num(p?.pp_off_z);
+        return num(p?.pp_off);
+      }
+      if(title === 'SH'){
+        if(mode === 'pct') return num(p?.sh_def_pct);
+        if(mode === 'z') return num(p?.sh_def_z);
+        return num(p?.sh_def);
+      }
+      // 5v5
+      const base = `5v5_${key}`;
+      if(mode === 'pct') return num(p?.[`${base}_pct`]);
+      if(mode === 'z') return num(p?.[`${base}_z`]);
+      return num(p?.[base]);
+    }
+
+    // y-scale
+    let yMin = null;
+    let yMax = null;
+    if(mode === 'pct'){
+      yMin = 0; yMax = 100;
+    }else if(mode === 'z'){
+      yMin = -zRange; yMax = zRange;
+    }else{
+      yMin = num(data?.scale?.min);
+      yMax = num(data?.scale?.max);
+      if(yMin == null || yMax == null || yMin === yMax){
+        const vals = [];
+        for(const p of points){
+          if(title === '5v5'){
+            ['off','def','diff'].forEach(k=>{ const v = pickValue(p,k); if(v != null) vals.push(v); });
+          }else if(title === 'PP'){
+            const v = pickValue(p,'off'); if(v != null) vals.push(v);
+          }else{
+            const v = pickValue(p,'def'); if(v != null) vals.push(v);
+          }
+        }
+        if(vals.length){ yMin = Math.min(...vals); yMax = Math.max(...vals); }
+        else { yMin = -1; yMax = 1; }
+        if(yMin === yMax){ yMin -= 1; yMax += 1; }
+      }
+    }
+
+    const w = 820;
+    const h = 420;
+    const padL = 12;
+    const padR = 12;
+    const padT = 12;
+    const padB = 34;
+    const edgePad = 26;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+    const n = Math.max(points.length, 2);
+    const xAt = (i)=> {
+      const denom = (n - 1) || 1;
+      const innerW = Math.max(0, plotW - (edgePad * 2));
+      return padL + edgePad + (innerW * i / denom);
+    };
+    const yAt = (v)=>{
+      const t = (v - yMin) / (yMax - yMin);
+      return padT + (plotH * (1 - t));
+    };
+
+    // axis labels (same layout as bars)
+    const axisMax = (mode === 'pct') ? '100' : (mode === 'z') ? `+${zRange.toFixed(1)}` : fmtSigned(yMax);
+    const axisMid = (mode === 'pct') ? '50' : '0';
+    const axisMin = (mode === 'pct') ? '0' : (mode === 'z') ? `-${zRange.toFixed(1)}` : fmtSigned(yMin);
+    const axisHtml = `
+      <div class="rapm-axis">
+        <div class="lbl top">${axisMax}</div>
+        <div class="lbl mid" style="top:50%;">${axisMid}</div>
+        <div class="lbl bot">${axisMin}</div>
+      </div>`;
+
+    function buildSegments(getVal){
+      const segs = [];
+      let cur = [];
+      for(let i=0;i<points.length;i++){
+        const v = getVal(points[i]);
+        if(v == null){
+          if(cur.length >= 2) segs.push(cur);
+          cur = [];
+          continue;
+        }
+        cur.push({x:xAt(i), y:yAt(v)});
+      }
+      if(cur.length >= 2) segs.push(cur);
+      return segs;
+    }
+
+    const svgs = [];
+    const midY = yAt(0);
+    svgs.push(`<line x1="${padL}" y1="${midY.toFixed(2)}" x2="${(w-padR)}" y2="${midY.toFixed(2)}" stroke="rgba(255,255,255,0.18)" stroke-width="1" />`);
+
+    const lines = (title === '5v5')
+      ? [
+          {key:'off', color:'#2f6bff'},
+          {key:'def', color:'#ff3b30'},
+          {key:'diff', color:'rgba(255,255,255,0.92)'}
+        ]
+      : (title === 'PP')
+        ? [{key:'off', color:'#2f6bff'}]
+        : [{key:'def', color:'#ff3b30'}];
+
+    let any = false;
+    for(const ln of lines){
+      const segs = buildSegments(p=>pickValue(p, ln.key));
+      for(const seg of segs){
+        any = true;
+        const pts = seg.map(pt=>`${pt.x.toFixed(2)},${pt.y.toFixed(2)}`).join(' ');
+        svgs.push(`<polyline fill="none" stroke="${ln.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${pts}" />`);
+      }
+      for(let i=0;i<points.length;i++){
+        const v = pickValue(points[i], ln.key);
+        if(v == null) continue;
+        any = true;
+        svgs.push(`<circle cx="${xAt(i).toFixed(2)}" cy="${yAt(v).toFixed(2)}" r="3" fill="${ln.color}" />`);
+      }
+    }
+
+    const ticks = [];
+    for(let i=0;i<points.length;i++){
+      const s = formatSeasonShort(points[i]?.Season);
+      if(!s) continue;
+      const show = (i === 0) || (i === points.length - 1) || (i % 2 === 0);
+      if(!show) continue;
+      ticks.push(`<text x="${xAt(i).toFixed(2)}" y="${(h-10)}" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="14">${s}</text>`);
+    }
+
+    const plot = any
+      ? `<div class="bar-area career-area"><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${svgs.join('')}${ticks.join('')}</svg></div>`
+      : `<div class="skater-empty" style="padding:18px 8px;">Not enough data</div>`;
+
+    wrap.innerHTML = `
+      <div class="rapm-sect" style="--rapmBarH: 420px;">
+        <h3>${title}</h3>
+        <div class="rapm-row">${axisHtml}${plot}</div>
+        ${title === '5v5' ? `
+          <div class="rapm-career-legend">
+            <span><span class="sw" style="background:#2f6bff"></span>Off</span>
+            <span><span class="sw" style="background:#ff3b30"></span>Def</span>
+            <span><span class="sw" style="background:rgba(255,255,255,0.92)"></span>Diff</span>
+          </div>` : ''}
+      </div>
+    `;
+  }catch(e){
+    wrap.innerHTML = '<div class="skater-empty">Error loading career RAPM.</div>';
+  }
+}
+
+function formatSeasonShort(seasonVal){
+  const n = parseInt(String(seasonVal || '').replace(/\D/g,''), 10);
+  if(!Number.isFinite(n)) return '';
+  const start = Math.floor(n / 10000);
+  const end = n % 10000;
+  if(!start || !end) return '';
+  const a = String(start).slice(-2);
+  const b = String(end).slice(-2);
+  return `${a}/${b}`;
+}
+
+function fmtNum(x, digits=3){
+  const n = parseLocaleNumber(x);
+  if(!Number.isFinite(n)) return '';
+  return n.toFixed(digits);
+}
+
+async function loadRAPMPanel(){
+  if(!rapmPanelInner) return;
+  const playerId = playerSelect?.value;
+  const season = seasonSelect?.value;
+  if(!playerId){
+    rapmPanelInner.textContent = 'Select a player to view RAPM.';
+    return;
+  }
+  rapmPanelInner.textContent = 'Loading RAPM...';
+  try{
+    const key = `${playerId}|${season||''}`;
+    if(__rapmKey !== key){
+      __rapmKey = key;
+      __rapmCache = null;
+      __ctxCache = null;
+    }
+
+    if(!__rapmCache || !__ctxCache){
+      const rapmUrl = `/api/rapm/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season||'')}`;
+      const ctxUrl = `/api/context/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season||'')}`;
+      const [rapmRes, ctxRes] = await Promise.all([fetch(rapmUrl), fetch(ctxUrl)]);
+      __rapmCache = await rapmRes.json();
+      __ctxCache = await ctxRes.json();
+    }
+
+    renderRAPMUI();
+  }catch(e){
+    rapmPanelInner.textContent = 'Error loading RAPM.';
+  }
+}
+
+async function loadProjectionsPanel(){
+  if(!projPanelInner) return;
+  if(!projectionsEnabled()){
+    projPanelInner.textContent = '';
+    return;
+  }
+  const playerId = playerSelect?.value;
+  if(!playerId){
+    projPanelInner.textContent = 'Select a player to view projections.';
+    return;
+  }
+  projPanelInner.textContent = 'Loading projections...';
+  try{
+    const r = await fetch(`/api/player-projections/${encodeURIComponent(playerId)}`);
+    const data = await r.json();
+    if(data?.error){
+      projPanelInner.textContent = 'No projections found for this player.';
+      return;
+    }
+    const row = data?.row || {};
+    const keys = [
+      ['Position', row.Position],
+      ['Game_No', row.Game_No],
+      ['EVO', fmtNum(row.EVO)],
+      ['EVD', fmtNum(row.EVD)],
+      ['PP', fmtNum(row.PP)],
+      ['SH', fmtNum(row.SH)],
+      ['GSAx', fmtNum(row.GSAx)],
+    ];
+    projPanelInner.innerHTML = `
+      <table class="mini-table">
+        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+        <tbody>
+          ${keys.filter(kv=>kv[1]!=null && String(kv[1]).length).map(kv=>`<tr><td>${kv[0]}</td><td>${kv[1]}</td></tr>`).join('')}
+        </tbody>
+      </table>`;
+  }catch(e){
+    projPanelInner.textContent = 'Error loading projections.';
+  }
+}
+
+async function loadPlayers(){
+  if(!teamSelect || !seasonSelect || !playerSelect) return;
+  const team = teamSelect.value;
+  const season = seasonSelect.value;
+  if(!team || !season){
+    playerSelect.innerHTML = '<option value="">Select team/season</option>';
+    return;
+  }
+  playerSelect.disabled = true;
+  playerSelect.innerHTML = '<option value="">Loading...</option>';
+  try{
+    const r = await fetch(`/api/skaters/players?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}`);
+    const data = await r.json();
+    const list = Array.isArray(data?.players) ? data.players : [];
+    list.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||'')));
+    const savedKey = `skaters_player_${team}`;
+    const saved = localStorage.getItem(savedKey);
+    playerSelect.innerHTML = '<option value="">Select player</option>' + list.map(p=>`<option value="${p.playerId}">${p.name}</option>`).join('');
+    if(saved && list.some(p=>String(p.playerId)===saved)) playerSelect.value = saved;
+  }catch(e){
+    playerSelect.innerHTML = '<option value="">Error loading players</option>';
+  }finally{
+    playerSelect.disabled = false;
+  }
+}
+
+async function loadPlayerCard(){
+  if(!teamSelect || !seasonSelect || !playerSelect) return;
+  const team = teamSelect.value;
+  const season = seasonSelect.value;
+  const playerId = playerSelect.value;
+  if(!playerId){
+    skaterName.textContent = 'Select a player';
+    skaterInfo.innerHTML = '';
+    setMsg('Choose Team, Season, and Player.');
+    return;
+  }
+  localStorage.setItem(`skaters_player_${team}`, String(playerId));
+  setHeadshot(team, season, playerId);
+  setMsg('Loading player info...');
+  try{
+    const r = await fetch(`/api/player/${encodeURIComponent(playerId)}/landing`);
+    const data = await r.json();
+    if(data?.error){
+      setMsg('Could not load player info.', true);
+      skaterInfo.innerHTML = '';
+      skaterName.textContent = 'Unknown player';
+      return;
+    }
+    renderPlayerLanding(data);
+    setMsg('');
+    loadRAPMPanel();
+    if(projectionsEnabled()) loadProjectionsPanel();
+  }catch(e){
+    setMsg('Could not load player info.', true);
+  }
+}
+
+tabRAPM?.addEventListener('click', ()=> setActiveTab('rapm'));
+tabProjections?.addEventListener('click', ()=> setActiveTab('projections'));
+
+teamSelect?.addEventListener('change', async ()=>{
+  await loadPlayers();
+  await loadPlayerCard();
+  applyRAPMSelectTextColor();
+});
+seasonSelect?.addEventListener('change', async ()=>{
+  updateTabsVisibility();
+  await loadPlayers();
+  await loadPlayerCard();
+});
+playerSelect?.addEventListener('change', ()=> loadPlayerCard());
+
+setTimeout(async ()=>{
+  updateTabsVisibility();
+  await loadPlayers();
+  await loadPlayerCard();
+}, 650);
+</script>
+{% endblock %}
