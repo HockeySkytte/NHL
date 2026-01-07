@@ -752,14 +752,12 @@ function recomputeWinWithSelection(gameId, side, selected){
     // Non-goalies: sum all
     for(const p of selected){
       const POS = (p.pos||'F').toUpperCase()[0];
-      // Exclude EXT from calculations
-      if(String(p.unit||'').toUpperCase()==='EXT') continue;
       if(POS==='G') continue;
       const m = (p.id && projMap[p.id]) ? projMap[p.id] : null;
       if(m) total += projValueFromMetrics(m); else total += (ROOKIE_FALLBACK[POS] ?? ROOKIE_FALLBACK['F']);
     }
     // Goalies: include only one, prefer unit G1
-    const goalies = selected.filter(p=> (p.pos||'F').toUpperCase().startsWith('G') && String(p.unit||'').toUpperCase()!=='EXT');
+    const goalies = selected.filter(p=> (p.pos||'F').toUpperCase().startsWith('G'));
     let gPick = goalies.find(p=> String(p.unit||'').toUpperCase()==='G1') || goalies[0] || null;
     if(gPick){
       const m = (gPick.id && projMap[gPick.id]) ? projMap[gPick.id] : null;

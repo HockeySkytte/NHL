@@ -751,6 +751,9 @@ _SHEET_ROWS_CACHE: Dict[Tuple[str, str], Tuple[float, List[Dict[str, Any]]]] = {
 # Projections enrichment cache: {playerId -> {name, team, pos}}
 _ALL_ROSTERS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, str]]]] = None
 
+# NHL skater bios cache by seasonId: {seasonId -> (timestamp, {playerId -> info})}
+_SKATER_BIOS_CACHE: Dict[int, Tuple[float, Dict[int, Dict[str, str]]]] = {}
+
 
 def _load_sheet_rows_cached(sheet_id: str, worksheet: str, ttl_env: str = 'SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl: int = 30) -> List[Dict[str, Any]]:
     """Fetch worksheet rows via Google Sheets API with a short in-memory TTL cache."""
@@ -1067,7 +1070,12 @@ def api_player_projections_sheets():
                 pid_raw = r.get('PlayerID') or r.get('playerId') or r.get('player_id')
                 if pid_raw is None:
                     continue
-                pid = int(str(pid_raw).strip())
+                pid = _safe_int(pid_raw)
+                if not pid or pid <= 0:
+                    # tolerate cases like '8479979.0' or '8 479 979'
+                    pid = _safe_int(str(pid_raw).replace(' ', '').replace('\u00a0', '').strip())
+                if not pid or pid <= 0:
+                    continue
                 # Return raw row - frontend will parse with _parse_locale_float equivalent
                 out[pid] = r
             except Exception:
@@ -1395,53 +1403,57 @@ def api_skaters_players():
     if not team:
         return jsonify({'players': []})
 
-    # Best-effort: try season-specific roster if upstream supports it, otherwise fall back to current.
-    urls = []
-    if season:
-        urls.append(f'https://api-web.nhle.com/v1/roster/{team}/{season}')
-    urls.append(f'https://api-web.nhle.com/v1/roster/{team}/current')
+    # Current season: use NHL stats skater bios (seasonId + currentTeamAbbrev).
+    # Previous seasons: use roster/{team}/{season} (historical roster by season).
+    # NOTE: skater bios endpoint returns 500 if cayenneExp is omitted.
+    season_i = _safe_int(season)
+    try:
+        current_i = int(current_season_id())
+    except Exception:
+        current_i = 0
+    if not season_i:
+        season_i = current_i
 
-    data = None
-    last_status = None
-    for url in urls:
+    players: List[Dict[str, Any]] = []
+    if season_i and current_i and season_i != current_i:
+        url = f'https://api-web.nhle.com/v1/roster/{team}/{season_i}'
         try:
             r = requests.get(url, timeout=20, allow_redirects=True)
-            last_status = r.status_code
-            if r.status_code != 200:
-                continue
-            data = r.json()
-            break
+            if r.status_code == 200:
+                data = r.json() if r.content else {}
+                if isinstance(data, dict):
+                    forwards = data.get('forwards') or []
+                    defensemen = data.get('defensemen') or []
+                    for p in list(forwards) + list(defensemen):
+                        if not isinstance(p, dict):
+                            continue
+                        pid = _safe_int(p.get('id') or p.get('playerId'))
+                        if not pid or pid <= 0:
+                            continue
+                        fn = (p.get('firstName') or {}).get('default') if isinstance(p.get('firstName'), dict) else (p.get('firstName') or '')
+                        ln = (p.get('lastName') or {}).get('default') if isinstance(p.get('lastName'), dict) else (p.get('lastName') or '')
+                        pos = str(p.get('positionCode') or p.get('position') or '').strip().upper()
+                        name = (str(fn).strip() + ' ' + str(ln).strip()).strip() or str(pid)
+                        players.append({'playerId': int(pid), 'name': name, 'pos': pos})
         except Exception:
-            continue
-
-    if not isinstance(data, dict):
-        return jsonify({'players': [], 'error': 'upstream_error', 'status': last_status}), 502
-
-    players = []
-    try:
-        forwards = data.get('forwards') or []
-        defensemen = data.get('defensemen') or []
-        # Only skaters (no goalies)
-        for p in list(forwards) + list(defensemen):
-            if not isinstance(p, dict):
-                continue
-            pid = p.get('id') or p.get('playerId')
-            fn = (p.get('firstName') or {}).get('default') if isinstance(p.get('firstName'), dict) else (p.get('firstName') or '')
-            ln = (p.get('lastName') or {}).get('default') if isinstance(p.get('lastName'), dict) else (p.get('lastName') or '')
-            pos = p.get('positionCode') or p.get('position') or ''
-            try:
-                if pid is None:
+            players = []
+    else:
+        bios_map = _load_skater_bios_season_cached(int(season_i or 0))
+        try:
+            for pid, info in (bios_map or {}).items():
+                try:
+                    if not pid:
+                        continue
+                    t = str((info or {}).get('team') or '').strip().upper()
+                    if t != team:
+                        continue
+                    name = str((info or {}).get('name') or '').strip() or str(pid)
+                    pos_code = str((info or {}).get('positionCode') or (info or {}).get('position') or '').strip().upper()
+                    players.append({'playerId': int(pid), 'name': name, 'pos': pos_code})
+                except Exception:
                     continue
-                pid_s: str = str(pid).strip()
-                if not pid_s:
-                    continue
-                pid_int = int(pid_s)
-            except Exception:
-                continue
-            name = (str(fn).strip() + ' ' + str(ln).strip()).strip() or str(pid_int)
-            players.append({'playerId': pid_int, 'name': name, 'pos': str(pos)})
-    except Exception:
-        players = []
+        except Exception:
+            players = []
 
     j = jsonify({'players': players})
     try:
@@ -3198,6 +3210,67 @@ def _extract_pos(obj: Any) -> str:
         return ''
 
 
+def _load_skater_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]:
+    """Build a playerId->info map from NHL stats skater bios for a season.
+
+    Uses: https://api.nhle.com/stats/rest/en/skater/bios
+    This provides currentTeamAbbrev and positionCode for skaters.
+    """
+    global _SKATER_BIOS_CACHE
+    try:
+        ttl_s = max(60, int(os.getenv('SKATER_BIOS_CACHE_TTL_SECONDS', '21600') or '21600'))
+    except Exception:
+        ttl_s = 21600
+
+    try:
+        season_i = int(season_id)
+    except Exception:
+        season_i = 0
+    if season_i <= 0:
+        try:
+            season_i = int(current_season_id())
+        except Exception:
+            season_i = 0
+
+    now = time.time()
+    cached = _SKATER_BIOS_CACHE.get(season_i)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
+    out: Dict[int, Dict[str, str]] = {}
+    # NOTE: The endpoint returns 500 if cayenneExp is omitted.
+    url = f'https://api.nhle.com/stats/rest/en/skater/bios?limit=-1&start=0&cayenneExp=seasonId={season_i}'
+    try:
+        r = requests.get(url, timeout=20, allow_redirects=True)
+        if r.status_code == 200:
+            data = r.json() if r.content else {}
+            rows = data.get('data') if isinstance(data, dict) else None
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    pid = _safe_int(row.get('playerId'))
+                    if not pid or pid <= 0:
+                        continue
+                    team = str(row.get('currentTeamAbbrev') or '').strip().upper()
+                    name = str(row.get('skaterFullName') or '').strip()
+                    pos_raw = str(row.get('positionCode') or '').strip().upper()
+                    pos = 'D' if pos_raw.startswith('D') else 'F'
+                    if pid not in out or (name and not (out.get(pid) or {}).get('name')):
+                        out[pid] = {
+                            'playerId': str(pid),
+                            'name': name,
+                            'team': team,
+                            'position': pos,
+                            'positionCode': pos_raw,
+                        }
+    except Exception:
+        out = {}
+
+    _SKATER_BIOS_CACHE[season_i] = (now, out)
+    return out
+
+
 def _load_all_rosters_cached() -> Dict[int, Dict[str, str]]:
     """Build a playerId->info map by fetching current rosters for all teams.
 
@@ -3212,47 +3285,13 @@ def _load_all_rosters_cached() -> Dict[int, Dict[str, str]]:
     if _ALL_ROSTERS_CACHE and (now - _ALL_ROSTERS_CACHE[0]) < ttl_s:
         return _ALL_ROSTERS_CACHE[1]
 
-    out: Dict[int, Dict[str, str]] = {}
-    # TEAM_ROWS uses key 'Team' for abbrev
-    teams = []
+    # Primary source: NHL stats skater bios for the current season.
+    # (We intentionally do NOT use app/static/lineups_all.json here; it may be stale.)
     try:
-        teams = [str(r.get('Team') or '').strip().upper() for r in (TEAM_ROWS or [])]
-        teams = [t for t in teams if t]
+        season_i = int(current_season_id())
     except Exception:
-        teams = []
-
-    for team in teams:
-        url = f'https://api-web.nhle.com/v1/roster/{team}/current'
-        try:
-            r = requests.get(url, timeout=20, allow_redirects=True)
-            if r.status_code != 200:
-                continue
-            data = r.json() if r.content else {}
-            if not isinstance(data, dict):
-                continue
-        except Exception:
-            continue
-
-        for bucket in ('forwards', 'defensemen', 'goalies'):
-            arr = data.get(bucket) or []
-            if not isinstance(arr, list):
-                continue
-            for p in arr:
-                if not isinstance(p, dict):
-                    continue
-                pid = _safe_int(p.get('id') or p.get('playerId') or p.get('personId') or (p.get('person') or {}).get('id'))
-                if not pid or pid <= 0:
-                    continue
-                name = _extract_name(p)
-                pos = _extract_pos(p)
-                if not pos:
-                    pos = 'G' if bucket == 'goalies' else ('D' if bucket == 'defensemen' else 'F')
-                out[pid] = {
-                    'playerId': str(pid),
-                    'name': name,
-                    'team': team,
-                    'position': pos,
-                }
+        season_i = 0
+    out = _load_skater_bios_season_cached(season_i)
 
     _ALL_ROSTERS_CACHE = (now, out)
     return out
@@ -3390,7 +3429,11 @@ def _load_player_projections_from_sheets() -> Dict[int, Dict[str, Any]]:
                 pid_raw = r.get('PlayerID') or r.get('playerId') or r.get('player_id')
                 if pid_raw is None:
                     continue
-                pid = int(str(pid_raw).strip())
+                pid = _safe_int(pid_raw)
+                if not pid or pid <= 0:
+                    pid = _safe_int(str(pid_raw).replace(' ', '').replace('\u00a0', '').strip())
+                if not pid or pid <= 0:
+                    continue
                 # Store raw row with string values preserved
                 out[pid] = r
             except Exception:

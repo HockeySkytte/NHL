@@ -403,8 +403,20 @@ function setActiveProjSubtab(which){
 
 async function ensureProjLeaguePlayers(){
   if(__projLeaguePlayers) return __projLeaguePlayers;
-  const r = await fetch('/api/player-projections/league', { cache:'no-store' });
-  const js = await r.json();
+  let js = null;
+  try{
+    const r = await fetch('/api/player-projections/league', { cache:'no-store' });
+    if(!r.ok){
+      console.error('[projections] /api/player-projections/league failed:', r.status);
+      __projLeaguePlayers = [];
+      return __projLeaguePlayers;
+    }
+    js = await r.json();
+  }catch(e){
+    console.error('[projections] /api/player-projections/league failed:', e);
+    __projLeaguePlayers = [];
+    return __projLeaguePlayers;
+  }
   __projLeaguePlayers = Array.isArray(js?.players) ? js.players : [];
   // Debug: log team distribution
   const teamCounts = {};
