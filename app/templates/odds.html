@@ -2,7 +2,7 @@
 
 {% block head %}
 <style>
-  .odds-wrap{ max-width:1100px; margin:0 auto; }
+  .odds-wrap{ max-width:100%; margin:0 auto; padding:0 14px; box-sizing:border-box; }
   .odds-title{ text-align:center; margin:0 0 6px 0; font-size:18px; font-weight:750; color:var(--text); }
   .odds-meta{ text-align:center; color:var(--text-dim); margin:0 0 14px 0; font-size:13px; }
   .chart-row{ display:flex; align-items:center; gap:10px; margin:0 0 8px 0; }
@@ -13,7 +13,7 @@
   .segmented button{ border:2px solid transparent; background:transparent; color:var(--text); padding:6px 14px; font-size:14px; border-radius:12px; font-weight:800; cursor:pointer; }
   .segmented button.active{ background:var(--panel-alt); border-color:rgba(255,255,255,.15); box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
   .segmented button:not(.active){ border-color:rgba(255,255,255,.20); }
-  .odds-card{ background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:14px; }
+  .odds-card{ background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:16px; }
   #oddsChart{ width:100%; height:280px; }
   #winChart{ width:100%; height:240px; }
   .odds-error{ margin-top:12px; color:#ff6a6a; display:none; }
@@ -263,8 +263,8 @@
 
   function renderChart(payload){
     const tickColor = cssVar('--text-dim', '#9aa4b1');
-    const gridColor = 'rgba(154,164,177,0.18)';
-    const chartBg = 'rgba(0,0,0,0.22)';
+    const gridColor = 'rgba(154,164,177,0.14)';
+    const chartBg = 'rgba(0,0,0,0.16)';
 
     const built = buildChartData(payload);
     const allY = [];
@@ -288,8 +288,17 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { labels: { color: tickColor } },
+          legend: {
+            labels: {
+              color: tickColor,
+              font: { size: 13, weight: '700' },
+              boxWidth: 12,
+              boxHeight: 12,
+              usePointStyle: true,
+            }
+          },
           tooltip: {
             callbacks: {
               title: (items)=>{
@@ -350,7 +359,10 @@
               color: tickColor,
             },
           }
-        }
+        },
+        elements: {
+          line: { borderCapStyle: 'round', borderJoinStyle: 'round' },
+        },
       },
       plugins: [{
         id: 'chartAreaBackground',
@@ -379,26 +391,28 @@
       winTeamBBtn.textContent = _teams[1];
       winTeamABtn.classList.toggle('active', _selectedTeam === _teams[0]);
       winTeamBBtn.classList.toggle('active', _selectedTeam === _teams[1]);
+      
+      // Apply team colors with proper text color
+      const teamAColor = (_raw?.teams || []).find(t=>t.abbrev===_teams[0])?.color || '';
+      const teamBColor = (_raw?.teams || []).find(t=>t.abbrev===_teams[1])?.color || '';
+      
+      if(_selectedTeam === _teams[0] && teamAColor){
+        winTeamABtn.style.background = teamAColor;
+        winTeamABtn.style.color = getTextColorForBg(teamAColor);
+      }else{
+        winTeamABtn.style.background = '';
+        winTeamABtn.style.color = '';
+      }
+      
+      if(_selectedTeam === _teams[1] && teamBColor){
+        winTeamBBtn.style.background = teamBColor;
+        winTeamBBtn.style.color = getTextColorForBg(teamBColor);
+      }else{
+        winTeamBBtn.style.background = '';
+        winTeamBBtn.style.color = '';
+      }
     }
     if(_raw) renderWinChart(_raw);
-  }
-
-  function impliedWinProbPctAt(ts, team){
-    // implied = dec(opponent) / (dec(team) + dec(opponent))
-    if(!_raw || !_raw.teams) return null;
-    const teams = Array.isArray(_raw.teams) ? _raw.teams : [];
-    const tRow = teams.find(x=>String(x.abbrev||'').toUpperCase() === String(team||'').toUpperCase());
-    const oRow = teams.find(x=>String(x.abbrev||'').toUpperCase() !== String(team||'').toUpperCase());
-    if(!tRow || !oRow) return null;
-    const tp = (tRow.points || []).find(p=>String(p.t)===String(ts));
-    const op = (oRow.points || []).find(p=>String(p.t)===String(ts));
-    if(!tp || !op) return null;
-    const dt = toDecimal(tp.ml);
-    const do2 = toDecimal(op.ml);
-    if(dt==null || do2==null) return null;
-    const p = do2 / (dt + do2);
-    if(!Number.isFinite(p)) return null;
-    return p * 100;
   }
 
   function bettingLineWinProbPctAt(ts, team){
@@ -434,8 +448,8 @@
 
   function renderWinChart(payload){
     const tickColor = cssVar('--text-dim', '#9aa4b1');
-    const gridColor = 'rgba(154,164,177,0.18)';
-    const chartBg = 'rgba(0,0,0,0.22)';
+    const gridColor = 'rgba(154,164,177,0.14)';
+    const chartBg = 'rgba(0,0,0,0.16)';
     const teams = Array.isArray(payload.teams) ? payload.teams : [];
     if(teams.length < 1) return;
     const team = _selectedTeam || (teams[0] && teams[0].abbrev);
@@ -456,17 +470,14 @@
 
     const baseColor = (teams.find(t=>t.abbrev===team)?.color) || cssVar('--accent', '#4da3ff');
     const stroke = isVeryDark(baseColor) ? lightenHex(baseColor, 0.35) : baseColor;
-    const impliedStroke = cssVar('--text', '#e6e8ec');
-    const lineStroke = cssVar('--accent', '#4da3ff');
+    const lineStroke = cssVar('--text', '#e6e8ec');
 
     const sheetData = labels.map(ts=> sheetWinProbPctAt(ts, team));
-    const impliedData = labels.map(ts=> impliedWinProbPctAt(ts, team));
     const lineData = labels.map(ts=> bettingLineWinProbPctAt(ts, team));
 
     // Auto-scale y-axis around the visible data to make differences readable.
     const yVals = [];
     for(const v of sheetData){ if(Number.isFinite(v)) yVals.push(Number(v)); }
-    for(const v of impliedData){ if(Number.isFinite(v)) yVals.push(Number(v)); }
     for(const v of lineData){ if(Number.isFinite(v)) yVals.push(Number(v)); }
     let yMin = 0;
     let yMax = 100;
@@ -503,26 +514,13 @@
             spanGaps: true,
           },
           {
-            label: 'Implied Win%',
-            data: impliedData,
-            borderColor: impliedStroke,
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            pointRadius: 3,
-            pointHoverRadius: 5,
-            pointBackgroundColor: impliedStroke,
-            pointBorderColor: impliedStroke,
-            tension: 0.2,
-            spanGaps: true,
-          },
-          {
             label: 'Betting Line',
             data: lineData,
             borderColor: lineStroke,
             backgroundColor: 'transparent',
-            borderWidth: 2,
-            pointRadius: 3,
-            pointHoverRadius: 5,
+            borderWidth: 2.5,
+            pointRadius: 2,
+            pointHoverRadius: 4,
             pointBackgroundColor: lineStroke,
             pointBorderColor: lineStroke,
             tension: 0.2,
@@ -533,8 +531,17 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { labels: { color: tickColor } },
+          legend: {
+            labels: {
+              color: tickColor,
+              font: { size: 13, weight: '700' },
+              boxWidth: 12,
+              boxHeight: 12,
+              usePointStyle: true,
+            }
+          },
           tooltip: {
             callbacks: {
               title: (items)=>{
@@ -567,7 +574,10 @@
             suggestedMin: yMin,
             suggestedMax: yMax,
           }
-        }
+        },
+        elements: {
+          line: { borderCapStyle: 'round', borderJoinStyle: 'round' },
+        },
       },
       plugins: [{
         id: 'chartAreaBackground',

@@ -3,7 +3,9 @@
 <style>
   .proj-toolbar{ display:flex; gap:10px; align-items:center; margin:0 0 16px 0; }
   .proj-toolbar button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:8px 12px; font-size:14px; border-radius:8px; font-weight:600; cursor:pointer; }
-  .proj-toolbar button.active{ outline:2px solid var(--accent); }
+  .proj-toolbar button.active{ background:var(--accent); border-color:var(--accent); }
+  .odds-toggle button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:6px 12px; font-size:13px; border-radius:8px; font-weight:600; cursor:pointer; }
+  .odds-toggle button.active{ background:var(--accent); border-color:var(--accent); }
   .live-table{ width:100%; border-collapse:collapse; font-size:15px; table-layout:auto; }
   .live-table th{ text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:700; border-bottom:1px solid #222b37; }
   .live-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; word-break:break-word; }
@@ -17,6 +19,7 @@
   .win-bg{ transition:background 0.2s; }
   .bet-bg{ transition:background 0.2s; }
   .odds-input{ width:72px; text-align:center; font-size:15px; border-radius:6px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--text); }
+  .odds-input:focus{ outline:2px solid var(--accent); }
   .win-duo{ display:inline-flex; gap:6px; align-items:center; justify-content:center; }
   .win-chip{ display:inline-block; padding:6px 10px; border-radius:8px; min-width:68px; text-align:center; font-weight:700; font-size:16px; }
   .bet-chip{ display:inline-block; padding:6px 10px; border-radius:8px; min-width:68px; text-align:center; font-weight:700; font-size:16px; color:#0b0f16; }
@@ -47,8 +50,6 @@
   .seg-pos{ background:#4f6cf6; }
   .seg-neg{ background:#ff6a6a; }
   .proj-num{ font-size:12px; color:var(--text-dim); min-width:70px; text-align:right; }
-  /* Ensure Win% chips use dark text for red/white/blue backgrounds */
-  .win-chip{ color:#0b0f16; }
 </style>
 {% endblock %}
 {% block content %}
@@ -65,6 +66,7 @@
 </div>
 <h2 id="projDateTitle" class="proj-title"></h2>
 <div id="projRoot"></div>
+
 <!-- Lineups Modal -->
 <div id="lineupModal" class="modal-backdrop">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="lineupTitle">
@@ -113,6 +115,67 @@ let _dialogState = null; // { gameId, side, teamAbbrev, baselineCount }
 let _currentWhich = 'today';
 
 let oddsMode = 'american'; // 'american' | 'decimal'
+
+function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+function hexToRgb(hex){
+  try{
+    let h = String(hex||'').trim();
+    if(!h.startsWith('#')) return null;
+    h = h.slice(1);
+    if(h.length===3) h = h.split('').map(c=>c+c).join('');
+    if(h.length!==6) return null;
+    const r = parseInt(h.slice(0,2),16);
+    const g = parseInt(h.slice(2,4),16);
+    const b = parseInt(h.slice(4,6),16);
+    if(!Number.isFinite(r)||!Number.isFinite(g)||!Number.isFinite(b)) return null;
+    return {r,g,b};
+  }catch(_){ return null; }
+}
+
+function mixHex(hexA, hexB, t){
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  if(!a || !b) return hexA;
+  const tt = clamp(Number(t)||0, 0, 1);
+  const r = Math.round(a.r*(1-tt) + b.r*tt);
+  const g = Math.round(a.g*(1-tt) + b.g*tt);
+  const bb = Math.round(a.b*(1-tt) + b.b*tt);
+  return `rgb(${r},${g},${bb})`;
+}
+
+function getTextColorForBg(bgColor){
+  // Parse rgba/rgb string or hex, return appropriate text color
+  const match = (bgColor||'').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if(match){
+    const r = parseInt(match[1], 10);
+    const g = parseInt(match[2], 10);
+    const b = parseInt(match[3], 10);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5 ? '#000000' : '#ffffff';
+  }
+  // Try hex format
+  let hex = String(bgColor||'').trim().replace('#', '');
+  if(hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  if(hex.length === 6){
+    const r = parseInt(hex.substring(0,2), 16);
+    const g = parseInt(hex.substring(2,4), 16);
+    const b = parseInt(hex.substring(4,6), 16);
+    if(Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)){
+      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      return luminance > 0.5 ? '#000000' : '#ffffff';
+    }
+  }
+  return '#ffffff';
+}
+
+function themeAccent(){
+  try{ return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4da3ff'; }catch(_){ return '#4da3ff'; }
+}
+
+function themeTextDim(){
+  try{ return getComputedStyle(document.documentElement).getPropertyValue('--text-dim').trim() || '#9aa4b1'; }catch(_){ return '#9aa4b1'; }
+}
 
 // --- Odds helpers (American/Decimal) ---
 function toDecimal(american){
@@ -283,18 +346,18 @@ function renderTable(games){
     return `<tr class="proj-row" data-href="/odds/${g.id}" style="cursor:pointer;">
       <td class="col-center">${timeStr}</td>
       <td class="col-center"><button class="lineup-btn" data-game="${g.id}" data-side="away" data-team="${a.abbrev||''}">Edit</button></td>
-      <td class="col-center">${betA!=null ? `<span class=\"bet-chip\" style=\"background:${betBgA}\">${(betA*100).toFixed(1)}%</span>` : ''}</td>
+      <td class="col-center">${betA!=null ? `<span class="bet-chip" style="background:${betBgA}; color:${getTextColorForBg(betBgA)}">${(betA*100).toFixed(1)}%</span>` : ''}</td>
       <td class="col-center">${oddsAInput}</td>
       <td class="col-right">${awayCell}</td>
       <td class="col-center">
         <div class="win-duo">
-          <span class="win-chip" style="background:${winBgA}">${winA}</span>
-          <span class="win-chip" style="background:${winBgH}">${winH}</span>
+          <span class="win-chip" style="background:${winBgA}; color:${getTextColorForBg(winBgA)}">${winA}</span>
+          <span class="win-chip" style="background:${winBgH}; color:${getTextColorForBg(winBgH)}">${winH}</span>
         </div>
       </td>
       <td class="col-left">${homeCell}</td>
       <td class="col-center">${oddsHInput}</td>
-      <td class="col-center">${betH!=null ? `<span class=\"bet-chip\" style=\"background:${betBgH}\">${(betH*100).toFixed(1)}%</span>` : ''}</td>
+      <td class="col-center">${betH!=null ? `<span class="bet-chip" style="background:${betBgH}; color:${getTextColorForBg(betBgH)}">${(betH*100).toFixed(1)}%</span>` : ''}</td>
       <td class="col-center"><button class="lineup-btn" data-game="${g.id}" data-side="home" data-team="${h.abbrev||''}">Edit</button></td>
     </tr>`;
   }).join('');
@@ -342,6 +405,16 @@ function setActiveWhich(which){
   btnToday.classList.toggle('active', which==='today');
   btnYesterday.classList.toggle('active', which==='yesterday');
   btnTomorrow.classList.toggle('active', which==='tomorrow');
+  // Apply text color based on accent color luminance
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123';
+  const textColor = getTextColorForBg(accentColor);
+  [btnToday, btnYesterday, btnTomorrow].forEach(btn => {
+    if(btn.classList.contains('active')){
+      btn.style.color = textColor;
+    } else {
+      btn.style.color = '';
+    }
+  });
 }
 
 btnToday.addEventListener('click', ()=>{ setActiveWhich('today'); loadGames('today'); });
@@ -359,6 +432,15 @@ if(savedMode === 'decimal' || savedMode === 'american'){
     oddsAmericanBtn.classList.add('active');
     oddsDecimalBtn.classList.remove('active');
   }
+}
+// Apply text color to active odds buttons on page load
+const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123';
+const textColor = getTextColorForBg(accentColor);
+if(oddsAmericanBtn && oddsAmericanBtn.classList.contains('active')){
+  oddsAmericanBtn.style.color = textColor;
+}
+if(oddsDecimalBtn && oddsDecimalBtn.classList.contains('active')){
+  oddsDecimalBtn.style.color = textColor;
 }
 
 // Load games and render table (restored helper)
@@ -384,6 +466,9 @@ oddsAmericanBtn?.addEventListener('click', ()=>{
   localStorage.setItem('oddsMode', oddsMode);
   oddsAmericanBtn.classList.add('active');
   oddsDecimalBtn.classList.remove('active');
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123';
+  oddsAmericanBtn.style.color = getTextColorForBg(accentColor);
+  oddsDecimalBtn.style.color = '';
   loadGames(_currentWhich);
 });
 oddsDecimalBtn?.addEventListener('click', ()=>{
@@ -391,11 +476,17 @@ oddsDecimalBtn?.addEventListener('click', ()=>{
   localStorage.setItem('oddsMode', oddsMode);
   oddsDecimalBtn.classList.add('active');
   oddsAmericanBtn.classList.remove('active');
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123';
+  oddsDecimalBtn.style.color = getTextColorForBg(accentColor);
+  oddsAmericanBtn.style.color = '';
   loadGames(_currentWhich);
 });
 
 setActiveWhich('today');
 loadGames('today');
+// Also apply text color to odds mode buttons
+oddsAmericanBtn.style.color = oddsAmericanBtn.classList.contains('active') ? getTextColorForBg(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123') : '';
+oddsDecimalBtn.style.color = oddsDecimalBtn.classList.contains('active') ? getTextColorForBg(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123') : '';
 
 // ------- Lineups dialog + Win% adjustment -------
 async function ensureLineupsCache(){
@@ -433,29 +524,37 @@ async function ensureRosterCache(teamAbbrev){
 async function ensureProjectionsCsv(){
   if(window._projCsvCache) return window._projCsvCache;
   try{
-    const r = await fetch('/static/player_projections.csv', { cache:'no-store' });
+    const r = await fetch('/api/player-projections/sheets', { cache:'no-store' });
     if(!r.ok) return null;
-    const txt = await r.text();
-    const lines = txt.split(/\r?\n/).filter(s=>s.trim().length>0);
-    if(lines.length < 2) return null;
-    const header = lines[0].split(',').map(s=>s.trim());
-    const idx = Object.fromEntries(header.map((h,i)=>[h,i]));
+    const data = await r.json();
+    if(!data || typeof data !== 'object') return null;
+    // Helper to parse numbers with comma decimal separator (like RAPM does)
+    const parseLocaleNumber = (val) => {
+      if(val == null || val === '') return 0;
+      if(typeof val === 'number') return val;
+      const s = String(val).trim().replace(',', '.');
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    };
+    // Convert from { playerId: { PlayerID, Position, Age, ... }, ... } to same format
     const map = {};
-    for(let i=1;i<lines.length;i++){
-      const parts = lines[i].split(',');
-      const id = Number(parts[idx['PlayerID']]);
-      if(!id) continue;
-      const pos = (parts[idx['Position']]||'').trim().toUpperCase();
-      const getNum = (k)=>{ const v = parts[idx[k]]; const n = Number(v); return Number.isFinite(n)? n: 0; };
-      map[id] = {
+    for(const [id, row] of Object.entries(data)){
+      const pid = Number(id);
+      if(!pid) continue;
+      const pos = String(row.Position || row.Pos || '').trim().toUpperCase();
+      const getNum = (k) => parseLocaleNumber(row[k]);
+      map[pid] = {
         pos: (pos||'F')[0],
         Age: getNum('Age'), Rookie: getNum('Rookie'), EVO: getNum('EVO'), EVD: getNum('EVD'), PP: getNum('PP'), SH: getNum('SH'), GSAx: getNum('GSAx')
       };
     }
     window._projCsvCache = map;
-    try{ console.log('[projections] CSV loaded:', Object.keys(map).length, 'players'); }catch(_){/* ignore */}
+    try{ console.log('[projections] Sheets3 loaded:', Object.keys(map).length, 'players'); }catch(_){/* ignore */}
     return map;
-  }catch(e){ return null; }
+  }catch(e){ 
+    console.error('[projections] Failed to load from Sheets3:', e);
+    return null; 
+  }
 }
 
 function extractPlayerName(p){
@@ -584,13 +683,14 @@ function closeLineupDialog(){
   clearModal();
 }
 
-modalClose?.addEventListener('click', closeLineupDialog);
-modalCancel?.addEventListener('click', closeLineupDialog);
+modalClose?.addEventListener('click', (e)=>{ e.stopPropagation(); closeLineupDialog(); });
+modalCancel?.addEventListener('click', (e)=>{ e.stopPropagation(); closeLineupDialog(); });
 modalBackdrop?.addEventListener('click', (e)=>{
   if(e.target === modalBackdrop) closeLineupDialog();
 });
 
-modalApply?.addEventListener('click', ()=>{
+modalApply?.addEventListener('click', (e)=>{
+  e.stopPropagation();
   if(!_dialogState) return;
   const { gameId, side } = _dialogState;
   const checks = [...playerListEl.querySelectorAll('input[type="checkbox"]')];
@@ -663,7 +763,9 @@ function recomputeWinWithSelection(gameId, side, selected){
     let gPick = goalies.find(p=> String(p.unit||'').toUpperCase()==='G1') || goalies[0] || null;
     if(gPick){
       const m = (gPick.id && projMap[gPick.id]) ? projMap[gPick.id] : null;
-      total += m ? projValueFromMetrics(m) : ROOKIE_FALLBACK['G'];
+      const gValue = m ? projValueFromMetrics(m) : ROOKIE_FALLBACK['G'];
+      console.log('[recompute] Selected goalie:', gPick.name, 'ID:', gPick.id, 'Metrics:', m, 'Value:', gValue);
+      total += gValue;
     }
     return total;
   };
@@ -674,6 +776,7 @@ function recomputeWinWithSelection(gameId, side, selected){
   const dproj = projAway - projHome;
   const winAway = 1.0/(1.0 + Math.exp(-(dproj) - sVal));
   const winHome = 1.0 - winAway;
+  console.log('[recompute]', side, 'team:', team, '| TeamSum:', teamSum.toFixed(3), '| ProjAway:', projAway.toFixed(3), '| ProjHome:', projHome.toFixed(3), '| dProj:', dproj.toFixed(3), '| WinAway:', (winAway*100).toFixed(1) + '%');
   window._winOverrides[gameId] = { away: winAway, home: winHome };
   const tableGames = Object.values(window._currentGamesById);
   renderTable(tableGames);

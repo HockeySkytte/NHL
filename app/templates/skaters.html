@@ -58,6 +58,38 @@
   .rapm-career svg{ position:absolute; inset:0; width:100%; height:100%; }
   .rapm-career-legend{ display:flex; gap:22px; align-items:center; justify-content:center; margin-top:10px; color:rgba(255,255,255,0.90); font-size:14px; letter-spacing:.2px; font-weight:750; }
   .rapm-career-legend .sw{ width:12px; height:12px; border-radius:3px; display:inline-block; margin-right:8px; }
+  .rapm-tooltip{ position:absolute; z-index:20; pointer-events:none; background:rgba(15,21,34,0.96); border:1px solid #2a3142; border-radius:10px; padding:10px 12px; box-shadow:0 10px 26px rgba(0,0,0,0.45); min-width:170px; display:none; }
+  .rapm-tooltip .t-title{ font-weight:850; font-size:13px; color:rgba(255,255,255,0.95); margin-bottom:6px; letter-spacing:.2px; }
+  .rapm-tooltip .t-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; color:rgba(255,255,255,0.86); }
+  .rapm-tooltip .dot{ width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:8px; flex:0 0 auto; }
+  .rapm-tooltip .lbl{ display:flex; align-items:center; min-width:0; }
+  .rapm-tooltip .val{ font-variant-numeric:tabular-nums; font-weight:800; }
+
+  .proj-subtabs{ display:flex; gap:12px; align-items:center; margin-top:6px; }
+  .proj-subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
+  .proj-subtab-btn.active{ outline:2px solid var(--accent); }
+  .proj-subpanel{ margin-top:14px; background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:16px; }
+  .proj-subpanel[hidden]{ display:none !important; }
+  .proj-grid{ display:grid; grid-template-columns: 320px 1fr; gap:16px; align-items:start; }
+  .kpi-card{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:12px 12px; text-align:center; }
+  .kpi-title{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
+  .kpi-value{ margin-top:6px; font-size:18px; font-weight:850; color:var(--text); font-variant-numeric: tabular-nums; }
+  .kpi-list{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .proj-canvas{ width:100%; height:360px; }
+  #projPlayerRadar{ height:500px; }
+  #projTeamStack{ height:600px; }
+  .proj-table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:12px; }
+  .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
+  .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
+  .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
+  .proj-table{ width:100%; border-collapse:collapse; font-size:14px; }
+  .proj-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
+  .proj-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; }
+  .proj-table td.name{ text-align:left; }
+  .proj-table th.name{ text-align:left; }
+  .proj-table td.num, .proj-table th.num{ text-align:center; }
+  .proj-table tr.selected-player{ background:var(--league-highlight-color, rgba(77,163,255,0.12)); }
+  .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
 </style>
 {% endblock %}
 
@@ -81,7 +113,35 @@
       <div id="rapmPanelInner" class="skater-empty">Select a player to view RAPM.</div>
     </div>
     <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
-      <div id="projPanelInner" class="skater-empty">Select a player to view projections.</div>
+      <div id="projPanelInner">
+        <div class="proj-subtabs" role="tablist" aria-label="Skater projections tabs">
+          <button id="projTabPlayer" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Player</button>
+          <button id="projTabTeam" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">Team</button>
+          <button id="projTabLeague" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">League</button>
+        </div>
+
+        <section id="projPanelPlayer" class="proj-subpanel" role="tabpanel">
+          <div class="proj-grid">
+            <div id="projPlayerKpis" class="kpi-list"></div>
+            <div style="min-width:0;">
+              <canvas id="projPlayerRadar" class="proj-canvas"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section id="projPanelTeam" class="proj-subpanel" role="tabpanel" hidden>
+          <canvas id="projTeamStack" class="proj-canvas"></canvas>
+        </section>
+
+        <section id="projPanelLeague" class="proj-subpanel" role="tabpanel" hidden>
+          <div class="proj-export-wrap">
+            <button id="projExportCsv" class="proj-export-btn">Export CSV</button>
+          </div>
+          <div class="proj-table-wrap">
+            <table id="projLeagueTable" class="proj-table"></table>
+          </div>
+        </section>
+      </div>
     </div>
 
     <div id="skaterMsg" class="skater-empty" style="margin-top:10px;">Choose Team, Season, and Player.</div>
@@ -91,6 +151,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 const teamSelect = document.getElementById('teamSelect');
 const seasonSelect = document.getElementById('seasonSelect');
@@ -107,6 +168,21 @@ const tabPanelRAPM = document.getElementById('tabPanelRAPM');
 const tabPanelProjections = document.getElementById('tabPanelProjections');
 const rapmPanelInner = document.getElementById('rapmPanelInner');
 const projPanelInner = document.getElementById('projPanelInner');
+
+const projTabPlayer = document.getElementById('projTabPlayer');
+const projTabTeam = document.getElementById('projTabTeam');
+const projTabLeague = document.getElementById('projTabLeague');
+const projPanelPlayer = document.getElementById('projPanelPlayer');
+const projPanelTeam = document.getElementById('projPanelTeam');
+const projPanelLeague = document.getElementById('projPanelLeague');
+const projPlayerKpis = document.getElementById('projPlayerKpis');
+const projLeagueTable = document.getElementById('projLeagueTable');
+const projExportCsv = document.getElementById('projExportCsv');
+
+let __projLeaguePlayers = null;
+let __projRadarChart = null;
+let __projTeamChart = null;
+let __projLeagueSort = { key: 'total', dir: 'desc' };
 
 let __rapmCache = null;
 let __ctxCache = null;
@@ -254,6 +330,348 @@ function zToPercentile(z){
   return cdf * 100;
 }
 
+function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+function hexToRgb(hex){
+  try{
+    let h = String(hex||'').trim();
+    if(!h.startsWith('#')) return null;
+    h = h.slice(1);
+    if(h.length===3) h = h.split('').map(c=>c+c).join('');
+    if(h.length!==6) return null;
+    const r = parseInt(h.slice(0,2),16);
+    const g = parseInt(h.slice(2,4),16);
+    const b = parseInt(h.slice(4,6),16);
+    if(!Number.isFinite(r)||!Number.isFinite(g)||!Number.isFinite(b)) return null;
+    return {r,g,b};
+  }catch(_){ return null; }
+}
+
+function mixHex(hexA, hexB, t){
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  if(!a || !b) return hexA;
+  const tt = clamp(Number(t)||0, 0, 1);
+  const r = Math.round(a.r*(1-tt) + b.r*tt);
+  const g = Math.round(a.g*(1-tt) + b.g*tt);
+  const bb = Math.round(a.b*(1-tt) + b.b*tt);
+  return `rgb(${r},${g},${bb})`;
+}
+
+function themeAccent(){
+  try{ return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4da3ff'; }catch(_){ return '#4da3ff'; }
+}
+
+function themeTextDim(){
+  try{ return getComputedStyle(document.documentElement).getPropertyValue('--text-dim').trim() || '#9aa4b1'; }catch(_){ return '#9aa4b1'; }
+}
+
+function fmt3(x){
+  const n = Number(x);
+  if(!Number.isFinite(n)) return '';
+  return n.toFixed(3);
+}
+
+function pctRank(values, v){
+  const arr = (values||[]).filter(n=>Number.isFinite(n)).slice().sort((a,b)=>a-b);
+  if(!arr.length || !Number.isFinite(v)) return null;
+  if(arr.length === 1) return 50;
+  let lo = 0, hi = arr.length;
+  while(lo < hi){
+    const mid = (lo+hi)>>1;
+    if(arr[mid] <= v) lo = mid + 1;
+    else hi = mid;
+  }
+  const rank = lo - 1;
+  return 100 * (rank / (arr.length - 1));
+}
+
+function setActiveProjSubtab(which){
+  const isP = which === 'player';
+  const isT = which === 'team';
+  const isL = which === 'league';
+  projTabPlayer?.classList.toggle('active', isP);
+  projTabTeam?.classList.toggle('active', isT);
+  projTabLeague?.classList.toggle('active', isL);
+  projTabPlayer?.setAttribute('aria-selected', isP ? 'true' : 'false');
+  projTabTeam?.setAttribute('aria-selected', isT ? 'true' : 'false');
+  projTabLeague?.setAttribute('aria-selected', isL ? 'true' : 'false');
+  if(projPanelPlayer) projPanelPlayer.hidden = !isP;
+  if(projPanelTeam) projPanelTeam.hidden = !isT;
+  if(projPanelLeague) projPanelLeague.hidden = !isL;
+}
+
+async function ensureProjLeaguePlayers(){
+  if(__projLeaguePlayers) return __projLeaguePlayers;
+  const r = await fetch('/api/player-projections/league', { cache:'no-store' });
+  const js = await r.json();
+  __projLeaguePlayers = Array.isArray(js?.players) ? js.players : [];
+  // Debug: log team distribution
+  const teamCounts = {};
+  __projLeaguePlayers.forEach(p => {
+    const t = p.team || '(no team)';
+    teamCounts[t] = (teamCounts[t] || 0) + 1;
+  });
+  console.log('[projections] League players by team:', teamCounts);
+  console.log('[projections] Total players loaded:', __projLeaguePlayers.length);
+  return __projLeaguePlayers;
+}
+
+function renderPlayerKpisFromLeague(p, ctx){
+  if(!projPlayerKpis) return;
+  if(!p){
+    projPlayerKpis.innerHTML = '<div class="skater-empty" style="grid-column:1 / -1; padding:8px 2px;">Select a player to view projections.</div>';
+    return;
+  }
+  const items = [
+    ['Position', p.position],
+    ['GP', p.gp],
+    ['Age', fmt3(p.Age)],
+    ['Rookie', fmt3(p.Rookie)],
+    ['EVO', fmt3(p.EVO)],
+    ['EVD', fmt3(p.EVD)],
+    ['PP', fmt3(p.PP)],
+    ['SH', fmt3(p.SH)],
+    ['QoT', ctx?.QoT != null ? fmt3(ctx.QoT) : '—'],
+    ['QoC', ctx?.QoC != null ? fmt3(ctx.QoC) : '—'],
+    ['ZS', ctx?.ZS != null ? fmt3(ctx.ZS) : '—'],
+    ['Total', fmt3(p.total)],
+  ];
+  projPlayerKpis.innerHTML = items.map(([k,v])=>(
+    `<div class="kpi-card"><div class="kpi-title">${k}</div><div class="kpi-value">${(v==null||v==='')?'—':v}</div></div>`
+  )).join('');
+}
+
+function renderPlayerRadarFromLeague(p, leaguePlayers, contextData, teamColor){
+  const ctx = document.getElementById('projPlayerRadar')?.getContext('2d');
+  if(!ctx) return;
+  if(__projRadarChart){ try{ __projRadarChart.destroy(); }catch(_){/*noop*/} __projRadarChart=null; }
+  if(!p) return;
+
+  const metrics = ['EVO','EVD','PP','SH','QoT','QoC','ZS'];
+  const groupPos = String(p.position||'F').toUpperCase().startsWith('D') ? 'D' : 'F';
+  const pool = (leaguePlayers||[]).filter(x=>String(x.position||'').toUpperCase().startsWith(groupPos));
+  const valuesByMetric = {};
+  for(const m of metrics){ 
+    if(m === 'QoT' || m === 'QoC' || m === 'ZS'){
+      valuesByMetric[m] = pool.map(x=>Number(x.contextData?.[m]));
+    } else {
+      valuesByMetric[m] = pool.map(x=>Number(x[m]));
+    }
+  }
+  const pct = metrics.map(m=>{
+    let v;
+    if(m === 'QoT' || m === 'QoC' || m === 'ZS'){
+      v = Number(contextData?.[m]);
+    } else {
+      v = Number(p[m]);
+    }
+    const pr = pctRank(valuesByMetric[m], v);
+    return pr==null ? 0 : pr;
+  });
+
+  const accent = teamColor || themeAccent();
+  const grid = 'rgba(154,164,177,0.16)';
+  const tick = themeTextDim();
+
+  __projRadarChart = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: metrics,
+      datasets: [{
+        label: `${p.name || p.playerId} (${groupPos})`,
+        data: pct,
+        borderColor: mixHex(accent, '#ffffff', 0.10),
+        backgroundColor: mixHex(accent, '#ffffff', 0.35),
+        pointBackgroundColor: mixHex(accent, '#ffffff', 0.10),
+        pointRadius: 3,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'nearest',
+        intersect: false,
+      },
+      plugins: {
+        legend: { labels: { color: tick, font: { size: 13, weight:'700' } } },
+        tooltip: { 
+          callbacks: { 
+            title: () => '',
+            label: (ctx) => '',
+            afterBody: (items) => {
+              if(!items || !items[0]) return '';
+              return metrics.map((m, i) => `${m}: ${pct[i].toFixed(1)}%`);
+            }
+          } 
+        }
+      },
+      scales: {
+        r: {
+          min: 0,
+          max: 100,
+          ticks: { display: false },
+          grid: { color: grid },
+          angleLines: { color: grid },
+          pointLabels: { color: tick, font: { size: 12, weight:'800' } },
+        }
+      }
+    }
+  });
+}
+
+function renderTeamStackFromLeague(team, leaguePlayers, teamColor){
+  const ctx = document.getElementById('projTeamStack')?.getContext('2d');
+  if(!ctx) return;
+  if(__projTeamChart){ try{ __projTeamChart.destroy(); }catch(_){/*noop*/} __projTeamChart=null; }
+
+  const list = (leaguePlayers||[])
+    .filter(p=>String(p.team||'').toUpperCase() === String(team||'').toUpperCase())
+    .slice()
+    .sort((a,b)=>Number(b.total||0)-Number(a.total||0));
+
+  const labels = list.map(p=>p.name || String(p.playerId));
+  const metrics = ['Age','Rookie','EVO','EVD','PP','SH'];
+  const accent = teamColor || themeAccent();
+  const tick = themeTextDim();
+  const grid = 'rgba(154,164,177,0.14)';
+
+  const colors = [
+    mixHex(accent,'#ffffff',0.05),
+    mixHex(accent,'#ffffff',0.18),
+    mixHex(accent,'#ffffff',0.32),
+    mixHex(accent,'#ffffff',0.46),
+    mixHex(accent,'#ffffff',0.60),
+    mixHex(accent,'#ffffff',0.74),
+  ];
+
+  const datasets = metrics.map((m, idx)=>({
+    label: m,
+    data: list.map(p=>Number(p[m]||0)),
+    backgroundColor: colors[idx % colors.length],
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+  }));
+
+  __projTeamChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: {
+        legend: { labels: { color: tick, font:{ size: 12, weight:'800' } } },
+        tooltip: { callbacks: { footer: (items)=>{
+          const i = items?.[0]?.dataIndex;
+          if(i==null) return '';
+          const t = Number(list[i]?.total);
+          return Number.isFinite(t) ? `Total: ${t.toFixed(3)}` : '';
+        } } }
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: tick }, grid: { color: grid } },
+        y: { stacked: true, ticks: { color: tick, autoSkip: false }, grid: { display:false } },
+      }
+    }
+  });
+}
+
+function renderLeagueTable(players, selectedPlayerId){
+  if(!projLeagueTable) return;
+  const cols = [
+    { key:'rank', label:'Rank', num:true },
+    { key:'name', label:'Player', name:true },
+    { key:'team', label:'Team' },
+    { key:'position', label:'Pos' },
+    { key:'gp', label:'GP', num:true },
+    { key:'Age', label:'Age', num:true },
+    { key:'Rookie', label:'Rookie', num:true },
+    { key:'EVO', label:'EVO', num:true },
+    { key:'EVD', label:'EVD', num:true },
+    { key:'PP', label:'PP', num:true },
+    { key:'SH', label:'SH', num:true },
+    { key:'QoT', label:'QoT', num:true },
+    { key:'QoC', label:'QoC', num:true },
+    { key:'ZS', label:'ZS', num:true },
+    { key:'total', label:'Total', num:true },
+  ];
+
+  const sortKey = __projLeagueSort.key;
+  const sortDir = __projLeagueSort.dir;
+  const list = (players||[]).filter(p=>p.name && String(p.name).trim()).slice();
+  list.sort((a,b)=>{
+    const av = a?.[sortKey];
+    const bv = b?.[sortKey];
+    const an = Number(av);
+    const bn = Number(bv);
+    let cmp = 0;
+    if(Number.isFinite(an) && Number.isFinite(bn)) cmp = an - bn;
+    else cmp = String(av||'').localeCompare(String(bv||''));
+    return sortDir==='asc' ? cmp : -cmp;
+  });
+
+  // Add rank based on sorted position
+  list.forEach((p, i) => { p._rank = i + 1; });
+
+  const head = `<thead><tr>${cols.map(c=>{
+    const active = c.key === sortKey;
+    const ind = active ? `<span class="sort-ind">${sortDir==='asc'?'▲':'▼'}</span>` : '';
+    const cls = c.name ? 'name' : (c.num ? 'num' : '');
+    return `<th class="${cls}" data-key="${c.key}">${c.label}${ind}</th>`;
+  }).join('')}</tr></thead>`;
+
+  const body = `<tbody>${list.map(p=>{
+    const isSelected = String(p.playerId) === String(selectedPlayerId||'');
+    const rowCls = isSelected ? ' class="selected-player"' : '';
+    const td = (val, num, isName)=>{
+      if(num){
+        const n = Number(val);
+        const s = Number.isFinite(n) ? (Number.isInteger(n) ? String(n) : n.toFixed(3)) : '';
+        return `<td class="num">${s || '—'}</td>`;
+      }
+      if(isName){
+        return `<td class="name">${(val==null||val==='')?'—':String(val)}</td>`;
+      }
+      return `<td>${(val==null||val==='')?'—':String(val)}</td>`;
+    };
+    return `<tr${rowCls}>
+      ${td(p._rank,true,false)}
+      ${td(p.name,false,true)}
+      ${td(p.team,false,false)}
+      ${td(p.position,false,false)}
+      ${td(p.gp,true,false)}
+      ${td(p.Age,true,false)}
+      ${td(p.Rookie,true,false)}
+      ${td(p.EVO,true,false)}
+      ${td(p.EVD,true,false)}
+      ${td(p.PP,true,false)}
+      ${td(p.SH,true,false)}
+      ${td(p.contextData?.QoT,true,false)}
+      ${td(p.contextData?.QoC,true,false)}
+      ${td(p.contextData?.ZS,true,false)}
+      ${td(p.total,true,false)}
+    </tr>`;
+  }).join('')}</tbody>`;
+
+  projLeagueTable.innerHTML = head + body;
+  projLeagueTable.querySelectorAll('th[data-key]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const k = th.getAttribute('data-key');
+      if(!k) return;
+      if(__projLeagueSort.key === k){
+        __projLeagueSort.dir = (__projLeagueSort.dir === 'asc') ? 'desc' : 'asc';
+      }else{
+        __projLeagueSort.key = k;
+        __projLeagueSort.dir = k === 'name' || k === 'team' || k === 'position' ? 'asc' : 'desc';
+      }
+      renderLeagueTable(__projLeaguePlayers, playerSelect?.value);
+    });
+  });
+}
+
 function getAccentColor(){
   try{
     return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4da3ff';
@@ -326,6 +744,12 @@ function applyRAPMSelectTextColor(){
     const el = document.getElementById(id);
     if(el) el.style.color = c;
   });
+}
+
+function applyExportButtonTextColor(){
+  if(!teamSelect || !projExportCsv) return;
+  const c = getComputedStyle(teamSelect).color;
+  projExportCsv.style.color = c;
 }
 
 function clamp(v, lo, hi){
@@ -522,6 +946,7 @@ function renderRAPMUI(){
       </label>
       <label id="rapmCareerStrengthWrap" style="display:none;">Strength
         <select id="rapmCareerStrength">
+          <option value="All">All</option>
           <option value="5v5">5v5</option>
           <option value="PP">PP</option>
           <option value="SH">SH</option>
@@ -764,6 +1189,8 @@ async function renderRAPMCareer(opts){
     points.sort((a,b)=>parseInt(a?.Season||0,10) - parseInt(b?.Season||0,10));
 
     const title = strength === '5v5' ? '5v5' : (strength === 'PP' ? 'PP' : 'SH');
+    const isAll = (strength === 'All');
+    const panelTitle = isAll ? 'ALL' : title;
 
     function num(x){
       const n = parseLocaleNumber(x);
@@ -776,6 +1203,11 @@ async function renderRAPMCareer(opts){
       return s + n.toFixed(3);
     }
     function pickValue(p, key){
+      if(isAll){
+        if(mode === 'pct') return num(p?.all_total_pct);
+        if(mode === 'z') return num(p?.all_total_z);
+        return num(p?.all_total);
+      }
       if(title === 'PP'){
         if(mode === 'pct') return num(p?.pp_off_pct);
         if(mode === 'z') return num(p?.pp_off_z);
@@ -787,7 +1219,7 @@ async function renderRAPMCareer(opts){
         return num(p?.sh_def);
       }
       // 5v5
-      const base = `5v5_${key}`;
+      const base = (key === 'total') ? '5v5_total' : `5v5_${key}`;
       if(mode === 'pct') return num(p?.[`${base}_pct`]);
       if(mode === 'z') return num(p?.[`${base}_z`]);
       return num(p?.[base]);
@@ -806,8 +1238,10 @@ async function renderRAPMCareer(opts){
       if(yMin == null || yMax == null || yMin === yMax){
         const vals = [];
         for(const p of points){
-          if(title === '5v5'){
-            ['off','def','diff'].forEach(k=>{ const v = pickValue(p,k); if(v != null) vals.push(v); });
+          if(isAll){
+            const v = pickValue(p,'total'); if(v != null) vals.push(v);
+          }else if(title === '5v5'){
+            ['off','def','total'].forEach(k=>{ const v = pickValue(p,k); if(v != null) vals.push(v); });
           }else if(title === 'PP'){
             const v = pickValue(p,'off'); if(v != null) vals.push(v);
           }else{
@@ -871,15 +1305,36 @@ async function renderRAPMCareer(opts){
     const midY = yAt(0);
     svgs.push(`<line x1="${padL}" y1="${midY.toFixed(2)}" x2="${(w-padR)}" y2="${midY.toFixed(2)}" stroke="rgba(255,255,255,0.18)" stroke-width="1" />`);
 
-    const lines = (title === '5v5')
-      ? [
-          {key:'off', color:'#2f6bff'},
-          {key:'def', color:'#ff3b30'},
-          {key:'diff', color:'rgba(255,255,255,0.92)'}
-        ]
-      : (title === 'PP')
-        ? [{key:'off', color:'#2f6bff'}]
-        : [{key:'def', color:'#ff3b30'}];
+    const lines = (isAll)
+      ? [{key:'total', color:'rgba(255,255,255,0.92)'}]
+      : (title === '5v5')
+        ? [
+            {key:'off', color:'#2f6bff'},
+            {key:'def', color:'#ff3b30'},
+            {key:'total', color:'rgba(255,255,255,0.92)'}
+          ]
+        : (title === 'PP')
+          ? [{key:'off', color:'#2f6bff'}]
+          : [{key:'def', color:'#ff3b30'}];
+
+    const lineLabel = (lnKey)=>{
+      if(isAll) return 'Total';
+      if(title === 'PP') return 'Off';
+      if(title === 'SH') return 'Def';
+      if(lnKey === 'off') return 'Off';
+      if(lnKey === 'def') return 'Def';
+      return 'Total';
+    };
+
+    const fmtTooltipVal = (v)=>{
+      if(v == null) return '—';
+      if(mode === 'pct') return `${v.toFixed(0)}%`;
+      if(mode === 'z'){
+        const s = (v > 0) ? '+' : '';
+        return s + v.toFixed(2);
+      }
+      return fmtSigned(v);
+    };
 
     let any = false;
     for(const ln of lines){
@@ -912,16 +1367,101 @@ async function renderRAPMCareer(opts){
 
     wrap.innerHTML = `
       <div class="rapm-sect" style="--rapmBarH: 420px;">
-        <h3>${title}</h3>
+        <h3>${panelTitle}</h3>
         <div class="rapm-row">${axisHtml}${plot}</div>
-        ${title === '5v5' ? `
+        ${(!isAll && title === '5v5') ? `
           <div class="rapm-career-legend">
             <span><span class="sw" style="background:#2f6bff"></span>Off</span>
             <span><span class="sw" style="background:#ff3b30"></span>Def</span>
-            <span><span class="sw" style="background:rgba(255,255,255,0.92)"></span>Diff</span>
+            <span><span class="sw" style="background:rgba(255,255,255,0.92)"></span>Total</span>
           </div>` : ''}
       </div>
     `;
+
+    // Tooltip
+    try{
+      const area = wrap.querySelector('.career-area');
+      const svg = wrap.querySelector('.career-area svg');
+      if(area && svg && points.length){
+        area.style.position = 'relative';
+        let tip = wrap.querySelector('.rapm-tooltip');
+        if(!tip){
+          tip = document.createElement('div');
+          tip.className = 'rapm-tooltip';
+          area.appendChild(tip);
+        }
+
+        const seasons = points.map(p=>formatSeasonShort(p?.Season));
+        const series = lines.map(ln=>({
+          key: ln.key,
+          label: lineLabel(ln.key),
+          color: ln.color,
+          values: points.map(p=>pickValue(p, ln.key)),
+        }));
+
+        const nearestIndex = (xPx)=>{
+          const rect = svg.getBoundingClientRect();
+          const t = (xPx - rect.left) / Math.max(1, rect.width);
+          const xSvg = t * w;
+          let bestI = 0;
+          let bestD = Infinity;
+          for(let i=0;i<points.length;i++){
+            const d = Math.abs(xAt(i) - xSvg);
+            if(d < bestD){ bestD = d; bestI = i; }
+          }
+          return bestI;
+        };
+
+        const renderTip = (i)=>{
+          const title = seasons[i] || '';
+          const rows = [];
+          for(const s of series){
+            const v = s.values[i];
+            if(v == null) continue;
+            rows.push(`<div class="t-row"><span class="lbl"><span class="dot" style="background:${s.color}"></span>${s.label}</span><span class="val">${fmtTooltipVal(v)}</span></div>`);
+          }
+          tip.innerHTML = `<div class="t-title">${title}</div>${rows.join('')}`;
+        };
+
+        const moveTip = (evt)=>{
+          const rect = svg.getBoundingClientRect();
+          const i = nearestIndex(evt.clientX);
+          renderTip(i);
+          tip.style.display = 'block';
+          const x = evt.clientX - rect.left;
+          const y = evt.clientY - rect.top;
+          const pad = 12;
+          // place to the right/up when possible
+          const areaRect = area.getBoundingClientRect();
+          const maxX = areaRect.width;
+          const maxY = areaRect.height;
+          // measure after content
+          const tw = tip.offsetWidth || 180;
+          const th = tip.offsetHeight || 80;
+          let left = x + 14;
+          let top = y - th - 14;
+          if(left + tw + pad > maxX) left = x - tw - 14;
+          if(top < pad) top = y + 14;
+          left = Math.max(pad, Math.min(maxX - tw - pad, left));
+          top = Math.max(pad, Math.min(maxY - th - pad, top));
+          tip.style.left = `${left}px`;
+          tip.style.top = `${top}px`;
+        };
+
+        const hideTip = ()=>{ tip.style.display = 'none'; };
+        area.addEventListener('mousemove', moveTip);
+        area.addEventListener('mouseleave', hideTip);
+        area.addEventListener('touchstart', (e)=>{
+          if(!e.touches || !e.touches[0]) return;
+          moveTip(e.touches[0]);
+        }, {passive:true});
+        area.addEventListener('touchmove', (e)=>{
+          if(!e.touches || !e.touches[0]) return;
+          moveTip(e.touches[0]);
+        }, {passive:true});
+        area.addEventListener('touchend', hideTip);
+      }
+    }catch(_){ /* ignore tooltip failures */ }
   }catch(e){
     wrap.innerHTML = '<div class="skater-empty">Error loading career RAPM.</div>';
   }
@@ -982,37 +1522,60 @@ async function loadProjectionsPanel(){
     return;
   }
   const playerId = playerSelect?.value;
-  if(!playerId){
-    projPanelInner.textContent = 'Select a player to view projections.';
-    return;
-  }
-  projPanelInner.textContent = 'Loading projections...';
+  const teamAbbrev = String(teamSelect?.value||'').toUpperCase();
+  const season = seasonSelect?.value;
   try{
-    const r = await fetch(`/api/player-projections/${encodeURIComponent(playerId)}`);
-    const data = await r.json();
-    if(data?.error){
-      projPanelInner.textContent = 'No projections found for this player.';
-      return;
+    const league = await ensureProjLeaguePlayers();
+    
+    // Fetch context data for all league players
+    const contextPromises = league.map(async (p)=>{
+      try{
+        const r = await fetch(`/api/context/player/${encodeURIComponent(p.playerId)}?season=${encodeURIComponent(season||'')}`, { cache:'no-store' });
+        const data = await r.json();
+        if(!data?.error && Array.isArray(data.rows)){
+          // Find the 5v5 row
+          const row5v5 = data.rows.find(row => String(row.StrengthState||'') === '5v5');
+          if(row5v5){
+            const parseNum = (val) => {
+              if(val == null) return null;
+              // If already a number, return it
+              if(typeof val === 'number') return Number.isFinite(val) ? val : null;
+              // Parse string values
+              const n = parseLocaleNumber(val);
+              return Number.isFinite(n) ? n : null;
+            };
+            p.contextData = { 
+              QoT: parseNum(row5v5.QoT_blend_xG67_G33), 
+              QoC: parseNum(row5v5.QoC_blend_xG67_G33), 
+              ZS: parseNum(row5v5.ZS_Difficulty) 
+            };
+          }
+        }
+      }catch(_){ /* ignore context fetch failures */ }
+    });
+    await Promise.all(contextPromises);
+
+    const teamObj = teams.find(tm=>String(tm?.Team||tm?.team||'').toUpperCase() === teamAbbrev);
+    const teamColor = teamObj?.Color || teamObj?.color || null;
+
+    // Set CSS variable for team color highlight
+    if(teamColor){
+      const rgb = hexToRgb(teamColor);
+      if(rgb){
+        document.documentElement.style.setProperty('--league-highlight-color', `rgba(${rgb.r},${rgb.g},${rgb.b},0.15)`);
+      }
     }
-    const row = data?.row || {};
-    const keys = [
-      ['Position', row.Position],
-      ['Game_No', row.Game_No],
-      ['EVO', fmtNum(row.EVO)],
-      ['EVD', fmtNum(row.EVD)],
-      ['PP', fmtNum(row.PP)],
-      ['SH', fmtNum(row.SH)],
-      ['GSAx', fmtNum(row.GSAx)],
-    ];
-    projPanelInner.innerHTML = `
-      <table class="mini-table">
-        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-        <tbody>
-          ${keys.filter(kv=>kv[1]!=null && String(kv[1]).length).map(kv=>`<tr><td>${kv[0]}</td><td>${kv[1]}</td></tr>`).join('')}
-        </tbody>
-      </table>`;
+
+    renderLeagueTable(league, playerId);
+
+    const p = league.find(x=>String(x.playerId) === String(playerId||''));
+    const playerContext = p?.contextData || null;
+    renderPlayerKpisFromLeague(p, playerContext);
+    renderPlayerRadarFromLeague(p, league, playerContext, teamColor);
+
+    renderTeamStackFromLeague(teamAbbrev, league, teamColor);
   }catch(e){
-    projPanelInner.textContent = 'Error loading projections.';
+    if(projPlayerKpis) projPlayerKpis.innerHTML = '<div class="skater-empty" style="grid-column:1 / -1; padding:8px 2px;">Error loading projections.</div>';
   }
 }
 
@@ -1077,10 +1640,39 @@ async function loadPlayerCard(){
 tabRAPM?.addEventListener('click', ()=> setActiveTab('rapm'));
 tabProjections?.addEventListener('click', ()=> setActiveTab('projections'));
 
+projTabPlayer?.addEventListener('click', ()=> setActiveProjSubtab('player'));
+projTabTeam?.addEventListener('click', ()=> setActiveProjSubtab('team'));
+projTabLeague?.addEventListener('click', ()=> setActiveProjSubtab('league'));
+setActiveProjSubtab('player');
+
+projExportCsv?.addEventListener('click', ()=>{
+  if(!__projLeaguePlayers || !__projLeaguePlayers.length) return;
+  const cols = ['name','team','position','gp','Age','Rookie','EVO','EVD','PP','SH','QoT','QoC','ZS','total'];
+  const header = cols.join(',');
+  const rows = __projLeaguePlayers.filter(p=>p.name && String(p.name).trim()).map(p=>{
+    return cols.map(c=>{
+      if(c === 'QoT' || c === 'QoC' || c === 'ZS'){
+        const v = p.contextData?.[c];
+        return v != null ? String(v) : '';
+      }
+      const v = p[c];
+      return v != null ? String(v) : '';
+    }).join(',');
+  });
+  const csv = header + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'projections_league.csv';
+  link.click();
+});
+
 teamSelect?.addEventListener('change', async ()=>{
   await loadPlayers();
   await loadPlayerCard();
   applyRAPMSelectTextColor();
+  applyExportButtonTextColor();
+  if(projectionsEnabled()) loadProjectionsPanel();
 });
 seasonSelect?.addEventListener('change', async ()=>{
   updateTabsVisibility();
@@ -1089,10 +1681,10 @@ seasonSelect?.addEventListener('change', async ()=>{
 });
 playerSelect?.addEventListener('change', ()=> loadPlayerCard());
 
-setTimeout(async ()=>{
-  updateTabsVisibility();
+setTimeout(async ()=>{ updateTabsVisibility();
   await loadPlayers();
   await loadPlayerCard();
+  applyExportButtonTextColor();
 }, 650);
 </script>
 {% endblock %}

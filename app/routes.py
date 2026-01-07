@@ -748,6 +748,9 @@ def odds_page(game_id: int):
 
 _SHEET_ROWS_CACHE: Dict[Tuple[str, str], Tuple[float, List[Dict[str, Any]]]] = {}
 
+# Projections enrichment cache: {playerId -> {name, team, pos}}
+_ALL_ROSTERS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, str]]]] = None
+
 
 def _load_sheet_rows_cached(sheet_id: str, worksheet: str, ttl_env: str = 'SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl: int = 30) -> List[Dict[str, Any]]:
     """Fetch worksheet rows via Google Sheets API with a short in-memory TTL cache."""
@@ -1024,6 +1027,62 @@ def api_lineups_all():
         return j, 500
 
 
+@main_bp.route('/api/player-projections/sheets')
+def api_player_projections_sheets():
+    """Fetch player projections from Google Sheets (Sheets3).
+    Returns: { playerId: { PlayerID, Position, Age, Rookie, EVO, EVD, PP, SH, GSAx, ... }, ... }
+    """
+    sheet_id = (os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    worksheet = (os.getenv('PROJECTIONS_WORKSHEET') or 'Sheets3').strip()
+    if not sheet_id:
+        return jsonify({'error': 'missing_sheet_id', 'hint': 'Set PROJECTIONS_SHEET_ID env var'}), 500
+    
+    try:
+        import gspread  # type: ignore
+        from google.oauth2.service_account import Credentials  # type: ignore
+    except Exception:
+        return jsonify({'error': 'gspread_unavailable', 'hint': 'Install gspread and google-auth'}), 500
+    
+    try:
+        info = _load_google_service_account_info_from_env()
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets.readonly',
+            'https://www.googleapis.com/auth/drive.readonly',
+        ]
+        creds = Credentials.from_service_account_info(info, scopes=scopes)
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.worksheet(worksheet)
+        # Use numericise_ignore to preserve comma decimal separators (like RAPM does)
+        try:
+            rows = ws.get_all_records(numericise_ignore=['all']) or []
+        except Exception:
+            rows = ws.get_all_records() or []
+        
+        # Build map keyed by PlayerID
+        # Values are kept as strings with comma decimal separators for proper parsing
+        out = {}
+        for r in rows:
+            try:
+                pid_raw = r.get('PlayerID') or r.get('playerId') or r.get('player_id')
+                if pid_raw is None:
+                    continue
+                pid = int(str(pid_raw).strip())
+                # Return raw row - frontend will parse with _parse_locale_float equivalent
+                out[pid] = r
+            except Exception:
+                continue
+        
+        j = jsonify(out)
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j
+    except Exception as e:
+        return jsonify({'error': 'fetch_failed', 'hint': str(e)}), 500
+
+
 @main_bp.route('/api/projections/games')
 def api_projections_games():
     """Return list of games for 'today', 'yesterday', or 'tomorrow' based on Eastern Time.
@@ -1161,7 +1220,7 @@ def api_projections_games():
 
     # Load lineups and player projections once
     lineups_all = _load_lineups_all()
-    proj_map = _load_player_projections_csv()
+    proj_map = _load_player_projections_cached()  # Use Google Sheets (same as frontend)
     # Situation mapping values
     SITUATION = {
         'Away-B2B-B2B': -0.126602018,
@@ -1993,7 +2052,7 @@ def api_rapm_career():
     strength = str(request.args.get('strength') or '5v5').strip() or '5v5'
     if metric not in {'corsi', 'xg', 'goals'}:
         metric = 'corsi'
-    if strength not in {'5v5', 'PP', 'SH'}:
+    if strength not in {'All', '5v5', 'PP', 'SH'}:
         strength = '5v5'
 
     def _rt(v: Any) -> str:
@@ -2153,14 +2212,18 @@ def api_rapm_career():
             z_pp = 'PP_CF_zscore'
             z_sh = 'SH_CA_zscore'
 
-        # Aggregate league distributions by season for percentiles
+        # Aggregate league distributions by season for percentiles + z-score stats
         dist_by_season: Dict[int, Dict[str, List[float]]] = {}
         scale_by_season: Dict[int, Dict[str, Dict[str, Optional[float]]]] = {}
+        stats_by_season: Dict[int, Dict[str, Dict[str, Optional[float]]]] = {}
 
         def _push(season_int: int, key: str, v: Optional[float]):
             if v is None:
                 return
             dist_by_season.setdefault(season_int, {}).setdefault(key, []).append(float(v))
+
+        # For totals we need to combine strengths per player within a season.
+        contrib: Dict[Tuple[int, int], Dict[str, float]] = {}
 
         # First pass: collect values per season/player/strength
         for r in rapm_rows:
@@ -2182,11 +2245,17 @@ def api_rapm_career():
                     _push(season_int, '5v5_off', voff)
                     _push(season_int, '5v5_def', vdef)
 
+                    if voff is not None and vdef is not None:
+                        contrib.setdefault((season_int, pid_i), {})['5v5_total'] = float(voff) + float(vdef)
+
                 elif st == 'PP' and _eligible(season_int, pid_i, 'PP'):
                     vpp = _parse_locale_float(r.get(pp_col))
                     if vpp is None:
                         vpp = _parse_locale_float(r.get(pp_base))
                     _push(season_int, 'pp_off', vpp)
+
+                    if vpp is not None:
+                        contrib.setdefault((season_int, pid_i), {})['pp_off'] = float(vpp)
 
                 elif st == 'SH' and _eligible(season_int, pid_i, 'SH'):
                     vsh = _parse_locale_float(r.get(sh_col))
@@ -2194,8 +2263,25 @@ def api_rapm_career():
                         vsh = _parse_locale_float(r.get(sh_base))
                     vsh2 = (-vsh) if vsh is not None else None
                     _push(season_int, 'sh_def', vsh2)
+
+                    if vsh2 is not None:
+                        contrib.setdefault((season_int, pid_i), {})['sh_def'] = float(vsh2)
             except Exception:
                 continue
+
+        # Second pass: totals distributions
+        for (season_int, _pid_i), d in contrib.items():
+            v5 = d.get('5v5_total')
+            if v5 is not None:
+                _push(season_int, '5v5_total', v5)
+            all_total = 0.0
+            any_part = False
+            for k in ('5v5_total', 'pp_off', 'sh_def'):
+                if k in d:
+                    all_total += float(d[k])
+                    any_part = True
+            if any_part:
+                _push(season_int, 'all_total', all_total)
 
         # Compute per-season min/max for scaling
         for season_int, d in dist_by_season.items():
@@ -2207,6 +2293,23 @@ def api_rapm_career():
                     out[k] = {'min': float(min(vals)), 'max': float(max(vals))}
             scale_by_season[season_int] = out
 
+        # Compute per-season mean/std for z-score (for derived totals)
+        for season_int, d in dist_by_season.items():
+            out2: Dict[str, Dict[str, Optional[float]]] = {}
+            for k, vals in d.items():
+                if not vals:
+                    out2[k] = {'mean': None, 'std': None}
+                    continue
+                try:
+                    n = float(len(vals))
+                    mean = float(sum(vals) / n)
+                    var = float(sum((x - mean) ** 2 for x in vals) / n)
+                    std = float(var ** 0.5)
+                    out2[k] = {'mean': mean, 'std': std}
+                except Exception:
+                    out2[k] = {'mean': None, 'std': None}
+            stats_by_season[season_int] = out2
+
         # Sort distributions for percentile calc
         for season_int, d in dist_by_season.items():
             for k in list(d.keys()):
@@ -2215,6 +2318,7 @@ def api_rapm_career():
         league = {
             'dist': dist_by_season,
             'scale': scale_by_season,
+            'stats': stats_by_season,
             'minutes': minutes_by_season_pid_strength,
             'thresholds': {'fivev5': MIN_5V5, 'pp': MIN_PP, 'sh': MIN_SH},
             'cols': {
@@ -2249,6 +2353,7 @@ def api_rapm_career():
     cols = league.get('cols') or {}
     dist = league.get('dist') or {}
     scale = league.get('scale') or {}
+    stats = league.get('stats') or {}
     minutes_map = league.get('minutes') or {}
     thresholds = league.get('thresholds') or {'fivev5': 100.0, 'pp': 40.0, 'sh': 40.0}
 
@@ -2276,6 +2381,22 @@ def api_rapm_career():
             return None
         idx = bisect.bisect_right(arr, v)
         return 100.0 * (idx / float(len(arr)))
+
+    def _z(season_int: int, key: str, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return None
+        mm = (stats.get(season_int) or {}).get(key) or {}
+        mean = mm.get('mean')
+        std = mm.get('std')
+        if mean is None or std is None:
+            return None
+        try:
+            std_f = float(std)
+            if std_f == 0:
+                return None
+            return (float(v) - float(mean)) / std_f
+        except Exception:
+            return None
 
     series: Dict[int, Dict[str, Any]] = {}
     for r in rapm_rows:
@@ -2360,6 +2481,17 @@ def api_rapm_career():
             p['5v5_off_pct'] = _pct(season_int, '5v5_off', row.get('5v5_off'))
             p['5v5_def_pct'] = _pct(season_int, '5v5_def', row.get('5v5_def'))
             p['5v5_diff_pct'] = _pct(season_int, '5v5_diff', row.get('5v5_diff'))
+
+            try:
+                v5off = row.get('5v5_off')
+                v5def = row.get('5v5_def')
+                if v5off is not None and v5def is not None:
+                    vtot = float(v5off) + float(v5def)
+                    p['5v5_total'] = vtot
+                    p['5v5_total_pct'] = _pct(season_int, '5v5_total', vtot)
+                    p['5v5_total_z'] = _z(season_int, '5v5_total', vtot)
+            except Exception:
+                pass
         if eligp:
             p['pp_off'] = row.get('pp_off')
             p['pp_off_z'] = row.get('pp_off_z')
@@ -2368,6 +2500,30 @@ def api_rapm_career():
             p['sh_def'] = row.get('sh_def')
             p['sh_def_z'] = row.get('sh_def_z')
             p['sh_def_pct'] = _pct(season_int, 'sh_def', row.get('sh_def'))
+
+        # All-strength total for this season: sum any eligible components.
+        try:
+            total_all = 0.0
+            any_part = False
+            if p.get('5v5_total') is not None:
+                total_all += float(p['5v5_total'])
+                any_part = True
+            if eligp:
+                vpp_any = p.get('pp_off')
+                if vpp_any is not None:
+                    total_all += float(vpp_any)
+                    any_part = True
+            if eligs:
+                vsh_any = p.get('sh_def')
+                if vsh_any is not None:
+                    total_all += float(vsh_any)
+                    any_part = True
+            if any_part:
+                p['all_total'] = total_all
+                p['all_total_pct'] = _pct(season_int, 'all_total', total_all)
+                p['all_total_z'] = _z(season_int, 'all_total', total_all)
+        except Exception:
+            pass
         points.append(p)
 
     # Global scale across seasons (league min/max per season, then overall min/max)
@@ -2390,8 +2546,16 @@ def api_rapm_career():
                     pass
         return {'min': (min(mins) if mins else None), 'max': (max(maxs) if maxs else None)}
 
-    if strength == '5v5':
-        league_scale = _minmax_over_seasons('5v5_diff')
+    if strength == 'All':
+        league_scale = _minmax_over_seasons('all_total')
+    elif strength == '5v5':
+        # 5v5 chart uses Off/Def/Total; keep scale wide enough for all three.
+        mm1 = _minmax_over_seasons('5v5_off')
+        mm2 = _minmax_over_seasons('5v5_def')
+        mm3 = _minmax_over_seasons('5v5_total')
+        mins = [x for x in [mm1.get('min'), mm2.get('min'), mm3.get('min')] if x is not None]
+        maxs = [x for x in [mm1.get('max'), mm2.get('max'), mm3.get('max')] if x is not None]
+        league_scale = {'min': (min(mins) if mins else None), 'max': (max(maxs) if maxs else None)}
     elif strength == 'PP':
         league_scale = _minmax_over_seasons('pp_off')
     else:
@@ -2970,19 +3134,275 @@ def _parse_locale_float(v: Any) -> Optional[float]:
         return None
 
 
+def _safe_int(v: Any) -> Optional[int]:
+    try:
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, int):
+            return v
+        s = str(v).strip()
+        if not s:
+            return None
+        return int(float(s))
+    except Exception:
+        return None
+
+
+def _extract_name(obj: Any) -> str:
+    try:
+        if not isinstance(obj, dict):
+            return ''
+        fn = obj.get('firstName')
+        ln = obj.get('lastName')
+        if fn is not None and ln is not None:
+            if isinstance(fn, dict):
+                fn = fn.get('default') or (next(iter(fn.values())) if fn else '')
+            if isinstance(ln, dict):
+                ln = ln.get('default') or (next(iter(ln.values())) if ln else '')
+            name = f"{fn or ''} {ln or ''}".strip()
+            if name:
+                return name
+        for k in ('fullName', 'name'):
+            val = obj.get(k)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+        person = obj.get('person')
+        if isinstance(person, dict):
+            val = person.get('fullName')
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+        return ''
+    except Exception:
+        return ''
+
+
+def _extract_pos(obj: Any) -> str:
+    try:
+        if not isinstance(obj, dict):
+            return ''
+        for k in ('positionCode', 'pos', 'position', 'primaryPosition'):
+            val = obj.get(k)
+            if isinstance(val, dict):
+                val = val.get('abbrev') or val.get('type')
+            if isinstance(val, str) and val.strip():
+                s = val.strip().upper()
+                if s.startswith('G'):
+                    return 'G'
+                if s.startswith('D'):
+                    return 'D'
+                return 'F'
+        return ''
+    except Exception:
+        return ''
+
+
+def _load_all_rosters_cached() -> Dict[int, Dict[str, str]]:
+    """Build a playerId->info map by fetching current rosters for all teams.
+
+    Cached with TTL to avoid hammering upstream.
+    """
+    global _ALL_ROSTERS_CACHE
+    try:
+        ttl_s = max(60, int(os.getenv('ALL_ROSTERS_CACHE_TTL_SECONDS', '21600') or '21600'))
+    except Exception:
+        ttl_s = 21600
+    now = time.time()
+    if _ALL_ROSTERS_CACHE and (now - _ALL_ROSTERS_CACHE[0]) < ttl_s:
+        return _ALL_ROSTERS_CACHE[1]
+
+    out: Dict[int, Dict[str, str]] = {}
+    # TEAM_ROWS uses key 'Team' for abbrev
+    teams = []
+    try:
+        teams = [str(r.get('Team') or '').strip().upper() for r in (TEAM_ROWS or [])]
+        teams = [t for t in teams if t]
+    except Exception:
+        teams = []
+
+    for team in teams:
+        url = f'https://api-web.nhle.com/v1/roster/{team}/current'
+        try:
+            r = requests.get(url, timeout=20, allow_redirects=True)
+            if r.status_code != 200:
+                continue
+            data = r.json() if r.content else {}
+            if not isinstance(data, dict):
+                continue
+        except Exception:
+            continue
+
+        for bucket in ('forwards', 'defensemen', 'goalies'):
+            arr = data.get(bucket) or []
+            if not isinstance(arr, list):
+                continue
+            for p in arr:
+                if not isinstance(p, dict):
+                    continue
+                pid = _safe_int(p.get('id') or p.get('playerId') or p.get('personId') or (p.get('person') or {}).get('id'))
+                if not pid or pid <= 0:
+                    continue
+                name = _extract_name(p)
+                pos = _extract_pos(p)
+                if not pos:
+                    pos = 'G' if bucket == 'goalies' else ('D' if bucket == 'defensemen' else 'F')
+                out[pid] = {
+                    'playerId': str(pid),
+                    'name': name,
+                    'team': team,
+                    'position': pos,
+                }
+
+    _ALL_ROSTERS_CACHE = (now, out)
+    return out
+
+
+def _parse_proj_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    # player_projections.csv columns: PlayerID,Position,Game_No,Age,Rookie,EVO,EVD,PP,SH,GSAx
+    pid = _safe_int(row.get('PlayerID') or row.get('playerId') or row.get('player_id') or row.get('id'))
+    pos = str(row.get('Position') or row.get('position') or '').strip().upper()[:1]
+    gp = _safe_int(row.get('Game_No') or row.get('GP') or row.get('games') or row.get('gamesPlayed'))
+    age = _parse_locale_float(row.get('Age'))
+    rookie = _parse_locale_float(row.get('Rookie'))
+    evo = _parse_locale_float(row.get('EVO'))
+    evd = _parse_locale_float(row.get('EVD'))
+    pp = _parse_locale_float(row.get('PP'))
+    sh = _parse_locale_float(row.get('SH'))
+    # Total excludes GSAx per spec
+    total = sum([(age or 0.0), (rookie or 0.0), (evo or 0.0), (evd or 0.0), (pp or 0.0), (sh or 0.0)])
+    return {
+        'playerId': pid,
+        'position': pos,
+        'gp': gp,
+        'Age': age,
+        'Rookie': rookie,
+        'EVO': evo,
+        'EVD': evd,
+        'PP': pp,
+        'SH': sh,
+        'total': total,
+    }
+
+
+@main_bp.route('/api/player-projections/league')
+def api_player_projections_league():
+    """League-wide skater projections.
+
+    Query params:
+      team=EDM (optional)
+    """
+    team = str(request.args.get('team') or '').strip().upper()
+
+    proj_map = _load_player_projections_cached()
+    roster_map = _load_all_rosters_cached()
+
+    out: List[Dict[str, Any]] = []
+    for pid, raw in (proj_map or {}).items():
+        try:
+            row = _parse_proj_row(raw)
+            if not row.get('playerId'):
+                continue
+            pos = str(row.get('position') or '').upper()
+            if pos.startswith('G'):
+                continue  # skaters only
+            info = roster_map.get(int(row['playerId'])) or {}
+            t = (info.get('team') or '').upper()
+            if team and t and t != team:
+                continue
+            if team and not t:
+                # If filtering by team and we don't know the team, skip.
+                continue
+            out.append({
+                **row,
+                'name': info.get('name') or '',
+                'team': t,
+                # prefer CSV position for skaters, but ensure a fallback
+                'position': pos if pos in ('F', 'D') else (info.get('position') or 'F'),
+            })
+        except Exception:
+            continue
+
+    out.sort(key=lambda r: float(r.get('total') or 0.0), reverse=True)
+    j = jsonify({'players': out})
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
 def _load_player_projections_cached() -> Dict[int, Dict[str, Any]]:
-    """Load app/static/player_projections.csv into memory (TTL cached)."""
-    global _PLAYER_PROJECTIONS_CACHE
+    """Load player projections from Google Sheets (with CSV fallback) into memory (TTL cached)."""
+    return _load_player_projections_from_sheets()
+
+_PLAYER_PROJECTIONS_SHEETS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
+
+def _load_player_projections_from_sheets() -> Dict[int, Dict[str, Any]]:
+    """Load player projections from Google Sheets (Sheets3) into memory."""
+    global _PLAYER_PROJECTIONS_SHEETS_CACHE
     try:
         ttl_s = max(30, int(os.getenv('PLAYER_PROJECTIONS_CACHE_TTL_SECONDS', '300') or '300'))
     except Exception:
         ttl_s = 300
     now = time.time()
-    if _PLAYER_PROJECTIONS_CACHE and (now - _PLAYER_PROJECTIONS_CACHE[0]) < ttl_s:
-        return _PLAYER_PROJECTIONS_CACHE[1]
-    data = _load_player_projections_csv()
-    _PLAYER_PROJECTIONS_CACHE = (now, data)
-    return data
+    if _PLAYER_PROJECTIONS_SHEETS_CACHE and (now - _PLAYER_PROJECTIONS_SHEETS_CACHE[0]) < ttl_s:
+        return _PLAYER_PROJECTIONS_SHEETS_CACHE[1]
+    
+    sheet_id = (os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    worksheet = (os.getenv('PROJECTIONS_WORKSHEET') or 'Sheets3').strip()
+    if not sheet_id:
+        # Fallback to CSV if no sheet configured
+        data = _load_player_projections_csv()
+        _PLAYER_PROJECTIONS_SHEETS_CACHE = (now, data)
+        return data
+    
+    try:
+        import gspread  # type: ignore
+        from google.oauth2.service_account import Credentials  # type: ignore
+    except Exception:
+        # Fallback to CSV if gspread not available
+        data = _load_player_projections_csv()
+        _PLAYER_PROJECTIONS_SHEETS_CACHE = (now, data)
+        return data
+    
+    try:
+        info = _load_google_service_account_info_from_env()
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets.readonly',
+            'https://www.googleapis.com/auth/drive.readonly',
+        ]
+        creds = Credentials.from_service_account_info(info, scopes=scopes)
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.worksheet(worksheet)
+        # Use numericise_ignore to preserve comma decimal separators (like RAPM does)
+        try:
+            rows = ws.get_all_records(numericise_ignore=['all']) or []
+        except Exception:
+            rows = ws.get_all_records() or []
+        
+        # Build map keyed by PlayerID
+        # Keep values as strings so _parse_locale_float can handle comma decimal separators
+        out: Dict[int, Dict[str, Any]] = {}
+        for r in rows:
+            try:
+                pid_raw = r.get('PlayerID') or r.get('playerId') or r.get('player_id')
+                if pid_raw is None:
+                    continue
+                pid = int(str(pid_raw).strip())
+                # Store raw row with string values preserved
+                out[pid] = r
+            except Exception:
+                continue
+        
+        _PLAYER_PROJECTIONS_SHEETS_CACHE = (now, out)
+        return out
+    except Exception:
+        # Fallback to CSV on error
+        data = _load_player_projections_csv()
+        _PLAYER_PROJECTIONS_SHEETS_CACHE = (now, data)
+        return data
 
 _LINEUPS_ALL_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
 
@@ -3395,7 +3815,7 @@ def _safe_float(v: Any) -> Optional[float]:
 
 def _proj_value_for_player(row: Optional[Dict[str, Any]]) -> float:
     """Sum of (Age + Rookie + EVO + EVD + PP + SH + GSAx) for a projections row.
-    Non-numeric values are treated as 0.
+    Non-numeric values are treated as 0. Handles comma decimal separators.
     """
     if not row:
         return 0.0
@@ -3404,14 +3824,19 @@ def _proj_value_for_player(row: Optional[Dict[str, Any]]) -> float:
             v = row.get(k)
             if v is None:
                 return 0.0
-            return float(v)
+            # Use _parse_locale_float to handle comma decimal separators
+            parsed = _parse_locale_float(v)
+            return parsed if parsed is not None else 0.0
         except Exception:
             # try case-insensitive
             try:
                 for key in row.keys():
                     if str(key).lower() == k.lower():
                         vv = row.get(key)
-                        return float(vv) if vv is not None else 0.0
+                        if vv is None:
+                            return 0.0
+                        parsed = _parse_locale_float(vv)
+                        return parsed if parsed is not None else 0.0
             except Exception:
                 pass
             return 0.0
