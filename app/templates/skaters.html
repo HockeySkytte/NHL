@@ -278,7 +278,7 @@ function setActiveTab(which){
 }
 
 function projectionsEnabled(){
-  return String(seasonSelect?.value || '') === '20252026';
+  return String(seasonSelect?.value || '').trim() === '20252026';
 }
 
 function updateTabsVisibility(){
@@ -286,6 +286,31 @@ function updateTabsVisibility(){
   if(tabProjections) tabProjections.style.display = enabled ? '' : 'none';
   if(!enabled) setActiveTab('rapm');
 }
+
+// base.html populates seasonSelect asynchronously and sets seasonSelect.value
+// without dispatching a change event. In slower environments (prod), our initial
+// updateTabsVisibility() can run before the value is set, hiding Projections.
+// This watcher ensures the tab visibility stays in sync once the season loads.
+let __seasonWatchTimer = null;
+let __seasonWatchLast = null;
+function __isSeasonId(v){ return /^\d{8}$/.test(String(v||'')); }
+function installSeasonWatcher(){
+  if(__seasonWatchTimer) return;
+  __seasonWatchLast = String(seasonSelect?.value || '').trim();
+  const startedAt = Date.now();
+  __seasonWatchTimer = setInterval(()=>{
+    const v = String(seasonSelect?.value || '').trim();
+    if(v !== __seasonWatchLast && __isSeasonId(v)){
+      __seasonWatchLast = v;
+      updateTabsVisibility();
+    }
+    if(Date.now() - startedAt > 12000){
+      clearInterval(__seasonWatchTimer);
+      __seasonWatchTimer = null;
+    }
+  }, 200);
+}
+installSeasonWatcher();
 
 function parseLocaleNumber(x){
   if(x == null) return NaN;
