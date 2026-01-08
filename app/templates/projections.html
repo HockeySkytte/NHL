@@ -169,6 +169,19 @@ function getTextColorForBg(bgColor){
   return '#ffffff';
 }
 
+function applyProjectionsTextColors(){
+  // Match base.html slicer behavior: choose text color based on the team's base color.
+  // Light-colored teams (e.g. BOS) => black text; most teams => white text.
+  try{
+    const panelAlt = (getComputedStyle(document.documentElement).getPropertyValue('--panel-alt').trim() || '#1c2233');
+    const uiText = getTextColorForBg(panelAlt);
+    const btns = [btnToday, btnYesterday, btnTomorrow, oddsAmericanBtn, oddsDecimalBtn].filter(Boolean);
+    btns.forEach(btn=>{ btn.style.color = uiText; });
+    // Inputs are re-rendered, but keep any existing ones consistent.
+    document.querySelectorAll('.odds-input').forEach(inp=>{ try{ inp.style.color = uiText; }catch(_){/*ignore*/} });
+  }catch(_){/* ignore */}
+}
+
 function themeAccent(){
   try{ return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4da3ff'; }catch(_){ return '#4da3ff'; }
 }
@@ -294,6 +307,8 @@ function renderPlayerItems(list, preselectIds){
 
 function renderTable(games){
   if(!games || !games.length){ root.innerHTML = '<div class="live-empty">No games.</div>'; return; }
+  const panelAlt = (getComputedStyle(document.documentElement).getPropertyValue('--panel-alt').trim() || '#1c2233');
+  const inputTextColor = getTextColorForBg(panelAlt);
   const header = `<thead><tr>
     <th class="col-center">Time</th>
     <th class="col-center">Lineups</th>
@@ -341,8 +356,8 @@ function renderTable(games){
     const step = (oddsMode==='american') ? '1' : '0.01';
     const minAttr = (oddsMode==='american') ? '' : ' min="1.01"';
   const disAttr = started ? ' disabled' : '';
-  const oddsAInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsA}" data-game="${g.id}" data-side="away"${disAttr} />`;
-  const oddsHInput = `<input class="odds-input" type="number" step="${step}"${minAttr} value="${displayOddsH}" data-game="${g.id}" data-side="home"${disAttr} />`;
+  const oddsAInput = `<input class="odds-input" style="color:${inputTextColor};" type="number" step="${step}"${minAttr} value="${displayOddsA}" data-game="${g.id}" data-side="away"${disAttr} />`;
+  const oddsHInput = `<input class="odds-input" style="color:${inputTextColor};" type="number" step="${step}"${minAttr} value="${displayOddsH}" data-game="${g.id}" data-side="home"${disAttr} />`;
     return `<tr class="proj-row" data-href="/odds/${g.id}" style="cursor:pointer;">
       <td class="col-center">${timeStr}</td>
       <td class="col-center"><button class="lineup-btn" data-game="${g.id}" data-side="away" data-team="${a.abbrev||''}">Edit</button></td>
@@ -405,16 +420,7 @@ function setActiveWhich(which){
   btnToday.classList.toggle('active', which==='today');
   btnYesterday.classList.toggle('active', which==='yesterday');
   btnTomorrow.classList.toggle('active', which==='tomorrow');
-  // Apply text color based on accent color luminance
-  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123';
-  const textColor = getTextColorForBg(accentColor);
-  [btnToday, btnYesterday, btnTomorrow].forEach(btn => {
-    if(btn.classList.contains('active')){
-      btn.style.color = textColor;
-    } else {
-      btn.style.color = '';
-    }
-  });
+  applyProjectionsTextColors();
 }
 
 btnToday.addEventListener('click', ()=>{ setActiveWhich('today'); loadGames('today'); });
@@ -434,14 +440,7 @@ if(savedMode === 'decimal' || savedMode === 'american'){
   }
 }
 // Apply text color to active odds buttons on page load
-const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123';
-const textColor = getTextColorForBg(accentColor);
-if(oddsAmericanBtn && oddsAmericanBtn.classList.contains('active')){
-  oddsAmericanBtn.style.color = textColor;
-}
-if(oddsDecimalBtn && oddsDecimalBtn.classList.contains('active')){
-  oddsDecimalBtn.style.color = textColor;
-}
+applyProjectionsTextColors();
 
 // Load games and render table (restored helper)
 async function loadGames(which='today'){
@@ -466,9 +465,7 @@ oddsAmericanBtn?.addEventListener('click', ()=>{
   localStorage.setItem('oddsMode', oddsMode);
   oddsAmericanBtn.classList.add('active');
   oddsDecimalBtn.classList.remove('active');
-  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123';
-  oddsAmericanBtn.style.color = getTextColorForBg(accentColor);
-  oddsDecimalBtn.style.color = '';
+  applyProjectionsTextColors();
   loadGames(_currentWhich);
 });
 oddsDecimalBtn?.addEventListener('click', ()=>{
@@ -476,17 +473,21 @@ oddsDecimalBtn?.addEventListener('click', ()=>{
   localStorage.setItem('oddsMode', oddsMode);
   oddsDecimalBtn.classList.add('active');
   oddsAmericanBtn.classList.remove('active');
-  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123';
-  oddsDecimalBtn.style.color = getTextColorForBg(accentColor);
-  oddsAmericanBtn.style.color = '';
+  applyProjectionsTextColors();
   loadGames(_currentWhich);
 });
 
 setActiveWhich('today');
 loadGames('today');
-// Also apply text color to odds mode buttons
-oddsAmericanBtn.style.color = oddsAmericanBtn.classList.contains('active') ? getTextColorForBg(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123') : '';
-oddsDecimalBtn.style.color = oddsDecimalBtn.classList.contains('active') ? getTextColorForBg(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#fbb123') : '';
+applyProjectionsTextColors();
+
+// Re-apply after team theme changes (base.html sets CSS vars on teamSelect change)
+teamSelect?.addEventListener('change', ()=>{
+  // Defer to allow base.html setTheme() to run first.
+  setTimeout(()=>{
+    applyProjectionsTextColors();
+  }, 0);
+});
 
 // ------- Lineups dialog + Win% adjustment -------
 async function ensureLineupsCache(){

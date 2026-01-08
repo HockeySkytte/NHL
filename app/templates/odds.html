@@ -144,6 +144,32 @@
     }
   }
 
+  function getTextColorForBg(bgColor){
+    // Parse rgba/rgb string or hex, return appropriate text color
+    try{
+      const match = (bgColor||'').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      if(match){
+        const r = parseInt(match[1], 10);
+        const g = parseInt(match[2], 10);
+        const b = parseInt(match[3], 10);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.5 ? '#000000' : '#ffffff';
+      }
+      let hex = String(bgColor||'').trim().replace('#', '');
+      if(hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+      if(hex.length === 6){
+        const r = parseInt(hex.substring(0,2), 16);
+        const g = parseInt(hex.substring(2,4), 16);
+        const b = parseInt(hex.substring(4,6), 16);
+        if(Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)){
+          const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+          return luminance > 0.5 ? '#000000' : '#ffffff';
+        }
+      }
+    }catch(e){ /* ignore */ }
+    return '#ffffff';
+  }
+
   function mlToAxisVal(ml){
     // Compress American odds by removing the impossible (-100..+99) region.
     // Baseline is +/-100 mapped to 0.
@@ -162,7 +188,8 @@
   }
 
   function loadSavedMode(){
-    const saved = localStorage.getItem('oddsChartMode');
+    let saved = null;
+    try{ saved = localStorage.getItem('oddsChartMode'); }catch(e){ saved = null; }
     if(saved === 'decimal' || saved === 'american') oddsMode = saved;
     oddsAmericanBtn.classList.toggle('active', oddsMode==='american');
     oddsDecimalBtn.classList.toggle('active', oddsMode==='decimal');
@@ -170,7 +197,7 @@
 
   function setMode(next){
     oddsMode = next;
-    localStorage.setItem('oddsChartMode', oddsMode);
+    try{ localStorage.setItem('oddsChartMode', oddsMode); }catch(e){ /* ignore */ }
     oddsAmericanBtn.classList.toggle('active', oddsMode==='american');
     oddsDecimalBtn.classList.toggle('active', oddsMode==='decimal');
     if(_raw) renderChart(_raw);
