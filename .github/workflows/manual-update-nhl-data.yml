@@ -78,7 +78,7 @@ jobs:
             EXTRA_ARGS="$EXTRA_ARGS --replace-date"
           fi
 
-          # If PROJECTIONS_WORKSHEET secret not set, update_data.py defaults to 'player_projections'
+          # If PROJECTIONS_WORKSHEET secret not set, update_data.py defaults to 'Sheets3'
           if [ -n "${PROJECTIONS_WORKSHEET}" ]; then
             EXTRA_ARGS="$EXTRA_ARGS --projections-worksheet ${PROJECTIONS_WORKSHEET}"
           fi

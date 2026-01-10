@@ -209,6 +209,48 @@ def run_update_data():
         if run_rapm and not export_flag:
             return jsonify({'error': 'run_rapm requires export=true'}), 400
 
+        # If export was requested, fail fast with a clear message when DB isn't reachable.
+        if export_flag:
+            try:
+                try:
+                    from sqlalchemy import create_engine, text  # type: ignore
+                except Exception as e:
+                    return jsonify({'error': f'sqlalchemy_import_failed: {e}'}), 500
+                db_url = os.getenv('DATABASE_URL_RW') or os.getenv('DB_URL_RW') or os.getenv('DATABASE_URL')
+                if not db_url:
+                    user = os.getenv('DB_USER', 'root')
+                    pwd = os.getenv('DB_PASSWORD', '')
+                    host = os.getenv('DB_HOST', 'localhost')
+                    port = os.getenv('DB_PORT', '3306')
+                    name = os.getenv('DB_NAME', 'public')
+                    db_url = f"mysql+mysqlconnector://{user}:{pwd}@{host}:{port}/{name}"
+                else:
+                    host_override = os.getenv('DB_HOST_RW') or os.getenv('DB_HOST')
+                    if host_override and '@localhost' in db_url:
+                        db_url = db_url.replace('@localhost', f'@{host_override}')
+
+                connect_args = {'connection_timeout': 3}
+                if os.getenv('DB_SSL_CA'):
+                    connect_args['ssl_ca'] = os.getenv('DB_SSL_CA')
+                if os.getenv('DB_SSL_CERT'):
+                    connect_args['ssl_cert'] = os.getenv('DB_SSL_CERT')
+                if os.getenv('DB_SSL_KEY'):
+                    connect_args['ssl_key'] = os.getenv('DB_SSL_KEY')
+
+                eng = create_engine(db_url, connect_args=connect_args)
+                with eng.connect() as conn:
+                    conn.execute(text('SELECT 1'))
+            except Exception as e:
+                # Common on Render when DB_HOST points to a private LAN address.
+                return jsonify({
+                    'error': (
+                        'MySQL is not reachable from this server. '
+                        'If you are running on Render, it cannot connect to a LAN/private IP MySQL host. '
+                        'Either configure a publicly reachable DB (DATABASE_URL), or uncheck Export to MySQL / projections / RAPM.'
+                    ),
+                    'details': str(e),
+                }), 502
+
         cmd = [sys.executable, script_path, '--date', date]
         if export_flag:
             cmd.append('--export')
@@ -1035,7 +1077,7 @@ def api_player_projections_sheets():
     """Fetch player projections from Google Sheets (Sheets3).
     Returns: { playerId: { PlayerID, Position, Age, Rookie, EVO, EVD, PP, SH, GSAx, ... }, ... }
     """
-    sheet_id = (os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    sheet_id = (os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
     worksheet = (os.getenv('PROJECTIONS_WORKSHEET') or 'Sheets3').strip()
     if not sheet_id:
         return jsonify({'error': 'missing_sheet_id', 'hint': 'Set PROJECTIONS_SHEET_ID env var'}), 500
@@ -1544,7 +1586,7 @@ def api_rapm_player(player_id: int):
     rows: List[Dict[str, Any]]
     source = 'static'
     if season_int == 20252026:
-        sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+        sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
         worksheet = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
         if not sheet_id:
             # Strictly requested to use Sheets4 for 20252026; return a helpful error.
@@ -1779,7 +1821,7 @@ def api_rapm_scale():
     ctx_rows: List[Dict[str, Any]] = []
     ctx_source = 'static'
     if season_int == 20252026:
-        sheet_id = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+        sheet_id = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
         worksheet = (os.getenv('CONTEXT_WORKSHEET') or 'Sheets5').strip()
         if sheet_id:
             try:
@@ -2136,7 +2178,7 @@ def api_rapm_career():
         # Load RAPM rows: static + (optional) replace 20252026 with Sheets4.
         rapm_rows = _load_rapm_static_csv() or []
         try:
-            sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+            sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
             worksheet = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
             if sheet_id:
                 sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='RAPM_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60) or []
@@ -2148,7 +2190,7 @@ def api_rapm_career():
         # Load context rows: static + (optional) replace 20252026 with Sheets5.
         ctx_rows = _load_context_static_csv() or []
         try:
-            sheet_id = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+            sheet_id = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
             worksheet = (os.getenv('CONTEXT_WORKSHEET') or 'Sheets5').strip()
             if sheet_id:
                 sheet_ctx = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='CONTEXT_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60) or []

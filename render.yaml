@@ -13,5 +13,5 @@ cronJobs:
     timezone: UTC
   - name: daily-update-data
     schedule: "15 9 * * *"
-    command: "python -u scripts/update_data.py --date $(python -c 'from datetime import datetime, timedelta, timezone; import sys; sys.stdout.write((datetime.now(timezone.utc)-timedelta(days=1)).strftime("%Y-%m-%d"))') --export --season 20252026 --replace-date --no-xg"
+    command: "python -u scripts/update_data.py --date $(python -c 'from datetime import datetime, timedelta, timezone; import sys; sys.stdout.write((datetime.now(timezone.utc)-timedelta(days=1)).strftime("%Y-%m-%d"))') --export --season 20252026 --replace-date"
     timezone: UTC

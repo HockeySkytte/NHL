@@ -7,7 +7,7 @@ This is a thin driver around scripts/update_data.py helpers:
 - export_to_mysql() for writing to MySQL tables with optional replace-by-date
 
 Typical usage (PowerShell):
-    pwsh> & .\.venv\Scripts\python.exe .\scripts\backfill_range.py --start 2025-12-17 --end 2026-01-01 --season 20252026 --replace-date --no-xg
+    pwsh> & .\.venv\Scripts\python.exe .\scripts\backfill_range.py --start 2025-12-17 --end 2026-01-01 --season 20252026 --replace-date
 
 Notes:
 - --replace-date now deletes rows for the date even if the fetch returns empty.
@@ -17,15 +17,17 @@ Notes:
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import date, datetime, timedelta
 from typing import List
 
 # Import from update_data.py (same folder)
 from update_data import (
     _validate_date,
+    _resolve_default_sheets_id,
     export_to_mysql,
     fetch_day,
-    run_player_projections_and_write_csv,
+    run_player_projections_and_write_google_sheet,
 )
 
 
@@ -50,7 +52,6 @@ def main(argv: List[str] | None = None) -> int:
     p.add_argument("--start", required=True, type=_parse_date, help="Start date (YYYY-MM-DD), inclusive")
     p.add_argument("--end", required=True, type=_parse_date, help="End date (YYYY-MM-DD), inclusive")
     p.add_argument("--season", default="20252026", help="Season code for table names, e.g. 20252026")
-    p.add_argument("--no-xg", action="store_true", help="Do not compute xG (faster)")
     p.add_argument(
         "--replace-date",
         action="store_true",
@@ -59,7 +60,7 @@ def main(argv: List[str] | None = None) -> int:
     p.add_argument(
         "--skip-projections",
         action="store_true",
-        help="Skip CALL Player_Projections() and CSV write at the end",
+        help="Skip CALL Player_Projections() and Sheets3 write at the end",
     )
     args = p.parse_args(argv)
 
@@ -73,7 +74,7 @@ def main(argv: List[str] | None = None) -> int:
     for d in dates:
         ds = d.isoformat()
         print(f"\n=== {ds} ===")
-        df_pbp, df_shifts, df_gd = fetch_day(ds, with_xg=(not args.no_xg))
+        df_pbp, df_shifts, df_gd = fetch_day(ds, with_xg=True)
         print(
             f"Fetched: PBP rows={len(df_pbp)} | Shifts rows={len(df_shifts)} | GameData rows={len(df_gd)}"
         )
@@ -97,8 +98,11 @@ def main(argv: List[str] | None = None) -> int:
     )
 
     if not args.skip_projections:
-        out_csv = run_player_projections_and_write_csv()
-        print(f"Projections updated and saved to: {out_csv}")
+        sheet_id = _resolve_default_sheets_id(os.getenv('GOOGLE_SHEETS_ID'), os.getenv('PROJECTIONS_SHEET_ID'))
+        if not sheet_id:
+            print('[warn] projections skipped (no GOOGLE_SHEETS_ID / PROJECTIONS_SHEET_ID set)')
+        else:
+            run_player_projections_and_write_google_sheet(sheet_id=sheet_id, worksheet='Sheets3')
 
     return 0
 

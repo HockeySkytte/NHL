@@ -5,7 +5,7 @@ Fetch play-by-play and shifts dataframes for all NHL games on a given date.
 
 - Reuses the app's existing logic (routes) via an internal Flask test client,
   so we get identical parsing/mapping as the web app (including robust Shifts parsing).
-- Avoids loading heavy xG models by passing xg=0 to the PBP route.
+- Computes xG via the PBP route (xg=1).
 
 Usage (PowerShell):
     pwsh> & .\.venv\Scripts\python.exe .\scripts\update_data.py --date 2025-10-12
@@ -20,7 +20,7 @@ import sys
 import argparse
 import subprocess
 from datetime import datetime, date
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, cast
 import json
 import re
 
@@ -951,40 +951,465 @@ def export_to_mysql(
 
 
 def run_player_projections_and_write_csv(csv_path: Optional[str] = None) -> str:
-    """Run stored procedure Player_Projections() and dump nhl_player_projections to CSV.
+    """Deprecated: projections are written to Google Sheets (Sheets3) only."""
+    raise RuntimeError(
+        "player_projections.csv updates are disabled. Use run_player_projections_and_write_google_sheet(sheet_id=..., worksheet='Sheets3')."
+    )
 
-    Returns the absolute path to the written CSV.
+
+def _seasonstats_strength_bucket(strength: Any) -> str:
+    s = str(strength or '').strip()
+    if not s:
+        return 'Other'
+    s_low = s.lower()
+    if s_low == '5v5':
+        return '5v5'
+    if s_low in {'5v4', '5v3', '4v3'}:
+        return 'PP'
+    if s_low in {'4v5', '3v5', '3v4'}:
+        return 'SH'
+    return 'Other'
+
+
+_INVERT_STRENGTH = {
+    '5v4': '4v5',
+    '5v3': '3v5',
+    '4v3': '3v4',
+    '4v5': '5v4',
+    '3v5': '5v3',
+    '3v4': '4v3',
+}
+
+
+def _invert_strength(strength: Any) -> str:
+    s = str(strength or '').strip().lower()
+    return _INVERT_STRENGTH.get(s, s)
+
+
+def _to_ids(v: Any) -> List[int]:
+    if v is None:
+        return []
+    if isinstance(v, list):
+        out: List[int] = []
+        for x in v:
+            if x is None:
+                continue
+            try:
+                out.append(int(x))
+            except Exception:
+                continue
+        return out
+    s = str(v)
+    if not s:
+        return []
+    try:
+        if s.strip().startswith('[') and s.strip().endswith(']'):
+            arr = json.loads(s)
+            if isinstance(arr, list):
+                out2: List[int] = []
+                for x in arr:
+                    if x is None:
+                        continue
+                    try:
+                        out2.append(int(x))
+                    except Exception:
+                        continue
+                return out2
+    except Exception:
+        pass
+    parts = re.split(r'[\,\|;\s]+', s)
+    out3: List[int] = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out3.append(int(part))
+        except Exception:
+            continue
+    return out3
+
+
+def compute_seasonstats_day(
+    *,
+    df_pbp: pd.DataFrame,
+    df_shifts: pd.DataFrame,
+    season: str,
+    date_str: str,
+) -> pd.DataFrame:
+    """Compute per-day seasonstats contributions for one season from PBP + Shifts.
+
+    Produces one row per (Season, SeasonState, StrengthState bucket, PlayerID).
+    StrengthState buckets: 5v5, PP, SH, Other.
     """
-    eng = _create_mysql_engine('rw')
+    # Required output columns (no plusMinus / blockedShots)
+    out_cols = [
+        'Date',
+        'Season', 'SeasonState', 'StrengthState', 'PlayerID', 'Position', 'GP', 'TOI',
+        'iGoals', 'Assists1', 'Assists2', 'iCorsi', 'iFenwick', 'iShots', 'ixG_F', 'ixG_S', 'ixG_F2',
+        'PIM_taken', 'PIM_drawn', 'Hits', 'Takeaways', 'Giveaways', 'SO_Goal', 'SO_Attempt',
+        'CA', 'CF', 'FA', 'FF', 'SA', 'SF', 'GA', 'GF',
+        'xGA_F', 'xGF_F', 'xGA_S', 'xGF_S', 'xGA_F2', 'xGF_F2',
+        'PIM_for', 'PIM_against',
+    ]
+    strength_buckets = ['5v5', 'PP', 'SH', 'Other']
+
+    # SeasonState per game (from PBP rows)
+    game_state: Dict[int, str] = {}
+    if not df_pbp.empty and 'GameID' in df_pbp.columns:
+        try:
+            tmp = df_pbp[['GameID']].copy()
+            tmp['SeasonState'] = df_pbp.get('SeasonState')
+            tmp = tmp.dropna(subset=['GameID'])
+            for gid, grp in tmp.groupby('GameID'):
+                ss = None
+                try:
+                    ss = (grp['SeasonState'].dropna().astype(str).head(1).tolist() or [None])[0]
+                except Exception:
+                    ss = None
+                if ss:
+                    try:
+                        game_state[int(gid)] = str(ss).strip()
+                    except Exception:
+                        continue
+        except Exception:
+            game_state = {}
+
+    # Base player set + Position from shifts
+    shifts = df_shifts.copy() if df_shifts is not None else pd.DataFrame()
+    if shifts.empty:
+        return pd.DataFrame(columns=out_cols)
+
+    # Normalize shift columns
+    for col in ['GameID', 'PlayerID', 'StrengthState', 'Position', 'Duration']:
+        if col not in shifts.columns:
+            shifts[col] = None
+    shifts['PlayerID'] = pd.to_numeric(shifts['PlayerID'], errors='coerce')
+    shifts = shifts.dropna(subset=['PlayerID'])
+    shifts['PlayerID'] = shifts['PlayerID'].astype(int)
+    shifts['GameID'] = pd.to_numeric(shifts['GameID'], errors='coerce')
+    shifts = shifts.dropna(subset=['GameID'])
+    shifts['GameID'] = shifts['GameID'].astype(int)
+    shifts['Duration'] = pd.to_numeric(shifts['Duration'], errors='coerce').fillna(0.0).astype(float)
+    shifts['Position'] = shifts['Position'].astype(str).str.strip().str.upper().str[:1]
+    shifts.loc[shifts['Position'].isin({'C', 'L', 'R'}), 'Position'] = 'F'
+    shifts.loc[~shifts['Position'].isin({'F', 'D', 'G'}), 'Position'] = ''
+    shifts['SeasonState'] = shifts['GameID'].map(lambda gid: game_state.get(int(gid), 'regular'))
+    shifts['StrengthStateBucket'] = shifts['StrengthState'].map(_seasonstats_strength_bucket)
+
+    # TOI per bucket (minutes)
+    toi = (
+        shifts.groupby(['SeasonState', 'StrengthStateBucket', 'PlayerID', 'Position'], dropna=False)['Duration']
+        .sum()
+        .reset_index()
+    )
+    toi['TOI'] = (toi['Duration'] / 60.0).astype(float)
+    toi = toi.drop(columns=['Duration'])
+
+    # GP per player per season state (unique games)
+    gp = (
+        shifts.groupby(['SeasonState', 'PlayerID'], dropna=False)['GameID']
+        .nunique()
+        .reset_index()
+        .rename(columns={'GameID': 'GP'})
+    )
+
+    # Prepare a skeleton of rows: every player x seasonState x bucket
+    players = shifts[['SeasonState', 'PlayerID', 'Position']].drop_duplicates()
+    rows: List[Dict[str, Any]] = []
+    for rec in players.to_dict(orient='records'):
+        ss = str(rec.get('SeasonState') or 'regular').strip() or 'regular'
+        pid = int(rec.get('PlayerID'))
+        pos = str(rec.get('Position') or '').strip().upper()[:1]
+        for b in strength_buckets:
+            rows.append({
+                'Date': date_str,
+                'Season': season,
+                'SeasonState': ss,
+                'StrengthState': b,
+                'PlayerID': pid,
+                'Position': ('F' if pos in {'C', 'L', 'R'} else pos),
+            })
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return pd.DataFrame(columns=out_cols)
+
+    # Merge TOI (minutes) and GP from shifts. Don't pre-create these columns to avoid merge suffix collisions.
+    out = out.merge(
+        toi.rename(columns={'StrengthStateBucket': 'StrengthState'}),
+        on=['SeasonState', 'StrengthState', 'PlayerID', 'Position'],
+        how='left',
+    )
+    out['TOI'] = pd.to_numeric(out.get('TOI'), errors='coerce').fillna(0.0)
+
+    out = out.merge(gp, on=['SeasonState', 'PlayerID'], how='left')
+    out['GP'] = pd.to_numeric(out.get('GP'), errors='coerce').fillna(0).astype(int)
+
+    # Build PBP-based aggregates using dict accumulator keyed by (SeasonState, StrengthBucket, PlayerID)
+    acc: Dict[Tuple[str, str, int], Dict[str, Any]] = {}
+
+    if df_pbp is not None and not df_pbp.empty:
+        pbp = df_pbp.copy()
+        for col in [
+            'GameID', 'SeasonState', 'Period', 'StrengthState', 'Event',
+            'Player1_ID', 'Player2_ID', 'Player3_ID',
+            'Corsi', 'Fenwick', 'Shot', 'Goal', 'xG_F', 'xG_S', 'xG_F2',
+            'PEN_duration', 'Venue',
+            'Home_Forwards_ID', 'Home_Defenders_ID', 'Home_Goalie_ID',
+            'Away_Forwards_ID', 'Away_Defenders_ID', 'Away_Goalie_ID',
+        ]:
+            if col not in pbp.columns:
+                pbp[col] = None
+
+        pbp['SeasonState'] = pbp['SeasonState'].astype(str).str.strip().replace({'': 'regular'})
+        pbp.loc[pbp['SeasonState'].isna(), 'SeasonState'] = 'regular'
+        pbp['Period'] = pd.to_numeric(pbp['Period'], errors='coerce').fillna(0).astype(int)
+        pbp['Corsi'] = pd.to_numeric(pbp['Corsi'], errors='coerce').fillna(0).astype(int)
+        pbp['Fenwick'] = pd.to_numeric(pbp['Fenwick'], errors='coerce').fillna(0).astype(int)
+        pbp['Shot'] = pd.to_numeric(pbp['Shot'], errors='coerce').fillna(0).astype(int)
+        pbp['Goal'] = pd.to_numeric(pbp['Goal'], errors='coerce').fillna(0).astype(int)
+        pbp['xG_F'] = pd.to_numeric(pbp['xG_F'], errors='coerce').fillna(0.0).astype(float)
+        pbp['xG_S'] = pd.to_numeric(pbp['xG_S'], errors='coerce').fillna(0.0).astype(float)
+        pbp['xG_F2'] = pd.to_numeric(pbp['xG_F2'], errors='coerce').fillna(0.0).astype(float)
+        pbp['PEN_duration'] = pd.to_numeric(pbp['PEN_duration'], errors='coerce').fillna(0.0).astype(float)
+
+        for _, row in pbp.iterrows():
+            ss = str(row.get('SeasonState') or 'regular').strip() or 'regular'
+            period = int(row.get('Period') or 0)
+            strength_raw = row.get('StrengthState')
+            bucket_for = _seasonstats_strength_bucket(strength_raw)
+            bucket_against = _seasonstats_strength_bucket(_invert_strength(strength_raw))
+
+            is_shootout = (period == 5) and (ss == 'regular')
+            shooter = row.get('Player1_ID')
+            a1 = row.get('Player2_ID')
+            a2 = row.get('Player3_ID')
+
+            try:
+                shooter_id = int(shooter) if shooter is not None else None
+            except Exception:
+                shooter_id = None
+            try:
+                a1_id = int(a1) if a1 is not None else None
+            except Exception:
+                a1_id = None
+            try:
+                a2_id = int(a2) if a2 is not None else None
+            except Exception:
+                a2_id = None
+
+            corsi = int(row.get('Corsi') or 0)
+            fenwick = int(row.get('Fenwick') or 0)
+            shot = int(row.get('Shot') or 0)
+            goal = int(row.get('Goal') or 0)
+            xgf = float(row.get('xG_F') or 0.0)
+            xgs = float(row.get('xG_S') or 0.0)
+            xgf2 = float(row.get('xG_F2') or 0.0)
+            pen_min = float(row.get('PEN_duration') or 0.0)
+            ev = str(row.get('Event') or '').strip().lower()
+
+            # Individual (non-shootout) stats
+            if shooter_id is not None and not is_shootout:
+                key = (ss, bucket_for, shooter_id)
+                d = acc.setdefault(key, {})
+                d['iGoals'] = d.get('iGoals', 0) + goal
+                d['iCorsi'] = d.get('iCorsi', 0) + corsi
+                d['iFenwick'] = d.get('iFenwick', 0) + fenwick
+                d['iShots'] = d.get('iShots', 0) + shot
+                d['ixG_F'] = d.get('ixG_F', 0.0) + xgf
+                d['ixG_S'] = d.get('ixG_S', 0.0) + xgs
+                d['ixG_F2'] = d.get('ixG_F2', 0.0) + xgf2
+                if ev == 'hit':
+                    d['Hits'] = d.get('Hits', 0) + 1
+                elif ev == 'takeaway':
+                    d['Takeaways'] = d.get('Takeaways', 0) + 1
+                elif ev == 'giveaway':
+                    d['Giveaways'] = d.get('Giveaways', 0) + 1
+
+            # Assists (non-shootout)
+            if a1_id is not None and not is_shootout and goal == 1:
+                key = (ss, bucket_for, a1_id)
+                d = acc.setdefault(key, {})
+                d['Assists1'] = d.get('Assists1', 0) + 1
+            if a2_id is not None and not is_shootout and goal == 1:
+                key = (ss, bucket_for, a2_id)
+                d = acc.setdefault(key, {})
+                d['Assists2'] = d.get('Assists2', 0) + 1
+
+            # Shootout stats (regular season, period 5)
+            if shooter_id is not None and is_shootout:
+                key = (ss, bucket_for, shooter_id)
+                d = acc.setdefault(key, {})
+                d['SO_Attempt'] = d.get('SO_Attempt', 0) + fenwick
+                d['SO_Goal'] = d.get('SO_Goal', 0) + goal
+
+            # Penalties: individual taken/drawn (all non-zero durations)
+            if pen_min > 0:
+                if shooter_id is not None:
+                    key = (ss, bucket_for, shooter_id)
+                    d = acc.setdefault(key, {})
+                    d['PIM_taken'] = d.get('PIM_taken', 0.0) + pen_min
+                if a1_id is not None:
+                    key = (ss, bucket_for, a1_id)
+                    d = acc.setdefault(key, {})
+                    d['PIM_drawn'] = d.get('PIM_drawn', 0.0) + pen_min
+
+            # On-ice stats (exclude shootout)
+            if not is_shootout:
+                home_list = _to_ids(row.get('Home_Forwards_ID')) + _to_ids(row.get('Home_Defenders_ID')) + _to_ids(row.get('Home_Goalie_ID'))
+                away_list = _to_ids(row.get('Away_Forwards_ID')) + _to_ids(row.get('Away_Defenders_ID')) + _to_ids(row.get('Away_Goalie_ID'))
+                if not home_list and not away_list:
+                    continue
+
+                venue = str(row.get('Venue') or '').strip()
+                if venue == 'Home':
+                    players_for, players_against = home_list, away_list
+                elif venue == 'Away':
+                    players_for, players_against = away_list, home_list
+                else:
+                    continue
+
+                for pid in players_for:
+                    key = (ss, bucket_for, int(pid))
+                    d = acc.setdefault(key, {})
+                    d['CF'] = d.get('CF', 0) + corsi
+                    d['FF'] = d.get('FF', 0) + fenwick
+                    d['SF'] = d.get('SF', 0) + shot
+                    d['GF'] = d.get('GF', 0) + goal
+                    d['xGF_F'] = d.get('xGF_F', 0.0) + xgf
+                    d['xGF_S'] = d.get('xGF_S', 0.0) + xgs
+                    d['xGF_F2'] = d.get('xGF_F2', 0.0) + xgf2
+                    if pen_min > 0:
+                        d['PIM_against'] = d.get('PIM_against', 0.0) + pen_min
+
+                for pid in players_against:
+                    key = (ss, bucket_against, int(pid))
+                    d = acc.setdefault(key, {})
+                    d['CA'] = d.get('CA', 0) + corsi
+                    d['FA'] = d.get('FA', 0) + fenwick
+                    d['SA'] = d.get('SA', 0) + shot
+                    d['GA'] = d.get('GA', 0) + goal
+                    d['xGA_F'] = d.get('xGA_F', 0.0) + xgf
+                    d['xGA_S'] = d.get('xGA_S', 0.0) + xgs
+                    d['xGA_F2'] = d.get('xGA_F2', 0.0) + xgf2
+                    if pen_min > 0:
+                        d['PIM_for'] = d.get('PIM_for', 0.0) + pen_min
+
+    # Apply accumulator into output df
+    if acc:
+        recs: List[Dict[str, Any]] = []
+        for (ss, bucket, pid), d in acc.items():
+            rec = {'SeasonState': ss, 'StrengthState': bucket, 'PlayerID': pid}
+            rec.update(d)
+            recs.append(rec)
+        a = pd.DataFrame(recs)
+        out = out.merge(a, on=['SeasonState', 'StrengthState', 'PlayerID'], how='left')
+
+    # Fill defaults and enforce dtypes
+    numeric_defaults: Dict[str, Any] = {
+        'GP': 0,
+        'TOI': 0.0,
+        'iGoals': 0,
+        'Assists1': 0,
+        'Assists2': 0,
+        'iCorsi': 0,
+        'iFenwick': 0,
+        'iShots': 0,
+        'ixG_F': 0.0,
+        'ixG_S': 0.0,
+        'ixG_F2': 0.0,
+        'PIM_taken': 0.0,
+        'PIM_drawn': 0.0,
+        'Hits': 0,
+        'Takeaways': 0,
+        'Giveaways': 0,
+        'SO_Goal': 0,
+        'SO_Attempt': 0,
+        'CA': 0,
+        'CF': 0,
+        'FA': 0,
+        'FF': 0,
+        'SA': 0,
+        'SF': 0,
+        'GA': 0,
+        'GF': 0,
+        'xGA_F': 0.0,
+        'xGF_F': 0.0,
+        'xGA_S': 0.0,
+        'xGF_S': 0.0,
+        'xGA_F2': 0.0,
+        'xGF_F2': 0.0,
+        'PIM_for': 0.0,
+        'PIM_against': 0.0,
+    }
+    for k, default in numeric_defaults.items():
+        if k not in out.columns:
+            out[k] = default
+        else:
+            out[k] = pd.to_numeric(out[k], errors='coerce').fillna(default)
+
+    int_cols = ['iGoals', 'Assists1', 'Assists2', 'iCorsi', 'iFenwick', 'iShots', 'Hits', 'Takeaways', 'Giveaways', 'SO_Goal', 'SO_Attempt',
+                'CA', 'CF', 'FA', 'FF', 'SA', 'SF', 'GA', 'GF']
+    for c in int_cols:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors='coerce').fillna(0).astype(int)
+    float_cols = [c for c in out_cols if c not in {'Date', 'Season', 'SeasonState', 'StrengthState', 'PlayerID', 'Position'} and c not in int_cols and c != 'GP']
+    for c in float_cols:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors='coerce').fillna(0.0).astype(float)
+
+    out = cast(pd.DataFrame, out.loc[:, out_cols])
+    return out
+
+
+def update_seasonstats_google_sheet(*, season: str, sheet_id: str, worksheet: str = 'Sheets6') -> None:
+    """Rebuild full-season seasonstats for `season` from MySQL and overwrite a Google Sheet worksheet."""
+    eng = _create_mysql_engine('ro')
     if eng is None:
-        raise RuntimeError("MySQL engine not available for projections")
+        raise RuntimeError('MySQL engine not available for seasonstats')
 
-    # Execute stored procedure
-    try:
-        with eng.begin() as conn:
-            conn.execute(text("CALL Player_Projections()"))
-        print("[mysql] executed stored procedure Player_Projections()")
-    except SQLAlchemyError as e:
-        raise RuntimeError(f"Failed to execute Player_Projections(): {e}")
+    tbl_pbp = f"nhl_{season}_pbp"
+    tbl_sh = f"nhl_{season}_shifts"
 
-    # Load table
-    try:
-        df_proj = pd.read_sql("SELECT * FROM nhl_player_projections", con=eng)
-        print(f"[mysql] loaded {len(df_proj)} rows from nhl_player_projections")
-    except SQLAlchemyError as e:
-        raise RuntimeError(f"Failed to query nhl_player_projections: {e}")
+    # Load only needed columns to keep memory reasonable.
+    pbp_cols = [
+        'GameID', 'SeasonState', 'Period', 'StrengthState', 'Event',
+        'Player1_ID', 'Player2_ID', 'Player3_ID',
+        'Corsi', 'Fenwick', 'Shot', 'Goal', 'xG_F', 'xG_S', 'xG_F2',
+        'PEN_duration', 'Venue',
+        'Home_Forwards_ID', 'Home_Defenders_ID', 'Home_Goalie_ID',
+        'Away_Forwards_ID', 'Away_Defenders_ID', 'Away_Goalie_ID',
+    ]
+    sh_cols = ['GameID', 'PlayerID', 'StrengthState', 'Position', 'Duration']
 
-    # Write CSV to static folder
-    if csv_path is None:
-        # Save under app/static per request
-        csv_path = os.path.join(REPO_ROOT, 'app', 'static', 'player_projections.csv')
     try:
-        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-        df_proj.to_csv(csv_path, index=False)
-        print(f"[file] wrote projections CSV: {csv_path}")
-        return os.path.abspath(csv_path)
+        df_pbp = pd.read_sql_query(
+            f"SELECT {', '.join(pbp_cols)} FROM {tbl_pbp}",
+            con=eng,
+        )
     except Exception as e:
-        raise RuntimeError(f"Failed to write projections CSV: {e}")
+        raise RuntimeError(f"Failed to load {tbl_pbp} for seasonstats: {e}")
+
+    try:
+        df_shifts = pd.read_sql_query(
+            f"SELECT {', '.join(sh_cols)} FROM {tbl_sh}",
+            con=eng,
+        )
+    except Exception as e:
+        raise RuntimeError(f"Failed to load {tbl_sh} for seasonstats: {e}")
+
+    # Compute totals using the same aggregation logic.
+    df_tot = compute_seasonstats_day(
+        df_pbp=df_pbp,
+        df_shifts=df_shifts,
+        season=str(season),
+        date_str='TOTAL',
+    )
+    if 'Date' in df_tot.columns:
+        df_tot = cast(pd.DataFrame, df_tot.drop(columns=['Date']))
+
+    _write_dataframe_to_google_sheet(df_tot, sheet_id=str(sheet_id).strip(), worksheet=str(worksheet).strip())
+    print(f"[sheets] wrote seasonstats to sheetId={sheet_id} worksheet={worksheet}")
 
 
 def _load_google_service_account_info() -> Dict[str, Any]:
@@ -1068,6 +1493,21 @@ def _write_dataframe_to_google_sheet(df: pd.DataFrame, *, sheet_id: str, workshe
 
     # Prepare values
     df_out = df.copy()
+
+    # Stamp the export time in-worksheet as a column so consumers can see refresh time.
+    # Keep the rest of the schema stable (existing columns preserved and order retained aside from this prepend).
+    try:
+        ts = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
+    except Exception:
+        ts = ''
+    try:
+        if 'TimestampUTC' in df_out.columns:
+            df_out['TimestampUTC'] = ts
+        else:
+            df_out.insert(0, 'TimestampUTC', ts)
+    except Exception:
+        pass
+
     # Replace NaN/NaT with empty string for Sheets
     df_out = df_out.where(pd.notnull(df_out), '')
 
@@ -1098,7 +1538,7 @@ def _write_dataframe_to_google_sheet(df: pd.DataFrame, *, sheet_id: str, workshe
 
 
 def run_player_projections_and_write_google_sheet(
-    *, sheet_id: str, worksheet: str = 'player_projections'
+    *, sheet_id: str, worksheet: str = 'Sheets3'
 ) -> None:
     """Run Player_Projections() and overwrite a Google Sheet worksheet."""
     eng = _create_mysql_engine('rw')
@@ -1124,16 +1564,33 @@ def run_player_projections_and_write_google_sheet(
     print(f"[sheets] wrote projections to sheetId={sheet_id} worksheet={worksheet}")
 
 
+def _resolve_default_sheets_id(*candidates: Optional[str]) -> str:
+    for c in candidates:
+        if c and str(c).strip():
+            return str(c).strip()
+    return ''
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Fetch PBP and Shifts dataframes for a date')
-    parser.add_argument('--date', required=True, type=_validate_date, help='Date in YYYY-MM-DD')
+    parser.add_argument('--date', type=_validate_date, help='Date in YYYY-MM-DD')
     parser.add_argument('--export', action='store_true', help='Export to MySQL after fetching')
-    parser.add_argument('--no-xg', action='store_true', help='Do not compute xG (faster)')
     parser.add_argument('--season', default='20252026', help='Season code for table names, e.g., 20252026')
     parser.add_argument('--replace-date', action='store_true', help='Pre-delete rows for this date before insert (idempotent loads)')
-    # Projections output options
-    parser.add_argument('--projections-sheets-id', help='Google Sheets document id to write nhl_player_projections into')
-    parser.add_argument('--projections-worksheet', default='player_projections', help='Worksheet/tab name for projections output')
+    parser.add_argument(
+        '--seasonstats-sheets-id',
+        default=_resolve_default_sheets_id(os.getenv('GOOGLE_SHEETS_ID'), os.getenv('SEASONSTATS_SHEETS_ID')),
+        help='Google Sheets document id to write seasonstats into (default from GOOGLE_SHEETS_ID or SEASONSTATS_SHEETS_ID)'
+    )
+    parser.add_argument('--seasonstats-worksheet', default='Sheets6', help='Worksheet/tab name for seasonstats output')
+    parser.add_argument('--seasonstats-only', action='store_true', help='Skip fetch/export; rebuild seasonstats from MySQL and write to Google Sheets')
+    # Projections output options (Sheets3 by default)
+    parser.add_argument(
+        '--projections-sheets-id',
+        default=_resolve_default_sheets_id(os.getenv('GOOGLE_SHEETS_ID'), os.getenv('PROJECTIONS_SHEET_ID')),
+        help='Google Sheets document id to write nhl_player_projections into (default from GOOGLE_SHEETS_ID or PROJECTIONS_SHEET_ID)'
+    )
+    parser.add_argument('--projections-worksheet', default='Sheets3', help='Worksheet/tab name for projections output')
     # RAPM/context post-step options (requires --export)
     parser.add_argument('--run-rapm', action='store_true', help='After export, rebuild RAPM + context and write to MySQL + Google Sheets')
     parser.add_argument('--rapm-sheets-id', help='Google Sheets document id to write RAPM/context into (Sheets4/Sheets5)')
@@ -1144,10 +1601,37 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument('--lineup-save', action='store_true', help='When using --lineup-url, save mapped lineup JSON to app/static/lineup_<TEAM>.json')
     args = parser.parse_args(argv)
 
+    # Standalone seasonstats mode (no fetch_day required)
+    if bool(args.seasonstats_only):
+        if str(args.season).strip() != '20252026':
+            print('[seasonstats] --seasonstats-only is currently intended for --season 20252026', file=sys.stderr)
+        ss_id = _resolve_default_sheets_id(
+            args.seasonstats_sheets_id,
+            os.getenv('GOOGLE_SHEETS_ID'),
+            os.getenv('SEASONSTATS_SHEETS_ID'),
+        )
+        if not ss_id:
+            print('[error] seasonstats requires a Sheets doc id via --seasonstats-sheets-id or GOOGLE_SHEETS_ID', file=sys.stderr)
+            return 8
+        try:
+            update_seasonstats_google_sheet(
+                season=str(args.season).strip(),
+                sheet_id=ss_id,
+                worksheet=str(args.seasonstats_worksheet or 'Sheets6').strip(),
+            )
+            return 0
+        except Exception as e:
+            print(f"[error] seasonstats-only failed: {e}", file=sys.stderr)
+            return 9
+
+    if not args.date:
+        print('[error] --date is required unless --seasonstats-only is used', file=sys.stderr)
+        return 2
+
     date_str = args.date
     print(f'Fetching games for {date_str}...')
     try:
-        df_pbp, df_shifts, df_gamedata = fetch_day(date_str, with_xg=(not args.no_xg))
+        df_pbp, df_shifts, df_gamedata = fetch_day(date_str, with_xg=True)
     except Exception as e:
         print(f'[error] {e}', file=sys.stderr)
         return 2
@@ -1167,16 +1651,40 @@ def main(argv: List[str] | None = None) -> int:
         except Exception as e:
             print(f"[error] export failed: {e}", file=sys.stderr)
             return 3
-        # After exporting, run projections and write either to Google Sheets or CSV
-        try:
-            if args.projections_sheets_id:
-                run_player_projections_and_write_google_sheet(
-                    sheet_id=str(args.projections_sheets_id).strip(),
-                    worksheet=str(args.projections_worksheet or 'player_projections').strip(),
-                )
+
+        # Post-step: rebuild seasonstats from MySQL and write to Google Sheets (Sheets6)
+        if str(args.season).strip() == '20252026':
+            # Prefer one shared doc id (GOOGLE_SHEETS_ID), then explicit seasonstats id, then other step ids.
+            ss_id = _resolve_default_sheets_id(
+                os.getenv('GOOGLE_SHEETS_ID'),
+                args.seasonstats_sheets_id,
+                args.rapm_sheets_id,
+                args.projections_sheets_id,
+            )
+            if ss_id:
+                try:
+                    update_seasonstats_google_sheet(
+                        season=str(args.season).strip(),
+                        sheet_id=ss_id,
+                        worksheet=str(args.seasonstats_worksheet or 'Sheets6').strip(),
+                    )
+                except Exception as e:
+                    print(f"[warn] seasonstats sheets step failed: {e}", file=sys.stderr)
             else:
-                out_csv = run_player_projections_and_write_csv()
-                print(f"Projections updated and saved to: {out_csv}")
+                print('[seasonstats] skipped (no Sheets doc id; set GOOGLE_SHEETS_ID)', file=sys.stderr)
+        # After exporting, run projections and write to Google Sheets (Sheets3)
+        try:
+            proj_id = _resolve_default_sheets_id(
+                args.projections_sheets_id,
+                os.getenv('GOOGLE_SHEETS_ID'),
+                os.getenv('PROJECTIONS_SHEET_ID'),
+            )
+            if not proj_id:
+                raise RuntimeError('projections requires a Sheets doc id via --projections-sheets-id or GOOGLE_SHEETS_ID')
+            run_player_projections_and_write_google_sheet(
+                sheet_id=str(proj_id).strip(),
+                worksheet=str(args.projections_worksheet or 'Sheets3').strip(),
+            )
         except Exception as e:
             print(f"[error] projections post-step failed: {e}", file=sys.stderr)
             return 4

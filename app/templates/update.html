@@ -100,6 +100,39 @@
             output.textContent = `Error: ${err}`;
         }
     };
+
+    // On load: disable DB-dependent options if DB isn't reachable from this server.
+    (async function initDbAwareness() {
+        const output = document.getElementById('update-data-output');
+        const exportCb = document.getElementById('export-db');
+        const projCb = document.getElementById('projections-to-sheets');
+        const rapmCb = document.getElementById('run-rapm');
+        try {
+            const res = await fetch('/admin/db-check?mode=rw');
+            if (!res.ok) {
+                throw new Error(`db-check failed (${res.status})`);
+            }
+            const data = await res.json();
+            if (!data.ok) {
+                exportCb.checked = false;
+                projCb.checked = false;
+                rapmCb.checked = false;
+                exportCb.disabled = true;
+                projCb.disabled = true;
+                rapmCb.disabled = true;
+                output.textContent = 'DB not reachable from this server; export/projections/RAPM disabled.';
+            }
+        } catch (err) {
+            // If db-check itself fails (e.g., missing deps), err on the safe side.
+            exportCb.checked = false;
+            projCb.checked = false;
+            rapmCb.checked = false;
+            exportCb.disabled = true;
+            projCb.disabled = true;
+            rapmCb.disabled = true;
+            output.textContent = 'DB check unavailable; export/projections/RAPM disabled.';
+        }
+    })();
     document.getElementById('run-lineups').onclick = async function() {
         const output = document.getElementById('lineups-output');
         output.textContent = 'Starting...';
