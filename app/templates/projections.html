@@ -2,9 +2,9 @@
 {% block head %}
 <style>
   .proj-toolbar{ display:flex; gap:10px; align-items:center; margin:0 0 16px 0; }
-  .proj-toolbar button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:8px 12px; font-size:14px; border-radius:8px; font-weight:600; cursor:pointer; }
+  .proj-toolbar button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; font-size:14px; border-radius:8px; font-weight:600; cursor:pointer; }
   .proj-toolbar button.active{ background:var(--accent); border-color:var(--accent); }
-  .odds-toggle button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:6px 12px; font-size:13px; border-radius:8px; font-weight:600; cursor:pointer; }
+  .odds-toggle button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:6px 12px; font-size:13px; border-radius:8px; font-weight:600; cursor:pointer; }
   .odds-toggle button.active{ background:var(--accent); border-color:var(--accent); }
   .live-table{ width:100%; border-collapse:collapse; font-size:15px; table-layout:auto; }
   .live-table th{ text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:700; border-bottom:1px solid #222b37; }
@@ -18,7 +18,7 @@
   .status-chip{ font-size:11px; font-weight:700; padding:2px 6px; border-radius:6px; background:#263145; color:#d7deea; }
   .win-bg{ transition:background 0.2s; }
   .bet-bg{ transition:background 0.2s; }
-  .odds-input{ width:72px; text-align:center; font-size:15px; border-radius:6px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--text); }
+  .odds-input{ width:72px; text-align:center; font-size:15px; border-radius:6px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--value-text, var(--text)); }
   .odds-input:focus{ outline:2px solid var(--accent); }
   .win-duo{ display:inline-flex; gap:6px; align-items:center; justify-content:center; }
   .win-chip{ display:inline-block; padding:6px 10px; border-radius:8px; min-width:68px; text-align:center; font-weight:700; font-size:16px; }
@@ -33,7 +33,7 @@
   .modal .body{ padding:12px 16px; background:#0f1522; }
   .modal .player-list{ display:flex; flex-direction:column; gap:8px; }
   .modal .footer{ display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; border-top:1px solid #2a3142; background:#0f1522; }
-  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:8px 12px; border-radius:8px; font-weight:650; cursor:pointer; }
+  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:8px; font-weight:650; cursor:pointer; }
   .btn.primary{ background:var(--accent); color:#0b1017; border-color:var(--accent); }
   .player-item{ display:grid; grid-template-columns: 1fr 360px; align-items:center; column-gap:10px; padding:6px 8px; border:1px solid transparent; border-radius:8px; }
   .player-item:hover{ background:rgba(255,255,255,0.03); border-color:#2a3142; }

@@ -4,6 +4,49 @@
 <label>Player
   <select id="playerSelect"></select>
 </label>
+<label id="cardSeasonStateWrap">Season State
+  <select id="cardSeasonState">
+    <option value="regular" selected>Regular</option>
+    <option value="playoffs">Playoffs</option>
+    <option value="all">All</option>
+  </select>
+</label>
+<label id="cardStrengthStateWrap">Strength State
+  <select id="cardStrengthState">
+    <option value="5v5" selected>5v5</option>
+    <option value="PP">PP</option>
+    <option value="SH">SH</option>
+    <option value="Other">Other</option>
+    <option value="all">All</option>
+  </select>
+</label>
+<label id="cardRatesWrap">Totals / Rates
+  <select id="cardRates">
+    <option value="Totals" selected>Totals</option>
+    <option value="Per60">Per 60</option>
+    <option value="PerGame">Per Game</option>
+  </select>
+</label>
+<label id="cardXgModelWrap">xG Model
+  <select id="cardXgModel">
+    <option value="xG_S">xG_S (Shots)</option>
+    <option value="xG_F" selected>xG_F (Fenwick)</option>
+    <option value="xG_F2">xG_F2 (Fenwick)</option>
+  </select>
+</label>
+<label id="cardMinGpWrap">Min GP
+  <input id="cardMinGp" type="number" min="0" step="1" placeholder="0" />
+</label>
+<label id="cardMinToiWrap">Min TOI
+  <input id="cardMinToi" type="number" min="0" step="1" placeholder="0" />
+</label>
+<label id="cardScopeWrap">Scope
+  <div id="cardScopeButtons" class="segmented" role="group" aria-label="Card scope">
+    <button type="button" class="seg-btn active" data-scope="season">Season</button>
+    <button type="button" class="seg-btn" data-scope="career">Career</button>
+  </div>
+  <input id="cardScope" type="hidden" value="season" />
+</label>
 {% endblock %}
 
 {% block head %}
@@ -20,6 +63,12 @@
   .skater-empty{ text-align:center; color:var(--text-dim); padding:30px 10px; }
   .err{ color:#ff8f8f; font-weight:650; }
 
+  #cardMinGpWrap input, #cardMinToiWrap input{ width:94px; }
+
+  .segmented{ display:flex; gap:8px; margin-top:6px; }
+  .seg-btn{ flex:1; background:transparent; border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 10px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
+  .seg-btn.active{ outline:2px solid var(--accent); background:rgba(255,255,255,0.03); }
+
   .subtabs{ display:flex; gap:12px; align-items:center; margin-top:18px; }
   .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .subtab-btn.active{ outline:2px solid var(--accent); }
@@ -28,9 +77,56 @@
   .mini-table th{ text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; }
   .mini-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; }
 
+  #tabPanelCard.panel{ padding:10px 10px 8px; }
+  .card-panel-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:2px 2px 10px; }
+  .card-panel-meta{ color:rgba(255,255,255,0.95); font-size:18px; font-style:italic; font-weight:800; letter-spacing:.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .card-grid{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:36px; width:100%; margin:0; }
+  @media (max-width: 980px){ .card-grid{ grid-template-columns: 1fr; } }
+  .card-col{ border:none; border-radius:0; padding:0; background:transparent; }
+  .card-col h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .metric{ padding:2px 0 10px; border:none; border-radius:0; background:transparent; margin-bottom:10px; }
+  .metric:last-child{ margin-bottom:0; }
+  .metric-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .metric-name{ font-size:12px; letter-spacing:.2px; text-transform:none; color:var(--text-dim); font-weight:850; }
+  .metric-val{ font-variant-numeric: tabular-nums; font-weight:850; color:rgba(255,255,255,0.95); }
+  .metric-bar{ position:relative; height:10px; border-radius:999px; background:transparent; border:1px solid rgba(255,255,255,0.16); overflow:hidden; margin-top:8px; }
+  .metric-fill{ position:absolute; top:0; left:0; height:100%; border-radius:999px; width:0%; background:#f7f7f7; }
+
+  .card-slot{ margin-bottom:14px; }
+  .card-slot:last-child{ margin-bottom:0; }
+
+  .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .config-btn:hover{ background:rgba(255,255,255,0.05); }
+
+  .modal{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:2000; }
+  .modal[hidden]{ display:none !important; }
+  .modal-card{ width:min(1100px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:#0f1522; border:1px solid #2a3142; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.6); }
+  .modal-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid #232a3a; }
+  .modal-title{ font-weight:900; letter-spacing:.2px; }
+  .modal-bd{ padding:14px 16px; }
+  .cc-grid{ display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
+  @media (max-width: 980px){ .cc-grid{ grid-template-columns:1fr; } }
+  .cc-slot{ border:1px solid #232a3a; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
+  .cc-slot .s{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
+  .cc-slot .n{ margin-top:6px; font-weight:850; }
+  .cc-help{ color:var(--text-dim); font-size:13px; margin-bottom:12px; }
+  .cc-row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .cc-row select{ min-width:240px; }
+  .cc-cat{ border-top:1px solid #232a3a; padding-top:10px; margin-top:10px; }
+  .cc-cat summary{ cursor:pointer; font-weight:850; }
+  .cc-metrics{ margin-top:8px; display:grid; grid-template-columns: 1fr 1fr; gap:8px 12px; }
+  @media (max-width: 980px){ .cc-metrics{ grid-template-columns:1fr; } }
+  .cc-metrics .cc-metric{ display:flex; flex-direction:row; gap:8px; align-items:center; font-size:13px; color:rgba(255,255,255,0.92); text-transform:none; letter-spacing:0; font-weight:650; }
+  .cc-metrics .cc-metric input[type="checkbox"]{ margin:0; flex:0 0 auto; }
+  .cc-metrics .cc-metric span{ display:inline; }
+  .modal-ft{ display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; border-top:1px solid #232a3a; }
+  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .btn:hover{ background:rgba(255,255,255,0.05); }
+  .btn.primary{ outline:2px solid var(--accent); }
+
   .rapm-controls{ display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; margin-bottom:14px; }
   .rapm-controls label{ min-width:160px; }
-  .rapm-controls select{ color:var(--text); }
+  .rapm-controls select{ color:var(--value-text, var(--text)); }
 
   .rapm-split{ display:grid; grid-template-columns: 1.4fr 0.8fr 0.8fr; gap:14px; max-width:1150px; margin:0 auto; }
   .rapm-sect{ --rapmBarH: 340px; border:1px solid #232a3a; border-radius:12px; padding:12px 12px 10px; background:rgba(255,255,255,0.01); }
@@ -80,7 +176,7 @@
   #projTeamStack{ height:600px; }
   .proj-table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:12px; }
   .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
-  .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
+  .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
   .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
   .proj-table{ width:100%; border-collapse:collapse; font-size:14px; }
   .proj-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
@@ -105,11 +201,20 @@
     </div>
 
     <div class="subtabs" role="tablist" aria-label="Skater tabs">
-      <button id="tabRAPM" class="subtab-btn active" type="button" role="tab" aria-selected="true">RAPM</button>
+      <button id="tabCard" class="subtab-btn active" type="button" role="tab" aria-selected="true">Card</button>
+      <button id="tabRAPM" class="subtab-btn" type="button" role="tab" aria-selected="false">RAPM</button>
       <button id="tabProjections" class="subtab-btn" type="button" role="tab" aria-selected="false">Projections</button>
     </div>
 
-    <div id="tabPanelRAPM" class="panel" role="tabpanel">
+    <div id="tabPanelCard" class="panel" role="tabpanel">
+      <div class="card-panel-hd">
+        <div id="cardSlicerSummary" class="card-panel-meta"></div>
+        <button id="btnConfigureCard" class="config-btn" type="button">Configure Card</button>
+      </div>
+      <div id="cardPanelInner" class="skater-empty">Select a player to view Card.</div>
+    </div>
+
+    <div id="tabPanelRAPM" class="panel" role="tabpanel" style="display:none;">
       <div id="rapmPanelInner" class="skater-empty">Select a player to view RAPM.</div>
     </div>
     <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
@@ -147,6 +252,27 @@
     <div id="skaterMsg" class="skater-empty" style="margin-top:10px;">Choose Team, Season, and Player.</div>
   </div>
 </div>
+
+<div id="cardConfigModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="cardConfigTitle">
+    <div class="modal-hd">
+      <div id="cardConfigTitle" class="modal-title">Configure Card</div>
+      <button id="btnCloseCardConfig" class="btn" type="button">Close</button>
+    </div>
+    <div class="modal-bd">
+      <div class="cc-help">Choose a category and metrics in each slot.</div>
+      <div id="ccGrid" class="cc-grid"></div>
+    </div>
+    <div class="modal-ft">
+      <input id="ccImportFile" type="file" accept="application/json" style="display:none;" />
+      <button id="btnExportCardConfig" class="btn" type="button">Export</button>
+      <button id="btnImportCardConfig" class="btn" type="button">Import</button>
+      <button id="btnResetCardConfig" class="btn" type="button">Reset defaults</button>
+      <button id="btnSaveCardConfig" class="btn primary" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
 <script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
 {% endblock %}
 
@@ -162,12 +288,48 @@ const skaterName = document.getElementById('skaterName');
 const skaterInfo = document.getElementById('skaterInfo');
 const skaterMsg = document.getElementById('skaterMsg');
 
+const tabCard = document.getElementById('tabCard');
 const tabRAPM = document.getElementById('tabRAPM');
 const tabProjections = document.getElementById('tabProjections');
+const tabPanelCard = document.getElementById('tabPanelCard');
 const tabPanelRAPM = document.getElementById('tabPanelRAPM');
 const tabPanelProjections = document.getElementById('tabPanelProjections');
+const cardPanelInner = document.getElementById('cardPanelInner');
 const rapmPanelInner = document.getElementById('rapmPanelInner');
 const projPanelInner = document.getElementById('projPanelInner');
+const cardSlicerSummary = document.getElementById('cardSlicerSummary');
+
+const cardScope = document.getElementById('cardScope');
+const cardScopeButtons = document.getElementById('cardScopeButtons');
+const cardSeasonState = document.getElementById('cardSeasonState');
+const cardMinGp = document.getElementById('cardMinGp');
+const cardMinToi = document.getElementById('cardMinToi');
+const cardStrengthState = document.getElementById('cardStrengthState');
+const cardRates = document.getElementById('cardRates');
+const cardXgModel = document.getElementById('cardXgModel');
+
+const btnConfigureCard = document.getElementById('btnConfigureCard');
+const cardConfigModal = document.getElementById('cardConfigModal');
+const btnCloseCardConfig = document.getElementById('btnCloseCardConfig');
+const btnResetCardConfig = document.getElementById('btnResetCardConfig');
+const btnSaveCardConfig = document.getElementById('btnSaveCardConfig');
+const btnExportCardConfig = document.getElementById('btnExportCardConfig');
+const btnImportCardConfig = document.getElementById('btnImportCardConfig');
+const ccImportFile = document.getElementById('ccImportFile');
+const ccGrid = document.getElementById('ccGrid');
+
+const cardScopeWrap = document.getElementById('cardScopeWrap');
+const cardSeasonStateWrap = document.getElementById('cardSeasonStateWrap');
+const cardMinGpWrap = document.getElementById('cardMinGpWrap');
+const cardMinToiWrap = document.getElementById('cardMinToiWrap');
+const cardStrengthStateWrap = document.getElementById('cardStrengthStateWrap');
+const cardRatesWrap = document.getElementById('cardRatesWrap');
+const cardXgModelWrap = document.getElementById('cardXgModelWrap');
+
+let __cardDefs = null;
+let __cardConfig = null;
+const CARD_CONFIG_KEY = 'nhlSkatersCardConfig_v1';
+const CARD_SLOTS = ['L1','C1','R1','L2','C2','R2','L3','C3','R3'];
 
 const projTabPlayer = document.getElementById('projTabPlayer');
 const projTabTeam = document.getElementById('projTabTeam');
@@ -191,6 +353,31 @@ let __scaleCache = null;
 let __scaleKey = '';
 
 const teams = JSON.parse(document.getElementById('teams-data').textContent);
+
+function setCardScope(scope){
+  const s = (String(scope||'').toLowerCase() === 'career') ? 'career' : 'season';
+  if(cardScope) cardScope.value = s;
+  try{
+    const btns = cardScopeButtons ? Array.from(cardScopeButtons.querySelectorAll('button[data-scope]')) : [];
+    btns.forEach(b=>{
+      const v = String(b.getAttribute('data-scope')||'').toLowerCase();
+      b.classList.toggle('active', v === s);
+      b.setAttribute('aria-pressed', v === s ? 'true' : 'false');
+    });
+  }catch(_){ /* ignore */ }
+}
+
+// Wire Scope segmented buttons.
+try{
+  const btns = cardScopeButtons ? Array.from(cardScopeButtons.querySelectorAll('button[data-scope]')) : [];
+  btns.forEach(b=>{
+    b.addEventListener('click', ()=>{
+      setCardScope(b.getAttribute('data-scope'));
+      loadCardPanel();
+    });
+  });
+  setCardScope(cardScope?.value || 'season');
+}catch(_){ /* ignore */ }
 
 function seasonToStartYear(season){
   const s = String(season||'').trim();
@@ -268,23 +455,82 @@ function renderPlayerLanding(landing){
 }
 
 function setActiveTab(which){
-  const isR = which === 'rapm';
-  tabRAPM?.classList.toggle('active', isR);
-  tabProjections?.classList.toggle('active', !isR);
-  if(tabRAPM) tabRAPM.setAttribute('aria-selected', isR ? 'true' : 'false');
-  if(tabProjections) tabProjections.setAttribute('aria-selected', !isR ? 'true' : 'false');
-  if(tabPanelRAPM) tabPanelRAPM.style.display = isR ? '' : 'none';
-  if(tabPanelProjections) tabPanelProjections.style.display = !isR ? '' : 'none';
+  const w = String(which || '').toLowerCase();
+  const isC = (w === 'card');
+  const isR = (w === 'rapm');
+  const isP = (w === 'projections');
+  // default
+  const finalC = (isC || (!isR && !isP));
+  const finalR = isR;
+  const finalP = isP;
+
+  tabCard?.classList.toggle('active', finalC);
+  tabRAPM?.classList.toggle('active', finalR);
+  tabProjections?.classList.toggle('active', finalP);
+  if(tabCard) tabCard.setAttribute('aria-selected', finalC ? 'true' : 'false');
+  if(tabRAPM) tabRAPM.setAttribute('aria-selected', finalR ? 'true' : 'false');
+  if(tabProjections) tabProjections.setAttribute('aria-selected', finalP ? 'true' : 'false');
+  if(tabPanelCard) tabPanelCard.style.display = finalC ? '' : 'none';
+  if(tabPanelRAPM) tabPanelRAPM.style.display = finalR ? '' : 'none';
+  if(tabPanelProjections) tabPanelProjections.style.display = finalP ? '' : 'none';
+
+  setCardSlicersVisible(finalC);
+
+  if(finalC) loadCardPanel();
+  if(finalR) loadRAPMPanel();
+  if(finalP && projectionsEnabled()) loadProjectionsPanel();
+}
+
+function setCardSlicersVisible(on){
+  const show = !!on;
+  // Configure button lives in the Card panel header; only show it on Card.
+  if(btnConfigureCard) btnConfigureCard.style.display = show ? '' : 'none';
+  if(cardSlicerSummary) cardSlicerSummary.style.display = show ? '' : 'none';
+  if(cardScopeWrap) cardScopeWrap.style.display = show ? '' : 'none';
+  if(cardSeasonStateWrap) cardSeasonStateWrap.style.display = show ? '' : 'none';
+  if(cardMinGpWrap) cardMinGpWrap.style.display = show ? '' : 'none';
+  if(cardMinToiWrap) cardMinToiWrap.style.display = show ? '' : 'none';
+  if(cardStrengthStateWrap) cardStrengthStateWrap.style.display = show ? '' : 'none';
+  if(cardRatesWrap) cardRatesWrap.style.display = show ? '' : 'none';
+  if(cardXgModelWrap) cardXgModelWrap.style.display = show ? '' : 'none';
+}
+
+function updateCardSlicerSummary(){
+  if(!cardSlicerSummary) return;
+  const scope = String(cardScope?.value || 'season');
+  const rawSeason = String(seasonSelect?.value || '').trim();
+  let season = rawSeason;
+  if(/^\d{8}$/.test(rawSeason)){
+    season = `${rawSeason.slice(0,4)}/${rawSeason.slice(4,8)}`;
+  }
+  const seasonState = String(cardSeasonState?.selectedOptions?.[0]?.textContent || cardSeasonState?.value || '').trim();
+  const strengthState = String(cardStrengthState?.selectedOptions?.[0]?.textContent || cardStrengthState?.value || '').trim();
+  const ratesText = String(cardRates?.selectedOptions?.[0]?.textContent || cardRates?.value || '').trim();
+  const minGp = Number.parseInt(String(cardMinGp?.value || '0'), 10);
+  const minToi = Number(String(cardMinToi?.value || '0'));
+  const minParts = [];
+  if(Number.isFinite(minGp) && minGp > 0) minParts.push(`Min GP ${minGp}`);
+  if(Number.isFinite(minToi) && minToi > 0) minParts.push(`Min TOI ${minToi}`);
+
+  const first = (scope === 'career') ? 'Career' : season;
+  const parts = [first, seasonState, strengthState, ratesText].concat(minParts).filter(Boolean);
+  cardSlicerSummary.textContent = parts.join(' - ');
 }
 
 function projectionsEnabled(){
   return String(seasonSelect?.value || '').trim() === '20252026';
 }
 
+function cardEnabled(){
+  // Card supports all seasons (20252026 from Sheets6; others from nhl_seasonstats.csv)
+  return true;
+}
+
 function updateTabsVisibility(){
   const enabled = projectionsEnabled();
   if(tabProjections) tabProjections.style.display = enabled ? '' : 'none';
-  if(!enabled) setActiveTab('rapm');
+  const projActive = tabProjections?.classList.contains('active');
+  if(!enabled && projActive) setActiveTab('card');
 }
 
 // base.html populates seasonSelect asynchronously and sets seasonSelect.value
@@ -311,6 +557,232 @@ function installSeasonWatcher(){
   }, 200);
 }
 installSeasonWatcher();
+
+// Default tab is Card; keep sidebar slicers in sync on initial load.
+setCardSlicersVisible(true);
+
+function safeJsonParse(s){
+  try{ return JSON.parse(String(s||'')); }catch(_){ return null; }
+}
+
+async function ensureCardDefs(){
+  if(__cardDefs) return __cardDefs;
+  try{
+    const r = await fetch('/api/skaters/card/defs', { cache:'no-store' });
+    const js = await r.json();
+    __cardDefs = js && typeof js === 'object' ? js : { categories:[], metrics:[] };
+  }catch(_){
+    __cardDefs = { categories:[], metrics:[] };
+  }
+  return __cardDefs;
+}
+
+function buildDefaultCardConfig(defs){
+  const metrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+  const categories = Array.isArray(defs?.categories) ? defs.categories : [];
+  const byCat = {};
+  metrics.forEach(m=>{
+    const c = String(m?.category||'').trim();
+    if(!c) return;
+    (byCat[c] = byCat[c] || []).push(m);
+  });
+
+  const categorySelected = {};
+  const categoryPlace = {};
+  categories.forEach(c=>{
+    const cat = String(c||'').trim();
+    const ms = byCat[cat] || [];
+    const defaults = ms.filter(x=>String(x?.default||'').trim() === '1' || x?.default === true || String(x?.default||'').toLowerCase()==='true');
+    categorySelected[cat] = defaults.map(x=>String(x?.id||'')).filter(Boolean);
+    const p = (defaults.find(x=>String(x?.place||'').trim() && String(x?.place||'').trim() !== '0') || ms.find(x=>String(x?.place||'').trim() && String(x?.place||'').trim() !== '0'));
+    if(p) categoryPlace[cat] = String(p.place).trim();
+  });
+
+  const slots = {};
+  CARD_SLOTS.forEach(s=>{ slots[s] = null; });
+  Object.entries(categoryPlace).forEach(([cat, place])=>{
+    if(CARD_SLOTS.includes(place)) slots[place] = cat;
+  });
+  return { version: 1, slots, categorySelected };
+}
+
+function loadCardConfig(defs){
+  const raw = safeJsonParse(localStorage.getItem(CARD_CONFIG_KEY));
+  if(raw && typeof raw === 'object' && raw.slots && raw.categorySelected) return raw;
+  return buildDefaultCardConfig(defs);
+}
+
+function saveCardConfig(cfg){
+  try{ localStorage.setItem(CARD_CONFIG_KEY, JSON.stringify(cfg)); }catch(_){ /* ignore */ }
+}
+
+function downloadTextFile(filename, text, mime='application/json'){
+  try{
+    const blob = new Blob([String(text||'')], { type: mime });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{
+      try{ URL.revokeObjectURL(a.href); }catch(_){/*noop*/}
+      try{ a.remove(); }catch(_){/*noop*/}
+    }, 250);
+  }catch(_){ /* ignore */ }
+}
+
+function normalizeCardConfig(defs, cfg){
+  const metrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+  const categories = new Set((Array.isArray(defs?.categories) ? defs.categories : []).map(String));
+  const allowedMetricIds = new Set(metrics.map(m=>String(m?.id||'')).filter(Boolean));
+
+  const out = { version: 1, slots: {}, categorySelected: {} };
+  // slots
+  const slotsIn = cfg?.slots && typeof cfg.slots === 'object' ? cfg.slots : {};
+  CARD_SLOTS.forEach(s=>{ out.slots[s] = null; });
+  CARD_SLOTS.forEach(s=>{
+    const cat = slotsIn?.[s];
+    const c = (cat == null || cat === '') ? null : String(cat);
+    if(c && categories.has(c)) out.slots[s] = c;
+  });
+  // enforce uniqueness (first wins)
+  const seen = new Set();
+  CARD_SLOTS.forEach(s=>{
+    const c = out.slots[s];
+    if(!c) return;
+    if(seen.has(c)) out.slots[s] = null;
+    else seen.add(c);
+  });
+
+  // metric selections
+  const selIn = cfg?.categorySelected && typeof cfg.categorySelected === 'object' ? cfg.categorySelected : {};
+  categories.forEach(cat=>{
+    const arr = Array.isArray(selIn?.[cat]) ? selIn[cat] : [];
+    out.categorySelected[cat] = arr.map(String).filter(id=>allowedMetricIds.has(id));
+  });
+
+  return out;
+}
+
+async function exportCardConfig(){
+  const defs = await ensureCardDefs();
+  const cfg = __cardConfig || loadCardConfig(defs);
+  const norm = normalizeCardConfig(defs, cfg);
+  const text = JSON.stringify(norm, null, 2);
+  downloadTextFile('skaters_card_config.json', text, 'application/json');
+  try{
+    if(navigator?.clipboard?.writeText){
+      await navigator.clipboard.writeText(text);
+    }
+  }catch(_){ /* ignore clipboard failures */ }
+}
+
+async function importCardConfigFromText(text){
+  const defs = await ensureCardDefs();
+  const parsed = safeJsonParse(text);
+  if(!parsed || typeof parsed !== 'object'){
+    alert('Invalid JSON.');
+    return;
+  }
+  const norm = normalizeCardConfig(defs, parsed);
+  __cardConfig = norm;
+  saveCardConfig(norm);
+  renderCardConfigModal(defs, __cardConfig);
+  loadCardPanel();
+}
+
+function openCardConfig(){
+  if(cardConfigModal) cardConfigModal.hidden = false;
+}
+function closeCardConfig(){
+  if(cardConfigModal) cardConfigModal.hidden = true;
+}
+
+function renderCardConfigModal(defs, cfg){
+  if(!ccGrid) return;
+  const categories = Array.isArray(defs?.categories) ? defs.categories : [];
+  const metrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+  const byCat = {};
+  metrics.forEach(m=>{
+    const c = String(m?.category||'').trim();
+    if(!c) return;
+    (byCat[c] = byCat[c] || []).push(m);
+  });
+
+  function categoryOptionsHtml(assignedCat){
+    const opts = [''].concat(categories.map(String));
+    return opts.map(c=>{
+      const v = String(c||'');
+      const sel = (v && v === String(assignedCat||'')) ? ' selected' : '';
+      const label = v ? v : '(empty)';
+      return `<option value="${v}"${sel}>${label}</option>`;
+    }).join('');
+  }
+
+  function metricsHtmlForCategory(cat){
+    const c = String(cat||'').trim();
+    if(!c) return '<div class="cc-help" style="margin:10px 0 0;">Select a category to choose metrics.</div>';
+    const ms = byCat[c] || [];
+    const selected = new Set((cfg?.categorySelected?.[c] || []).map(String));
+    const checks = ms.map(m=>{
+      const id = String(m?.id||'');
+      const name = String(m?.name || m?.metric || id);
+      const checked = selected.has(id) ? ' checked' : '';
+      return `<label class="cc-metric"><input type="checkbox" data-mid="${id}" data-cat="${c}"${checked}/><span>${name}</span></label>`;
+    }).join('');
+    return `<div class="cc-metrics" style="margin-top:10px;">${checks || '<div class="cc-help">No metrics</div>'}</div>`;
+  }
+
+  ccGrid.innerHTML = CARD_SLOTS.map(slot=>{
+    const assignedCat = String(cfg?.slots?.[slot] || '');
+    return `
+      <div class="cc-slot" data-slot="${slot}">
+        <div class="s">${slot}</div>
+        <div class="cc-row" style="margin-top:8px; margin-bottom:0;">
+          <div style="min-width:70px; font-weight:850;">Category</div>
+          <select data-slot="${slot}" class="cc-assign" style="flex:1; min-width:0;">${categoryOptionsHtml(assignedCat)}</select>
+        </div>
+        ${metricsHtmlForCategory(assignedCat)}
+      </div>
+    `;
+  }).join('');
+
+  ccGrid.querySelectorAll('select.cc-assign[data-slot]').forEach(dd=>{
+    dd.addEventListener('change', ()=>{
+      const slot = String(dd.getAttribute('data-slot')||'');
+      if(!slot) return;
+      const next = String(dd.value||'');
+      if(next){
+        // Enforce uniqueness: selecting a used category clears it from the other slot.
+        CARD_SLOTS.forEach(s=>{ if(s !== slot && cfg.slots[s] === next) cfg.slots[s] = null; });
+      }
+      cfg.slots[slot] = next || null;
+      renderCardConfigModal(defs, cfg);
+    });
+  });
+
+  ccGrid.querySelectorAll('input[type="checkbox"][data-mid][data-cat]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const cat = cb.getAttribute('data-cat');
+      const mid = cb.getAttribute('data-mid');
+      if(!cat || !mid) return;
+      const arr = cfg.categorySelected[cat] || (cfg.categorySelected[cat] = []);
+      const i = arr.map(String).indexOf(String(mid));
+      if(cb.checked){
+        if(i === -1) arr.push(mid);
+      }else{
+        if(i !== -1) arr.splice(i, 1);
+      }
+    });
+  });
+}
+
+async function showCardConfig(){
+  const defs = await ensureCardDefs();
+  __cardConfig = loadCardConfig(defs);
+  renderCardConfigModal(defs, __cardConfig);
+  openCardConfig();
+}
 
 function parseLocaleNumber(x){
   if(x == null) return NaN;
@@ -381,6 +853,219 @@ function mixHex(hexA, hexB, t){
   const g = Math.round(a.g*(1-tt) + b.g*tt);
   const bb = Math.round(a.b*(1-tt) + b.b*tt);
   return `rgb(${r},${g},${bb})`;
+}
+
+function lerp(a,b,t){ return a*(1-t)+b*t; }
+function mixRgb(rgbA, rgbB, t){
+  const tt = clamp(Number(t)||0, 0, 1);
+  return {
+    r: Math.round(lerp(rgbA.r, rgbB.r, tt)),
+    g: Math.round(lerp(rgbA.g, rgbB.g, tt)),
+    b: Math.round(lerp(rgbA.b, rgbB.b, tt)),
+  };
+}
+function pctToColor(pct){
+  const p = clamp(Number(pct)||0, 0, 100);
+  const red = {r:255,g:77,b:77};
+  const white = {r:247,g:247,b:247};
+  const blue = {r:77,g:163,b:255};
+  if(p <= 50){
+    const c = mixRgb(red, white, p/50);
+    return `rgb(${c.r},${c.g},${c.b})`;
+  }
+  const c = mixRgb(white, blue, (p-50)/50);
+  return `rgb(${c.r},${c.g},${c.b})`;
+}
+
+function fmtMetricValue(def, value, ratesSel){
+  const v = Number(value);
+  if(!Number.isFinite(v)) return '—';
+  const cat = String(def?.category||'');
+  const m = String(def?.metric||'');
+
+  if(m === 'ixG' || String(def?.name||'').trim().toLowerCase() === 'individual xg'){
+    return v.toFixed(1);
+  }
+
+  if(m === 'GP') return String(Math.round(v));
+  if(m === 'TOI'){
+    return (ratesSel === 'PerGame') ? v.toFixed(2) : v.toFixed(1);
+  }
+  if(m.includes('%') || m === 'PDO' || (String(def?.name||'').includes('%'))){
+    if(m === 'PDO') return v.toFixed(1);
+    const s = (m.startsWith('d') && v > 0) ? '+' : '';
+    return s + v.toFixed(1) + '%';
+  }
+  if(m.endsWith('+/-') || m.includes('+/-') || m === 'GAx' || m === 'GSAx' || m === 'xG+/-' || m === 'xG+/-' || m === 'C+/-' || m === 'F+/-' || m === 'S+/-' || m === 'G+/-'){
+    const s = v > 0 ? '+' : '';
+    return s + v.toFixed(2);
+  }
+  if(m.startsWith('RAPM')) return v.toFixed(3);
+  if(cat === 'Context' && (m === 'QoT' || m === 'QoC' || m === 'ZS')) return v.toFixed(3);
+
+  // counts / rates
+  return (ratesSel === 'Totals') ? String(Math.round(v)) : v.toFixed(2);
+}
+
+function displayMetricLabel(def, labels){
+  const m = String(def?.metric||'');
+  if(m === 'iShots or iFenwick') return String(labels?.Attempts || def?.name || 'Attempts');
+  if(m === 'Sh% or FSh%') return String(labels?.Sh || def?.name || 'Sh%');
+  if(m === 'xSh% or xFS%') return String(labels?.xSh || def?.name || 'xSh%');
+  if(m === 'dSh% or dFSh%') return String(labels?.dSh || def?.name || 'dSh%');
+  return String(def?.name || def?.metric || def?.id || '');
+}
+
+function renderCardMetric(def, metric, labels, ratesSel){
+  const pct = Number(metric?.pct);
+  const pctOk = Number.isFinite(pct);
+  const width = pctOk ? clamp(pct, 0, 100).toFixed(1) : '0.0';
+  const color = pctOk ? pctToColor(pct) : 'rgba(255,255,255,0.15)';
+  const valText = fmtMetricValue(def, metric?.value, ratesSel);
+  return `
+    <div class="metric">
+      <div class="metric-head">
+        <div class="metric-name">${displayMetricLabel(def, labels)}</div>
+        <div class="metric-val">${valText}</div>
+      </div>
+      <div class="metric-bar"><div class="metric-fill" style="width:${width}%; background:${color};"></div></div>
+    </div>
+  `;
+}
+
+function renderCardUI(data, defs, cfg){
+  if(!cardPanelInner) return;
+  const metrics = data?.metrics || {};
+  const labels = data?.labels || {};
+  const ratesSel = String(cardRates?.value || data?.rates || 'Totals');
+
+  const defsMetrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+  const defById = {};
+  defsMetrics.forEach(d=>{ if(d?.id) defById[String(d.id)] = d; });
+
+  const defaultsByCat = {};
+  defsMetrics.forEach(d=>{
+    const cat = String(d?.category||'');
+    if(!cat) return;
+    const isDef = String(d?.default||'').trim()==='1' || d?.default===true || String(d?.default||'').toLowerCase()==='true';
+    if(!isDef) return;
+    (defaultsByCat[cat] = defaultsByCat[cat] || []).push(String(d?.id||''));
+  });
+
+  const slots = cfg?.slots || {};
+  const selectedByCat = cfg?.categorySelected || {};
+
+  function slotHtml(slot){
+    const cat = slots?.[slot];
+    if(!cat) return '';
+    let mids = Array.isArray(selectedByCat?.[cat]) ? selectedByCat[cat].map(String).filter(Boolean) : [];
+    if(!mids.length) mids = (defaultsByCat[cat] || []).filter(Boolean);
+    const body = mids.map(mid=>{
+      const def = defById[mid] || { id: mid, category: cat, metric: mid.split('|')[1] || mid, name: mid };
+      let m = metrics?.[mid];
+      // Special: TOI/GP display when rates is PerGame
+      if(ratesSel === 'PerGame' && mid === 'Ice Time|TOI'){
+        const toi = Number(metrics?.['Ice Time|TOI']?.value);
+        const gp = Number(metrics?.['Ice Time|GP']?.value);
+        if(Number.isFinite(toi) && Number.isFinite(gp) && gp > 0){
+          m = { value: toi / gp, pct: metrics?.['Ice Time|TOI']?.pct };
+        }
+      }
+      return renderCardMetric(def, m, labels, ratesSel);
+    }).join('');
+    return `<div class="card-slot"><h3>${cat}</h3>${body || '<div class="skater-empty" style="padding:10px 0;">No metrics selected.</div>'}</div>`;
+  }
+
+  const columns = [
+    ['L1','L2','L3'],
+    ['C1','C2','C3'],
+    ['R1','R2','R3'],
+  ];
+  cardPanelInner.innerHTML = `
+    <div class="card-grid">
+      ${columns.map(col=>`<div class="card-col">${col.map(slotHtml).join('')}</div>`).join('')}
+    </div>
+  `;
+}
+
+async function loadCardPanel(){
+  if(!cardPanelInner) return;
+  if(!cardEnabled()){
+    cardPanelInner.textContent = '';
+    return;
+  }
+
+  updateCardSlicerSummary();
+  const playerId = String(playerSelect?.value || '').trim();
+  if(!playerId){
+    cardPanelInner.textContent = 'Select a player to view Card.';
+    return;
+  }
+
+  const season = String(seasonSelect?.value || '').trim() || '20252026';
+  const scope = String(cardScope?.value || 'season');
+  const seasonState = String(cardSeasonState?.value || 'regular');
+  const strengthState = String(cardStrengthState?.value || '5v5');
+  const rates = String(cardRates?.value || 'Totals');
+  const xgModel = String(cardXgModel?.value || 'xG_F');
+  let minGP = Number.parseInt(String(cardMinGp?.value || '0'), 10);
+  if(!Number.isFinite(minGP) || minGP < 0) minGP = 0;
+  let minTOI = Number(String(cardMinToi?.value || '0'));
+  if(!Number.isFinite(minTOI) || minTOI < 0) minTOI = 0;
+
+  cardPanelInner.textContent = 'Loading card...';
+  try{
+    const defs = await ensureCardDefs();
+    const cfg = (__cardConfig = loadCardConfig(defs));
+    // Build requested metric list from configured categories.
+    const defsMetrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+    const byCat = {};
+    defsMetrics.forEach(m=>{
+      const c = String(m?.category||'').trim();
+      if(!c) return;
+      (byCat[c] = byCat[c] || []).push(m);
+    });
+    const metricIds = [];
+    const usedCats = new Set(Object.values(cfg?.slots||{}).filter(Boolean).map(String));
+    usedCats.forEach(cat=>{
+      let mids = Array.isArray(cfg?.categorySelected?.[cat]) ? cfg.categorySelected[cat].map(String).filter(Boolean) : [];
+      if(!mids.length){
+        const defaults = (byCat[cat] || []).filter(x=>String(x?.default||'').trim()==='1' || x?.default===true || String(x?.default||'').toLowerCase()==='true');
+        mids = defaults.map(x=>String(x?.id||'')).filter(Boolean);
+      }
+      mids.forEach(id=>{ if(id && !metricIds.includes(id)) metricIds.push(id); });
+    });
+    // Ensure GP is present if we need TOI/GP display.
+    if(String(rates) === 'PerGame' && metricIds.includes('Ice Time|TOI') && !metricIds.includes('Ice Time|GP')){
+      metricIds.push('Ice Time|GP');
+    }
+
+    const url = `/api/skaters/card?season=${encodeURIComponent(season)}&playerId=${encodeURIComponent(playerId)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(rates)}&scope=${encodeURIComponent(scope)}&minGP=${encodeURIComponent(String(minGP))}&minTOI=${encodeURIComponent(String(minTOI))}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
+    const r = await fetch(url, { cache: 'no-store' });
+    let data = null;
+    try{
+      data = await r.json();
+    }catch(_){
+      data = null;
+    }
+    if(!r.ok){
+      const err = (data && typeof data === 'object' && data.error) ? String(data.error) : '';
+      cardPanelInner.textContent = `Error loading Card (${r.status}${err?`: ${err}`:''}).`;
+      return;
+    }
+    if(data?.error){
+      if(data.error === 'not_found'){
+        cardPanelInner.textContent = 'No SeasonStats found for this filter.';
+        return;
+      }
+      cardPanelInner.textContent = 'Error loading Card.';
+      return;
+    }
+    renderCardUI(data, defs, cfg);
+  }catch(e){
+    try{ console.error('[card] loadCardPanel failed:', e); }catch(_){/*noop*/}
+    cardPanelInner.textContent = 'Error loading Card.';
+  }
 }
 
 function themeAccent(){
@@ -1667,6 +2352,7 @@ async function loadPlayerCard(){
     }
     renderPlayerLanding(data);
     setMsg('');
+    if(cardEnabled()) loadCardPanel();
     loadRAPMPanel();
     if(projectionsEnabled()) loadProjectionsPanel();
   }catch(e){
@@ -1674,8 +2360,70 @@ async function loadPlayerCard(){
   }
 }
 
+tabCard?.addEventListener('click', ()=> setActiveTab('card'));
 tabRAPM?.addEventListener('click', ()=> setActiveTab('rapm'));
 tabProjections?.addEventListener('click', ()=> setActiveTab('projections'));
+
+cardSeasonState?.addEventListener('change', ()=> loadCardPanel());
+cardMinGp?.addEventListener('change', ()=> loadCardPanel());
+cardMinToi?.addEventListener('change', ()=> loadCardPanel());
+cardStrengthState?.addEventListener('change', ()=> loadCardPanel());
+cardRates?.addEventListener('change', ()=> loadCardPanel());
+cardXgModel?.addEventListener('change', ()=> loadCardPanel());
+
+btnConfigureCard?.addEventListener('click', async ()=>{
+  await showCardConfig();
+});
+btnCloseCardConfig?.addEventListener('click', ()=> closeCardConfig());
+cardConfigModal?.addEventListener('click', (e)=>{
+  // click backdrop to close
+  if(e?.target === cardConfigModal) closeCardConfig();
+});
+document.addEventListener('keydown', (e)=>{
+  if(e?.key === 'Escape' && cardConfigModal && !cardConfigModal.hidden) closeCardConfig();
+});
+btnResetCardConfig?.addEventListener('click', async ()=>{
+  const defs = await ensureCardDefs();
+  __cardConfig = buildDefaultCardConfig(defs);
+  renderCardConfigModal(defs, __cardConfig);
+});
+btnSaveCardConfig?.addEventListener('click', ()=>{
+  if(__cardConfig){
+    saveCardConfig(__cardConfig);
+    closeCardConfig();
+    loadCardPanel();
+  }
+});
+
+btnExportCardConfig?.addEventListener('click', async ()=>{
+  await exportCardConfig();
+});
+
+btnImportCardConfig?.addEventListener('click', async ()=>{
+  // Prefer file import; if user cancels, fall back to paste.
+  if(ccImportFile){
+    try{ ccImportFile.value = ''; }catch(_){/*noop*/}
+    ccImportFile.click();
+    return;
+  }
+  const t = prompt('Paste card config JSON');
+  if(t) await importCardConfigFromText(t);
+});
+
+ccImportFile?.addEventListener('change', async ()=>{
+  const f = ccImportFile.files && ccImportFile.files[0];
+  if(!f){
+    const t = prompt('Paste card config JSON');
+    if(t) await importCardConfigFromText(t);
+    return;
+  }
+  try{
+    const text = await f.text();
+    await importCardConfigFromText(text);
+  }catch(_){
+    alert('Could not read file.');
+  }
+});
 
 projTabPlayer?.addEventListener('click', ()=> setActiveProjSubtab('player'));
 projTabTeam?.addEventListener('click', ()=> setActiveProjSubtab('team'));

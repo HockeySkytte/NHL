@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --bg:#0d0f16; --panel:#141826; --panel-alt:#1c2233; --text:#e6e8ec; --text-dim:#9aa4b1; --accent:#4da3ff; }
+    :root { --bg:#0d0f16; --panel:#141826; --panel-alt:#1c2233; --text:#e6e8ec; --text-dim:#9aa4b1; --accent:#4da3ff; --value-text:#f1f5f9; }
     body { margin:0; font-family:Inter, system-ui, sans-serif; background:linear-gradient(160deg,#05060a,#0f121a); color:var(--text); }
     .app-shell { display:grid; grid-template-columns:260px 1fr; min-height:100vh; }
   aside { background:radial-gradient(circle at 30% 20%, var(--panel), #0b0e15); padding:16px 8px 20px; border-right:1px solid #232a3a; }
@@ -22,8 +22,10 @@
   nav.tabs a.active::after { content:""; position:absolute; left:0; right:0; bottom:10px; height:4px; border-radius:4px; background:var(--accent); box-shadow:0 0 8px -1px var(--accent); }
     .filters { display:flex; flex-direction:column; gap:18px; }
     label { display:flex; flex-direction:column; font-size:12px; gap:6px; text-transform:uppercase; letter-spacing:.9px; color:var(--text-dim); font-weight:600; }
-  select { background:var(--panel-alt); color:var(--text); border:1px solid #2a3142; padding:10px 12px; border-radius:8px; font-size:14px; font-weight:500; appearance:none; -webkit-appearance:none; -moz-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239aa4b1'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; background-size:18px; padding-right:42px; }
+  select { background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; padding:10px 12px; border-radius:8px; font-size:14px; font-weight:500; appearance:none; -webkit-appearance:none; -moz-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239aa4b1'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; background-size:18px; padding-right:42px; }
   select:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  input[type="number"], input[type="text"] { background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; padding:10px 12px; border-radius:8px; font-size:14px; font-weight:500; }
+  input[type="number"]:focus, input[type="text"]:focus { outline:2px solid var(--accent); outline-offset:1px; }
   label.checkbox-row { flex-direction:row; align-items:center; font-size:11px; letter-spacing:.8px; text-transform:uppercase; gap:8px; font-weight:600; }
   label.checkbox-row span { position:relative; top:1px; }
   label.checkbox-row input { accent-color:var(--accent); width:16px; height:16px; }
@@ -146,6 +148,7 @@
       root.style.setProperty('--panel', dark1);
       root.style.setProperty('--panel-alt', base);
       const valueColor = isLight(base)? '#0f141b' : '#f1f5f9';
+      root.style.setProperty('--value-text', valueColor);
       const viewModeSelect = document.getElementById('viewMode');
       const playerSelect = document.getElementById('playerSelect');
       [teamSelect, seasonSelect, seasonStateSelect, viewModeSelect, playerSelect].filter(Boolean).forEach(sel=> sel.style.color = valueColor);

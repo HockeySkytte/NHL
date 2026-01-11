@@ -1,0 +1,59 @@
+﻿Category;Metric;Calculation;Name;Default;Place;Card
+Ice Time;GP;;Games Played;1;L1;Skaters
+Ice Time;TOI;;Time on Ice;1;L1;Skaters
+Production;iGoals;;Goals;1;L2;Skaters
+Production;Assists1;;Primary Assists;1;L2;Skaters
+Production;Assists2;;Secondary Assists;1;L2;Skaters
+Production;Points;;Points;1;L2;Skaters
+Defense;CA;;Corsi Against;0;0;Skaters
+Defense;FA;;Fenwick Against;0;0;Skaters
+Defense;SA;;Shots Against;0;0;Skaters
+Defense;GA;;Goals Against;0;0;Skaters
+Defense;xGA;;xG Against;0;0;Skaters
+Defense;RAPM CA;;RAPM CA;0;0;Skaters
+Defense;RAPM GA;;RAPM GA;1;C1;Skaters
+Defense;RAPM xGA;;RAPM xGA;1;C1;Skaters
+Offense;CF;;Corsi For;0;0;Skaters
+Offense;FF;;Fenwick For;0;0;Skaters
+Offense;SF;;Shots For;0;0;Skaters
+Offense;GF;;Goals For;0;0;Skaters
+Offense;xGF;;xG For;0;0;Skaters
+Offense;RAPM CF;;RAPM CF;0;0;Skaters
+Offense;RAPM GF;;RAPM GF;1;R1;Skaters
+Offense;RAPM xGF;;RAPM xGF;1;R1;Skaters
+Play Driving;CF%;CF/(CF+CA);CF%;0;0;Skaters
+Play Driving;FF%;FF/(FF+FA);FF%;0;0;Skaters
+Play Driving;SF%;SF/(SF+SA);SF%;0;0;Skaters
+Play Driving;GF%;GF/(GF+GA);GF%;0;0;Skaters
+Play Driving;xGF%;xGF/(xGF+xGA);xGF%;0;0;Skaters
+Play Driving;C+/-;CF-CA;Corsi Differential;0;0;Skaters
+Play Driving;F+/-;FF-FA;Fenwick Differential;0;0;Skaters
+Play Driving;S+/-;SF-SA;Shot Differential;0;0;Skaters
+Play Driving;G+/-;GF-GA;Goal Differential;0;0;Skaters
+Play Driving;xG+/-;xGF-xGA;xG Differential;0;0;Skaters
+Play Driving;RAPM C+/-;;RAPM C+/-;0;0;Skaters
+Play Driving;RAPM G+/-;;RAPM G+/-;0;0;Skaters
+Play Driving;RAPM xG+/-;;RAPM xG+/-;0;0;Skaters
+Context;Sh%;GF/SF;On-Ice Sh%;1;C2;Skaters
+Context;Sv%;1-GA/SA;On-Ice Sv%;1;C2;Skaters
+Context;PDO;Sh%+Sv%;PDO;1;C2;Skaters
+Context;GAx;GF-xGF;On-Ice GAx;0;0;Skaters
+Context;GSAx;xGA-GA;On-Ice GSAx;0;0;Skaters
+Context;QoT;;Quality of Teammates;0;0;Skaters
+Context;QoC;;Quality of Competition;0;0;Skaters
+Context;ZS;;Zone Start Difficulty;0;0;Skaters
+Shooting;iShots or iFenwick;;Shots or Fenwick;0;0;Skaters
+Shooting;ixG;;Individual xG;1;R2;Skaters
+Shooting;Sh% or FSh%;;Sh% or FSh%;1;R2;Skaters
+Shooting;xSh% or xFS%;;xSh% or xFSh%;1;R2;Skaters
+Shooting;dSh% or dFSh%;;dSh% or dFSh%;1;R2;Skaters
+Shooting;GAx;;Goals Scored Above Expected;0;0;Skaters
+Penalties;PIM_taken;;PIM taken;0;0;Skaters
+Penalties;PIM_drawn;;PIM drawn;0;0;Skaters
+Penalties;PIM+/-;;PIM differential;0;0;Skaters
+Penalties;PIM_For;;On-Ice PIM For;0;0;Skaters
+Penalties;PIM_Against;;On-Ice PIM Against;0;0;Skaters
+Penalties;oiPIM+/-;;On-Ice PIM differential;0;0;Skaters
+Other;Hits;;Hits;0;0;Skaters
+Other;Takeaways;;Takeaways;0;0;Skaters
+Other;Giveaways;;Giveaways;0;0;Skaters

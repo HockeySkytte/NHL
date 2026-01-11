@@ -860,6 +860,40 @@ def export_to_mysql(
     tbl_sh = f"nhl_{season}_shifts"
     tbl_gd = f"nhl_{season}_gamedata"
 
+    def _ensure_mysql_column(table_name: str, col_name: str, col_def_sql: str) -> bool:
+        """Best-effort: ensure a column exists on an existing MySQL table.
+
+        Returns True if the column exists or was added successfully.
+        Returns False if the column could not be ensured (e.g., permissions).
+        """
+        try:
+            with eng.begin() as conn:
+                res = conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) AS n
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME = :t
+                          AND COLUMN_NAME = :c
+                        """
+                    ),
+                    {"t": table_name, "c": col_name},
+                )
+                n = int((res.scalar() or 0))
+                if n > 0:
+                    return True
+        except Exception:
+            # Can't inspect schema; don't block exports.
+            return False
+
+        try:
+            with eng.begin() as conn:
+                conn.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `{col_name}` {col_def_sql}"))
+            return True
+        except Exception:
+            return False
+
     def _apply_xg_nulling_rule(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
         """Ensure xG columns are NULL when reason indicates invalid/short xG.
 
@@ -930,8 +964,15 @@ def export_to_mysql(
 
     try:
         if not df_shifts.empty:
-            df_shifts.to_sql(tbl_sh, con=eng, if_exists='append', index=False, method='multi', chunksize=1000)
-            print(f"[mysql] wrote {len(df_shifts)} rows to {tbl_sh}")
+            # Newer shifts exports include StrengthStateBucket; add the column if the table already exists.
+            df_sh = df_shifts
+            if 'StrengthStateBucket' in df_sh.columns:
+                ok = _ensure_mysql_column(tbl_sh, 'StrengthStateBucket', 'VARCHAR(16) NULL')
+                if not ok:
+                    # If we can't add the column (permissions), drop it so inserts don't fail.
+                    df_sh = df_sh.drop(columns=['StrengthStateBucket'], errors='ignore')
+            df_sh.to_sql(tbl_sh, con=eng, if_exists='append', index=False, method='multi', chunksize=1000)
+            print(f"[mysql] wrote {len(df_sh)} rows to {tbl_sh}")
         else:
             print("[mysql] df_shifts empty; nothing to write")
     except SQLAlchemyError as e:
@@ -962,11 +1003,55 @@ def _seasonstats_strength_bucket(strength: Any) -> str:
     if not s:
         return 'Other'
     s_low = s.lower()
+    # Ignore empty-net and other labels here; they bucket as Other.
+    if s_low.startswith('en'):
+        return 'Other'
+    # Parse generic "NvM" patterns and apply the SeasonStats rules.
+    try:
+        if 'v' in s_low:
+            left, right = s_low.split('v', 1)
+            my_s = int(left.strip())
+            their_s = int(right.strip())
+            # 5+ v 5+ => 5v5 (includes 6v5, 5v6, etc)
+            if my_s >= 5 and their_s >= 5:
+                return '5v5'
+            # Opponent has 3/4 and we have the advantage => PP
+            if their_s in (3, 4) and my_s > their_s:
+                return 'PP'
+            # We have 3/4 and opponent has the advantage => SH
+            if my_s in (3, 4) and their_s > my_s:
+                return 'SH'
+            return 'Other'
+    except Exception:
+        pass
+    # Backward-compatible exact matches
     if s_low == '5v5':
         return '5v5'
-    if s_low in {'5v4', '5v3', '4v3'}:
+    return 'Other'
+
+
+def _seasonstats_bucket_from_counts(*, my_skaters: int, their_skaters: int, my_goalies: int, their_goalies: int) -> str:
+    """SeasonStats StrengthState bucket from on-ice counts.
+
+    Rules (only when both goalies are in the net):
+    - both teams have 5+ skaters -> 5v5
+    - opponent has 3/4 skaters -> PP (if we have more skaters)
+    - we have 3/4 skaters -> SH (if opponent has more skaters)
+    Everything else -> Other.
+    """
+    try:
+        mg = int(my_goalies or 0)
+        tg = int(their_goalies or 0)
+        ms = int(my_skaters or 0)
+        ts = int(their_skaters or 0)
+    except Exception:
+        return 'Other'
+
+    if mg >= 1 and tg >= 1 and ms >= 5 and ts >= 5:
+        return '5v5'
+    if mg >= 1 and tg >= 1 and ts in (3, 4) and ms > ts:
         return 'PP'
-    if s_low in {'4v5', '3v5', '3v4'}:
+    if mg >= 1 and tg >= 1 and ms in (3, 4) and ts > ms:
         return 'SH'
     return 'Other'
 
@@ -1095,7 +1180,17 @@ def compute_seasonstats_day(
     shifts.loc[shifts['Position'].isin({'C', 'L', 'R'}), 'Position'] = 'F'
     shifts.loc[~shifts['Position'].isin({'F', 'D', 'G'}), 'Position'] = ''
     shifts['SeasonState'] = shifts['GameID'].map(lambda gid: game_state.get(int(gid), 'regular'))
-    shifts['StrengthStateBucket'] = shifts['StrengthState'].map(_seasonstats_strength_bucket)
+    if 'StrengthStateBucket' in shifts.columns:
+        # Prefer upstream bucketing (computed from skater/goalie counts in /api/game/<id>/shifts)
+        shifts['StrengthStateBucket'] = (
+            shifts['StrengthStateBucket']
+            .astype(str)
+            .map(lambda x: x.strip() if x is not None else '')
+            .map(lambda x: x if x in {'5v5', 'PP', 'SH', 'Other'} else 'Other')
+        )
+    else:
+        # Fallback to legacy parsing from raw "NvM" strings
+        shifts['StrengthStateBucket'] = shifts['StrengthState'].map(_seasonstats_strength_bucket)
 
     # TOI per bucket (minutes)
     toi = (
@@ -1176,9 +1271,58 @@ def compute_seasonstats_day(
         for _, row in pbp.iterrows():
             ss = str(row.get('SeasonState') or 'regular').strip() or 'regular'
             period = int(row.get('Period') or 0)
-            strength_raw = row.get('StrengthState')
-            bucket_for = _seasonstats_strength_bucket(strength_raw)
-            bucket_against = _seasonstats_strength_bucket(_invert_strength(strength_raw))
+
+            # Strength bucketing (prefer on-ice counts + goalie presence; fallback to raw StrengthState strings)
+            venue = str(row.get('Venue') or '').strip()
+            try:
+                home_f = _to_ids(row.get('Home_Forwards_ID'))
+                home_d = _to_ids(row.get('Home_Defenders_ID'))
+                home_g = _to_ids(row.get('Home_Goalie_ID'))
+                away_f = _to_ids(row.get('Away_Forwards_ID'))
+                away_d = _to_ids(row.get('Away_Defenders_ID'))
+                away_g = _to_ids(row.get('Away_Goalie_ID'))
+                home_s = len(home_f) + len(home_d)
+                away_s = len(away_f) + len(away_d)
+                home_goalies = len(home_g)
+                away_goalies = len(away_g)
+
+                if venue == 'Home':
+                    bucket_for = _seasonstats_bucket_from_counts(
+                        my_skaters=home_s,
+                        their_skaters=away_s,
+                        my_goalies=home_goalies,
+                        their_goalies=away_goalies,
+                    )
+                    bucket_against = _seasonstats_bucket_from_counts(
+                        my_skaters=away_s,
+                        their_skaters=home_s,
+                        my_goalies=away_goalies,
+                        their_goalies=home_goalies,
+                    )
+                elif venue == 'Away':
+                    bucket_for = _seasonstats_bucket_from_counts(
+                        my_skaters=away_s,
+                        their_skaters=home_s,
+                        my_goalies=away_goalies,
+                        their_goalies=home_goalies,
+                    )
+                    bucket_against = _seasonstats_bucket_from_counts(
+                        my_skaters=home_s,
+                        their_skaters=away_s,
+                        my_goalies=home_goalies,
+                        their_goalies=away_goalies,
+                    )
+                else:
+                    bucket_for = None
+                    bucket_against = None
+            except Exception:
+                bucket_for = None
+                bucket_against = None
+
+            if not bucket_for or not bucket_against:
+                strength_raw = row.get('StrengthState')
+                bucket_for = _seasonstats_strength_bucket(strength_raw)
+                bucket_against = _seasonstats_strength_bucket(_invert_strength(strength_raw))
 
             is_shootout = (period == 5) and (ss == 'regular')
             shooter = row.get('Player1_ID')
@@ -1261,7 +1405,6 @@ def compute_seasonstats_day(
                 if not home_list and not away_list:
                     continue
 
-                venue = str(row.get('Venue') or '').strip()
                 if venue == 'Home':
                     players_for, players_against = home_list, away_list
                 elif venue == 'Away':
