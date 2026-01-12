@@ -4,6 +4,12 @@
 <label>Player
   <select id="playerSelect"></select>
 </label>
+<label id="edgeSeasonStateWrap">Season State
+  <select id="edgeSeasonState">
+    <option value="regular" selected>Regular</option>
+    <option value="playoffs">Playoffs</option>
+  </select>
+</label>
 <label id="cardSeasonStateWrap">Season State
   <select id="cardSeasonState">
     <option value="regular" selected>Regular</option>
@@ -186,6 +192,33 @@
   .proj-table td.num, .proj-table th.num{ text-align:center; }
   .proj-table tr.selected-player{ background:var(--league-highlight-color, rgba(77,163,255,0.12)); }
   .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
+
+  .edge-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
+  .edge-card{ background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:14px; }
+  .edge-title{ font-size:12px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; margin:0 0 10px 0; }
+  .edge-controls{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+  .edge-control{ display:flex; align-items:center; gap:8px; }
+  .edge-control label{ font-size:12px; color:var(--text-dim); font-weight:800; letter-spacing:.4px; text-transform:uppercase; }
+  .edge-select{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 10px; border-radius:10px; font-weight:750; }
+
+  .edge-zone-rink{ position:relative; width:100%; max-width:520px; margin:10px auto 2px; }
+  .edge-zone-rink img{ width:100%; height:auto; display:block; border-radius:14px; filter: saturate(0.92) contrast(1.05); opacity:0.95; }
+  .edge-zone-kpi-row{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:12px; padding:0 16px; }
+  .edge-zone-kpi{ position:static; transform:none; flex:1 1 0; max-width:170px; min-width:0; background:rgba(7,10,16,0.78); border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:10px 10px; text-align:center; box-shadow: 0 10px 28px rgba(0,0,0,0.35); }
+  .edge-zone-pill{ display:inline-block; padding:5px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.25); background:rgba(15,21,34,0.92); font-weight:900; font-size:14px; letter-spacing:.2px; margin-bottom:10px; }
+  .edge-zone-value{ font-size:30px; font-weight:950; line-height:1.0; font-variant-numeric:tabular-nums; margin:0 0 6px 0; color:#ffffff; }
+  .edge-zone-avg{ font-size:12px; font-weight:850; letter-spacing:.4px; color:rgba(255,255,255,0.72); margin:0 0 6px 0; }
+  .edge-zone-label{ font-size:12px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; color:rgba(255,255,255,0.82); }
+  @media (max-width: 560px){
+    .edge-zone-kpi-row{ flex-direction:column; justify-content:center; gap:10px; padding:12px; }
+    .edge-zone-kpi{ width:86%; max-width:260px; padding:8px 8px; }
+    .edge-zone-value{ font-size:24px; }
+    .edge-zone-pill{ font-size:13px; padding:4px 10px; }
+  }
+
+  @media (max-width: 980px){
+    .edge-grid{ grid-template-columns: 1fr; }
+  }
 </style>
 {% endblock %}
 
@@ -202,6 +235,7 @@
 
     <div class="subtabs" role="tablist" aria-label="Skater tabs">
       <button id="tabCard" class="subtab-btn active" type="button" role="tab" aria-selected="true">Card</button>
+      <button id="tabEdge" class="subtab-btn" type="button" role="tab" aria-selected="false">Edge</button>
       <button id="tabRAPM" class="subtab-btn" type="button" role="tab" aria-selected="false">RAPM</button>
       <button id="tabProjections" class="subtab-btn" type="button" role="tab" aria-selected="false">Projections</button>
     </div>
@@ -212,6 +246,10 @@
         <button id="btnConfigureCard" class="config-btn" type="button">Configure Card</button>
       </div>
       <div id="cardPanelInner" class="skater-empty">Select a player to view Card.</div>
+    </div>
+
+    <div id="tabPanelEdge" class="panel" role="tabpanel" style="display:none;">
+      <div id="edgePanelInner" class="skater-empty">Select a player to view Edge metrics.</div>
     </div>
 
     <div id="tabPanelRAPM" class="panel" role="tabpanel" style="display:none;">
@@ -289,12 +327,15 @@ const skaterInfo = document.getElementById('skaterInfo');
 const skaterMsg = document.getElementById('skaterMsg');
 
 const tabCard = document.getElementById('tabCard');
+const tabEdge = document.getElementById('tabEdge');
 const tabRAPM = document.getElementById('tabRAPM');
 const tabProjections = document.getElementById('tabProjections');
 const tabPanelCard = document.getElementById('tabPanelCard');
+const tabPanelEdge = document.getElementById('tabPanelEdge');
 const tabPanelRAPM = document.getElementById('tabPanelRAPM');
 const tabPanelProjections = document.getElementById('tabPanelProjections');
 const cardPanelInner = document.getElementById('cardPanelInner');
+const edgePanelInner = document.getElementById('edgePanelInner');
 const rapmPanelInner = document.getElementById('rapmPanelInner');
 const projPanelInner = document.getElementById('projPanelInner');
 const cardSlicerSummary = document.getElementById('cardSlicerSummary');
@@ -302,6 +343,7 @@ const cardSlicerSummary = document.getElementById('cardSlicerSummary');
 const cardScope = document.getElementById('cardScope');
 const cardScopeButtons = document.getElementById('cardScopeButtons');
 const cardSeasonState = document.getElementById('cardSeasonState');
+const edgeSeasonState = document.getElementById('edgeSeasonState');
 const cardMinGp = document.getElementById('cardMinGp');
 const cardMinToi = document.getElementById('cardMinToi');
 const cardStrengthState = document.getElementById('cardStrengthState');
@@ -320,6 +362,7 @@ const ccGrid = document.getElementById('ccGrid');
 
 const cardScopeWrap = document.getElementById('cardScopeWrap');
 const cardSeasonStateWrap = document.getElementById('cardSeasonStateWrap');
+const edgeSeasonStateWrap = document.getElementById('edgeSeasonStateWrap');
 const cardMinGpWrap = document.getElementById('cardMinGpWrap');
 const cardMinToiWrap = document.getElementById('cardMinToiWrap');
 const cardStrengthStateWrap = document.getElementById('cardStrengthStateWrap');
@@ -351,6 +394,11 @@ let __ctxCache = null;
 let __rapmKey = '';
 let __scaleCache = null;
 let __scaleKey = '';
+
+let __edgeCache = null;
+let __edgeKey = '';
+let __edgeData = null;
+let __edgeStrength = 'all';
 
 const teams = JSON.parse(document.getElementById('teams-data').textContent);
 
@@ -457,28 +505,290 @@ function renderPlayerLanding(landing){
 function setActiveTab(which){
   const w = String(which || '').toLowerCase();
   const isC = (w === 'card');
+  const isE = (w === 'edge');
   const isR = (w === 'rapm');
   const isP = (w === 'projections');
   // default
-  const finalC = (isC || (!isR && !isP));
+  const finalC = (isC || (!isE && !isR && !isP));
+  const finalE = isE;
   const finalR = isR;
   const finalP = isP;
 
   tabCard?.classList.toggle('active', finalC);
+  tabEdge?.classList.toggle('active', finalE);
   tabRAPM?.classList.toggle('active', finalR);
   tabProjections?.classList.toggle('active', finalP);
   if(tabCard) tabCard.setAttribute('aria-selected', finalC ? 'true' : 'false');
+  if(tabEdge) tabEdge.setAttribute('aria-selected', finalE ? 'true' : 'false');
   if(tabRAPM) tabRAPM.setAttribute('aria-selected', finalR ? 'true' : 'false');
   if(tabProjections) tabProjections.setAttribute('aria-selected', finalP ? 'true' : 'false');
   if(tabPanelCard) tabPanelCard.style.display = finalC ? '' : 'none';
+  if(tabPanelEdge) tabPanelEdge.style.display = finalE ? '' : 'none';
   if(tabPanelRAPM) tabPanelRAPM.style.display = finalR ? '' : 'none';
   if(tabPanelProjections) tabPanelProjections.style.display = finalP ? '' : 'none';
 
   setCardSlicersVisible(finalC);
+  setEdgeSlicersVisible(finalE);
+
+  // Keep Edge season state in sync with Card selection when possible.
+  if(finalE && edgeSeasonState){
+    const cs = String(cardSeasonState?.value || 'regular');
+    const v = (cs === 'playoffs') ? 'playoffs' : 'regular';
+    try{ edgeSeasonState.value = v; }catch(_){/*noop*/}
+  }
 
   if(finalC) loadCardPanel();
+  if(finalE) loadEdgePanel();
   if(finalR) loadRAPMPanel();
   if(finalP && projectionsEnabled()) loadProjectionsPanel();
+}
+
+function setEdgeSlicersVisible(on){
+  const show = !!on;
+  if(edgeSeasonStateWrap) edgeSeasonStateWrap.style.display = show ? '' : 'none';
+}
+
+function edgeEnabled(){
+  return true;
+}
+
+function _edgeStrengthLabel(v){
+  const s = String(v||'').toLowerCase();
+  if(s === 'all') return 'All';
+  if(s === 'es') return 'EV';
+  if(s === 'pp') return 'PP';
+  if(s === 'pk') return 'SH';
+  return 'All';
+}
+
+function _edgeStrengthToCode(v){
+  const s = String(v||'').toLowerCase();
+  if(s === 'ev' || s === 'es') return 'es';
+  if(s === 'pp') return 'pp';
+  if(s === 'sh' || s === 'pk') return 'pk';
+  return 'all';
+}
+
+function _edgeVal(obj){
+  const v = Number(obj?.value);
+  return Number.isFinite(v) ? v : null;
+}
+
+function _edgePct(obj){
+  const p = Number(obj?.pct);
+  return Number.isFinite(p) ? p : null;
+}
+
+function _edgeFmtValue(metricKey, value){
+  const v = Number(value);
+  if(!Number.isFinite(v)) return '—';
+  const m = String(metricKey||'');
+  if(m === 'topShotSpeed' || m === 'avgShotSpeed' || m === 'maxSkatingSpeed') return v.toFixed(1);
+  if(m === 'distanceTotal' || m === 'distancePer60') return v.toFixed(1);
+  if(m.endsWith('Pctg')){
+    // Some Edge payloads encode zone time as 0..1 rather than 0..100.
+    const vv = (0.0 <= v && v <= 1.0) ? (100.0 * v) : v;
+    return vv.toFixed(1) + '%';
+  }
+  // counts
+  return String(Math.round(v));
+}
+
+function _ordinal(n){
+  const x = Math.round(Number(n));
+  if(!Number.isFinite(x)) return '';
+  const mod100 = x % 100;
+  if(mod100 >= 11 && mod100 <= 13) return `${x}th`;
+  const mod10 = x % 10;
+  if(mod10 === 1) return `${x}st`;
+  if(mod10 === 2) return `${x}nd`;
+  if(mod10 === 3) return `${x}rd`;
+  return `${x}th`;
+}
+
+function renderEdgeZoneKpi(metricKey, obj, zoneLabel){
+  const p = _edgePct(obj);
+  const pctOk = (p != null);
+  const pctLabel = !pctOk ? '—' : _ordinal(p);
+  const accent = pctOk ? pctToColor(p) : 'rgba(255,255,255,0.55)';
+  const valText = _edgeFmtValue(metricKey, obj?.value);
+  const avgText = _edgeFmtValue(metricKey, obj?.avg);
+  const showAvg = (obj?.avg != null) && avgText !== '—';
+  return `
+    <div class="edge-zone-pill" style="border-color:${accent}; color:${accent};">${pctLabel}</div>
+    <div class="edge-zone-value">${valText}</div>
+    ${showAvg ? `<div class="edge-zone-avg">NHL Avg ${avgText}</div>` : ''}
+    <div class="edge-zone-label">${zoneLabel}</div>
+  `;
+}
+
+function renderEdgeMetricBar(label, metricKey, obj){
+  const pct = _edgePct(obj);
+  const pctOk = Number.isFinite(Number(pct));
+  const width = pctOk ? clamp(Number(pct), 0, 100).toFixed(1) : '0.0';
+  const color = pctOk ? pctToColor(Number(pct)) : 'rgba(255,255,255,0.15)';
+  const valText = _edgeFmtValue(metricKey, obj?.value);
+  return `
+    <div class="metric">
+      <div class="metric-head">
+        <div class="metric-name">${label}</div>
+        <div class="metric-val">${valText}</div>
+      </div>
+      <div class="metric-bar"><div class="metric-fill" style="width:${width}%; background:${color};"></div></div>
+    </div>
+  `;
+}
+
+function renderEdgeUI(data){
+  if(!edgePanelInner) return;
+  __edgeData = data || null;
+
+  if(!data || data?.available === false){
+    const season = String(seasonSelect?.value || '').trim();
+    edgePanelInner.innerHTML = `
+      <div class="skater-empty" style="padding:10px 0;">
+        NHL Edge data is available starting in 2021/22. (Selected season: ${season || '—'})
+      </div>
+    `;
+    return;
+  }
+
+  edgePanelInner.innerHTML = `
+    <div class="edge-grid">
+      <div class="edge-card card-col">
+        <div class="card-slot">
+          <h3>Shot Speed</h3>
+          <div id="edgeShotBars"></div>
+        </div>
+        <div class="card-slot">
+          <h3>Skating Speed</h3>
+          <div id="edgeSkateBars"></div>
+        </div>
+      </div>
+
+      <div class="edge-card card-col">
+        <div class="edge-controls">
+          <div class="edge-control">
+            <label for="edgeStrength">Strength</label>
+            <select id="edgeStrength" class="edge-select">
+              <option value="all">All</option>
+              <option value="es">EV</option>
+              <option value="pp">PP</option>
+              <option value="pk">SH</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card-slot">
+          <h3>Skating Distance</h3>
+          <div id="edgeDistanceBars"></div>
+        </div>
+        <div class="card-slot">
+          <h3>Zone Time</h3>
+          <div class="edge-zone-rink">
+            <img src="/static/hockey-rink.png" alt="Hockey rink" loading="lazy" />
+            <div class="edge-zone-kpi-row">
+              <div id="edgeZoneDef" class="edge-zone-kpi"></div>
+              <div id="edgeZoneNeu" class="edge-zone-kpi"></div>
+              <div id="edgeZoneOff" class="edge-zone-kpi"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const shot = data?.shotSpeed || {};
+  const skate = data?.skatingSpeed || {};
+  const shotWrap = document.getElementById('edgeShotBars');
+  const skateWrap = document.getElementById('edgeSkateBars');
+  if(shotWrap){
+    shotWrap.innerHTML = [
+      renderEdgeMetricBar('Top Shot Speed', 'topShotSpeed', shot?.topShotSpeed),
+      renderEdgeMetricBar('Average Shot Speed', 'avgShotSpeed', shot?.avgShotSpeed),
+      renderEdgeMetricBar('Shots over 100 MPH', 'shotAttemptsOver100', shot?.shotAttemptsOver100),
+      renderEdgeMetricBar('Shots 90 to 100 MPH', 'shotAttempts90to100', shot?.shotAttempts90to100),
+      renderEdgeMetricBar('Shots 80 to 90 MPH', 'shotAttempts80to90', shot?.shotAttempts80to90),
+      renderEdgeMetricBar('Shots 70 to 80 MPH', 'shotAttempts70to80', shot?.shotAttempts70to80),
+    ].join('');
+  }
+  if(skateWrap){
+    skateWrap.innerHTML = [
+      renderEdgeMetricBar('Top Skating Speed', 'maxSkatingSpeed', skate?.maxSkatingSpeed),
+      renderEdgeMetricBar('Speed Bursts 22+ MPH', 'burstsOver22', skate?.burstsOver22),
+      renderEdgeMetricBar('Speed Bursts 20 to 22 MPH', 'bursts20to22', skate?.bursts20to22),
+      renderEdgeMetricBar('Speed Bursts 18 to 20 MPH', 'bursts18to20', skate?.bursts18to20),
+    ].join('');
+  }
+
+  const selStrength = document.getElementById('edgeStrength');
+  if(selStrength){
+    selStrength.value = String(__edgeStrength || 'all');
+    selStrength.onchange = () => {
+      __edgeStrength = String(selStrength.value || 'all');
+      renderEdgeStrengthPanels();
+    };
+  }
+
+  renderEdgeStrengthPanels();
+}
+
+function renderEdgeStrengthPanels(){
+  const data = __edgeData;
+  if(!data || data?.available === false) return;
+  const sc = _edgeStrengthToCode(__edgeStrength);
+
+  const dist = data?.skatingDistance?.[sc] || data?.skatingDistance?.all || {};
+  const zone = data?.zoneTime?.[sc] || data?.zoneTime?.all || {};
+
+  const distWrap = document.getElementById('edgeDistanceBars');
+  const zoneDef = document.getElementById('edgeZoneDef');
+  const zoneNeu = document.getElementById('edgeZoneNeu');
+  const zoneOff = document.getElementById('edgeZoneOff');
+  if(distWrap){
+    distWrap.innerHTML = [
+      renderEdgeMetricBar('Total Skating Distance', 'distanceTotal', dist?.distanceTotal),
+      renderEdgeMetricBar('Skating Distance Per 60', 'distancePer60', dist?.distancePer60),
+    ].join('');
+  }
+  if(zoneDef) zoneDef.innerHTML = renderEdgeZoneKpi('defensiveZonePctg', zone?.defensiveZonePctg, 'Defensive Zone');
+  if(zoneNeu) zoneNeu.innerHTML = renderEdgeZoneKpi('neutralZonePctg', zone?.neutralZonePctg, 'Neutral Zone');
+  if(zoneOff) zoneOff.innerHTML = renderEdgeZoneKpi('offensiveZonePctg', zone?.offensiveZonePctg, 'Offensive Zone');
+}
+
+async function loadEdgePanel(){
+  if(!edgePanelInner) return;
+  if(!edgeEnabled()){
+    edgePanelInner.textContent = '';
+    return;
+  }
+  const playerId = String(playerSelect?.value || '').trim();
+  const season = String(seasonSelect?.value || '').trim() || '20252026';
+  const seasonState = String(edgeSeasonState?.value || 'regular');
+
+  if(!playerId){
+    edgePanelInner.textContent = 'Select a player to view Edge metrics.';
+    return;
+  }
+
+  edgePanelInner.textContent = 'Loading Edge metrics...';
+  try{
+    const key = `${playerId}|${season||''}|${seasonState||''}`;
+    if(__edgeKey !== key){
+      __edgeKey = key;
+      __edgeCache = null;
+      __edgeData = null;
+    }
+
+    if(!__edgeCache){
+      const url = `/api/skaters/edge?season=${encodeURIComponent(season||'')}&playerId=${encodeURIComponent(playerId)}&seasonState=${encodeURIComponent(seasonState||'regular')}`;
+      const r = await fetch(url, { cache:'no-store' });
+      __edgeCache = await r.json();
+    }
+    renderEdgeUI(__edgeCache);
+  }catch(_){
+    edgePanelInner.textContent = 'Error loading Edge metrics.';
+  }
 }
 
 function setCardSlicersVisible(on){
@@ -557,6 +867,9 @@ function installSeasonWatcher(){
   }, 200);
 }
 installSeasonWatcher();
+
+// Edge slicer should only show when Edge tab is active.
+setEdgeSlicersVisible(false);
 
 // Default tab is Card; keep sidebar slicers in sync on initial load.
 setCardSlicersVisible(true);
@@ -882,6 +1195,16 @@ function fmtMetricValue(def, value, ratesSel){
   if(!Number.isFinite(v)) return '—';
   const cat = String(def?.category||'');
   const m = String(def?.metric||'');
+
+  // NHL Edge formatting
+  if(cat === 'Edge'){
+    if(m.endsWith('Pctg')){
+      return v.toFixed(1) + '%';
+    }
+    if(m === 'topShotSpeed' || m === 'avgShotSpeed' || m === 'maxSkatingSpeed' || m === 'distanceTotal or distancePer60'){
+      return v.toFixed(1);
+    }
+  }
 
   if(m === 'ixG' || String(def?.name||'').trim().toLowerCase() === 'individual xg'){
     return v.toFixed(1);
@@ -2361,10 +2684,17 @@ async function loadPlayerCard(){
 }
 
 tabCard?.addEventListener('click', ()=> setActiveTab('card'));
+tabEdge?.addEventListener('click', ()=> setActiveTab('edge'));
 tabRAPM?.addEventListener('click', ()=> setActiveTab('rapm'));
 tabProjections?.addEventListener('click', ()=> setActiveTab('projections'));
 
 cardSeasonState?.addEventListener('change', ()=> loadCardPanel());
+cardSeasonState?.addEventListener('change', ()=>{
+  if(tabEdge?.classList.contains('active')) loadEdgePanel();
+});
+edgeSeasonState?.addEventListener('change', ()=>{
+  if(tabEdge?.classList.contains('active')) loadEdgePanel();
+});
 cardMinGp?.addEventListener('change', ()=> loadCardPanel());
 cardMinToi?.addEventListener('change', ()=> loadCardPanel());
 cardStrengthState?.addEventListener('change', ()=> loadCardPanel());

@@ -93,6 +93,9 @@ def admin_db_check():
 # Lightweight in-memory job tracker for admin runs
 _ADMIN_JOBS: Dict[str, Dict[str, Any]] = {}
 
+# NHL Edge API cache (per-URL)
+_EDGE_API_CACHE: Dict[str, Tuple[float, Any]] = {}
+
 def _jobs_dir() -> str:
     try:
         base = os.getenv('XG_CACHE_DIR') or tempfile.gettempdir()
@@ -2110,6 +2113,69 @@ def api_skaters_card():
         else:
             metric = metric_id
 
+        # NHL Edge metrics (value + percentile come from the NHL Edge API; don't compute percentiles locally).
+        if category == 'Edge':
+            if int(player_id) != int(pid):
+                return None
+            if season_int is not None and int(season_int) < 20212022:
+                special_pct[metric_id] = None
+                return None
+            mdef = def_map.get(metric_id) or {}
+            link = str(mdef.get('link') or '').strip()
+            if not link:
+                special_pct[metric_id] = None
+                return None
+
+            game_type = _edge_game_type(season_state)
+            url = _edge_format_url(link, int(pid), int(season_int or 0), int(game_type))
+            if not url:
+                special_pct[metric_id] = None
+                return None
+            payload_edge = _edge_get_cached_json(url)
+            if not payload_edge:
+                special_pct[metric_id] = None
+                return None
+
+            strength_code = None
+            if str(mdef.get('strengthCode') or '').strip().lower() == 'strengthcode':
+                strength_code = _edge_strength_code(strength_state)
+
+            # Distance Skated: alternate total/per60; PerGame uses distanceTotal/GP but keeps distanceTotal percentile.
+            if metric == 'distanceTotal or distancePer60':
+                total_val, total_pct = _edge_extract_value_and_pct(payload_edge, 'distanceTotal', strength_code)
+                per60_val, per60_pct = _edge_extract_value_and_pct(payload_edge, 'distancePer60', strength_code)
+                if rates == 'Per60':
+                    if per60_pct is not None:
+                        special_pct[metric_id] = per60_pct
+                    return per60_val
+                if rates == 'PerGame':
+                    if total_pct is not None:
+                        special_pct[metric_id] = total_pct
+                    if total_val is None or gp <= 0:
+                        return None
+                    return float(total_val) / float(gp)
+                # Totals
+                if total_pct is not None:
+                    special_pct[metric_id] = total_pct
+                return total_val
+
+            # Default Edge extraction
+            val_e, pct_e = _edge_extract_value_and_pct(payload_edge, str(metric or ''), strength_code)
+            if pct_e is not None:
+                special_pct[metric_id] = pct_e
+            else:
+                special_pct[metric_id] = None
+
+            # Percent-of-time fields (zone time) come back as 0..1 fractions.
+            try:
+                if metric and str(metric).lower().endswith('pctg') and val_e is not None:
+                    fv = float(val_e)
+                    if 0.0 <= fv <= 1.5:
+                        val_e = 100.0 * fv
+            except Exception:
+                pass
+            return val_e
+
         # External metrics (RAPM/context) for requested player only.
         if player_id == int(pid):
             if metric and str(metric).startswith('RAPM '):
@@ -2306,11 +2372,14 @@ def api_skaters_card():
     # (Skater Card is skaters-only; goalies are excluded above.)
     dist_all: Dict[str, List[float]] = {mid: [] for mid in metric_ids}
     dist_by_pos: Dict[Tuple[str, str], List[float]] = {}
+    edge_metric_ids = {mid for mid in metric_ids if str(mid).startswith('Edge|')}
     for pid_i, m in derived.items():
         g = pos_group_by_pid.get(int(pid_i)) or 'F'
         if g not in {'F', 'D'}:
             g = 'F'
         for mid in metric_ids:
+            if mid in edge_metric_ids:
+                continue
             vv = m.get(mid)
             if vv is None:
                 continue
@@ -2324,8 +2393,52 @@ def api_skaters_card():
                 continue
 
     mine = derived.get(int(pid))
+    seasonstats_missing = False
     if mine is None:
-        return jsonify({'error': 'not_found', 'playerId': int(pid), 'source': source}), 404
+        # For some seasons (notably the in-progress 20252026), SeasonStats may be unavailable
+        # (e.g., missing Sheets6 config) or incomplete. Don't hard-fail the entire card;
+        # instead, fall back to an empty SeasonStats row so Edge/RAPM/Context metrics can render.
+        if int(season_int or 0) == 20252026:
+            seasonstats_missing = True
+            empty_v: Dict[str, Any] = {
+                'GP': 0,
+                'TOI': 0.0,
+                'iGoals': 0.0,
+                'Assists1': 0.0,
+                'Assists2': 0.0,
+                'iShots': 0.0,
+                'iFenwick': 0.0,
+                'ixG_S': 0.0,
+                'ixG_F': 0.0,
+                'ixG_F2': 0.0,
+                'CA': 0.0,
+                'CF': 0.0,
+                'FA': 0.0,
+                'FF': 0.0,
+                'SA': 0.0,
+                'SF': 0.0,
+                'GA': 0.0,
+                'GF': 0.0,
+                'xGA_S': 0.0,
+                'xGF_S': 0.0,
+                'xGA_F': 0.0,
+                'xGF_F': 0.0,
+                'xGA_F2': 0.0,
+                'xGF_F2': 0.0,
+                'PIM_taken': 0.0,
+                'PIM_drawn': 0.0,
+                'PIM_for': 0.0,
+                'PIM_against': 0.0,
+                'Hits': 0.0,
+                'Takeaways': 0.0,
+                'Giveaways': 0.0,
+            }
+            if int(pid) not in pos_group_by_pid:
+                pos_group_by_pid[int(pid)] = 'F'
+            mine = {mid: _compute_metric(mid, empty_v, int(pid)) for mid in metric_ids}
+            derived[int(pid)] = mine
+        else:
+            return jsonify({'error': 'not_found', 'playerId': int(pid), 'source': source}), 404
 
     out_metrics: Dict[str, Any] = {}
     my_group = pos_group_by_pid.get(int(pid)) or 'F'
@@ -2363,6 +2476,7 @@ def api_skaters_card():
         'minGP': int(min_gp),
         'minTOI': float(min_toi),
         'source': source,
+        'seasonStatsMissing': bool(seasonstats_missing),
         'labels': {
             'Attempts': label_attempts,
             'Sh': label_sh,
@@ -2370,6 +2484,125 @@ def api_skaters_card():
             'dSh': label_dsh,
         },
         'metrics': out_metrics,
+    }
+    j = jsonify(payload)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
+@main_bp.route('/api/skaters/edge')
+def api_skaters_edge():
+    """Return a compact set of NHL Edge metrics for the Skaters 'Edge' tab.
+
+    Query params:
+      season=20252026
+      playerId=<int>
+      seasonState=regular|playoffs
+
+    Notes:
+      - NHL Edge data availability starts at 20212022.
+      - Percentiles are returned by NHL Edge (0..1) and converted to 0..100.
+      - Strength filter is applied only to distance + zone time metrics.
+    """
+    season = str(request.args.get('season') or '').strip()
+    player_id_q = str(request.args.get('playerId') or request.args.get('player_id') or '').strip()
+    season_state = str(request.args.get('seasonState') or 'regular').strip().lower()
+
+    pid = _safe_int(player_id_q)
+    if not pid or pid <= 0:
+        return jsonify({'error': 'missing_playerId'}), 400
+
+    try:
+        season_int = int(season) if season else None
+    except Exception:
+        season_int = None
+    if season_int is None:
+        season_int = 20252026
+
+    if season_state not in {'regular', 'playoffs'}:
+        season_state = 'regular'
+
+    # NHL Edge data begins in 20212022.
+    if season_int < 20212022:
+        j0 = jsonify({
+            'playerId': int(pid),
+            'season': int(season_int),
+            'seasonState': season_state,
+            'gameType': _edge_game_type(season_state),
+            'available': False,
+            'reason': 'edge_unavailable_before_20212022',
+            'shotSpeed': {},
+            'skatingSpeed': {},
+            'zoneTime': {},
+            'skatingDistance': {},
+        })
+        try:
+            j0.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j0
+
+    game_type = _edge_game_type(season_state)
+    base = 'https://api-web.nhle.com/v1/edge'
+    urls = {
+        'shotSpeed': f'{base}/skater-shot-speed-detail/{int(pid)}/{int(season_int)}/{int(game_type)}',
+        'skatingSpeed': f'{base}/skater-skating-speed-detail/{int(pid)}/{int(season_int)}/{int(game_type)}',
+        'zoneTime': f'{base}/skater-zone-time/{int(pid)}/{int(season_int)}/{int(game_type)}',
+        'skatingDistance': f'{base}/skater-skating-distance-detail/{int(pid)}/{int(season_int)}/{int(game_type)}',
+    }
+
+    payload_shot = _edge_get_cached_json(urls['shotSpeed']) or {}
+    payload_skate = _edge_get_cached_json(urls['skatingSpeed']) or {}
+    payload_zone = _edge_get_cached_json(urls['zoneTime']) or {}
+    payload_dist = _edge_get_cached_json(urls['skatingDistance']) or {}
+
+    def pack(payload: Dict[str, Any], metric_key: str, strength_code: Optional[str] = None) -> Dict[str, Any]:
+        v, p, a = _edge_extract_value_pct_avg(payload, metric_key, strength_code)
+        return {'value': v, 'pct': p, 'avg': a}
+
+    shot_metrics = {
+        'topShotSpeed': pack(payload_shot, 'topShotSpeed'),
+        'avgShotSpeed': pack(payload_shot, 'avgShotSpeed'),
+        'shotAttempts70to80': pack(payload_shot, 'shotAttempts70to80'),
+        'shotAttempts80to90': pack(payload_shot, 'shotAttempts80to90'),
+        'shotAttempts90to100': pack(payload_shot, 'shotAttempts90to100'),
+        'shotAttemptsOver100': pack(payload_shot, 'shotAttemptsOver100'),
+    }
+
+    skating_speed_metrics = {
+        'maxSkatingSpeed': pack(payload_skate, 'maxSkatingSpeed'),
+        'bursts18to20': pack(payload_skate, 'bursts18to20'),
+        'bursts20to22': pack(payload_skate, 'bursts20to22'),
+        'burstsOver22': pack(payload_skate, 'burstsOver22'),
+    }
+
+    strength_codes = ['all', 'es', 'pp', 'pk']
+    zone_time_by_strength: Dict[str, Any] = {}
+    skating_distance_by_strength: Dict[str, Any] = {}
+    for sc in strength_codes:
+        zone_time_by_strength[sc] = {
+            'offensiveZonePctg': pack(payload_zone, 'offensiveZonePctg', sc),
+            'neutralZonePctg': pack(payload_zone, 'neutralZonePctg', sc),
+            'defensiveZonePctg': pack(payload_zone, 'defensiveZonePctg', sc),
+        }
+        skating_distance_by_strength[sc] = {
+            'distanceTotal': pack(payload_dist, 'distanceTotal', sc),
+            'distancePer60': pack(payload_dist, 'distancePer60', sc),
+        }
+
+    payload = {
+        'playerId': int(pid),
+        'season': int(season_int),
+        'seasonState': season_state,
+        'gameType': int(game_type),
+        'available': True,
+        'shotSpeed': shot_metrics,
+        'skatingSpeed': skating_speed_metrics,
+        'zoneTime': zone_time_by_strength,
+        'skatingDistance': skating_distance_by_strength,
     }
     j = jsonify(payload)
     try:
@@ -3939,23 +4172,38 @@ def _build_seasonstats_agg(
     # Stream rows and aggregate.
     for r in _iter_rows():
         try:
-            pos = str(r.get('Position') or '').strip().upper()
+            # Sheets-based SeasonStats tabs often omit some columns (e.g. Season) and may vary casing.
+            pos = str(
+                (r.get('Position') or _ci_get(r, 'Position') or _ci_get(r, 'position') or _ci_get(r, 'positionCode') or _ci_get(r, 'Pos') or '')
+            ).strip().upper()
             if pos.startswith('G'):
                 continue
 
+            season_row = None
             try:
-                season_row = int(str(r.get('Season') or '').strip())
+                season_row = int(str(r.get('Season') or _ci_get(r, 'Season') or '').strip())
             except Exception:
-                continue
+                season_row = None
+            if season_row is None:
+                # Sheets6 can be a single-season tab and may omit Season.
+                # For career scope, those rows represent 20252026.
+                season_row = 20252026 if scope_norm == 'career' else int(season_int)
 
-            ss = str(r.get('SeasonState') or '').strip().lower() or 'regular'
-            st = str(r.get('StrengthState') or '').strip() or 'Other'
+            ss_raw = str(r.get('SeasonState') or _ci_get(r, 'SeasonState') or _ci_get(r, 'seasonState') or '').strip().lower()
+            if ss_raw in {'2', 'reg', 'regular', 'regularseason', 'regular_season'}:
+                ss = 'regular'
+            elif ss_raw in {'3', 'po', 'playoffs', 'playoff'}:
+                ss = 'playoffs'
+            else:
+                ss = ss_raw or 'regular'
+
+            st = str(r.get('StrengthState') or _ci_get(r, 'StrengthState') or _ci_get(r, 'strengthState') or '').strip() or 'Other'
             if ss_norm != 'all' and ss != ss_norm:
                 continue
             if st_norm != 'all' and st != st_norm:
                 continue
 
-            pid_i = _i(r.get('PlayerID'))
+            pid_i = _i(r.get('PlayerID') or _ci_get(r, 'PlayerID') or _ci_get(r, 'playerId'))
             if pid_i <= 0:
                 continue
 
@@ -4004,38 +4252,38 @@ def _build_seasonstats_agg(
                 'Giveaways': 0.0,
             })
 
-            d['TOI'] = float(d.get('TOI') or 0.0) + _flt(r.get('TOI'))
-            d['iGoals'] = float(d.get('iGoals') or 0.0) + _flt(r.get('iGoals'))
-            d['Assists1'] = float(d.get('Assists1') or 0.0) + _flt(r.get('Assists1'))
-            d['Assists2'] = float(d.get('Assists2') or 0.0) + _flt(r.get('Assists2'))
-            d['iShots'] = float(d.get('iShots') or 0.0) + _flt(r.get('iShots'))
-            d['iFenwick'] = float(d.get('iFenwick') or 0.0) + _flt(r.get('iFenwick'))
-            d['ixG_S'] = float(d.get('ixG_S') or 0.0) + _flt(r.get('ixG_S'))
-            d['ixG_F'] = float(d.get('ixG_F') or 0.0) + _flt(r.get('ixG_F'))
-            d['ixG_F2'] = float(d.get('ixG_F2') or 0.0) + _flt(r.get('ixG_F2'))
+            d['TOI'] = float(d.get('TOI') or 0.0) + _flt(r.get('TOI') or _ci_get(r, 'TOI'))
+            d['iGoals'] = float(d.get('iGoals') or 0.0) + _flt(r.get('iGoals') or _ci_get(r, 'iGoals'))
+            d['Assists1'] = float(d.get('Assists1') or 0.0) + _flt(r.get('Assists1') or _ci_get(r, 'Assists1'))
+            d['Assists2'] = float(d.get('Assists2') or 0.0) + _flt(r.get('Assists2') or _ci_get(r, 'Assists2'))
+            d['iShots'] = float(d.get('iShots') or 0.0) + _flt(r.get('iShots') or _ci_get(r, 'iShots'))
+            d['iFenwick'] = float(d.get('iFenwick') or 0.0) + _flt(r.get('iFenwick') or _ci_get(r, 'iFenwick'))
+            d['ixG_S'] = float(d.get('ixG_S') or 0.0) + _flt(r.get('ixG_S') or _ci_get(r, 'ixG_S'))
+            d['ixG_F'] = float(d.get('ixG_F') or 0.0) + _flt(r.get('ixG_F') or _ci_get(r, 'ixG_F'))
+            d['ixG_F2'] = float(d.get('ixG_F2') or 0.0) + _flt(r.get('ixG_F2') or _ci_get(r, 'ixG_F2'))
 
-            d['CA'] = float(d.get('CA') or 0.0) + _flt(r.get('CA'))
-            d['CF'] = float(d.get('CF') or 0.0) + _flt(r.get('CF'))
-            d['FA'] = float(d.get('FA') or 0.0) + _flt(r.get('FA'))
-            d['FF'] = float(d.get('FF') or 0.0) + _flt(r.get('FF'))
-            d['SA'] = float(d.get('SA') or 0.0) + _flt(r.get('SA'))
-            d['SF'] = float(d.get('SF') or 0.0) + _flt(r.get('SF'))
-            d['GA'] = float(d.get('GA') or 0.0) + _flt(r.get('GA'))
-            d['GF'] = float(d.get('GF') or 0.0) + _flt(r.get('GF'))
-            d['xGA_S'] = float(d.get('xGA_S') or 0.0) + _flt(r.get('xGA_S'))
-            d['xGF_S'] = float(d.get('xGF_S') or 0.0) + _flt(r.get('xGF_S'))
-            d['xGA_F'] = float(d.get('xGA_F') or 0.0) + _flt(r.get('xGA_F'))
-            d['xGF_F'] = float(d.get('xGF_F') or 0.0) + _flt(r.get('xGF_F'))
-            d['xGA_F2'] = float(d.get('xGA_F2') or 0.0) + _flt(r.get('xGA_F2'))
-            d['xGF_F2'] = float(d.get('xGF_F2') or 0.0) + _flt(r.get('xGF_F2'))
+            d['CA'] = float(d.get('CA') or 0.0) + _flt(r.get('CA') or _ci_get(r, 'CA'))
+            d['CF'] = float(d.get('CF') or 0.0) + _flt(r.get('CF') or _ci_get(r, 'CF'))
+            d['FA'] = float(d.get('FA') or 0.0) + _flt(r.get('FA') or _ci_get(r, 'FA'))
+            d['FF'] = float(d.get('FF') or 0.0) + _flt(r.get('FF') or _ci_get(r, 'FF'))
+            d['SA'] = float(d.get('SA') or 0.0) + _flt(r.get('SA') or _ci_get(r, 'SA'))
+            d['SF'] = float(d.get('SF') or 0.0) + _flt(r.get('SF') or _ci_get(r, 'SF'))
+            d['GA'] = float(d.get('GA') or 0.0) + _flt(r.get('GA') or _ci_get(r, 'GA'))
+            d['GF'] = float(d.get('GF') or 0.0) + _flt(r.get('GF') or _ci_get(r, 'GF'))
+            d['xGA_S'] = float(d.get('xGA_S') or 0.0) + _flt(r.get('xGA_S') or _ci_get(r, 'xGA_S'))
+            d['xGF_S'] = float(d.get('xGF_S') or 0.0) + _flt(r.get('xGF_S') or _ci_get(r, 'xGF_S'))
+            d['xGA_F'] = float(d.get('xGA_F') or 0.0) + _flt(r.get('xGA_F') or _ci_get(r, 'xGA_F'))
+            d['xGF_F'] = float(d.get('xGF_F') or 0.0) + _flt(r.get('xGF_F') or _ci_get(r, 'xGF_F'))
+            d['xGA_F2'] = float(d.get('xGA_F2') or 0.0) + _flt(r.get('xGA_F2') or _ci_get(r, 'xGA_F2'))
+            d['xGF_F2'] = float(d.get('xGF_F2') or 0.0) + _flt(r.get('xGF_F2') or _ci_get(r, 'xGF_F2'))
 
-            d['PIM_taken'] = float(d.get('PIM_taken') or 0.0) + _flt(r.get('PIM_taken'))
-            d['PIM_drawn'] = float(d.get('PIM_drawn') or 0.0) + _flt(r.get('PIM_drawn'))
-            d['PIM_for'] = float(d.get('PIM_for') or 0.0) + _flt(r.get('PIM_for'))
-            d['PIM_against'] = float(d.get('PIM_against') or 0.0) + _flt(r.get('PIM_against'))
-            d['Hits'] = float(d.get('Hits') or 0.0) + _flt(r.get('Hits'))
-            d['Takeaways'] = float(d.get('Takeaways') or 0.0) + _flt(r.get('Takeaways'))
-            d['Giveaways'] = float(d.get('Giveaways') or 0.0) + _flt(r.get('Giveaways'))
+            d['PIM_taken'] = float(d.get('PIM_taken') or 0.0) + _flt(r.get('PIM_taken') or _ci_get(r, 'PIM_taken'))
+            d['PIM_drawn'] = float(d.get('PIM_drawn') or 0.0) + _flt(r.get('PIM_drawn') or _ci_get(r, 'PIM_drawn'))
+            d['PIM_for'] = float(d.get('PIM_for') or 0.0) + _flt(r.get('PIM_for') or _ci_get(r, 'PIM_for'))
+            d['PIM_against'] = float(d.get('PIM_against') or 0.0) + _flt(r.get('PIM_against') or _ci_get(r, 'PIM_against'))
+            d['Hits'] = float(d.get('Hits') or 0.0) + _flt(r.get('Hits') or _ci_get(r, 'Hits'))
+            d['Takeaways'] = float(d.get('Takeaways') or 0.0) + _flt(r.get('Takeaways') or _ci_get(r, 'Takeaways'))
+            d['Giveaways'] = float(d.get('Giveaways') or 0.0) + _flt(r.get('Giveaways') or _ci_get(r, 'Giveaways'))
         except Exception:
             continue
 
@@ -4144,7 +4392,7 @@ def _load_seasonstats_static_csv() -> List[Dict[str, Any]]:
 
 
 def _load_card_metrics_defs() -> Dict[str, Any]:
-    """Load app/static/card_metrics.csv (semicolon-delimited) as card metric definitions.
+    """Load app/static/card_metrics.csv as card metric definitions.
 
     Returns:
       {
@@ -4183,7 +4431,15 @@ def _load_card_metrics_defs() -> Dict[str, Any]:
         seen_cat: set[str] = set()
         # Use utf-8-sig to tolerate UTF-8 BOM in headers (common on Windows).
         with open(path, 'r', encoding='utf-8-sig', newline='') as f:
-            rdr = csv.DictReader(f, delimiter=';')
+            # card_metrics.csv is sometimes tab-delimited (Excel/Sheets export).
+            # Auto-detect delimiter between ';' and '\t' based on the header line.
+            try:
+                first_line = f.readline()
+                delim = '\t' if first_line.count('\t') > first_line.count(';') else ';'
+                f.seek(0)
+            except Exception:
+                delim = ';'
+            rdr = csv.DictReader(f, delimiter=delim)
             for row in rdr:
                 if not isinstance(row, dict):
                     continue
@@ -4209,6 +4465,8 @@ def _load_card_metrics_defs() -> Dict[str, Any]:
                     'calculation': calc,
                     'default': bool(is_default),
                     'place': place,
+                    'link': str(row.get('Link') or row.get('link') or '').strip(),
+                    'strengthCode': str(row.get('StrengthCode') or row.get('strengthCode') or '').strip(),
                 })
                 if category not in seen_cat:
                     seen_cat.add(category)
@@ -4220,6 +4478,260 @@ def _load_card_metrics_defs() -> Dict[str, Any]:
 
     _CARD_METRICS_DEF_CACHE = (now, out)
     return out
+
+
+def _edge_game_type(season_state: str) -> int:
+    # NHL Edge endpoints use 2=regular, 3=playoffs.
+    return 3 if str(season_state).strip().lower() == 'playoffs' else 2
+
+
+def _edge_strength_code(strength_state: str) -> Optional[str]:
+    s = str(strength_state or '').strip()
+    if s == '5v5':
+        return 'es'
+    if s == 'PP':
+        return 'pp'
+    if s == 'SH':
+        return 'pk'
+    if s == 'all':
+        return 'all'
+    return None
+
+
+def _edge_format_url(example_link: str, player_id: int, season_int: int, game_type: int) -> Optional[str]:
+    link = str(example_link or '').strip()
+    if not link:
+        return None
+    if link.startswith('api-web.nhle.com/'):
+        link = 'https://' + link
+    if link.startswith('http://'):
+        link = 'https://' + link[len('http://'):]
+    if not link.startswith('https://'):
+        return None
+
+    # Replace trailing /<player>/<season>/<gameType> if present.
+    try:
+        parts = link.rstrip('/').split('/')
+        if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit() and parts[-3].isdigit():
+            parts[-3] = str(int(player_id))
+            parts[-2] = str(int(season_int))
+            parts[-1] = str(int(game_type))
+            return '/'.join(parts)
+    except Exception:
+        pass
+    return link
+
+
+def _edge_get_cached_json(url: str) -> Optional[Dict[str, Any]]:
+    try:
+        ttl_s = max(30, int(os.getenv('EDGE_API_CACHE_TTL_SECONDS', '3600') or '3600'))
+    except Exception:
+        ttl_s = 3600
+    now = time.time()
+    cached = _EDGE_API_CACHE.get(url)
+    if cached and (now - cached[0]) < ttl_s:
+        try:
+            return cached[1]
+        except Exception:
+            return None
+
+    try:
+        r = requests.get(url, timeout=20)
+        if r.status_code != 200:
+            return None
+        j = r.json()
+        if not isinstance(j, dict):
+            return None
+        _EDGE_API_CACHE[url] = (now, j)
+        return j
+    except Exception:
+        return None
+
+
+def _ci_get(d: Dict[str, Any], key: str) -> Any:
+    if key in d:
+        return d.get(key)
+    lk = str(key).lower()
+    for k, v in d.items():
+        if str(k).lower() == lk:
+            return v
+    return None
+
+
+def _edge_pct_to_100(p: Any) -> Optional[float]:
+    try:
+        if p is None:
+            return None
+        f = float(p)
+        if not math.isfinite(f):
+            return None
+        # NHL Edge uses 0..1 percentiles
+        if 0.0 <= f <= 1.0:
+            return 100.0 * f
+        # Already 0..100
+        if 0.0 <= f <= 100.0:
+            return f
+        return None
+    except Exception:
+        return None
+
+
+def _edge_extract_value_and_pct(payload: Dict[str, Any], metric_key: str, strength_code: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
+    """Extract a single metric value + percentile from an NHL Edge JSON payload.
+
+    Supports:
+      - dict-of-metrics (e.g. shotSpeedDetails.topShotSpeed)
+      - list-of-strength-rows (e.g. zoneTimeDetails with strengthCode)
+      - nested dict values with {value|imperial|metric, percentile}
+      - scalar values with sibling <metric>Percentile
+    """
+    # 1) Direct hit in a nested dict of details.
+    for v in payload.values():
+        if isinstance(v, dict):
+            node = _ci_get(v, metric_key)
+            if isinstance(node, dict):
+                val = _ci_get(node, 'imperial')
+                if val is None:
+                    val = _ci_get(node, 'value')
+                if val is None:
+                    val = _ci_get(node, 'metric')
+                pct = _edge_pct_to_100(_ci_get(node, 'percentile'))
+                try:
+                    out_val = float(val) if val is not None else None
+                except Exception:
+                    out_val = None
+                if out_val is not None and str(metric_key).endswith('Pctg') and 0.0 <= out_val <= 1.0:
+                    out_val = 100.0 * out_val
+                return (out_val, pct)
+            if node is not None and not isinstance(node, (dict, list)):
+                try:
+                    out_val = float(node)
+                    if str(metric_key).endswith('Pctg') and 0.0 <= out_val <= 1.0:
+                        out_val = 100.0 * out_val
+                    return (out_val, _edge_pct_to_100(_ci_get(v, f'{metric_key}Percentile')))
+                except Exception:
+                    return (None, _edge_pct_to_100(_ci_get(v, f'{metric_key}Percentile')))
+
+    # 2) Strength-split list.
+    rows: Optional[List[Dict[str, Any]]] = None
+    for v in payload.values():
+        if isinstance(v, list) and v and isinstance(v[0], dict) and any(str(k).lower() == 'strengthcode' for k in v[0].keys()):
+            rows = v  # type: ignore[assignment]
+            break
+    if rows:
+        wanted = strength_code
+        row = None
+        if wanted:
+            for rr in rows:
+                if str(rr.get('strengthCode') or '').lower() == str(wanted).lower():
+                    row = rr
+                    break
+        if row is None:
+            for rr in rows:
+                if str(rr.get('strengthCode') or '').lower() == 'all':
+                    row = rr
+                    break
+        if row is None:
+            row = rows[0]
+
+        # Scalar metric with separate percentile key
+        val0 = _ci_get(row, metric_key)
+        pct_raw = _ci_get(row, f'{metric_key}Percentile')
+        if pct_raw is None and str(metric_key).endswith('Pctg'):
+            pct_raw = _ci_get(row, f"{str(metric_key)[:-4]}Percentile")
+        pct0 = _edge_pct_to_100(pct_raw)
+        if isinstance(val0, dict):
+            val = _ci_get(val0, 'imperial')
+            if val is None:
+                val = _ci_get(val0, 'value')
+            if val is None:
+                val = _ci_get(val0, 'metric')
+            pct = _edge_pct_to_100(_ci_get(val0, 'percentile'))
+            try:
+                out_val = float(val) if val is not None else None
+            except Exception:
+                out_val = None
+            if out_val is not None and str(metric_key).endswith('Pctg') and 0.0 <= out_val <= 1.0:
+                out_val = 100.0 * out_val
+            return (out_val, pct)
+        try:
+            out_val = float(val0) if val0 is not None else None
+            if out_val is not None and str(metric_key).endswith('Pctg') and 0.0 <= out_val <= 1.0:
+                out_val = 100.0 * out_val
+            return (out_val, pct0)
+        except Exception:
+            return (None, pct0)
+
+    return (None, None)
+
+
+def _edge_extract_value_pct_avg(payload: Dict[str, Any], metric_key: str, strength_code: Optional[str]) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    """Extract value + percentile + NHL/league average from an NHL Edge JSON payload.
+
+    Many NHL Edge endpoints include league averages in fields like `<metricBase>LeagueAvg`.
+    Example (zone time): `offensiveZonePctg` + `offensiveZoneLeagueAvg`.
+    """
+    val, pct = _edge_extract_value_and_pct(payload, metric_key, strength_code)
+
+    def _coerce_avg(x: Any) -> Optional[float]:
+        try:
+            if x is None:
+                return None
+            f = float(x)
+            if not math.isfinite(f):
+                return None
+            if str(metric_key).endswith('Pctg') and 0.0 <= f <= 1.0:
+                return 100.0 * f
+            return f
+        except Exception:
+            return None
+
+    # Strength-split list rows (e.g., zoneTimeDetails).
+    rows: Optional[List[Dict[str, Any]]] = None
+    for v in payload.values():
+        if isinstance(v, list) and v and isinstance(v[0], dict) and any(str(k).lower() == 'strengthcode' for k in v[0].keys()):
+            rows = v  # type: ignore[assignment]
+            break
+    if rows:
+        wanted = strength_code
+        row = None
+        if wanted:
+            for rr in rows:
+                if str(rr.get('strengthCode') or '').lower() == str(wanted).lower():
+                    row = rr
+                    break
+        if row is None:
+            for rr in rows:
+                if str(rr.get('strengthCode') or '').lower() == 'all':
+                    row = rr
+                    break
+        if row is None:
+            row = rows[0]
+
+        mk = str(metric_key)
+        base = mk[:-4] if mk.endswith('Pctg') else mk
+        avg_raw = (
+            _ci_get(row, f'{mk}LeagueAvg')
+            or _ci_get(row, f'{base}LeagueAvg')
+            or _ci_get(row, f'{mk}LeagueAverage')
+            or _ci_get(row, f'{base}LeagueAverage')
+        )
+        return (val, pct, _coerce_avg(avg_raw))
+
+    # Nested dict-of-metrics nodes sometimes contain avg-like fields.
+    for v in payload.values():
+        if isinstance(v, dict):
+            node = _ci_get(v, metric_key)
+            if isinstance(node, dict):
+                avg_raw = (
+                    _ci_get(node, 'leagueAvg')
+                    or _ci_get(node, 'leagueAverage')
+                    or _ci_get(node, 'nhlAvg')
+                    or _ci_get(node, 'nhlAverage')
+                )
+                return (val, pct, _coerce_avg(avg_raw))
+
+    return (val, pct, None)
 
 
 @main_bp.route('/api/skaters/card/defs')
