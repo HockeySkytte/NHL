@@ -8,7 +8,7 @@ import bisect
 from datetime import datetime, timedelta
 import threading
 import time
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Iterable, Iterator
 
 import requests
 import numpy as np  # for numeric handling in model inference
@@ -310,6 +310,8 @@ _PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = N
 _CONTEXT_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _SEASONSTATS_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _CARD_METRICS_DEF_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
+_RAPM_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
+_CONTEXT_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
 _RAPM_SCALE_CACHE: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any], Dict[str, Any]]] = {}
 _RAPM_CAREER_CACHE: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any]]] = {}
 _SHIFTS_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
@@ -1605,7 +1607,8 @@ def api_rapm_player(player_id: int):
             rows = _load_rapm_static_csv()
             source = 'static'
     else:
-        rows = _load_rapm_static_csv()
+        # Static CSVs can be large across seasons; stream+cache only this player's rows.
+        rows = _load_rapm_player_rows_static(pid, season_int)
     out: List[Dict[str, Any]] = []
     for r in rows:
         try:
@@ -1706,7 +1709,8 @@ def api_context_player(player_id: int):
             rows = _load_context_static_csv()
             source = 'static'
     else:
-        rows = _load_context_static_csv()
+        # Static CSVs can be large across seasons; stream+cache only this player's rows.
+        rows = _load_context_player_rows_static(pid, season_int)
 
     out: List[Dict[str, Any]] = []
     for r in rows:
@@ -1809,45 +1813,44 @@ def api_skaters_card():
     #   - other seasons: app/static/nhl_seasonstats.csv
     # - career scope:
     #   - all seasons: app/static/nhl_seasonstats.csv, with 20252026 replaced by Sheets6 when available
-    rows: List[Dict[str, Any]] = []
+    rows_iter: Iterable[Dict[str, Any]]
     source = 'none'
     sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
     worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
 
+    sheet_rows: Optional[List[Dict[str, Any]]] = None
+    sheet_ok = False
+    if sheet_id:
+        try:
+            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
+            sheet_ok = True
+        except Exception:
+            sheet_rows = None
+            sheet_ok = False
+
     if scope == 'career':
-        rows = _load_seasonstats_static_csv()
-        source = 'static'
-        if sheet_id:
-            try:
-                sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-                # Replace the 20252026 slice from static with Sheets6.
-                kept: List[Dict[str, Any]] = []
-                for r in rows:
-                    try:
-                        if int(str(r.get('Season') or '').strip()) == 20252026:
-                            continue
-                    except Exception:
-                        pass
-                    kept.append(r)
-                rows = kept + list(sheet_rows or [])
-                source = 'static+sheets'
-            except Exception:
-                pass
-    else:
-        if season_int == 20252026:
-            if not sheet_id:
-                rows = _load_seasonstats_static_csv()
-                source = 'static'
-            else:
-                try:
-                    rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-                    source = 'sheets'
-                except Exception:
-                    rows = _load_seasonstats_static_csv()
-                    source = 'static'
+        # Stream static seasons, optionally replacing 20252026 with Sheets6.
+        if sheet_ok and sheet_rows is not None:
+            source = 'static+sheets'
+
+            def _it() -> Iterator[Dict[str, Any]]:
+                yield from _iter_seasonstats_static_rows(skip_season=20252026)
+                for rr in sheet_rows or []:
+                    if isinstance(rr, dict):
+                        yield rr
+
+            rows_iter = _it()
         else:
-            rows = _load_seasonstats_static_csv()
             source = 'static'
+            rows_iter = _iter_seasonstats_static_rows()
+    else:
+        # Season scope: prefer Sheets6 only for 20252026; otherwise stream just the requested season.
+        if season_int == 20252026 and sheet_ok and sheet_rows is not None:
+            source = 'sheets'
+            rows_iter = sheet_rows
+        else:
+            source = 'static'
+            rows_iter = _iter_seasonstats_static_rows(season=season_int)
 
     def _flt(v: Any) -> float:
         x = _parse_locale_float(v)
@@ -1862,7 +1865,7 @@ def api_skaters_card():
     # GP is duplicated across strength buckets; de-duplicate by taking max GP per (player, season, seasonState)
     # and then summing across those keys.
     gp_max_by_key: Dict[Tuple[int, int, str], int] = {}
-    for r in rows:
+    for r in rows_iter:
         try:
             # Skip Timestamp rows/cols noise
             pos = str(r.get('Position') or '').strip().upper()
@@ -1870,8 +1873,6 @@ def api_skaters_card():
                 continue
             try:
                 season_row = int(str(r.get('Season') or '').strip())
-                if scope != 'career' and season_int is not None and season_row != season_int:
-                    continue
             except Exception:
                 continue
 
@@ -2113,7 +2114,7 @@ def api_skaters_card():
             else:
                 rapm_rows = _load_rapm_static_csv()
         else:
-            rapm_rows = _load_rapm_static_csv()
+            rapm_rows = _load_rapm_player_rows_static(int(pid), season_int)
 
         # Filter to the requested player/season and pick the requested strength+rates.
         candidates: List[Dict[str, Any]] = []
@@ -2155,7 +2156,7 @@ def api_skaters_card():
             else:
                 ctx_rows = _load_context_static_csv()
         else:
-            ctx_rows = _load_context_static_csv()
+            ctx_rows = _load_context_player_rows_static(int(pid), season_int)
 
         candidates2: List[Dict[str, Any]] = []
         for r in ctx_rows:
@@ -3847,6 +3848,108 @@ def _static_path(*parts: str) -> str:
         return os.path.join(base, *parts)
     except Exception:
         return os.path.join(os.getcwd(), *parts)
+
+
+def _iter_csv_dict_rows(path: str, *, delimiter: str = ',', encoding: str = 'utf-8-sig') -> Iterator[Dict[str, Any]]:
+    """Yield DictReader rows without materializing the full file in memory."""
+    try:
+        if not path or (not os.path.exists(path)):
+            return
+        with open(path, 'r', encoding=encoding, newline='') as f:
+            rdr = csv.DictReader(f, delimiter=delimiter)
+            for row in rdr:
+                if isinstance(row, dict):
+                    yield row
+    except Exception:
+        return
+
+
+def _load_rapm_player_rows_static(player_id: int, season: Optional[int]) -> List[Dict[str, Any]]:
+    """Load RAPM rows for a single player from app/static/rapm/rapm.csv (TTL cached)."""
+    global _RAPM_PLAYER_STATIC_CACHE
+    try:
+        ttl_s = max(30, int(os.getenv('RAPM_PLAYER_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
+    except Exception:
+        ttl_s = 600
+    key = (int(player_id), int(season) if season is not None else None)
+    now = time.time()
+    cached = _RAPM_PLAYER_STATIC_CACHE.get(key)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
+    path = _static_path('rapm', 'rapm.csv')
+    out: List[Dict[str, Any]] = []
+    pid_s = str(int(player_id))
+    for r in _iter_csv_dict_rows(path, delimiter=',', encoding='utf-8-sig'):
+        try:
+            if str(r.get('PlayerID') or '').strip() != pid_s:
+                continue
+            if season is not None:
+                try:
+                    if int(str(r.get('Season') or '').strip()) != int(season):
+                        continue
+                except Exception:
+                    continue
+            out.append(r)
+        except Exception:
+            continue
+
+    _RAPM_PLAYER_STATIC_CACHE[key] = (now, out)
+    return out
+
+
+def _load_context_player_rows_static(player_id: int, season: Optional[int]) -> List[Dict[str, Any]]:
+    """Load Context rows for a single player from app/static/rapm/context.csv (TTL cached)."""
+    global _CONTEXT_PLAYER_STATIC_CACHE
+    try:
+        ttl_s = max(30, int(os.getenv('CONTEXT_PLAYER_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
+    except Exception:
+        ttl_s = 600
+    key = (int(player_id), int(season) if season is not None else None)
+    now = time.time()
+    cached = _CONTEXT_PLAYER_STATIC_CACHE.get(key)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
+    path = _static_path('rapm', 'context.csv')
+    out: List[Dict[str, Any]] = []
+    pid_s = str(int(player_id))
+    for r in _iter_csv_dict_rows(path, delimiter=',', encoding='utf-8-sig'):
+        try:
+            if str(r.get('PlayerID') or '').strip() != pid_s:
+                continue
+            if season is not None:
+                try:
+                    if int(str(r.get('Season') or '').strip()) != int(season):
+                        continue
+                except Exception:
+                    continue
+            out.append(r)
+        except Exception:
+            continue
+
+    _CONTEXT_PLAYER_STATIC_CACHE[key] = (now, out)
+    return out
+
+
+def _iter_seasonstats_static_rows(*, season: Optional[int] = None, skip_season: Optional[int] = None) -> Iterator[Dict[str, Any]]:
+    """Yield SeasonStats rows from app/static/nhl_seasonstats.csv, optionally filtered by season."""
+    path = _static_path('nhl_seasonstats.csv')
+    season_i = int(season) if season is not None else None
+    skip_i = int(skip_season) if skip_season is not None else None
+    for r in _iter_csv_dict_rows(path, delimiter=',', encoding='utf-8-sig'):
+        if season_i is None and skip_i is None:
+            yield r
+            continue
+        try:
+            s = int(str(r.get('Season') or '').strip())
+        except Exception:
+            continue
+        if skip_i is not None and s == skip_i:
+            continue
+        if season_i is not None and s != season_i:
+            continue
+        yield r
 
 
 def _load_rapm_static_csv() -> List[Dict[str, Any]]:
@@ -6780,10 +6883,12 @@ def api_game_shifts(game_id: int):
                 else:
                     strength_bucket = 'Other'
             except Exception:
+                my_g = 0
+                their_g = 0
                 strength_bucket = 'Other'
 
             # Only call ENA/ENF when we actually observed goalie rows in this slice.
-            observed_goalies = (my_g + their_g) > 0 if 'my_g' in locals() and 'their_g' in locals() else False
+            observed_goalies = (my_g + their_g) > 0
             if observed_goalies and my_g == 0 and their_g >= 1:
                 strength = 'ENF'
             elif observed_goalies and their_g == 0 and my_g >= 1:
