@@ -5,6 +5,9 @@ import csv
 import re
 import math
 import bisect
+import hashlib
+import pickle
+import gzip
 from datetime import datetime, timedelta
 import threading
 import time
@@ -312,6 +315,7 @@ _SEASONSTATS_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _CARD_METRICS_DEF_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
 _RAPM_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
 _CONTEXT_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
+_SEASONSTATS_AGG_CACHE: Dict[Tuple[str, int, str, str, str, str], Tuple[float, Dict[int, Dict[str, Any]], Dict[int, str]]] = {}
 _RAPM_SCALE_CACHE: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any], Dict[str, Any]]] = {}
 _RAPM_CAREER_CACHE: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any]]] = {}
 _SHIFTS_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
@@ -1852,132 +1856,17 @@ def api_skaters_card():
             source = 'static'
             rows_iter = _iter_seasonstats_static_rows(season=season_int)
 
-    def _flt(v: Any) -> float:
-        x = _parse_locale_float(v)
-        return float(x) if x is not None else 0.0
-
-    def _i(v: Any) -> int:
-        return int(_safe_int(v) or 0)
-
-    # Aggregate by player under the requested filters.
-    agg: Dict[int, Dict[str, Any]] = {}
-    pos_group_by_pid: Dict[int, str] = {}
-    # GP is duplicated across strength buckets; de-duplicate by taking max GP per (player, season, seasonState)
-    # and then summing across those keys.
-    gp_max_by_key: Dict[Tuple[int, int, str], int] = {}
-    for r in rows_iter:
-        try:
-            # Skip Timestamp rows/cols noise
-            pos = str(r.get('Position') or '').strip().upper()
-            if pos.startswith('G'):
-                continue
-            try:
-                season_row = int(str(r.get('Season') or '').strip())
-            except Exception:
-                continue
-
-            ss = str(r.get('SeasonState') or '').strip().lower() or 'regular'
-            st = str(r.get('StrengthState') or '').strip() or 'Other'
-            if season_state != 'all' and ss != season_state:
-                continue
-            if strength_state != 'all' and st != strength_state:
-                continue
-
-            pid_i = _i(r.get('PlayerID'))
-            if pid_i <= 0:
-                continue
-
-            # Track GP de-duplication key (max across strengths per season+seasonState).
-            try:
-                gp_row = _i(r.get('GP'))
-            except Exception:
-                gp_row = 0
-            k = (pid_i, int(season_row), str(ss))
-            prev_gp = gp_max_by_key.get(k)
-            if prev_gp is None or gp_row > prev_gp:
-                gp_max_by_key[k] = gp_row
-
-            # Position group for percentile pools.
-            if pid_i not in pos_group_by_pid:
-                pos_group_by_pid[pid_i] = 'D' if pos.startswith('D') else 'F'
-
-            d = agg.setdefault(pid_i, {
-                'GP': 0,
-                'TOI': 0.0,
-                'iGoals': 0.0,
-                'Assists1': 0.0,
-                'Assists2': 0.0,
-                'iShots': 0.0,
-                'iFenwick': 0.0,
-                'ixG_S': 0.0,
-                'ixG_F': 0.0,
-                'ixG_F2': 0.0,
-                # on-ice
-                'CA': 0.0,
-                'CF': 0.0,
-                'FA': 0.0,
-                'FF': 0.0,
-                'SA': 0.0,
-                'SF': 0.0,
-                'GA': 0.0,
-                'GF': 0.0,
-                'xGA_S': 0.0,
-                'xGF_S': 0.0,
-                'xGA_F': 0.0,
-                'xGF_F': 0.0,
-                'xGA_F2': 0.0,
-                'xGF_F2': 0.0,
-                # misc
-                'PIM_taken': 0.0,
-                'PIM_drawn': 0.0,
-                'PIM_for': 0.0,
-                'PIM_against': 0.0,
-                'Hits': 0.0,
-                'Takeaways': 0.0,
-                'Giveaways': 0.0,
-            })
-
-            d['TOI'] = float(d.get('TOI') or 0.0) + _flt(r.get('TOI'))
-            d['iGoals'] = float(d.get('iGoals') or 0.0) + _flt(r.get('iGoals'))
-            d['Assists1'] = float(d.get('Assists1') or 0.0) + _flt(r.get('Assists1'))
-            d['Assists2'] = float(d.get('Assists2') or 0.0) + _flt(r.get('Assists2'))
-            d['iShots'] = float(d.get('iShots') or 0.0) + _flt(r.get('iShots'))
-            d['iFenwick'] = float(d.get('iFenwick') or 0.0) + _flt(r.get('iFenwick'))
-            d['ixG_S'] = float(d.get('ixG_S') or 0.0) + _flt(r.get('ixG_S'))
-            d['ixG_F'] = float(d.get('ixG_F') or 0.0) + _flt(r.get('ixG_F'))
-            d['ixG_F2'] = float(d.get('ixG_F2') or 0.0) + _flt(r.get('ixG_F2'))
-
-            d['CA'] = float(d.get('CA') or 0.0) + _flt(r.get('CA'))
-            d['CF'] = float(d.get('CF') or 0.0) + _flt(r.get('CF'))
-            d['FA'] = float(d.get('FA') or 0.0) + _flt(r.get('FA'))
-            d['FF'] = float(d.get('FF') or 0.0) + _flt(r.get('FF'))
-            d['SA'] = float(d.get('SA') or 0.0) + _flt(r.get('SA'))
-            d['SF'] = float(d.get('SF') or 0.0) + _flt(r.get('SF'))
-            d['GA'] = float(d.get('GA') or 0.0) + _flt(r.get('GA'))
-            d['GF'] = float(d.get('GF') or 0.0) + _flt(r.get('GF'))
-            d['xGA_S'] = float(d.get('xGA_S') or 0.0) + _flt(r.get('xGA_S'))
-            d['xGF_S'] = float(d.get('xGF_S') or 0.0) + _flt(r.get('xGF_S'))
-            d['xGA_F'] = float(d.get('xGA_F') or 0.0) + _flt(r.get('xGA_F'))
-            d['xGF_F'] = float(d.get('xGF_F') or 0.0) + _flt(r.get('xGF_F'))
-            d['xGA_F2'] = float(d.get('xGA_F2') or 0.0) + _flt(r.get('xGA_F2'))
-            d['xGF_F2'] = float(d.get('xGF_F2') or 0.0) + _flt(r.get('xGF_F2'))
-
-            d['PIM_taken'] = float(d.get('PIM_taken') or 0.0) + _flt(r.get('PIM_taken'))
-            d['PIM_drawn'] = float(d.get('PIM_drawn') or 0.0) + _flt(r.get('PIM_drawn'))
-            d['PIM_for'] = float(d.get('PIM_for') or 0.0) + _flt(r.get('PIM_for'))
-            d['PIM_against'] = float(d.get('PIM_against') or 0.0) + _flt(r.get('PIM_against'))
-            d['Hits'] = float(d.get('Hits') or 0.0) + _flt(r.get('Hits'))
-            d['Takeaways'] = float(d.get('Takeaways') or 0.0) + _flt(r.get('Takeaways'))
-            d['Giveaways'] = float(d.get('Giveaways') or 0.0) + _flt(r.get('Giveaways'))
-        except Exception:
-            continue
-
-    # Finalize GP totals after de-duplication.
-    gp_sum_by_pid: Dict[int, int] = {}
-    for (pid_k, _season_k, _ss_k), gp_k in gp_max_by_key.items():
-        gp_sum_by_pid[pid_k] = int(gp_sum_by_pid.get(pid_k, 0) + int(gp_k or 0))
-    for pid_k, d in agg.items():
-        d['GP'] = int(gp_sum_by_pid.get(pid_k, 0))
+    # Aggregate by player under the requested filters (cached).
+    agg, pos_group_by_pid = _build_seasonstats_agg(
+        scope=scope,
+        season_int=season_int,
+        season_state=season_state,
+        strength_state=strength_state,
+        sheet_id=sheet_id,
+        worksheet=worksheet,
+        sheet_ok=sheet_ok,
+        sheet_rows=sheet_rows,
+    )
 
     # Apply minimum requirements (affects both the returned player and percentile pools).
     if min_gp > 0 or min_toi > 0:
@@ -3950,6 +3839,221 @@ def _iter_seasonstats_static_rows(*, season: Optional[int] = None, skip_season: 
         if season_i is not None and s != season_i:
             continue
         yield r
+
+
+def _build_seasonstats_agg(
+    *,
+    scope: str,
+    season_int: int,
+    season_state: str,
+    strength_state: str,
+    sheet_id: str,
+    worksheet: str,
+    sheet_ok: bool,
+    sheet_rows: Optional[List[Dict[str, Any]]],
+) -> Tuple[Dict[int, Dict[str, Any]], Dict[int, str]]:
+    """Build (and cache) per-player aggregates for SeasonStats under the requested filters.
+
+    This avoids scanning and materializing the full CSV for every request.
+    """
+    global _SEASONSTATS_AGG_CACHE
+    try:
+        ttl_s = max(30, int(os.getenv('SEASONSTATS_AGG_CACHE_TTL_SECONDS', '1800') or '1800'))
+    except Exception:
+        ttl_s = 1800
+
+    scope_norm = (scope or 'season').strip().lower()
+    if scope_norm not in {'season', 'career'}:
+        scope_norm = 'season'
+    ss_norm = (season_state or 'regular').strip().lower()
+    if ss_norm not in {'regular', 'playoffs', 'all'}:
+        ss_norm = 'regular'
+    st_norm = (strength_state or '5v5').strip()
+    if st_norm not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
+        st_norm = '5v5'
+
+    # Cache key includes sheet identity because career scope can splice in Sheets6.
+    key = (
+        scope_norm,
+        int(season_int or 0),
+        ss_norm,
+        st_norm,
+        (sheet_id or '')[:80],
+        (worksheet or '')[:80],
+    )
+    now = time.time()
+    cached = _SEASONSTATS_AGG_CACHE.get(key)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1], cached[2]
+
+    # Best-effort on-disk cache (helps on Render where workers may restart).
+    cache_path = None
+    try:
+        base = os.getenv('XG_CACHE_DIR')
+        if not base:
+            base = _disk_cache_base()
+        os.makedirs(base, exist_ok=True)
+        key_bytes = ('|'.join(map(str, key)) + '|v1').encode('utf-8', errors='ignore')
+        h = hashlib.sha1(key_bytes).hexdigest()  # nosec - non-crypto use (filename)
+        cache_path = os.path.join(base, f'seasonstats_agg_{h}.pkl.gz')
+        if os.path.exists(cache_path):
+            mtime = os.path.getmtime(cache_path)
+            if (now - float(mtime)) < float(ttl_s):
+                with gzip.open(cache_path, 'rb') as f:
+                    loaded = pickle.load(f)
+                if isinstance(loaded, tuple) and len(loaded) == 2:
+                    agg0, pos0 = loaded
+                    if isinstance(agg0, dict) and isinstance(pos0, dict):
+                        _SEASONSTATS_AGG_CACHE[key] = (now, agg0, pos0)
+                        return agg0, pos0
+    except Exception:
+        cache_path = None
+
+    def _iter_rows() -> Iterable[Dict[str, Any]]:
+        if scope_norm == 'career':
+            if sheet_ok and sheet_rows is not None:
+                def _it() -> Iterator[Dict[str, Any]]:
+                    yield from _iter_seasonstats_static_rows(skip_season=20252026)
+                    for rr in sheet_rows or []:
+                        if isinstance(rr, dict):
+                            yield rr
+                return _it()
+            return _iter_seasonstats_static_rows()
+
+        # scope == season
+        if int(season_int) == 20252026 and sheet_ok and sheet_rows is not None:
+            return sheet_rows
+        return _iter_seasonstats_static_rows(season=int(season_int))
+
+    def _flt(v: Any) -> float:
+        x = _parse_locale_float(v)
+        return float(x) if x is not None else 0.0
+
+    def _i(v: Any) -> int:
+        return int(_safe_int(v) or 0)
+
+    agg: Dict[int, Dict[str, Any]] = {}
+    pos_group_by_pid: Dict[int, str] = {}
+    gp_max_by_key: Dict[Tuple[int, int, str], int] = {}
+
+    # Stream rows and aggregate.
+    for r in _iter_rows():
+        try:
+            pos = str(r.get('Position') or '').strip().upper()
+            if pos.startswith('G'):
+                continue
+
+            try:
+                season_row = int(str(r.get('Season') or '').strip())
+            except Exception:
+                continue
+
+            ss = str(r.get('SeasonState') or '').strip().lower() or 'regular'
+            st = str(r.get('StrengthState') or '').strip() or 'Other'
+            if ss_norm != 'all' and ss != ss_norm:
+                continue
+            if st_norm != 'all' and st != st_norm:
+                continue
+
+            pid_i = _i(r.get('PlayerID'))
+            if pid_i <= 0:
+                continue
+
+            gp_row = _i(r.get('GP'))
+            k = (pid_i, int(season_row), str(ss))
+            prev_gp = gp_max_by_key.get(k)
+            if prev_gp is None or gp_row > prev_gp:
+                gp_max_by_key[k] = gp_row
+
+            if pid_i not in pos_group_by_pid:
+                pos_group_by_pid[pid_i] = 'D' if pos.startswith('D') else 'F'
+
+            d = agg.setdefault(pid_i, {
+                'GP': 0,
+                'TOI': 0.0,
+                'iGoals': 0.0,
+                'Assists1': 0.0,
+                'Assists2': 0.0,
+                'iShots': 0.0,
+                'iFenwick': 0.0,
+                'ixG_S': 0.0,
+                'ixG_F': 0.0,
+                'ixG_F2': 0.0,
+                # on-ice
+                'CA': 0.0,
+                'CF': 0.0,
+                'FA': 0.0,
+                'FF': 0.0,
+                'SA': 0.0,
+                'SF': 0.0,
+                'GA': 0.0,
+                'GF': 0.0,
+                'xGA_S': 0.0,
+                'xGF_S': 0.0,
+                'xGA_F': 0.0,
+                'xGF_F': 0.0,
+                'xGA_F2': 0.0,
+                'xGF_F2': 0.0,
+                # misc
+                'PIM_taken': 0.0,
+                'PIM_drawn': 0.0,
+                'PIM_for': 0.0,
+                'PIM_against': 0.0,
+                'Hits': 0.0,
+                'Takeaways': 0.0,
+                'Giveaways': 0.0,
+            })
+
+            d['TOI'] = float(d.get('TOI') or 0.0) + _flt(r.get('TOI'))
+            d['iGoals'] = float(d.get('iGoals') or 0.0) + _flt(r.get('iGoals'))
+            d['Assists1'] = float(d.get('Assists1') or 0.0) + _flt(r.get('Assists1'))
+            d['Assists2'] = float(d.get('Assists2') or 0.0) + _flt(r.get('Assists2'))
+            d['iShots'] = float(d.get('iShots') or 0.0) + _flt(r.get('iShots'))
+            d['iFenwick'] = float(d.get('iFenwick') or 0.0) + _flt(r.get('iFenwick'))
+            d['ixG_S'] = float(d.get('ixG_S') or 0.0) + _flt(r.get('ixG_S'))
+            d['ixG_F'] = float(d.get('ixG_F') or 0.0) + _flt(r.get('ixG_F'))
+            d['ixG_F2'] = float(d.get('ixG_F2') or 0.0) + _flt(r.get('ixG_F2'))
+
+            d['CA'] = float(d.get('CA') or 0.0) + _flt(r.get('CA'))
+            d['CF'] = float(d.get('CF') or 0.0) + _flt(r.get('CF'))
+            d['FA'] = float(d.get('FA') or 0.0) + _flt(r.get('FA'))
+            d['FF'] = float(d.get('FF') or 0.0) + _flt(r.get('FF'))
+            d['SA'] = float(d.get('SA') or 0.0) + _flt(r.get('SA'))
+            d['SF'] = float(d.get('SF') or 0.0) + _flt(r.get('SF'))
+            d['GA'] = float(d.get('GA') or 0.0) + _flt(r.get('GA'))
+            d['GF'] = float(d.get('GF') or 0.0) + _flt(r.get('GF'))
+            d['xGA_S'] = float(d.get('xGA_S') or 0.0) + _flt(r.get('xGA_S'))
+            d['xGF_S'] = float(d.get('xGF_S') or 0.0) + _flt(r.get('xGF_S'))
+            d['xGA_F'] = float(d.get('xGA_F') or 0.0) + _flt(r.get('xGA_F'))
+            d['xGF_F'] = float(d.get('xGF_F') or 0.0) + _flt(r.get('xGF_F'))
+            d['xGA_F2'] = float(d.get('xGA_F2') or 0.0) + _flt(r.get('xGA_F2'))
+            d['xGF_F2'] = float(d.get('xGF_F2') or 0.0) + _flt(r.get('xGF_F2'))
+
+            d['PIM_taken'] = float(d.get('PIM_taken') or 0.0) + _flt(r.get('PIM_taken'))
+            d['PIM_drawn'] = float(d.get('PIM_drawn') or 0.0) + _flt(r.get('PIM_drawn'))
+            d['PIM_for'] = float(d.get('PIM_for') or 0.0) + _flt(r.get('PIM_for'))
+            d['PIM_against'] = float(d.get('PIM_against') or 0.0) + _flt(r.get('PIM_against'))
+            d['Hits'] = float(d.get('Hits') or 0.0) + _flt(r.get('Hits'))
+            d['Takeaways'] = float(d.get('Takeaways') or 0.0) + _flt(r.get('Takeaways'))
+            d['Giveaways'] = float(d.get('Giveaways') or 0.0) + _flt(r.get('Giveaways'))
+        except Exception:
+            continue
+
+    gp_sum_by_pid: Dict[int, int] = {}
+    for (pid_k, _season_k, _ss_k), gp_k in gp_max_by_key.items():
+        gp_sum_by_pid[pid_k] = int(gp_sum_by_pid.get(pid_k, 0) + int(gp_k or 0))
+    for pid_k, d in agg.items():
+        d['GP'] = int(gp_sum_by_pid.get(pid_k, 0))
+
+    _SEASONSTATS_AGG_CACHE[key] = (now, agg, pos_group_by_pid)
+
+    if cache_path:
+        try:
+            with gzip.open(cache_path, 'wb') as f:
+                pickle.dump((agg, pos_group_by_pid), f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception:
+            pass
+    return agg, pos_group_by_pid
 
 
 def _load_rapm_static_csv() -> List[Dict[str, Any]]:
