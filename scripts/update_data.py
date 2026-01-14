@@ -966,11 +966,20 @@ def export_to_mysql(
         if not df_shifts.empty:
             # Newer shifts exports include StrengthStateBucket; add the column if the table already exists.
             df_sh = df_shifts
+            # Best-effort: add new columns when exporting to an existing table.
             if 'StrengthStateBucket' in df_sh.columns:
                 ok = _ensure_mysql_column(tbl_sh, 'StrengthStateBucket', 'VARCHAR(16) NULL')
                 if not ok:
-                    # If we can't add the column (permissions), drop it so inserts don't fail.
                     df_sh = df_sh.drop(columns=['StrengthStateBucket'], errors='ignore')
+            if 'StrengthStateRaw' in df_sh.columns:
+                ok = _ensure_mysql_column(tbl_sh, 'StrengthStateRaw', 'VARCHAR(16) NULL')
+                if not ok:
+                    df_sh = df_sh.drop(columns=['StrengthStateRaw'], errors='ignore')
+            for col in ('SkatersOnIceFor', 'SkatersOnIceAgainst', 'GoaliesOnIceFor', 'GoaliesOnIceAgainst'):
+                if col in df_sh.columns:
+                    ok = _ensure_mysql_column(tbl_sh, col, 'INT NULL')
+                    if not ok:
+                        df_sh = df_sh.drop(columns=[col], errors='ignore')
             df_sh.to_sql(tbl_sh, con=eng, if_exists='append', index=False, method='multi', chunksize=1000)
             print(f"[mysql] wrote {len(df_sh)} rows to {tbl_sh}")
         else:
@@ -1006,6 +1015,10 @@ def _seasonstats_strength_bucket(strength: Any) -> str:
     # Ignore empty-net and other labels here; they bucket as Other.
     if s_low.startswith('en'):
         return 'Other'
+
+    # If StrengthState is already bucketed, pass through.
+    if s_low in {'pp', 'sh', 'other'}:
+        return s_low.upper() if s_low != 'other' else 'Other'
     # Parse generic "NvM" patterns and apply the SeasonStats rules.
     try:
         if 'v' in s_low:

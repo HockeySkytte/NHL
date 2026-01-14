@@ -504,8 +504,8 @@ const teams = JSON.parse(document.getElementById('teams-data').textContent);
 
 function teamLogoUrl(abbrev){
   const a = String(abbrev||'').toUpperCase();
-  const row = Array.isArray(teams) ? teams.find(t=> String(t?.Team||'').toUpperCase() === a) : null;
-  return (row && row.Logo) ? row.Logo : (a ? `https://assets.nhle.com/logos/nhl/svg/${a}_light.svg` : '');
+  // Use same-origin proxy for SVG logos so canvas rendering works reliably.
+  return a ? `/api/team-logo/${encodeURIComponent(a)}.svg` : '';
 }
 
 function getTeamLogoImage(abbrev, onLoad){
@@ -980,7 +980,8 @@ function makeScatterChart(canvasEl, title){
           const p = ptEl.getProps(['x','y'], true);
 
           const outerR = 14;
-          const innerR = 11.0;
+          // Keep the overall badge size the same (outerR), but let the image fill more of it.
+          const innerR = 12.6;
 
           ctx.save();
           // Backplate + ring
@@ -1006,10 +1007,40 @@ function makeScatterChart(canvasEl, title){
             img = getTeamLogoImage(raw.team);
           }
 
-          if(img && img.complete && img.naturalWidth){
-            const pad = (mode === 'team') ? 1.2 : 0.0;
+          if(img && img.complete){
             const d = innerR * 2;
-            ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad);
+            const pad = (mode === 'team') ? 0.35 : 0.0;
+            const zoom = (mode === 'player') ? 1.18 : 1.08;
+
+            // Note: NHL team logos are often SVG, which may report naturalWidth=0.
+            // In that case, fall back to a simple drawImage without source-cropping.
+            const iw = Number(img.naturalWidth || img.width || 0);
+            const ih = Number(img.naturalHeight || img.height || 0);
+            const side = Math.min(iw, ih);
+
+            try{
+              if(side > 0 && Number.isFinite(zoom) && zoom > 0){
+                const crop = side / zoom;
+                if(crop > 0){
+                  const sx = (iw - crop) / 2;
+                  const sy = (ih - crop) / 2;
+                  ctx.drawImage(
+                    img,
+                    sx, sy, crop, crop,
+                    p.x - innerR + pad,
+                    p.y - innerR + pad,
+                    d - 2*pad,
+                    d - 2*pad
+                  );
+                }else{
+                  ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad);
+                }
+              }else{
+                ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad);
+              }
+            }catch(_){
+              try{ ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad); }catch(__){/*noop*/}
+            }
           }
           ctx.restore();
         });

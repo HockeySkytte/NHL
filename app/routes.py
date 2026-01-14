@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple, Optional, Any, Iterable, Iterator
 import requests
 import numpy as np  # for numeric handling in model inference
 import joblib       # to load pickled models
-from flask import Blueprint, jsonify, render_template, request, current_app
+from flask import Blueprint, jsonify, render_template, request, current_app, make_response
 import subprocess
 import sys
 import uuid
@@ -318,7 +318,7 @@ _SEASONSTATS_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _CARD_METRICS_DEF_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
 _RAPM_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
 _CONTEXT_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
-_SEASONSTATS_AGG_CACHE: Dict[Tuple[str, int, str, str, str, str], Tuple[float, Dict[int, Dict[str, Any]], Dict[int, str]]] = {}
+_SEASONSTATS_AGG_CACHE: Dict[Tuple[str, int, str, str, str, str, str], Tuple[float, Dict[int, Dict[str, Any]], Dict[int, str]]] = {}
 _RAPM_SCALE_CACHE: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any], Dict[str, Any]]] = {}
 _RAPM_CAREER_CACHE: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any]]] = {}
 _SHIFTS_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
@@ -4339,6 +4339,109 @@ def api_diag_models():
     return jsonify(info)
 
 
+_TEAM_LOGO_PROXY_CACHE: Dict[str, Tuple[float, bytes]] = {}
+
+
+def _team_logo_source_url(team_abbrev: str) -> Optional[str]:
+    a = (team_abbrev or '').strip().upper()
+    if not a:
+        return None
+    # Prefer Teams.csv mapping when present
+    try:
+        for row in TEAM_ROWS:
+            if (row.get('Team') or '').strip().upper() == a:
+                u = (row.get('Logo') or '').strip()
+                if u:
+                    return u
+    except Exception:
+        pass
+    # Fallback to current NHL assets
+    return f'https://assets.nhle.com/logos/nhl/svg/{a}_light.svg'
+
+
+def _normalize_svg_dimensions(svg_text: str) -> str:
+    """Ensure SVG has width/height when only viewBox is provided.
+
+    Some browsers are picky when drawing SVGs to canvas without intrinsic dimensions.
+    """
+    try:
+        head = svg_text[:2048]
+        if 'width=' in head and 'height=' in head:
+            return svg_text
+        m = re.search(r'viewBox\s*=\s*"\s*[-\d\.]+\s+[-\d\.]+\s+([\d\.]+)\s+([\d\.]+)\s*"', head, re.IGNORECASE)
+        if not m:
+            return svg_text
+        w = m.group(1)
+        h = m.group(2)
+
+        def repl(match: re.Match) -> str:
+            attrs = match.group(1) or ''
+            if 'width=' in attrs.lower() or 'height=' in attrs.lower():
+                return match.group(0)
+            return f'<svg{attrs} width="{w}" height="{h}">' 
+
+        return re.sub(r'<svg\b([^>]*)>', repl, svg_text, count=1, flags=re.IGNORECASE)
+    except Exception:
+        return svg_text
+
+
+@main_bp.route('/api/team-logo/<team_abbrev>.svg')
+def api_team_logo_svg(team_abbrev: str):
+    """Proxy team SVG logos as same-origin to make canvas rendering reliable."""
+    a = (team_abbrev or '').strip().upper()
+    if not a or not re.fullmatch(r'[A-Z]{2,4}', a):
+        return ('', 404)
+
+    # Cache for 30 days in-process
+    now = time.time()
+    try:
+        cached = _TEAM_LOGO_PROXY_CACHE.get(a)
+        if cached:
+            ts, data = cached
+            if (now - ts) < (30 * 24 * 3600):
+                resp = make_response(data)
+                resp.headers['Content-Type'] = 'image/svg+xml'
+                resp.headers['Cache-Control'] = 'public, max-age=86400'
+                return resp
+    except Exception:
+        pass
+
+    src = _team_logo_source_url(a)
+    if not src:
+        return ('', 404)
+
+    # Whitelist host/path to avoid SSRF from Teams.csv edits
+    try:
+        from urllib.parse import urlparse
+        pu = urlparse(src)
+        if pu.scheme not in ('http', 'https') or pu.netloc.lower() not in ('assets.nhle.com',):
+            src = f'https://assets.nhle.com/logos/nhl/svg/{a}_light.svg'
+    except Exception:
+        src = f'https://assets.nhle.com/logos/nhl/svg/{a}_light.svg'
+
+    try:
+        r = requests.get(src, timeout=10)
+        if r.status_code != 200 or not (r.content or b''):
+            return ('', 404)
+        raw = r.content
+        try:
+            txt = raw.decode('utf-8', errors='replace')
+            txt = _normalize_svg_dimensions(txt)
+            data = txt.encode('utf-8')
+        except Exception:
+            data = raw
+        try:
+            _TEAM_LOGO_PROXY_CACHE[a] = (now, data)
+        except Exception:
+            pass
+        resp = make_response(data)
+        resp.headers['Content-Type'] = 'image/svg+xml'
+        resp.headers['Cache-Control'] = 'public, max-age=86400'
+        return resp
+    except Exception:
+        return ('', 404)
+
+
 # Load Teams.csv (used for theming and lookups in templates)
 def _load_teams_csv() -> List[Dict[str, str]]:
     paths = [
@@ -4588,6 +4691,16 @@ def _build_seasonstats_agg(
     if st_norm not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
         st_norm = '5v5'
 
+    # When sourcing SeasonStats from Google Sheets (Sheets6), the sheet is overwritten on updates.
+    # We stamp a TimestampUTC column in the sheet; include it in the cache key to avoid serving stale
+    # aggregates from the in-memory/on-disk cache after a sheet refresh.
+    sheet_rev = ''
+    try:
+        if sheet_ok and sheet_rows:
+            sheet_rev = str((sheet_rows[0] or {}).get('TimestampUTC') or '').strip()
+    except Exception:
+        sheet_rev = ''
+
     # Cache key includes sheet identity because career scope can splice in Sheets6.
     key = (
         scope_norm,
@@ -4596,6 +4709,7 @@ def _build_seasonstats_agg(
         st_norm,
         (sheet_id or '')[:80],
         (worksheet or '')[:80],
+        sheet_rev[:40],
     )
     now = time.time()
     cached = _SEASONSTATS_AGG_CACHE.get(key)
@@ -4609,7 +4723,7 @@ def _build_seasonstats_agg(
         if not base:
             base = _disk_cache_base()
         os.makedirs(base, exist_ok=True)
-        key_bytes = ('|'.join(map(str, key)) + '|v1').encode('utf-8', errors='ignore')
+        key_bytes = ('|'.join(map(str, key)) + '|v2').encode('utf-8', errors='ignore')
         h = hashlib.sha1(key_bytes).hexdigest()  # nosec - non-crypto use (filename)
         cache_path = os.path.join(base, f'seasonstats_agg_{h}.pkl.gz')
         if os.path.exists(cache_path):
@@ -7723,6 +7837,9 @@ def api_game_shifts(game_id: int):
                     end_sec = to_seconds(end_txt)
                     if start_sec is None or end_sec is None:
                         continue
+                    if current_pid is None and not current_name:
+                        # If we couldn't resolve the current player header, don't emit anonymous shifts.
+                        continue
                     # Prefer canonical name from lineups if we have a playerId
                     name_out = canonical_name_for(current_pid, current_name)
                     out.append({
@@ -7842,6 +7959,8 @@ def api_game_shifts(game_id: int):
                     if start_sec is None or end_sec is None:
                         continue
                     name_out2 = canonical_name_for(pid, disp_name)
+                    if pid is None and not name_out2:
+                        continue
                     soup_results.append({
                         'PlayerID': pid,
                         'Name': name_out2,
@@ -7940,6 +8059,8 @@ def api_game_shifts(game_id: int):
                 if start_sec is None or end_sec is None:
                     continue
                 name_out3 = canonical_name_for(pid, disp_name)
+                if pid is None and not name_out3:
+                    continue
                 out.append({
                     'PlayerID': pid,
                     'Name': name_out3,
@@ -8019,25 +8140,111 @@ def api_game_shifts(game_id: int):
         if not active:
             continue
 
-        # Compute skater and goalie counts per team for this slice
-        team_counts: Dict[str, Dict[str, int]] = {}
+        # Compute unique on-ice skater/goalie counts per team for this slice.
+        # The HTML shift reports can contain duplicate or overlapping rows; counting rows inflates
+        # skater counts (e.g., 10v8). Use unique PlayerID (fallback to Name) per side.
+        team_players: Dict[str, Dict[str, set]] = {}
         for rec in active:
-            team = rec['Team'] or ''
-            pos = (rec.get('Position') or '').upper()
-            tc = team_counts.setdefault(team, {'G': 0, 'S': 0})
+            team = str(rec.get('Team') or '')
+            pos = str(rec.get('Position') or '').upper()
+            pid = rec.get('PlayerID')
+            name = str(rec.get('Name') or '').strip()
+            key = pid if isinstance(pid, int) else (name if name else None)
+            if key is None:
+                continue
+            tp = team_players.setdefault(team, {'G': set(), 'S': set()})
             if pos == 'G':
-                tc['G'] += 1
+                tp['G'].add(key)
             else:
-                tc['S'] += 1
+                tp['S'].add(key)
 
-        # Clamp to realistic maxima to avoid parser noise (e.g., missing/duplicated rows).
-        for t, tc in team_counts.items():
+        team_counts_raw: Dict[str, Dict[str, int]] = {}
+        team_counts_clamped: Dict[str, Dict[str, int]] = {}
+        for t, tp in team_players.items():
             try:
-                tc['G'] = min(int(tc.get('G') or 0), 1)
-                tc['S'] = min(int(tc.get('S') or 0), 6)
+                g_raw = int(len(tp.get('G') or set()))
+                s_raw = int(len(tp.get('S') or set()))
             except Exception:
-                tc['G'] = 0
-                tc['S'] = 0
+                g_raw = 0
+                s_raw = 0
+
+            # Clamp to realistic maxima to avoid noise in downstream calculations.
+            g = min(max(g_raw, 0), 1)
+            sk = min(max(s_raw, 0), 6)
+
+            team_counts_raw[t] = {'G': g_raw, 'S': s_raw}
+            team_counts_clamped[t] = {'G': g, 'S': sk}
+
+        def _normalize_strength_state(*, my_s: int, their_s: int, my_g: int, their_g: int) -> str:
+            observed_goalies = (my_g + their_g) > 0
+            if observed_goalies and my_g == 0 and their_g >= 1:
+                return 'ENF'
+            if observed_goalies and their_g == 0 and my_g >= 1:
+                return 'ENA'
+
+            ms = int(my_s or 0)
+            ts = int(their_s or 0)
+            ms = max(0, min(ms, 6))
+            ts = max(0, min(ts, 6))
+
+            # Preserve empty-net states (6vX / Xv6) explicitly. The expected set includes
+            # 6v5/6v4/6v3/6v2 and their inverses.
+            if ms == 6 and ts == 6:
+                # Extremely rare (both teams with extra attacker) — snap to even strength.
+                return '5v5'
+            # Requested bucketing for future shifts calcs:
+            # - treat 6v5/5v6 as 5v5 (empty net shouldn't split the state)
+            # - treat 6v4 as PP and 4v6 as SH
+            if (ms, ts) in {(6, 5), (5, 6)}:
+                return '5v5'
+            if (ms, ts) == (6, 4):
+                return 'PP'
+            if (ms, ts) == (4, 6):
+                return 'SH'
+            if ms == 6 or ts == 6:
+                return f'{ms}v{ts}'
+
+            # PP / SH
+            if ts == 4 and ms == 5:
+                return '5v4'
+            if ts == 3 and ms == 5:
+                return '5v3'
+            if ts == 3 and ms == 4:
+                return '4v3'
+            if ms == 4 and ts == 5:
+                return '4v5'
+            if ms == 3 and ts == 5:
+                return '3v5'
+            if ms == 3 and ts == 4:
+                return '3v4'
+
+            # Two-man advantage/disadvantage cases that we want to preserve.
+            if ms == 2 and ts in (3, 4, 5):
+                return f'2v{ts}'
+            if ts == 2 and ms in (3, 4, 5):
+                return f'{ms}v2'
+
+            # Even strength
+            if ms == 4 and ts == 4:
+                return '4v4'
+            if ms == 3 and ts == 3:
+                return '3v3'
+            if ms == 5 and ts == 5:
+                return '5v5'
+
+            # Extreme low-count fallbacks.
+            if ts == 0 and ms >= 1:
+                return '1v0'
+            if ms == 0 and ts >= 1:
+                return '0v1'
+
+            # If we're missing players due to scraping quirks, snap to closest even-strength.
+            m = max(ms, ts)
+            if m <= 3:
+                return '3v3'
+            if m == 4:
+                return '4v4'
+            return '5v5'
 
         # Emit rows with StrengthState
         for rec in active:
@@ -8053,10 +8260,12 @@ def api_game_shifts(game_id: int):
                 opp = 'Away'
             else:
                 # Fallback: pick any other team in this slice
-                opp = next((t for t in team_counts.keys() if t != team), '')
+                opp = next((t for t in team_counts_clamped.keys() if t != team), '')
 
-            my = team_counts.get(team, {'G': 0, 'S': 0})
-            their = team_counts.get(opp, {'G': 0, 'S': 0})
+            my_raw = team_counts_raw.get(team, {'G': 0, 'S': 0})
+            their_raw = team_counts_raw.get(opp, {'G': 0, 'S': 0})
+            my = team_counts_clamped.get(team, {'G': 0, 'S': 0})
+            their = team_counts_clamped.get(opp, {'G': 0, 'S': 0})
 
             # SeasonStats bucketing: only trust skater counts when both goalies are in.
             # Rules:
@@ -8083,16 +8292,12 @@ def api_game_shifts(game_id: int):
             except Exception:
                 my_g = 0
                 their_g = 0
+                my_s = 0
+                their_s = 0
                 strength_bucket = 'Other'
 
-            # Only call ENA/ENF when we actually observed goalie rows in this slice.
-            observed_goalies = (my_g + their_g) > 0
-            if observed_goalies and my_g == 0 and their_g >= 1:
-                strength = 'ENF'
-            elif observed_goalies and their_g == 0 and my_g >= 1:
-                strength = 'ENA'
-            else:
-                strength = f"{my['S']}v{their['S']}"
+            strength = _normalize_strength_state(my_s=my_s, their_s=their_s, my_g=my_g, their_g=their_g)
+            strength_raw = f"{int(my_raw.get('S') or 0)}v{int(their_raw.get('S') or 0)}"
 
             period_calc = 1 + (s // 1200)
             split_rows.append({
@@ -8106,7 +8311,12 @@ def api_game_shifts(game_id: int):
                 'End': int(e),
                 'Duration': int(e - s),
                 'StrengthState': strength,
+                'StrengthStateRaw': strength_raw,
                 'StrengthStateBucket': strength_bucket,
+                'SkatersOnIceFor': int(my_raw.get('S') or 0),
+                'SkatersOnIceAgainst': int(their_raw.get('S') or 0),
+                'GoaliesOnIceFor': int(my_raw.get('G') or 0),
+                'GoaliesOnIceAgainst': int(their_raw.get('G') or 0),
             })
 
     out = {
