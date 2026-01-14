@@ -1,5 +1,5 @@
-#Run update without RAPM/Context update:
-$env:GOOGLE_SHEETS_ID='1HcVuRJGKI8xanZV3nr3JggNrj1NvTHEv9hskWZyGcZE'; $dates = @('2026-01-07','2026-01-08','2026-01-09'); foreach($d in $dates){ Write-Host "\n=== Running update_data.py for $d (xG ON) ==="; C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe scripts\update_data.py --date $d --export --season 20252026 --replace-date; if($LASTEXITCODE -ne 0){ throw "update_data.py failed for $d (exit $LASTEXITCODE)" } }
+#Run update without RAPM/Context update:$env:GOOGLE_SHEETS_ID='1HcVuRJGKI8xanZV3nr3JggNrj1NvTHEv9hskWZyGcZE'; $dates = @('2026-01-07','2026-01-08','2026-01-09'); foreach($d in $dates){ Write-Host "\n=== Running update_data.py for $d (xG ON) ==="; C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe scripts\update_data.py --date $d --export --season 20252026 --replace-date; if($LASTEXITCODE -ne 0){ throw "update_data.py failed for $d (exit $LASTEXITCODE)" } }
+
 
 #Run update WITH RAPM/Context refresh (writes Sheets4 + Sheets5):
 $env:GOOGLE_SHEETS_ID='1HcVuRJGKI8xanZV3nr3JggNrj1NvTHEv9hskWZyGcZE'; $dates = @('2026-01-07','2026-01-08','2026-01-09'); foreach($d in $dates){ Write-Host "\n=== Running update_data.py for $d (xG ON + RAPM/Context) ==="; C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe scripts\update_data.py --date $d --export --season 20252026 --replace-date --run-rapm --rapm-sheets-id $env:GOOGLE_SHEETS_ID --rapm-worksheet Sheets4 --context-worksheet Sheets5; if($LASTEXITCODE -ne 0){ throw "update_data.py failed for $d (exit $LASTEXITCODE)" } }

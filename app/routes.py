@@ -1456,8 +1456,8 @@ def api_skaters_players():
     if not team:
         return jsonify({'players': []})
 
-    # Current season: use NHL stats skater bios (seasonId + currentTeamAbbrev).
-    # Previous seasons: use roster/{team}/{season} (historical roster by season).
+    # Prefer NHL stats skater bios (seasonId + currentTeamAbbrev) for any season.
+    # Fallback for older seasons: roster/{team}/{season} (historical roster by season).
     # NOTE: skater bios endpoint returns 500 if cayenneExp is omitted.
     season_i = _safe_int(season)
     try:
@@ -1468,8 +1468,27 @@ def api_skaters_players():
         season_i = current_i
 
     players: List[Dict[str, Any]] = []
-    if season_i and current_i and season_i != current_i:
-        url = f'https://api-web.nhle.com/v1/roster/{team}/{season_i}'
+
+    bios_map = _load_skater_bios_season_cached(int(season_i or 0))
+    try:
+        for pid, info in (bios_map or {}).items():
+            try:
+                if not pid:
+                    continue
+                t = str((info or {}).get('team') or '').strip().upper()
+                if t != team:
+                    continue
+                name = str((info or {}).get('name') or '').strip() or str(pid)
+                pos_code = str((info or {}).get('positionCode') or (info or {}).get('position') or '').strip().upper()
+                players.append({'playerId': int(pid), 'name': name, 'pos': pos_code})
+            except Exception:
+                continue
+    except Exception:
+        players = []
+
+    # Fallback: if bios is empty for a historical season, try the roster endpoint.
+    if (not players) and season_i and current_i and season_i != current_i:
+        url = f'https://api-web.nhle.com/v1/roster/{team.lower()}/{season_i}'
         try:
             r = requests.get(url, timeout=20, allow_redirects=True)
             if r.status_code == 200:
@@ -1489,24 +1508,7 @@ def api_skaters_players():
                         name = (str(fn).strip() + ' ' + str(ln).strip()).strip() or str(pid)
                         players.append({'playerId': int(pid), 'name': name, 'pos': pos})
         except Exception:
-            players = []
-    else:
-        bios_map = _load_skater_bios_season_cached(int(season_i or 0))
-        try:
-            for pid, info in (bios_map or {}).items():
-                try:
-                    if not pid:
-                        continue
-                    t = str((info or {}).get('team') or '').strip().upper()
-                    if t != team:
-                        continue
-                    name = str((info or {}).get('name') or '').strip() or str(pid)
-                    pos_code = str((info or {}).get('positionCode') or (info or {}).get('position') or '').strip().upper()
-                    players.append({'playerId': int(pid), 'name': name, 'pos': pos_code})
-                except Exception:
-                    continue
-        except Exception:
-            players = []
+            pass
 
     j = jsonify({'players': players})
     try:
@@ -2603,6 +2605,487 @@ def api_skaters_edge():
         'skatingSpeed': skating_speed_metrics,
         'zoneTime': zone_time_by_strength,
         'skatingDistance': skating_distance_by_strength,
+    }
+    j = jsonify(payload)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
+@main_bp.route('/api/skaters/scatter')
+def api_skaters_scatter():
+    """League-wide scatter data for the Skaters 'Charts' tab.
+
+    Query params (match Card slicers):
+      season=20252026
+      seasonState=regular|playoffs|all
+      strengthState=5v5|PP|SH|Other|all
+      xgModel=xG_S|xG_F|xG_F2
+      rates=Totals|Per60|PerGame
+      scope=season|career
+      minGP=<int>
+      minTOI=<float>
+
+    Scatter params:
+      xMetricId=<Category|Metric>
+      yMetricId=<Category|Metric>
+
+    Notes:
+      - Uses SeasonStats aggregates for all players.
+      - Supports RAPM and Context (QoT/QoC/ZS) metrics via static CSVs and/or Sheets for 20252026.
+      - Does NOT support NHL Edge metrics.
+    """
+    season = str(request.args.get('season') or '').strip()
+    season_state = str(request.args.get('seasonState') or 'regular').strip().lower()
+    strength_state = str(request.args.get('strengthState') or '5v5').strip()
+    xg_model = str(request.args.get('xgModel') or 'xG_F').strip()
+    rates = str(request.args.get('rates') or 'Totals').strip()
+    scope = str(request.args.get('scope') or 'season').strip().lower()
+    x_metric_id = str(request.args.get('xMetricId') or request.args.get('xMetric') or '').strip()
+    y_metric_id = str(request.args.get('yMetricId') or request.args.get('yMetric') or '').strip()
+
+    try:
+        min_gp = int(float(str(request.args.get('minGP') or '0').strip() or '0'))
+    except Exception:
+        min_gp = 0
+    try:
+        min_toi = float(str(request.args.get('minTOI') or '0').strip() or '0')
+    except Exception:
+        min_toi = 0.0
+
+    try:
+        season_int = int(season) if season else None
+    except Exception:
+        season_int = None
+    if season_int is None:
+        season_int = 20252026
+
+    if season_state not in {'regular', 'playoffs', 'all'}:
+        season_state = 'regular'
+    if strength_state not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
+        strength_state = '5v5'
+    if xg_model not in {'xG_S', 'xG_F', 'xG_F2'}:
+        xg_model = 'xG_F'
+    if rates not in {'Totals', 'Per60', 'PerGame'}:
+        rates = 'Totals'
+    if scope not in {'season', 'career'}:
+        scope = 'season'
+
+    if not x_metric_id or not y_metric_id:
+        return jsonify({'error': 'missing_metric', 'hint': 'Provide xMetricId and yMetricId'}), 400
+    if str(x_metric_id).startswith('Edge|') or str(y_metric_id).startswith('Edge|'):
+        return jsonify({'error': 'edge_not_supported'}), 400
+
+    sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
+    sheet_rows: Optional[List[Dict[str, Any]]] = None
+    sheet_ok = False
+    if sheet_id:
+        try:
+            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
+            sheet_ok = True
+        except Exception:
+            sheet_rows = None
+            sheet_ok = False
+
+    agg, _pos_group_by_pid = _build_seasonstats_agg(
+        scope=scope,
+        season_int=season_int,
+        season_state=season_state,
+        strength_state=strength_state,
+        sheet_id=sheet_id,
+        worksheet=worksheet,
+        sheet_ok=sheet_ok,
+        sheet_rows=sheet_rows,
+    )
+
+    # Apply minimum requirements.
+    if min_gp > 0 or min_toi > 0:
+        eligible = {pid_k for pid_k, d in agg.items() if float(d.get('GP') or 0) >= float(min_gp) and float(d.get('TOI') or 0.0) >= float(min_toi)}
+        agg = {pid_k: d for pid_k, d in agg.items() if pid_k in eligible}
+
+    def _pct(n: Optional[float], d: Optional[float]) -> Optional[float]:
+        try:
+            if n is None or d is None:
+                return None
+            if d <= 0:
+                return None
+            return 100.0 * (float(n) / float(d))
+        except Exception:
+            return None
+
+    def _attempts(v: Dict[str, Any]) -> float:
+        vv = v.get('iShots') if xg_model == 'xG_S' else v.get('iFenwick')
+        return float(vv or 0.0)
+
+    def _ixg(v: Dict[str, Any]) -> float:
+        if xg_model == 'xG_F':
+            return float(v.get('ixG_F') or 0.0)
+        if xg_model == 'xG_F2':
+            return float(v.get('ixG_F2') or 0.0)
+        return float(v.get('ixG_S') or 0.0)
+
+    def _xgf(v: Dict[str, Any]) -> float:
+        if xg_model == 'xG_F':
+            return float(v.get('xGF_F') or 0.0)
+        if xg_model == 'xG_F2':
+            return float(v.get('xGF_F2') or 0.0)
+        return float(v.get('xGF_S') or 0.0)
+
+    def _xga(v: Dict[str, Any]) -> float:
+        if xg_model == 'xG_F':
+            return float(v.get('xGA_F') or 0.0)
+        if xg_model == 'xG_F2':
+            return float(v.get('xGA_F2') or 0.0)
+        return float(v.get('xGA_S') or 0.0)
+
+    def _rate_from(gp: float, toi: float, vv: Optional[float]) -> Optional[float]:
+        if rates == 'Totals':
+            return vv
+        denom = None
+        if rates == 'PerGame':
+            denom = gp if gp > 0 else None
+        elif rates == 'Per60':
+            denom = (toi / 60.0) if toi > 0 else None
+        if vv is None or denom is None or denom <= 0:
+            return None
+        try:
+            return float(vv) / float(denom)
+        except Exception:
+            return None
+
+    def _norm_rates_totals(v: Any) -> str:
+        s = str(v or '').strip().lower()
+        if s.startswith('tot'):
+            return 'Totals'
+        if s.startswith('rate'):
+            return 'Rates'
+        return str(v or '').strip() or 'Rates'
+
+    want_strength = strength_state if strength_state in {'5v5', 'PP', 'SH'} else '5v5'
+    want_rapm_rates = 'Totals' if rates == 'Totals' else 'Rates'
+
+    # Optional RAPM/context maps for league-wide lookup.
+    rapm_by_pid: Dict[int, Dict[str, Any]] = {}
+    ctx_by_pid: Dict[int, Dict[str, Any]] = {}
+
+    needs_rapm = ('|RAPM ' in x_metric_id) or ('|RAPM ' in y_metric_id)
+    needs_ctx = (x_metric_id in {'Context|QoT', 'Context|QoC', 'Context|ZS'}) or (y_metric_id in {'Context|QoT', 'Context|QoC', 'Context|ZS'})
+
+    if needs_rapm:
+        rapm_rows: List[Dict[str, Any]] = []
+        if season_int == 20252026:
+            rid = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
+            rws = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
+            if rid:
+                try:
+                    rapm_rows = _load_sheet_rows_cached(rid, rws, ttl_env='RAPM_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60) or []
+                except Exception:
+                    rapm_rows = _load_rapm_static_csv() or []
+            else:
+                rapm_rows = _load_rapm_static_csv() or []
+        else:
+            rapm_rows = _load_rapm_static_csv() or []
+
+        for r in rapm_rows:
+            try:
+                if season_int is not None:
+                    if int(str(r.get('Season') or '').strip()) != int(season_int):
+                        continue
+                st = str(r.get('StrengthState') or '').strip()
+                rt = _norm_rates_totals(r.get('Rates_Totals') or r.get('Rates/Totals') or r.get('RatesTotals'))
+                if st != want_strength or rt != want_rapm_rates:
+                    continue
+                pid_r = int(str(r.get('PlayerID') or '').strip())
+                if pid_r <= 0:
+                    continue
+                rapm_by_pid[pid_r] = r
+            except Exception:
+                continue
+
+    if needs_ctx:
+        ctx_rows: List[Dict[str, Any]] = []
+        if season_int == 20252026:
+            cid = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
+            cws = (os.getenv('CONTEXT_WORKSHEET') or 'Sheets5').strip()
+            if cid:
+                try:
+                    ctx_rows = _load_sheet_rows_cached(cid, cws, ttl_env='CONTEXT_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60) or []
+                except Exception:
+                    ctx_rows = _load_context_static_csv() or []
+            else:
+                ctx_rows = _load_context_static_csv() or []
+        else:
+            ctx_rows = _load_context_static_csv() or []
+
+        for r in ctx_rows:
+            try:
+                if season_int is not None:
+                    if int(str(r.get('Season') or '').strip()) != int(season_int):
+                        continue
+                st = str(r.get('StrengthState') or '').strip()
+                if st != want_strength:
+                    continue
+                pid_r = int(str(r.get('PlayerID') or '').strip())
+                if pid_r <= 0:
+                    continue
+                ctx_by_pid[pid_r] = r
+            except Exception:
+                continue
+
+    def _compute_metric(metric_id: str, v: Dict[str, Any], player_id: int) -> Optional[float]:
+        gp = float(v.get('GP') or 0.0)
+        toi = float(v.get('TOI') or 0.0)
+        igoals = float(v.get('iGoals') or 0.0)
+        a1 = float(v.get('Assists1') or 0.0)
+        a2 = float(v.get('Assists2') or 0.0)
+        pts = igoals + a1 + a2
+        att = _attempts(v)
+        ixg = _ixg(v)
+
+        cf = float(v.get('CF') or 0.0)
+        ca = float(v.get('CA') or 0.0)
+        ff = float(v.get('FF') or 0.0)
+        fa = float(v.get('FA') or 0.0)
+        sf = float(v.get('SF') or 0.0)
+        sa = float(v.get('SA') or 0.0)
+        gf = float(v.get('GF') or 0.0)
+        ga = float(v.get('GA') or 0.0)
+        xgf = _xgf(v)
+        xga = _xga(v)
+
+        pim_taken = float(v.get('PIM_taken') or 0.0)
+        pim_drawn = float(v.get('PIM_drawn') or 0.0)
+        pim_for = float(v.get('PIM_for') or 0.0)
+        pim_against = float(v.get('PIM_against') or 0.0)
+        hits = float(v.get('Hits') or 0.0)
+        takeaways = float(v.get('Takeaways') or 0.0)
+        giveaways = float(v.get('Giveaways') or 0.0)
+
+        category = None
+        metric = None
+        if '|' in metric_id:
+            category, metric = metric_id.split('|', 1)
+        else:
+            metric = metric_id
+
+        # No Edge support here.
+        if category == 'Edge':
+            return None
+
+        # League-wide RAPM.
+        if metric and str(metric).startswith('RAPM '):
+            rrow = rapm_by_pid.get(int(player_id))
+            if not rrow:
+                return None
+            base = str(metric).replace('RAPM', '', 1).strip()
+            col = None
+            if base in {'CF', 'CA', 'GF', 'GA', 'xGF', 'xGA'}:
+                col = base
+            elif base == 'C+/-':
+                col = 'C_plusminus'
+            elif base == 'G+/-':
+                col = 'G_plusminus'
+            elif base == 'xG+/-':
+                col = 'xG_plusminus'
+            if not col:
+                return None
+            val = _parse_locale_float(rrow.get(col))
+            return float(val) if val is not None else None
+
+        # League-wide Context (QoT/QoC/ZS).
+        if category == 'Context' and metric in {'QoT', 'QoC', 'ZS'}:
+            crow = ctx_by_pid.get(int(player_id))
+            if not crow:
+                return None
+            col2 = None
+            if metric == 'QoT':
+                col2 = 'QoT_blend_xG67_G33'
+            elif metric == 'QoC':
+                col2 = 'QoC_blend_xG67_G33'
+            elif metric == 'ZS':
+                col2 = 'ZS_Difficulty'
+            val2 = _parse_locale_float(crow.get(col2)) if col2 else None
+            return float(val2) if val2 is not None else None
+
+        if metric == 'GP':
+            return gp
+        if metric == 'TOI':
+            return toi
+
+        if metric == 'iGoals':
+            return _rate_from(gp, toi, igoals)
+        if metric == 'Assists1':
+            return _rate_from(gp, toi, a1)
+        if metric == 'Assists2':
+            return _rate_from(gp, toi, a2)
+        if metric == 'Points':
+            return _rate_from(gp, toi, pts)
+
+        if metric in {'iShots', 'iFenwick', 'iShots or iFenwick'}:
+            vv = float(v.get('iShots') or 0.0) if xg_model == 'xG_S' else float(v.get('iFenwick') or 0.0)
+            return _rate_from(gp, toi, vv)
+
+        if metric in {'ixG', 'Individual xG'}:
+            return _rate_from(gp, toi, ixg)
+
+        if category == 'Shooting' and metric in {'Sh% or FSh%', 'Sh%'}:
+            return _pct(igoals, att)
+        if category == 'Shooting' and metric in {'xSh% or xFS%', 'xSh%'}:
+            return _pct(ixg, att)
+        if category == 'Shooting' and metric in {'dSh% or dFSh%'}:
+            sh = _pct(igoals, att)
+            xsh = _pct(ixg, att)
+            return (sh - xsh) if (sh is not None and xsh is not None) else None
+        if metric == 'GAx' and category == 'Shooting':
+            return _rate_from(gp, toi, (igoals - ixg))
+
+        if metric == 'CF':
+            return _rate_from(gp, toi, cf)
+        if metric == 'CA':
+            return _rate_from(gp, toi, ca)
+        if metric == 'FF':
+            return _rate_from(gp, toi, ff)
+        if metric == 'FA':
+            return _rate_from(gp, toi, fa)
+        if metric == 'SF':
+            return _rate_from(gp, toi, sf)
+        if metric == 'SA':
+            return _rate_from(gp, toi, sa)
+        if metric == 'GF':
+            return _rate_from(gp, toi, gf)
+        if metric == 'GA':
+            return _rate_from(gp, toi, ga)
+        if metric == 'xGF':
+            return _rate_from(gp, toi, xgf)
+        if metric == 'xGA':
+            return _rate_from(gp, toi, xga)
+
+        if metric == 'CF%':
+            return _pct(cf, (cf + ca))
+        if metric == 'FF%':
+            return _pct(ff, (ff + fa))
+        if metric == 'SF%':
+            return _pct(sf, (sf + sa))
+        if metric == 'GF%':
+            return _pct(gf, (gf + ga))
+        if metric == 'xGF%':
+            return _pct(xgf, (xgf + xga))
+        if metric == 'C+/-':
+            return _rate_from(gp, toi, (cf - ca))
+        if metric == 'F+/-':
+            return _rate_from(gp, toi, (ff - fa))
+        if metric == 'S+/-':
+            return _rate_from(gp, toi, (sf - sa))
+        if metric == 'G+/-':
+            return _rate_from(gp, toi, (gf - ga))
+        if metric == 'xG+/-':
+            return _rate_from(gp, toi, (xgf - xga))
+
+        if category == 'Context' and metric == 'Sh%':
+            return _pct(gf, sf)
+        if category == 'Context' and metric == 'Sv%':
+            if sa <= 0:
+                return 100.0 if ga <= 0 else 0.0
+            return 100.0 * (1.0 - (ga / sa))
+        if category == 'Context' and metric == 'PDO':
+            sh_oi = _pct(gf, sf)
+            sv_oi = 100.0 if sa <= 0 and ga <= 0 else (0.0 if sa <= 0 else 100.0 * (1.0 - (ga / sa)))
+            return (sh_oi + sv_oi) if (sh_oi is not None and sv_oi is not None) else None
+        if category == 'Context' and metric == 'GAx':
+            return _rate_from(gp, toi, (gf - xgf))
+        if category == 'Context' and metric == 'GSAx':
+            return _rate_from(gp, toi, (xga - ga))
+
+        if category == 'Penalties' and metric == 'PIM_taken':
+            return _rate_from(gp, toi, pim_taken)
+        if category == 'Penalties' and metric == 'PIM_drawn':
+            return _rate_from(gp, toi, pim_drawn)
+        if category == 'Penalties' and metric == 'PIM+/-':
+            return _rate_from(gp, toi, (pim_drawn - pim_taken))
+        if category == 'Penalties' and metric == 'PIM_For':
+            return _rate_from(gp, toi, pim_for)
+        if category == 'Penalties' and metric == 'PIM_Against':
+            return _rate_from(gp, toi, pim_against)
+        if category == 'Penalties' and metric == 'oiPIM+/-':
+            return _rate_from(gp, toi, (pim_for - pim_against))
+
+        if category == 'Other' and metric == 'Hits':
+            return _rate_from(gp, toi, hits)
+        if category == 'Other' and metric == 'Takeaways':
+            return _rate_from(gp, toi, takeaways)
+        if category == 'Other' and metric == 'Giveaways':
+            return _rate_from(gp, toi, giveaways)
+
+        # If the metric names a column directly, use it.
+        if metric and metric in v:
+            try:
+                return _rate_from(gp, toi, float(v.get(metric) or 0.0))
+            except Exception:
+                return None
+
+        return None
+
+    # Player/team labels via season-aware roster mapping.
+    roster_map: Dict[int, Dict[str, Any]] = {}
+    try:
+        roster_map = _load_all_rosters_for_season_cached(int(season_int or 0)) or {}
+    except Exception:
+        roster_map = {}
+
+    pts_out: List[Dict[str, Any]] = []
+    for pid_i, v in agg.items():
+        try:
+            xv = _compute_metric(x_metric_id, v, int(pid_i))
+            yv = _compute_metric(y_metric_id, v, int(pid_i))
+            if xv is None or yv is None:
+                continue
+            xf = float(xv)
+            yf = float(yv)
+            if not math.isfinite(xf) or not math.isfinite(yf):
+                continue
+            info = roster_map.get(int(pid_i)) or {}
+            team = str(info.get('team') or '').strip().upper()
+            name = str(info.get('name') or '').strip()
+            if not name:
+                name = str(pid_i)
+            pts_out.append({
+                'playerId': int(pid_i),
+                'name': name,
+                'team': team,
+                'x': xf,
+                'y': yf,
+                'gp': float(v.get('GP') or 0.0),
+                'toi': float(v.get('TOI') or 0.0),
+            })
+        except Exception:
+            continue
+
+    label_attempts = 'iShots' if xg_model == 'xG_S' else 'iFenwick'
+    label_sh = 'Sh%' if xg_model == 'xG_S' else 'FSh%'
+    label_xsh = 'xSh%' if xg_model == 'xG_S' else 'xFS%'
+    label_dsh = 'dSh%' if xg_model == 'xG_S' else 'dFSh%'
+
+    payload = {
+        'season': season_int,
+        'scope': scope,
+        'seasonState': season_state,
+        'strengthState': strength_state,
+        'xgModel': xg_model,
+        'rates': rates,
+        'minGP': int(min_gp),
+        'minTOI': float(min_toi),
+        'xMetricId': x_metric_id,
+        'yMetricId': y_metric_id,
+        'labels': {
+            'Attempts': label_attempts,
+            'Sh': label_sh,
+            'xSh': label_xsh,
+            'dSh': label_dsh,
+        },
+        'points': pts_out,
     }
     j = jsonify(payload)
     try:
@@ -4925,6 +5408,105 @@ def _load_all_rosters_cached() -> Dict[int, Dict[str, str]]:
     out = _load_skater_bios_season_cached(season_i)
 
     _ALL_ROSTERS_CACHE = (now, out)
+    return out
+
+
+# Historical roster cache: {seasonId -> (timestamp, playerId->info)}
+_ALL_ROSTERS_BY_SEASON_CACHE: Dict[int, Tuple[float, Dict[int, Dict[str, str]]]] = {}
+
+
+def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, str]]:
+    """Build a playerId->info map for a specific season.
+
+    For the current season, prefer NHL stats skater bios.
+    For other seasons, best-effort fetch team rosters from api-web.nhle.com to recover
+    a season-appropriate team abbreviation.
+    """
+    global _ALL_ROSTERS_BY_SEASON_CACHE
+    try:
+        ttl_s = max(60, int(os.getenv('ALL_ROSTERS_BY_SEASON_CACHE_TTL_SECONDS', '21600') or '21600'))
+    except Exception:
+        ttl_s = 21600
+
+    try:
+        season_i = int(season_id)
+    except Exception:
+        season_i = 0
+    if season_i <= 0:
+        try:
+            season_i = int(current_season_id())
+        except Exception:
+            season_i = 0
+
+    try:
+        current_i = int(current_season_id())
+    except Exception:
+        current_i = 0
+
+    now = time.time()
+    cached = _ALL_ROSTERS_BY_SEASON_CACHE.get(season_i)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
+    # Current season: bios has fast, complete coverage.
+    if current_i and season_i == current_i:
+        out = _load_skater_bios_season_cached(season_i)
+        _ALL_ROSTERS_BY_SEASON_CACHE[season_i] = (now, out)
+        return out
+
+    out: Dict[int, Dict[str, str]] = {}
+    # Historical season: build mapping from per-team roster endpoints.
+    teams = [str(r.get('Team') or '').strip().upper() for r in (TEAM_ROWS or []) if isinstance(r, dict)]
+    teams = [t for t in teams if t]
+    for team in teams:
+        url = f'https://api-web.nhle.com/v1/roster/{team}/{season_i}'
+        try:
+            r = requests.get(url, timeout=20, allow_redirects=True)
+            if r.status_code != 200:
+                continue
+            data = r.json() if r.content else {}
+            if not isinstance(data, dict):
+                continue
+            forwards = data.get('forwards') or []
+            defensemen = data.get('defensemen') or []
+            for p in list(forwards) + list(defensemen):
+                if not isinstance(p, dict):
+                    continue
+                pid = _safe_int(p.get('id') or p.get('playerId'))
+                if not pid or pid <= 0:
+                    continue
+                fn = (p.get('firstName') or {}).get('default') if isinstance(p.get('firstName'), dict) else (p.get('firstName') or '')
+                ln = (p.get('lastName') or {}).get('default') if isinstance(p.get('lastName'), dict) else (p.get('lastName') or '')
+                name = (str(fn).strip() + ' ' + str(ln).strip()).strip() or str(pid)
+                pos_raw = str(p.get('positionCode') or p.get('position') or '').strip().upper()
+                pos = 'D' if pos_raw.startswith('D') else 'F'
+                out[int(pid)] = {
+                    'playerId': str(int(pid)),
+                    'name': name,
+                    'team': team,
+                    'position': pos,
+                    'positionCode': pos_raw,
+                }
+        except Exception:
+            continue
+
+    # Fill gaps with bios names (team may be currentTeamAbbrev; keep historical roster team when present).
+    try:
+        bios = _load_skater_bios_season_cached(season_i) or {}
+        for pid_s, info in bios.items():
+            try:
+                pid_i = int(pid_s)
+            except Exception:
+                continue
+            if pid_i in out:
+                if (not out[pid_i].get('name')) and info.get('name'):
+                    out[pid_i]['name'] = info.get('name') or out[pid_i].get('name')
+                continue
+            out[pid_i] = info
+    except Exception:
+        pass
+
+    _ALL_ROSTERS_BY_SEASON_CACHE[season_i] = (now, out)
     return out
 
 

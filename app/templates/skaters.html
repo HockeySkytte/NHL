@@ -139,6 +139,21 @@
   .rapm-sect h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .toi{ margin-top:8px; font-size:12px; color:rgba(255,255,255,0.90); text-align:center; font-weight:750; }
 
+  .charts-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
+  @media (max-width: 1100px){ .charts-grid{ grid-template-columns:1fr; } }
+  .chart-block{ border:1px solid #232a3a; border-radius:12px; padding:12px 12px 10px; background:rgba(255,255,255,0.01); display:flex; flex-direction:column; min-width:0; }
+  .chart-hd{ display:flex; flex-direction:column; align-items:stretch; gap:10px; margin-bottom:10px; }
+  .chart-hd h3{ margin:0; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .chart-controls{ width:100%; display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:flex-end; }
+  @media (max-width: 640px){ .chart-controls{ grid-template-columns:1fr; } }
+  .chart-controls label{ min-width:0; }
+  .chart-controls select{ width:100%; }
+  .charts-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .charts-sub{ color:var(--text-dim); font-size:13px; }
+  .chart-area{ position:relative; width:100%; height:520px; flex:1 1 auto; }
+  @media (max-width: 980px){ .chart-area{ height:420px; } }
+  .chart-canvas{ width:100% !important; height:100% !important; display:block; }
+
   .rapm-row{ display:flex; gap:3px; align-items:flex-start; justify-content:center; }
   .rapm-axis{ width:40px; height:var(--rapmBarH); position:relative; }
   .rapm-axis .lbl{ position:absolute; left:0; font-size:11px; color:var(--text-dim); }
@@ -235,6 +250,7 @@
 
     <div class="subtabs" role="tablist" aria-label="Skater tabs">
       <button id="tabCard" class="subtab-btn active" type="button" role="tab" aria-selected="true">Card</button>
+      <button id="tabCharts" class="subtab-btn" type="button" role="tab" aria-selected="false">Charts</button>
       <button id="tabEdge" class="subtab-btn" type="button" role="tab" aria-selected="false">Edge</button>
       <button id="tabRAPM" class="subtab-btn" type="button" role="tab" aria-selected="false">RAPM</button>
       <button id="tabProjections" class="subtab-btn" type="button" role="tab" aria-selected="false">Projections</button>
@@ -246,6 +262,56 @@
         <button id="btnConfigureCard" class="config-btn" type="button">Configure Card</button>
       </div>
       <div id="cardPanelInner" class="skater-empty">Select a player to view Card.</div>
+    </div>
+
+    <div id="tabPanelCharts" class="panel" role="tabpanel" style="display:none;">
+      <div class="charts-toolbar">
+        <div id="chartsSlicerSummary" class="card-panel-meta"></div>
+        <div id="chartsHighlightWrap">
+          <div id="chartsHighlightButtons" class="segmented" role="group" aria-label="Charts highlight">
+            <button id="chartsHlPlayer" type="button" class="seg-btn" aria-pressed="false">Highlight Player</button>
+            <button id="chartsHlTeam" type="button" class="seg-btn active" aria-pressed="true">Highlight Team</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="chartsEmpty" class="skater-empty" hidden>Select a season to view Charts.</div>
+
+      <div id="chartsGrid" class="charts-grid">
+        <section class="chart-block" aria-label="Play Driving chart">
+          <div class="chart-hd">
+            <h3>Play Driving</h3>
+            <div class="chart-controls">
+              <label>X Axis
+                <select id="pdX"></select>
+              </label>
+              <label>Y Axis
+                <select id="pdY"></select>
+              </label>
+            </div>
+          </div>
+          <div class="chart-area">
+            <canvas id="pdChart" class="chart-canvas"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-block" aria-label="Shooting and Context chart">
+          <div class="chart-hd">
+            <h3>Shooting and Context</h3>
+            <div class="chart-controls">
+              <label>X Axis
+                <select id="scX"></select>
+              </label>
+              <label>Y Axis
+                <select id="scY"></select>
+              </label>
+            </div>
+          </div>
+          <div class="chart-area">
+            <canvas id="scChart" class="chart-canvas"></canvas>
+          </div>
+        </section>
+      </div>
     </div>
 
     <div id="tabPanelEdge" class="panel" role="tabpanel" style="display:none;">
@@ -317,6 +383,8 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
+const DEFAULT_SKATER_IMG = 'https://assets.nhle.com/mugs/nhl/default-skater.png';
+
 const teamSelect = document.getElementById('teamSelect');
 const seasonSelect = document.getElementById('seasonSelect');
 const playerSelect = document.getElementById('playerSelect');
@@ -327,18 +395,32 @@ const skaterInfo = document.getElementById('skaterInfo');
 const skaterMsg = document.getElementById('skaterMsg');
 
 const tabCard = document.getElementById('tabCard');
+const tabCharts = document.getElementById('tabCharts');
 const tabEdge = document.getElementById('tabEdge');
 const tabRAPM = document.getElementById('tabRAPM');
 const tabProjections = document.getElementById('tabProjections');
 const tabPanelCard = document.getElementById('tabPanelCard');
+const tabPanelCharts = document.getElementById('tabPanelCharts');
 const tabPanelEdge = document.getElementById('tabPanelEdge');
 const tabPanelRAPM = document.getElementById('tabPanelRAPM');
 const tabPanelProjections = document.getElementById('tabPanelProjections');
 const cardPanelInner = document.getElementById('cardPanelInner');
+const chartsEmpty = document.getElementById('chartsEmpty');
+const chartsGrid = document.getElementById('chartsGrid');
+const chartsHighlightButtons = document.getElementById('chartsHighlightButtons');
+const chartsHlPlayer = document.getElementById('chartsHlPlayer');
+const chartsHlTeam = document.getElementById('chartsHlTeam');
+const pdX = document.getElementById('pdX');
+const pdY = document.getElementById('pdY');
+const scX = document.getElementById('scX');
+const scY = document.getElementById('scY');
+const pdChartEl = document.getElementById('pdChart');
+const scChartEl = document.getElementById('scChart');
 const edgePanelInner = document.getElementById('edgePanelInner');
 const rapmPanelInner = document.getElementById('rapmPanelInner');
 const projPanelInner = document.getElementById('projPanelInner');
 const cardSlicerSummary = document.getElementById('cardSlicerSummary');
+const chartsSlicerSummary = document.getElementById('chartsSlicerSummary');
 
 const cardScope = document.getElementById('cardScope');
 const cardScopeButtons = document.getElementById('cardScopeButtons');
@@ -374,6 +456,16 @@ let __cardConfig = null;
 const CARD_CONFIG_KEY = 'nhlSkatersCardConfig_v1';
 const CARD_SLOTS = ['L1','C1','R1','L2','C2','R2','L3','C3','R3'];
 
+const SKATERS_STATE_KEY = 'nhlSkatersPageState_v1';
+let __restoreActiveTab = null;
+let __restorePlayerId = null;
+let __restoreChartAxes = null;
+let __restoreProjSubtab = null;
+let __restoreTeam = null;
+let __restoreSeason = null;
+let __isRestoringSkatersState = false;
+let __isBootingSkatersPage = true;
+
 const projTabPlayer = document.getElementById('projTabPlayer');
 const projTabTeam = document.getElementById('projTabTeam');
 const projTabLeague = document.getElementById('projTabLeague');
@@ -400,7 +492,695 @@ let __edgeKey = '';
 let __edgeData = null;
 let __edgeStrength = 'all';
 
+let __pdChart = null;
+let __scChart = null;
+let __chartsHighlightMode = 'team'; // 'team' | 'player'
+let __scatterCache = new Map();
+let __logoImgCache = new Map();
+let __chartsLastKey = '';
+let __playerMugCache = new Map();
+
 const teams = JSON.parse(document.getElementById('teams-data').textContent);
+
+function teamLogoUrl(abbrev){
+  const a = String(abbrev||'').toUpperCase();
+  const row = Array.isArray(teams) ? teams.find(t=> String(t?.Team||'').toUpperCase() === a) : null;
+  return (row && row.Logo) ? row.Logo : (a ? `https://assets.nhle.com/logos/nhl/svg/${a}_light.svg` : '');
+}
+
+function getTeamLogoImage(abbrev, onLoad){
+  const a = String(abbrev||'').toUpperCase();
+  if(!a) return null;
+
+  if(__logoImgCache.has(a)) return __logoImgCache.get(a);
+  const url = teamLogoUrl(a);
+  if(!url) return null;
+  const img = new Image();
+  img.onload = ()=>{
+    try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/}
+    try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/}
+  };
+  img.onerror = ()=>{ /* noop */ };
+  img.src = url;
+  __logoImgCache.set(a, img);
+  return img;
+}
+
+function getPlayerMugImage(season, team, playerId){
+  const pid = String(playerId||'').trim();
+  if(!pid) return null;
+  if(__playerMugCache.has(pid)) return __playerMugCache.get(pid);
+
+  const s = String(season||'').trim();
+  const t = String(team||'').trim();
+  const primary = (s && t)
+    ? `https://assets.nhle.com/mugs/nhl/${encodeURIComponent(s)}/${encodeURIComponent(t)}/${encodeURIComponent(pid)}.png`
+    : null;
+  const fallback = `https://assets.nhle.com/mugs/nhl/latest/${encodeURIComponent(pid)}.png`;
+
+  const img = new Image();
+  img.onload = ()=>{
+    try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/}
+    try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/}
+  };
+  img.onerror = ()=>{
+    // one-time fallback
+    if(img.dataset.fallbackDone === '1') return;
+    img.dataset.fallbackDone = '1';
+    img.src = fallback;
+  };
+  img.dataset.fallbackDone = '0';
+  img.src = primary || fallback;
+  __playerMugCache.set(pid, img);
+  return img;
+}
+
+const PLAY_DRIVING_METRICS = [
+  { id:'Play Driving|CF', label:'CF' },
+  { id:'Play Driving|CA', label:'CA' },
+  { id:'Play Driving|CF%', label:'CF%' },
+  { id:'Play Driving|C+/-', label:'C+/-' },
+  { id:'Play Driving|GF', label:'GF' },
+  { id:'Play Driving|GA', label:'GA' },
+  { id:'Play Driving|GF%', label:'GF%' },
+  { id:'Play Driving|G+/-', label:'G+/-' },
+  { id:'Play Driving|xGF', label:'xGF' },
+  { id:'Play Driving|xGA', label:'xGA' },
+  { id:'Play Driving|xGF%', label:'xGF%' },
+  { id:'Play Driving|xG+/-', label:'xG+/-' },
+  { id:'Play Driving|RAPM CF', label:'RAPM CF' },
+  { id:'Play Driving|RAPM CA', label:'RAPM CA' },
+  { id:'Play Driving|RAPM C+/-', label:'RAPM C+/-' },
+  { id:'Play Driving|RAPM GF', label:'RAPM GF' },
+  { id:'Play Driving|RAPM GA', label:'RAPM GA' },
+  { id:'Play Driving|RAPM G+/-', label:'RAPM G+/-' },
+  { id:'Play Driving|RAPM xGF', label:'RAPM xGF' },
+  { id:'Play Driving|RAPM xGA', label:'RAPM xGA' },
+  { id:'Play Driving|RAPM xG+/-', label:'RAPM xG+/-' },
+];
+
+const SHOOTING_CONTEXT_METRICS = [
+  { id:'Shooting|iShots or iFenwick', label:'Individual Shots/Fenwick' },
+  { id:'Shooting|ixG', label:'Individual xG' },
+  { id:'Production|iGoals', label:'Individual Goals' },
+  { id:'Shooting|Sh% or FSh%', label:'Individual Sh%' },
+  { id:'Shooting|xSh% or xFS%', label:'Individual xSh%' },
+  { id:'Shooting|dSh% or dFSh%', label:'Individual dSh%' },
+  { id:'Shooting|GAx', label:'Individual GAx' },
+  { id:'Context|Sh%', label:'On-ice Sh%' },
+  { id:'Context|Sv%', label:'On-ice Sv%' },
+  { id:'Context|PDO', label:'PDO' },
+  { id:'Context|GAx', label:'On-ice GAx' },
+  { id:'Context|GSAx', label:'GSAx' },
+  { id:'Context|QoT', label:'QoT' },
+  { id:'Context|QoC', label:'QoC' },
+  { id:'Context|ZS', label:'ZS' },
+];
+
+function metricLabel(metricId){
+  const ratesVal = String(cardRates?.value || 'Totals');
+  const xgVal = String(cardXgModel?.value || 'xG_F');
+  const raw = String(metricId||'');
+  const parts = raw.split('|');
+  const cat = (parts.length > 1) ? String(parts[0]||'') : '';
+  const m = String(parts[1]||parts[0]||'');
+
+  const isPercent = m.includes('%') || m === 'PDO' || m === 'Sv%' || m === 'Sh%';
+  const isRateLike = !isPercent && !['GP','TOI','QoT','QoC','ZS'].includes(m) && !m.startsWith('RAPM ');
+
+  let base = m;
+  if(m === 'iShots or iFenwick') base = (xgVal === 'xG_S') ? 'iShots' : 'iFenwick';
+  if(m === 'Sh% or FSh%') base = (xgVal === 'xG_S') ? 'Sh%' : 'FSh%';
+  if(m === 'xSh% or xFS%') base = (xgVal === 'xG_S') ? 'xSh%' : 'xFS%';
+  if(m === 'dSh% or dFSh%') base = (xgVal === 'xG_S') ? 'dSh%' : 'dFSh%';
+
+  // Clarify which metrics are individual vs on-ice in Charts.
+  if(cat === 'Shooting'){
+    if(m === 'iShots or iFenwick') base = (xgVal === 'xG_S') ? 'Individual Shots' : 'Individual Fenwick';
+    else if(m === 'ixG') base = 'Individual xG';
+    else if(m === 'GAx') base = 'Individual GAx';
+    else if(base === 'Sh%' || base === 'FSh%') base = `Individual ${base}`;
+    else if(base === 'xSh%' || base === 'xFS%') base = `Individual ${base}`;
+    else if(base === 'dSh%' || base === 'dFSh%') base = `Individual ${base}`;
+  }
+  if(cat === 'Production'){
+    if(m === 'iGoals') base = 'Individual Goals';
+  }
+  if(cat === 'Context'){
+    if(base === 'Sh%' || base === 'Sv%' || base === 'PDO' || base === 'GAx' || base === 'GSAx') base = `On-ice ${base}`;
+  }
+
+  if(m.startsWith('RAPM ')){
+    if(ratesVal === 'Totals') return base;
+    return `${base}/60`;
+  }
+  if(isRateLike){
+    if(ratesVal === 'Per60') return `${base}/60`;
+    if(ratesVal === 'PerGame') return `${base}/GP`;
+  }
+  return base;
+}
+
+function metricBase(metricId){
+  const xgVal = String(cardXgModel?.value || 'xG_F');
+  const raw = String(metricId||'');
+  const parts = raw.split('|');
+  const m = String(parts[1]||parts[0]||'');
+
+  let base = m;
+  if(m === 'iShots or iFenwick') base = (xgVal === 'xG_S') ? 'iShots' : 'iFenwick';
+  if(m === 'Sh% or FSh%') base = (xgVal === 'xG_S') ? 'Sh%' : 'FSh%';
+  if(m === 'xSh% or xFS%') base = (xgVal === 'xG_S') ? 'xSh%' : 'xFS%';
+  if(m === 'dSh% or dFSh%') base = (xgVal === 'xG_S') ? 'dSh%' : 'dFSh%';
+  if(m === 'GAx') base = 'GAx';
+  return base;
+}
+
+function isAgainstMetric(metricId){
+  const b = String(metricBase(metricId)||'');
+  if(!b) return false;
+  // “Against” metrics should be inverted so Good is top-right.
+  if(b === 'CA' || b === 'GA' || b === 'xGA') return true;
+  if(b === 'RAPM CA' || b === 'RAPM xGA') return true;
+  return false;
+}
+
+function fillMetricSelect(sel, items, defaultId){
+  if(!sel) return;
+  const curr = String(sel.value||'');
+  const desired = defaultId && !curr ? String(defaultId) : curr;
+  sel.innerHTML = items.map(it=>{
+    const lab = metricLabel(it.id);
+    return `<option value="${it.id}">${lab}</option>`;
+  }).join('');
+  if(desired && Array.from(sel.options).some(o=>o.value===desired)) sel.value = desired;
+}
+
+function refreshChartMetricLabels(){
+  // Defaults apply only when nothing is stored/selected yet.
+  fillMetricSelect(pdX, PLAY_DRIVING_METRICS, 'Play Driving|xGF%');
+  fillMetricSelect(pdY, PLAY_DRIVING_METRICS, 'Play Driving|GF%');
+  fillMetricSelect(scX, SHOOTING_CONTEXT_METRICS, 'Context|Sh%');
+  fillMetricSelect(scY, SHOOTING_CONTEXT_METRICS, 'Context|Sv%');
+
+  // Apply restored axis selections once options exist.
+  if(__restoreChartAxes){
+    try{
+      const a = __restoreChartAxes;
+      if(pdX && a.pdX && Array.from(pdX.options).some(o=>o.value===a.pdX)) pdX.value = a.pdX;
+      if(pdY && a.pdY && Array.from(pdY.options).some(o=>o.value===a.pdY)) pdY.value = a.pdY;
+      if(scX && a.scX && Array.from(scX.options).some(o=>o.value===a.scX)) scX.value = a.scX;
+      if(scY && a.scY && Array.from(scY.options).some(o=>o.value===a.scY)) scY.value = a.scY;
+      __restoreChartAxes = null;
+    }catch(_){/*noop*/}
+  }
+}
+
+function getActiveTabKey(){
+  if(tabCharts?.classList.contains('active')) return 'charts';
+  if(tabEdge?.classList.contains('active')) return 'edge';
+  if(tabRAPM?.classList.contains('active')) return 'rapm';
+  if(tabProjections?.classList.contains('active')) return 'projections';
+  return 'card';
+}
+
+function getActiveProjSubtabKey(){
+  if(projTabTeam?.classList.contains('active')) return 'team';
+  if(projTabLeague?.classList.contains('active')) return 'league';
+  return 'player';
+}
+
+function saveSkatersState(){
+  try{
+    if(__isBootingSkatersPage || __isRestoringSkatersState) return;
+    const state = {
+      team: String(teamSelect?.value||''),
+      season: String(seasonSelect?.value||''),
+      playerId: String(playerSelect?.value||''),
+      activeTab: getActiveTabKey(),
+      edge: {
+        seasonState: String(edgeSeasonState?.value||''),
+      },
+      card: {
+        scope: String(cardScope?.value||'season'),
+        seasonState: String(cardSeasonState?.value||'regular'),
+        strengthState: String(cardStrengthState?.value||'5v5'),
+        rates: String(cardRates?.value||'Totals'),
+        xgModel: String(cardXgModel?.value||'xG_F'),
+        minGp: String(cardMinGp?.value||'0'),
+        minToi: String(cardMinToi?.value||'0'),
+      },
+      charts: {
+        highlightMode: String(__chartsHighlightMode||'team'),
+        pdX: String(pdX?.value||''),
+        pdY: String(pdY?.value||''),
+        scX: String(scX?.value||''),
+        scY: String(scY?.value||''),
+      },
+      projectionsSubtab: getActiveProjSubtabKey(),
+    };
+    localStorage.setItem(SKATERS_STATE_KEY, JSON.stringify(state));
+
+    // base.html reads these keys during its own init; keep them aligned.
+    try{ if(state.team) localStorage.setItem('team', String(state.team)); }catch(_){/*noop*/}
+    try{ if(state.season) localStorage.setItem('season', String(state.season)); }catch(_){/*noop*/}
+  }catch(_){/*noop*/}
+}
+
+function restoreSkatersState(){
+  try{
+    __isRestoringSkatersState = true;
+    const raw = localStorage.getItem(SKATERS_STATE_KEY);
+    if(!raw) return;
+    const state = JSON.parse(raw);
+    if(state && typeof state === 'object'){
+      const t = String(state.team||'');
+      const s = String(state.season||'');
+      __restoreTeam = t || null;
+      __restoreSeason = s || null;
+
+      // base.html chooses its initial values from these keys.
+      try{ if(t) localStorage.setItem('team', t); }catch(_){/*noop*/}
+      try{ if(s) localStorage.setItem('season', s); }catch(_){/*noop*/}
+
+      // Best-effort immediate apply (base.html may overwrite until its async load completes).
+      if(teamSelect && t) teamSelect.value = t;
+      if(seasonSelect && s) seasonSelect.value = s;
+
+      const c = state.card || {};
+      if(c && typeof c === 'object'){
+        try{ setCardScope(String(c.scope||'season')); }catch(_){/*noop*/}
+        try{ if(cardSeasonState && c.seasonState) cardSeasonState.value = String(c.seasonState); }catch(_){/*noop*/}
+        try{ if(cardStrengthState && c.strengthState) cardStrengthState.value = String(c.strengthState); }catch(_){/*noop*/}
+        try{ if(cardRates && c.rates) cardRates.value = String(c.rates); }catch(_){/*noop*/}
+        try{ if(cardXgModel && c.xgModel) cardXgModel.value = String(c.xgModel); }catch(_){/*noop*/}
+        try{ if(cardMinGp && c.minGp != null) cardMinGp.value = String(c.minGp); }catch(_){/*noop*/}
+        try{ if(cardMinToi && c.minToi != null) cardMinToi.value = String(c.minToi); }catch(_){/*noop*/}
+      }
+
+      const e = state.edge || {};
+      if(e && typeof e === 'object'){
+        try{ if(edgeSeasonState && e.seasonState) edgeSeasonState.value = String(e.seasonState); }catch(_){/*noop*/}
+      }
+
+      const ch = state.charts || {};
+      if(ch && typeof ch === 'object'){
+        __chartsHighlightMode = (String(ch.highlightMode||'team') === 'player') ? 'player' : 'team';
+        __restoreChartAxes = {
+          pdX: String(ch.pdX||''),
+          pdY: String(ch.pdY||''),
+          scX: String(ch.scX||''),
+          scY: String(ch.scY||''),
+        };
+      }
+
+      __restorePlayerId = String(state.playerId||'') || null;
+      __restoreActiveTab = String(state.activeTab||'') || null;
+      __restoreProjSubtab = String(state.projectionsSubtab||'') || null;
+    }
+  }catch(_){/*noop*/}
+  finally{ __isRestoringSkatersState = false; }
+}
+
+function __sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+async function initSkatersPage(){
+  try{
+    // Restore saved state first.
+    restoreSkatersState();
+    try{ setActiveProjSubtab(__restoreProjSubtab || 'player'); }catch(_){/*noop*/}
+    updateCardSlicerSummary();
+
+    setDefaultHeadshot();
+    updateTabsVisibility();
+
+    // Wait for base.html to populate the Team select.
+    const t0 = Date.now();
+    while(Date.now() - t0 < 6000){
+      if(teamSelect && teamSelect.options && teamSelect.options.length) break;
+      await __sleep(60);
+    }
+
+    // If we need to switch teams, dispatch change so base.html reloads seasons for that team.
+    try{
+      if(__restoreTeam && teamSelect && Array.from(teamSelect.options).some(o=>String(o.value)===String(__restoreTeam)) && teamSelect.value !== __restoreTeam){
+        teamSelect.value = __restoreTeam;
+        teamSelect.dispatchEvent(new Event('change'));
+      }
+    }catch(_){/*noop*/}
+
+    // Wait for base.html to finish loading seasons.
+    const s0 = Date.now();
+    while(Date.now() - s0 < 8000){
+      const firstTxt = String(seasonSelect?.options?.[0]?.textContent || '').toLowerCase();
+      if(seasonSelect && seasonSelect.options && seasonSelect.options.length && firstTxt !== 'loading...') break;
+      await __sleep(80);
+    }
+
+    // Apply season selection (no need to dispatch change; we'll load ourselves next).
+    try{
+      if(__restoreSeason && seasonSelect && Array.from(seasonSelect.options).some(o=>String(o.value)===String(__restoreSeason))){
+        seasonSelect.value = __restoreSeason;
+      }
+    }catch(_){/*noop*/}
+
+    // Load player list + card.
+    await loadPlayers();
+    await loadPlayerCard();
+    applyExportButtonTextColor();
+
+    // Re-open the last active tab.
+    try{
+      if(__restoreActiveTab){
+        const t = String(__restoreActiveTab||'').toLowerCase();
+        __restoreActiveTab = null;
+        if(t) setActiveTab(t);
+      }
+    }catch(_){/*noop*/}
+  }finally{
+    __isBootingSkatersPage = false;
+    saveSkatersState();
+  }
+}
+
+function chartsSetHighlightMode(mode){
+  const m = (mode === 'player') ? 'player' : 'team';
+  __chartsHighlightMode = m;
+  if(chartsHlPlayer) chartsHlPlayer.classList.toggle('active', m==='player');
+  if(chartsHlTeam) chartsHlTeam.classList.toggle('active', m==='team');
+  if(chartsHlPlayer) chartsHlPlayer.setAttribute('aria-pressed', m==='player' ? 'true' : 'false');
+  if(chartsHlTeam) chartsHlTeam.setAttribute('aria-pressed', m==='team' ? 'true' : 'false');
+  try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/}
+  try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/}
+  saveSkatersState();
+}
+
+try{
+  chartsHlPlayer?.addEventListener('click', ()=> chartsSetHighlightMode('player'));
+  chartsHlTeam?.addEventListener('click', ()=> chartsSetHighlightMode('team'));
+}catch(_){/*noop*/}
+
+async function fetchScatter(xMetricId, yMetricId){
+  const season = String(seasonSelect?.value||'').trim();
+  const seasonState = String(cardSeasonState?.value||'regular');
+  const strengthState = String(cardStrengthState?.value||'5v5');
+  const xgModel = String(cardXgModel?.value||'xG_F');
+  const ratesVal = String(cardRates?.value||'Totals');
+  const scopeVal = String(cardScope?.value||'season');
+  const minGP = String(cardMinGp?.value||'0');
+  const minTOI = String(cardMinToi?.value||'0');
+
+  if(!season){
+    return { points: [], labels: {} };
+  }
+
+  const key = JSON.stringify({ season, seasonState, strengthState, xgModel, ratesVal, scopeVal, minGP, minTOI, xMetricId, yMetricId });
+  if(__scatterCache.has(key)) return __scatterCache.get(key);
+
+  const url = `/api/skaters/scatter?season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&minGP=${encodeURIComponent(minGP)}&minTOI=${encodeURIComponent(minTOI)}&xMetricId=${encodeURIComponent(xMetricId)}&yMetricId=${encodeURIComponent(yMetricId)}`;
+  const r = await fetch(url, { cache:'no-store' });
+  const data = await r.json();
+  __scatterCache.set(key, data);
+  return data;
+}
+
+function makeScatterChart(canvasEl, title){
+  if(!canvasEl || typeof Chart === 'undefined') return null;
+
+  const avgLinesPlugin = {
+    id: 'avgLines',
+    beforeDatasetsDraw(chart){
+      try{
+        const ds = chart?.data?.datasets?.[0];
+        const pts = Array.isArray(ds?.data) ? ds.data : [];
+        let sx = 0, sy = 0, n = 0;
+        for(const p of pts){
+          const x = Number(p?.x);
+          const y = Number(p?.y);
+          if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          sx += x; sy += y; n++;
+        }
+        if(n <= 0) return;
+        const mx = sx / n;
+        const my = sy / n;
+        const xScale = chart.scales?.x;
+        const yScale = chart.scales?.y;
+        if(!xScale || !yScale) return;
+
+        const xPix = xScale.getPixelForValue(mx);
+        const yPix = yScale.getPixelForValue(my);
+        const ca = chart.chartArea;
+        if(!ca) return;
+
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(ca.left, ca.top, ca.right - ca.left, ca.bottom - ca.top);
+        ctx.clip();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 2;
+
+        // vertical avg line
+        ctx.beginPath();
+        ctx.moveTo(xPix, ca.top);
+        ctx.lineTo(xPix, ca.bottom);
+        ctx.stroke();
+
+        // horizontal avg line
+        ctx.beginPath();
+        ctx.moveTo(ca.left, yPix);
+        ctx.lineTo(ca.right, yPix);
+        ctx.stroke();
+
+        ctx.restore();
+      }catch(_){/*noop*/}
+    }
+  };
+
+  const highlightBadgePlugin = {
+    id: 'highlightBadge',
+    afterDatasetsDraw(chart){
+      try{
+        const ctx = chart.ctx;
+        const meta = chart.getDatasetMeta(0);
+        const mode = __chartsHighlightMode;
+        const wantTeam = String(teamSelect?.value||'').toUpperCase();
+        const wantPid = String(playerSelect?.value||'');
+        const season = String(seasonSelect?.value||'').trim();
+        const selectedTeam = String(teamSelect?.value||'').trim();
+        meta.data.forEach((ptEl, i)=>{
+          const raw = chart.data.datasets[0].data[i];
+          if(!raw) return;
+          const isHit = (mode === 'player')
+            ? (wantPid && String(raw.playerId) === wantPid)
+            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          if(!isHit) return;
+          const p = ptEl.getProps(['x','y'], true);
+
+          const outerR = 14;
+          const innerR = 11.0;
+
+          ctx.save();
+          // Backplate + ring
+          ctx.beginPath();
+          ctx.fillStyle = 'rgba(10,14,22,0.92)';
+          ctx.arc(p.x, p.y, outerR, 0, Math.PI*2);
+          ctx.fill();
+          ctx.lineWidth = 3.5;
+          ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+          ctx.stroke();
+
+          // Clip + image inside circle
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, innerR, 0, Math.PI*2);
+          ctx.clip();
+
+          let img = null;
+          if(mode === 'player'){
+            // Player highlight uses the selected player's mug.
+            img = getPlayerMugImage(season, selectedTeam, raw.playerId);
+          }else{
+            // Team highlight uses team logo.
+            img = getTeamLogoImage(raw.team);
+          }
+
+          if(img && img.complete && img.naturalWidth){
+            const pad = (mode === 'team') ? 1.2 : 0.0;
+            const d = innerR * 2;
+            ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad);
+          }
+          ctx.restore();
+        });
+      }catch(_){/*noop*/}
+    }
+  };
+
+  const chart = new Chart(canvasEl.getContext('2d'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: title,
+        data: [],
+        pointBackgroundColor: (ctx)=>{
+          const raw = ctx.raw || {};
+          const mode = __chartsHighlightMode;
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const wantPid = String(playerSelect?.value||'');
+          const isHit = (mode === 'player')
+            ? (wantPid && String(raw.playerId) === wantPid)
+            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.16)';
+        },
+        pointBorderColor: (ctx)=>{
+          const raw = ctx.raw || {};
+          const mode = __chartsHighlightMode;
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const wantPid = String(playerSelect?.value||'');
+          const isHit = (mode === 'player')
+            ? (wantPid && String(raw.playerId) === wantPid)
+            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.10)';
+        },
+        pointBorderWidth: (ctx)=>{
+          const raw = ctx.raw || {};
+          const mode = __chartsHighlightMode;
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const wantPid = String(playerSelect?.value||'');
+          const isHit = (mode === 'player')
+            ? (wantPid && String(raw.playerId) === wantPid)
+            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          return isHit ? 0 : 1;
+        },
+        pointRadius: (ctx)=>{
+          const raw = ctx.raw || {};
+          const mode = __chartsHighlightMode;
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const wantPid = String(playerSelect?.value||'');
+          const isHit = (mode === 'player')
+            ? (wantPid && String(raw.playerId) === wantPid)
+            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          // The actual highlight badge is drawn by the plugin.
+          return isHit ? 10 : 4;
+        },
+        pointHoverRadius: 10,
+        pointStyle: 'circle',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            label: (t)=>{
+              const r = t.raw || {};
+              const nm = r.name || '';
+              const tm = r.team ? ` (${r.team})` : '';
+              return `${nm}${tm}: ${t.parsed.x.toFixed(3)}, ${t.parsed.y.toFixed(3)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { title: { display:true, text:'X', color:'rgba(255,255,255,0.95)' }, grid: { color:'rgba(255,255,255,0.06)' }, ticks:{ color:'rgba(255,255,255,0.75)' } },
+        y: { title: { display:true, text:'Y', color:'rgba(255,255,255,0.95)' }, grid: { color:'rgba(255,255,255,0.06)' }, ticks:{ color:'rgba(255,255,255,0.75)' } },
+      }
+    },
+    plugins: [avgLinesPlugin, highlightBadgePlugin]
+  });
+
+  return chart;
+}
+
+async function renderCharts(){
+  if(!tabPanelCharts) return;
+  const season = String(seasonSelect?.value||'').trim();
+  if(!season){
+    if(chartsEmpty) chartsEmpty.hidden = false;
+    if(chartsGrid) chartsGrid.style.display = 'none';
+    return;
+  }
+
+  function setChartsLoading(on, text){
+    if(chartsEmpty){
+      chartsEmpty.hidden = !on;
+      if(on) chartsEmpty.textContent = text || 'Loading charts...';
+    }
+    if(chartsGrid){
+      chartsGrid.style.display = '';
+      chartsGrid.style.opacity = on ? '0.35' : '';
+      chartsGrid.style.pointerEvents = on ? 'none' : '';
+    }
+  }
+
+  setChartsLoading(true, 'Loading charts...');
+
+  refreshChartMetricLabels();
+  chartsSetHighlightMode(__chartsHighlightMode);
+
+  if(!__pdChart && pdChartEl) __pdChart = makeScatterChart(pdChartEl, 'Play Driving');
+  if(!__scChart && scChartEl) __scChart = makeScatterChart(scChartEl, 'Shooting and Context');
+
+  const keyNow = JSON.stringify({
+    tab:'charts',
+    season,
+    seasonState:String(cardSeasonState?.value||''),
+    strengthState:String(cardStrengthState?.value||''),
+    xgModel:String(cardXgModel?.value||''),
+    rates:String(cardRates?.value||''),
+    scope:String(cardScope?.value||''),
+    minGP:String(cardMinGp?.value||''),
+    minTOI:String(cardMinToi?.value||''),
+    pdX:String(pdX?.value||''),
+    pdY:String(pdY?.value||''),
+    scX:String(scX?.value||''),
+    scY:String(scY?.value||''),
+  });
+  if(keyNow === __chartsLastKey){
+    setChartsLoading(false);
+    return;
+  }
+  __chartsLastKey = keyNow;
+
+  try{
+    const [pd, sc] = await Promise.all([
+      fetchScatter(String(pdX?.value||''), String(pdY?.value||'')),
+      fetchScatter(String(scX?.value||''), String(scY?.value||'')),
+    ]);
+
+    if(__pdChart){
+      __pdChart.options.scales.x.title.text = metricLabel(String(pdX?.value||''));
+      __pdChart.options.scales.y.title.text = metricLabel(String(pdY?.value||''));
+      __pdChart.options.scales.x.reverse = isAgainstMetric(String(pdX?.value||''));
+      __pdChart.options.scales.y.reverse = isAgainstMetric(String(pdY?.value||''));
+      __pdChart.data.datasets[0].data = Array.isArray(pd?.points) ? pd.points : [];
+      __pdChart.update('none');
+    }
+    if(__scChart){
+      __scChart.options.scales.x.title.text = metricLabel(String(scX?.value||''));
+      __scChart.options.scales.y.title.text = metricLabel(String(scY?.value||''));
+      __scChart.options.scales.x.reverse = isAgainstMetric(String(scX?.value||''));
+      __scChart.options.scales.y.reverse = isAgainstMetric(String(scY?.value||''));
+      __scChart.data.datasets[0].data = Array.isArray(sc?.points) ? sc.points : [];
+      __scChart.update('none');
+    }
+
+    setChartsLoading(false);
+  }catch(e){
+    if(chartsEmpty){
+      chartsEmpty.hidden = false;
+      chartsEmpty.textContent = 'Error loading charts.';
+    }
+    if(chartsGrid){
+      chartsGrid.style.display = 'none';
+      chartsGrid.style.opacity = '';
+      chartsGrid.style.pointerEvents = '';
+    }
+  }
+}
 
 function setCardScope(scope){
   const s = (String(scope||'').toLowerCase() === 'career') ? 'career' : 'season';
@@ -413,6 +1193,9 @@ function setCardScope(scope){
       b.setAttribute('aria-pressed', v === s ? 'true' : 'false');
     });
   }catch(_){ /* ignore */ }
+
+  updateCardSlicerSummary();
+  saveSkatersState();
 }
 
 // Wire Scope segmented buttons.
@@ -422,6 +1205,10 @@ try{
     b.addEventListener('click', ()=>{
       setCardScope(b.getAttribute('data-scope'));
       loadCardPanel();
+      try{
+        __chartsLastKey='';
+        if(tabCharts?.classList.contains('active')) renderCharts();
+      }catch(_){/*noop*/}
     });
   });
   setCardScope(cardScope?.value || 'season');
@@ -460,10 +1247,21 @@ function setMsg(text, isError=false){
   skaterMsg.className = 'skater-empty' + (isError ? ' err' : '');
 }
 
+function setDefaultHeadshot(){
+  if(!skaterImg) return;
+  try{ skaterImg.onerror = null; }catch(_){/*noop*/}
+  try{ skaterImg.dataset.fallbackDone = '0'; }catch(_){/*noop*/}
+  skaterImg.src = DEFAULT_SKATER_IMG;
+}
+
 function setHeadshot(team, season, playerId){
   const s = String(season||'').trim();
   const t = String(team||'').trim();
   const pid = String(playerId||'').trim();
+  if(!pid){
+    setDefaultHeadshot();
+    return;
+  }
   const primary = `https://assets.nhle.com/mugs/nhl/${s}/${t}/${pid}.png`;
   const fallback = `https://assets.nhle.com/mugs/nhl/latest/${pid}.png`;
   skaterImg.onerror = () => {
@@ -505,29 +1303,35 @@ function renderPlayerLanding(landing){
 function setActiveTab(which){
   const w = String(which || '').toLowerCase();
   const isC = (w === 'card');
+  const isH = (w === 'charts');
   const isE = (w === 'edge');
   const isR = (w === 'rapm');
   const isP = (w === 'projections');
   // default
-  const finalC = (isC || (!isE && !isR && !isP));
+  const finalC = (isC || (!isH && !isE && !isR && !isP));
+  const finalH = isH;
   const finalE = isE;
   const finalR = isR;
   const finalP = isP;
 
   tabCard?.classList.toggle('active', finalC);
+  tabCharts?.classList.toggle('active', finalH);
   tabEdge?.classList.toggle('active', finalE);
   tabRAPM?.classList.toggle('active', finalR);
   tabProjections?.classList.toggle('active', finalP);
   if(tabCard) tabCard.setAttribute('aria-selected', finalC ? 'true' : 'false');
+  if(tabCharts) tabCharts.setAttribute('aria-selected', finalH ? 'true' : 'false');
   if(tabEdge) tabEdge.setAttribute('aria-selected', finalE ? 'true' : 'false');
   if(tabRAPM) tabRAPM.setAttribute('aria-selected', finalR ? 'true' : 'false');
   if(tabProjections) tabProjections.setAttribute('aria-selected', finalP ? 'true' : 'false');
   if(tabPanelCard) tabPanelCard.style.display = finalC ? '' : 'none';
+  if(tabPanelCharts) tabPanelCharts.style.display = finalH ? '' : 'none';
   if(tabPanelEdge) tabPanelEdge.style.display = finalE ? '' : 'none';
   if(tabPanelRAPM) tabPanelRAPM.style.display = finalR ? '' : 'none';
   if(tabPanelProjections) tabPanelProjections.style.display = finalP ? '' : 'none';
 
-  setCardSlicersVisible(finalC);
+  // Card slicers are shared by Card + Charts.
+  setCardSlicersVisible(finalC || finalH, { showConfig: finalC });
   setEdgeSlicersVisible(finalE);
 
   // Keep Edge season state in sync with Card selection when possible.
@@ -538,9 +1342,15 @@ function setActiveTab(which){
   }
 
   if(finalC) loadCardPanel();
+  if(finalH) {
+    // Render charts when the tab becomes active.
+    try{ __chartsLastKey=''; renderCharts(); }catch(_){ /* noop */ }
+  }
   if(finalE) loadEdgePanel();
   if(finalR) loadRAPMPanel();
   if(finalP && projectionsEnabled()) loadProjectionsPanel();
+
+  saveSkatersState();
 }
 
 function setEdgeSlicersVisible(on){
@@ -791,11 +1601,12 @@ async function loadEdgePanel(){
   }
 }
 
-function setCardSlicersVisible(on){
+function setCardSlicersVisible(on, opts){
   const show = !!on;
+  const showConfig = !!(opts && opts.showConfig);
   // Configure button lives in the Card panel header; only show it on Card.
-  if(btnConfigureCard) btnConfigureCard.style.display = show ? '' : 'none';
-  if(cardSlicerSummary) cardSlicerSummary.style.display = show ? '' : 'none';
+  if(btnConfigureCard) btnConfigureCard.style.display = showConfig ? '' : 'none';
+  if(cardSlicerSummary) cardSlicerSummary.style.display = showConfig ? '' : 'none';
   if(cardScopeWrap) cardScopeWrap.style.display = show ? '' : 'none';
   if(cardSeasonStateWrap) cardSeasonStateWrap.style.display = show ? '' : 'none';
   if(cardMinGpWrap) cardMinGpWrap.style.display = show ? '' : 'none';
@@ -806,7 +1617,7 @@ function setCardSlicersVisible(on){
 }
 
 function updateCardSlicerSummary(){
-  if(!cardSlicerSummary) return;
+  if(!cardSlicerSummary && !chartsSlicerSummary) return;
   const scope = String(cardScope?.value || 'season');
   const rawSeason = String(seasonSelect?.value || '').trim();
   let season = rawSeason;
@@ -824,7 +1635,9 @@ function updateCardSlicerSummary(){
 
   const first = (scope === 'career') ? 'Career' : season;
   const parts = [first, seasonState, strengthState, ratesText].concat(minParts).filter(Boolean);
-  cardSlicerSummary.textContent = parts.join(' - ');
+  const text = parts.join(' - ');
+  if(cardSlicerSummary) cardSlicerSummary.textContent = text;
+  if(chartsSlicerSummary) chartsSlicerSummary.textContent = text;
 }
 
 function projectionsEnabled(){
@@ -2642,7 +3455,12 @@ async function loadPlayers(){
     const savedKey = `skaters_player_${team}`;
     const saved = localStorage.getItem(savedKey);
     playerSelect.innerHTML = '<option value="">Select player</option>' + list.map(p=>`<option value="${p.playerId}">${p.name}</option>`).join('');
-    if(saved && list.some(p=>String(p.playerId)===saved)) playerSelect.value = saved;
+    if(__restorePlayerId && list.some(p=>String(p.playerId)===String(__restorePlayerId))){
+      playerSelect.value = String(__restorePlayerId);
+      __restorePlayerId = null;
+    }else if(saved && list.some(p=>String(p.playerId)===saved)){
+      playerSelect.value = saved;
+    }
   }catch(e){
     playerSelect.innerHTML = '<option value="">Error loading players</option>';
   }finally{
@@ -2656,6 +3474,7 @@ async function loadPlayerCard(){
   const season = seasonSelect.value;
   const playerId = playerSelect.value;
   if(!playerId){
+    setDefaultHeadshot();
     skaterName.textContent = 'Select a player';
     skaterInfo.innerHTML = '';
     setMsg('Choose Team, Season, and Player.');
@@ -2671,6 +3490,7 @@ async function loadPlayerCard(){
       setMsg('Could not load player info.', true);
       skaterInfo.innerHTML = '';
       skaterName.textContent = 'Unknown player';
+      setDefaultHeadshot();
       return;
     }
     renderPlayerLanding(data);
@@ -2680,10 +3500,30 @@ async function loadPlayerCard(){
     if(projectionsEnabled()) loadProjectionsPanel();
   }catch(e){
     setMsg('Could not load player info.', true);
+    setDefaultHeadshot();
   }
 }
 
 tabCard?.addEventListener('click', ()=> setActiveTab('card'));
+tabCharts?.addEventListener('click', ()=> setActiveTab('charts'));
+  // Charts interactions
+  try{ pdX?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
+  try{ pdY?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
+  try{ scX?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
+  try{ scY?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
+  // Re-render charts when shared slicers change.
+  try{ seasonSelect?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ teamSelect?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ playerSelect?.addEventListener('change', ()=> { try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/} try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/} }); }catch(_){/*noop*/}
+  try{ cardSeasonState?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardStrengthState?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardRates?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardXgModel?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardMinGp?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardMinToi?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  // Scope segmented buttons already call loadCardPanel(); extend to re-render charts too.
+  // (Keep behavior localized: just trigger charts refresh after scope changes.)
+  // NOTE: setCardScope() itself doesn't call renderCharts.
 tabEdge?.addEventListener('click', ()=> setActiveTab('edge'));
 tabRAPM?.addEventListener('click', ()=> setActiveTab('rapm'));
 tabProjections?.addEventListener('click', ()=> setActiveTab('projections'));
@@ -2694,12 +3534,36 @@ cardSeasonState?.addEventListener('change', ()=>{
 });
 edgeSeasonState?.addEventListener('change', ()=>{
   if(tabEdge?.classList.contains('active')) loadEdgePanel();
+  saveSkatersState();
 });
 cardMinGp?.addEventListener('change', ()=> loadCardPanel());
 cardMinToi?.addEventListener('change', ()=> loadCardPanel());
 cardStrengthState?.addEventListener('change', ()=> loadCardPanel());
 cardRates?.addEventListener('change', ()=> loadCardPanel());
 cardXgModel?.addEventListener('change', ()=> loadCardPanel());
+
+cardSeasonState?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
+cardMinGp?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
+cardMinToi?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
+cardStrengthState?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
+cardRates?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
+cardXgModel?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
+
+// Min GP / Min TOI inputs only fire "change" on blur; persist while typing.
+let __minFilterSaveTimer = null;
+function __scheduleMinFilterSave(){
+  try{ if(__minFilterSaveTimer) clearTimeout(__minFilterSaveTimer); }catch(_){/*noop*/}
+  __minFilterSaveTimer = setTimeout(()=>{
+    updateCardSlicerSummary();
+    saveSkatersState();
+    if(tabCharts?.classList.contains('active')){
+      __chartsLastKey='';
+      renderCharts();
+    }
+  }, 250);
+}
+try{ cardMinGp?.addEventListener('input', __scheduleMinFilterSave); }catch(_){/*noop*/}
+try{ cardMinToi?.addEventListener('input', __scheduleMinFilterSave); }catch(_){/*noop*/}
 
 btnConfigureCard?.addEventListener('click', async ()=>{
   await showCardConfig();
@@ -2755,10 +3619,9 @@ ccImportFile?.addEventListener('change', async ()=>{
   }
 });
 
-projTabPlayer?.addEventListener('click', ()=> setActiveProjSubtab('player'));
-projTabTeam?.addEventListener('click', ()=> setActiveProjSubtab('team'));
-projTabLeague?.addEventListener('click', ()=> setActiveProjSubtab('league'));
-setActiveProjSubtab('player');
+projTabPlayer?.addEventListener('click', ()=> { setActiveProjSubtab('player'); saveSkatersState(); });
+projTabTeam?.addEventListener('click', ()=> { setActiveProjSubtab('team'); saveSkatersState(); });
+projTabLeague?.addEventListener('click', ()=> { setActiveProjSubtab('league'); saveSkatersState(); });
 
 projExportCsv?.addEventListener('click', ()=>{
   if(!__projLeaguePlayers || !__projLeaguePlayers.length) return;
@@ -2788,18 +3651,19 @@ teamSelect?.addEventListener('change', async ()=>{
   applyRAPMSelectTextColor();
   applyExportButtonTextColor();
   if(projectionsEnabled()) loadProjectionsPanel();
+  updateCardSlicerSummary();
+  saveSkatersState();
 });
 seasonSelect?.addEventListener('change', async ()=>{
   updateTabsVisibility();
   await loadPlayers();
   await loadPlayerCard();
+  updateCardSlicerSummary();
+  saveSkatersState();
 });
-playerSelect?.addEventListener('change', ()=> loadPlayerCard());
+playerSelect?.addEventListener('change', ()=> { loadPlayerCard(); saveSkatersState(); });
 
-setTimeout(async ()=>{ updateTabsVisibility();
-  await loadPlayers();
-  await loadPlayerCard();
-  applyExportButtonTextColor();
-}, 650);
+// Boot sequence: restore persisted state and load once base.html filters are ready.
+initSkatersPage();
 </script>
 {% endblock %}
