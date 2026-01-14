@@ -310,6 +310,9 @@ _PBP_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 # Player landing cache: {playerId: (timestamp, json)}
 _PLAYER_LANDING_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 
+# Skaters player-list cache: {(seasonId, teamAbbrev, seasonState): (timestamp, players)}
+_SKATERS_PLAYERS_CACHE: Dict[Tuple[int, str, str], Tuple[float, List[Dict[str, Any]]]] = {}
+
 # Static CSV caches
 _RAPM_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
@@ -1445,14 +1448,18 @@ def api_roster_current(team_code: str):
 
 @main_bp.route('/api/skaters/players')
 def api_skaters_players():
-    """Return selectable skaters for a given team (optionally season).
+    """Return selectable skaters for a given team + season.
+
+    We want *all* skaters who played for the team in that season (including traded / inactive).
 
     Query params:
-      team=EDM
-      season=20252026 (optional; best-effort upstream)
+      team=BOS
+      season=20252026 (optional; defaults to current season)
+      seasonState=regular|playoffs|all (optional; default regular)
     """
     team = str(request.args.get('team') or '').upper().strip()
     season = str(request.args.get('season') or '').strip()
+    season_state = str(request.args.get('seasonState') or request.args.get('season_state') or 'regular').strip().lower()
     if not team:
         return jsonify({'players': []})
 
@@ -1469,24 +1476,102 @@ def api_skaters_players():
 
     players: List[Dict[str, Any]] = []
 
-    bios_map = _load_skater_bios_season_cached(int(season_i or 0))
+    # Primary source: NHL stats skater summary filtered by teamAbbrev.
+    # This includes players who played for the team that season (including multi-team "teamAbbrevs").
+    # Docs/shape: https://api.nhle.com/stats/rest/en/skater/summary
     try:
-        for pid, info in (bios_map or {}).items():
-            try:
-                if not pid:
-                    continue
-                t = str((info or {}).get('team') or '').strip().upper()
-                if t != team:
-                    continue
-                name = str((info or {}).get('name') or '').strip() or str(pid)
-                pos_code = str((info or {}).get('positionCode') or (info or {}).get('position') or '').strip().upper()
-                players.append({'playerId': int(pid), 'name': name, 'pos': pos_code})
-            except Exception:
-                continue
+        players_ttl_s = max(60, int(os.getenv('SKATERS_PLAYERS_CACHE_TTL_SECONDS', '21600') or '21600'))
     except Exception:
-        players = []
+        players_ttl_s = 21600
 
-    # Fallback: if bios is empty for a historical season, try the roster endpoint.
+    if season_state not in {'regular', 'playoffs', 'all'}:
+        season_state = 'regular'
+
+    cache_key = (int(season_i or 0), team, season_state)
+    now = time.time()
+    try:
+        cached = _SKATERS_PLAYERS_CACHE.get(cache_key)
+        if cached and (now - float(cached[0])) < float(players_ttl_s):
+            players = list(cached[1] or [])
+    except Exception:
+        pass
+
+    if not players:
+        try:
+            if season_state == 'regular':
+                cay = f'seasonId={int(season_i)} and gameTypeId=2 and teamAbbrev="{team}"'
+            elif season_state == 'playoffs':
+                cay = f'seasonId={int(season_i)} and gameTypeId=3 and teamAbbrev="{team}"'
+            else:
+                cay = f'seasonId={int(season_i)} and (gameTypeId=2 or gameTypeId=3) and teamAbbrev="{team}"'
+
+            url = 'https://api.nhle.com/stats/rest/en/skater/summary'
+            r = requests.get(
+                url,
+                params={'limit': -1, 'start': 0, 'cayenneExp': cay},
+                headers={'User-Agent': 'Mozilla/5.0'},
+                timeout=25,
+                allow_redirects=True,
+            )
+            if r.status_code == 200:
+                data = r.json() if r.content else {}
+                rows = data.get('data') if isinstance(data, dict) else None
+                if isinstance(rows, list):
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        pid = _safe_int(row.get('playerId'))
+                        if not pid or pid <= 0:
+                            continue
+                        name = str(row.get('skaterFullName') or '').strip() or str(pid)
+                        pos = str(row.get('positionCode') or '').strip().upper()
+                        if pos.startswith('G'):
+                            continue
+                        players.append({'playerId': int(pid), 'name': name, 'pos': pos})
+        except Exception:
+            players = []
+
+        try:
+            # De-dupe by playerId
+            seen: set[int] = set()
+            uniq: List[Dict[str, Any]] = []
+            for p in players:
+                try:
+                    pid_i = int(p.get('playerId') or 0)
+                    if pid_i <= 0 or pid_i in seen:
+                        continue
+                    seen.add(pid_i)
+                    uniq.append(p)
+                except Exception:
+                    continue
+            players = uniq
+        except Exception:
+            pass
+
+        try:
+            _SKATERS_PLAYERS_CACHE[cache_key] = (now, players)
+        except Exception:
+            pass
+
+    # Fallbacks (best-effort) if stats summary fails.
+    if not players:
+        bios_map = _load_skater_bios_season_cached(int(season_i or 0))
+        try:
+            for pid, info in (bios_map or {}).items():
+                try:
+                    if not pid:
+                        continue
+                    t = str((info or {}).get('team') or '').strip().upper()
+                    if t != team:
+                        continue
+                    name = str((info or {}).get('name') or '').strip() or str(pid)
+                    pos_code = str((info or {}).get('positionCode') or (info or {}).get('position') or '').strip().upper()
+                    players.append({'playerId': int(pid), 'name': name, 'pos': pos_code})
+                except Exception:
+                    continue
+        except Exception:
+            players = []
+
     if (not players) and season_i and current_i and season_i != current_i:
         url = f'https://api-web.nhle.com/v1/roster/{team.lower()}/{season_i}'
         try:

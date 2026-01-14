@@ -3472,6 +3472,7 @@ async function loadPlayers(){
   if(!teamSelect || !seasonSelect || !playerSelect) return;
   const team = teamSelect.value;
   const season = seasonSelect.value;
+  const seasonState = String(cardSeasonState?.value || 'regular');
   if(!team || !season){
     playerSelect.innerHTML = '<option value="">Select team/season</option>';
     return;
@@ -3479,7 +3480,7 @@ async function loadPlayers(){
   playerSelect.disabled = true;
   playerSelect.innerHTML = '<option value="">Loading...</option>';
   try{
-    const r = await fetch(`/api/skaters/players?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}`);
+    const r = await fetch(`/api/skaters/players?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}`);
     const data = await r.json();
     const list = Array.isArray(data?.players) ? data.players : [];
     list.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||'')));
@@ -3560,6 +3561,11 @@ tabRAPM?.addEventListener('click', ()=> setActiveTab('rapm'));
 tabProjections?.addEventListener('click', ()=> setActiveTab('projections'));
 
 cardSeasonState?.addEventListener('change', ()=> loadCardPanel());
+cardSeasonState?.addEventListener('change', async ()=>{
+  // Player list depends on seasonState in /api/skaters/players
+  await loadPlayers();
+  await loadPlayerCard();
+});
 cardSeasonState?.addEventListener('change', ()=>{
   if(tabEdge?.classList.contains('active')) loadEdgePanel();
 });
