@@ -4,12 +4,6 @@
 <label>Player
   <select id="playerSelect"></select>
 </label>
-<label id="edgeSeasonStateWrap">Season State
-  <select id="edgeSeasonState">
-    <option value="regular" selected>Regular</option>
-    <option value="playoffs">Playoffs</option>
-  </select>
-</label>
 <label id="cardSeasonStateWrap">Season State
   <select id="cardSeasonState">
     <option value="regular" selected>Regular</option>
@@ -272,33 +266,28 @@
     <div class="skater-top">
       <img id="skaterImg" class="skater-img" alt="Player" />
       <div style="min-width:0;">
-        <h2 id="skaterName" class="skater-name">Select a player</h2>
+        <h2 id="skaterName" class="skater-name">Select a goalie</h2>
         <div id="skaterInfo" class="skater-sub"></div>
       </div>
     </div>
 
-    <div class="subtabs" role="tablist" aria-label="Skater tabs">
+    <div class="subtabs" role="tablist" aria-label="Goalie tabs">
       <button id="tabCard" class="subtab-btn active" type="button" role="tab" aria-selected="true">Card</button>
       <button id="tabCharts" class="subtab-btn" type="button" role="tab" aria-selected="false">Charts</button>
-      <button id="tabEdge" class="subtab-btn" type="button" role="tab" aria-selected="false">Edge</button>
-      <button id="tabRAPM" class="subtab-btn" type="button" role="tab" aria-selected="false">RAPM</button>
-      <button id="tabProjections" class="subtab-btn" type="button" role="tab" aria-selected="false">Projections</button>
       <button id="tabTable" class="subtab-btn" type="button" role="tab" aria-selected="false">Table View</button>
     </div>
 
     <div id="tabPanelCard" class="panel" role="tabpanel">
       <div class="card-panel-hd">
         <div id="cardSlicerSummary" class="card-panel-meta"></div>
-        <button id="btnConfigureCard" class="config-btn" type="button">Configure Card</button>
       </div>
-      <div id="cardPanelInner" class="skater-empty">Select a player to view Card.</div>
+      <div id="cardPanelInner" class="skater-empty">Select a goalie to view Card.</div>
     </div>
 
     <div id="tabPanelTable" class="panel" role="tabpanel" style="display:none;">
       <div class="card-panel-hd" style="padding-bottom: 8px;">
         <div id="tableSlicerSummary" class="card-panel-meta"></div>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button id="btnConfigureTable" class="config-btn" type="button">Configure Table</button>
           <button id="btnReloadTable" class="config-btn" type="button">Reload</button>
           <button id="btnExportTableCsv" class="config-btn" type="button">Export CSV</button>
         </div>
@@ -307,7 +296,7 @@
         <div id="tableLoading" class="skater-empty" style="display:none; padding:10px 0;">Loading table...</div>
         <div id="tableError" class="skater-empty err" style="display:none; padding:10px 0;"></div>
         <div class="table-wrap">
-          <table id="skatersTable" class="metrics-table"></table>
+          <table id="goaliesTable" class="metrics-table"></table>
         </div>
       </div>
     </div>
@@ -326,9 +315,9 @@
       <div id="chartsEmpty" class="skater-empty" hidden>Select a season to view Charts.</div>
 
       <div id="chartsGrid" class="charts-grid">
-        <section class="chart-block" aria-label="Play Driving chart">
+        <section class="chart-block" aria-label="Workload chart">
           <div class="chart-hd">
-            <h3>Play Driving</h3>
+            <h3>Workload</h3>
             <div class="chart-controls">
               <label>X Axis
                 <select id="pdX"></select>
@@ -343,9 +332,9 @@
           </div>
         </section>
 
-        <section class="chart-block" aria-label="Shooting and Context chart">
+        <section class="chart-block" aria-label="Performance chart">
           <div class="chart-hd">
-            <h3>Shooting and Context</h3>
+            <h3>Performance</h3>
             <div class="chart-controls">
               <label>X Axis
                 <select id="scX"></select>
@@ -362,90 +351,10 @@
       </div>
     </div>
 
-    <div id="tabPanelEdge" class="panel" role="tabpanel" style="display:none;">
-      <div id="edgePanelInner" class="skater-empty">Select a player to view Edge metrics.</div>
-    </div>
-
-    <div id="tabPanelRAPM" class="panel" role="tabpanel" style="display:none;">
-      <div id="rapmPanelInner" class="skater-empty">Select a player to view RAPM.</div>
-    </div>
-    <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
-      <div id="projPanelInner">
-        <div class="proj-subtabs" role="tablist" aria-label="Skater projections tabs">
-          <button id="projTabPlayer" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Player</button>
-          <button id="projTabTeam" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">Team</button>
-          <button id="projTabLeague" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">League</button>
-        </div>
-
-        <section id="projPanelPlayer" class="proj-subpanel" role="tabpanel">
-          <div class="proj-grid">
-            <div id="projPlayerKpis" class="kpi-list"></div>
-            <div style="min-width:0;">
-              <canvas id="projPlayerRadar" class="proj-canvas"></canvas>
-            </div>
-          </div>
-        </section>
-
-        <section id="projPanelTeam" class="proj-subpanel" role="tabpanel" hidden>
-          <canvas id="projTeamStack" class="proj-canvas"></canvas>
-        </section>
-
-        <section id="projPanelLeague" class="proj-subpanel" role="tabpanel" hidden>
-          <div class="proj-export-wrap">
-            <button id="projExportCsv" class="proj-export-btn">Export CSV</button>
-          </div>
-          <div class="proj-table-wrap">
-            <table id="projLeagueTable" class="proj-table"></table>
-          </div>
-        </section>
-      </div>
-    </div>
-
     <div id="skaterMsg" class="skater-empty" style="margin-top:10px;">Choose Team, Season, and Player.</div>
   </div>
 </div>
 
-<div id="cardConfigModal" class="modal" hidden>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="cardConfigTitle">
-    <div class="modal-hd">
-      <div id="cardConfigTitle" class="modal-title">Configure Card</div>
-      <button id="btnCloseCardConfig" class="btn" type="button">Close</button>
-    </div>
-    <div class="modal-bd">
-      <div class="cc-help">Choose a category and metrics in each slot.</div>
-      <div id="ccGrid" class="cc-grid"></div>
-    </div>
-    <div class="modal-ft">
-      <input id="ccImportFile" type="file" accept="application/json" style="display:none;" />
-      <button id="btnExportCardConfig" class="btn" type="button">Export</button>
-      <button id="btnImportCardConfig" class="btn" type="button">Import</button>
-      <button id="btnResetCardConfig" class="btn" type="button">Reset defaults</button>
-      <button id="btnSaveCardConfig" class="btn primary" type="button">Save</button>
-    </div>
-  </div>
-</div>
-
-<div id="tableConfigModal" class="modal" hidden>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="tableConfigTitle">
-    <div class="modal-hd">
-      <div id="tableConfigTitle" class="modal-title">Configure Table</div>
-      <button id="btnCloseTableConfig" class="btn" type="button">Close</button>
-    </div>
-    <div class="modal-bd">
-      <div class="cc-help">Select metrics (columns). Rank / Name / Pos are always included. Edge metrics are excluded for performance. Click column headers to sort.</div>
-      <div class="cc-row" style="justify-content:flex-start; gap:10px;">
-        <button id="btnTableDefaults" class="btn" type="button">Defaults</button>
-        <button id="btnTableNone" class="btn" type="button">None</button>
-        <button id="btnTableCardDefaults" class="btn" type="button">Card Defaults</button>
-      </div>
-      <div id="tableMetricPicker" class="table-metric-picker"></div>
-    </div>
-    <div class="modal-ft">
-      <div id="tableConfigStatus" class="cc-help" style="margin:0; padding:0;"></div>
-      <button id="btnApplyTableConfig" class="btn primary" type="button">Apply</button>
-    </div>
-  </div>
-</div>
 
 <script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
 {% endblock %}
@@ -525,10 +434,10 @@ const cardXgModelWrap = document.getElementById('cardXgModelWrap');
 
 let __cardDefs = null;
 let __cardConfig = null;
-const CARD_CONFIG_KEY = 'nhlSkatersCardConfig_v1';
+const CARD_CONFIG_KEY = 'nhlGoaliesCardConfig_v1';
 const CARD_SLOTS = ['L1','C1','R1','L2','C2','R2','L3','C3','R3'];
 
-const SKATERS_STATE_KEY = 'nhlSkatersPageState_v1';
+const SKATERS_STATE_KEY = 'nhlGoaliesPageState_v1';
 let __restoreActiveTab = null;
 let __restorePlayerId = null;
 let __restoreChartAxes = null;
@@ -554,7 +463,7 @@ const btnReloadTable = document.getElementById('btnReloadTable');
 const btnExportTableCsv = document.getElementById('btnExportTableCsv');
 const tableLoading = document.getElementById('tableLoading');
 const tableError = document.getElementById('tableError');
-const skatersTable = document.getElementById('skatersTable');
+const skatersTable = document.getElementById('goaliesTable');
 
 const tableConfigModal = document.getElementById('tableConfigModal');
 const btnCloseTableConfig = document.getElementById('btnCloseTableConfig');
@@ -647,45 +556,18 @@ function getPlayerMugImage(season, team, playerId){
 }
 
 const PLAY_DRIVING_METRICS = [
-  { id:'Play Driving|CF', label:'CF' },
-  { id:'Play Driving|CA', label:'CA' },
-  { id:'Play Driving|CF%', label:'CF%' },
-  { id:'Play Driving|C+/-', label:'C+/-' },
-  { id:'Play Driving|GF', label:'GF' },
-  { id:'Play Driving|GA', label:'GA' },
-  { id:'Play Driving|GF%', label:'GF%' },
-  { id:'Play Driving|G+/-', label:'G+/-' },
-  { id:'Play Driving|xGF', label:'xGF' },
-  { id:'Play Driving|xGA', label:'xGA' },
-  { id:'Play Driving|xGF%', label:'xGF%' },
-  { id:'Play Driving|xG+/-', label:'xG+/-' },
-  { id:'Play Driving|RAPM CF', label:'RAPM CF' },
-  { id:'Play Driving|RAPM CA', label:'RAPM CA' },
-  { id:'Play Driving|RAPM C+/-', label:'RAPM C+/-' },
-  { id:'Play Driving|RAPM GF', label:'RAPM GF' },
-  { id:'Play Driving|RAPM GA', label:'RAPM GA' },
-  { id:'Play Driving|RAPM G+/-', label:'RAPM G+/-' },
-  { id:'Play Driving|RAPM xGF', label:'RAPM xGF' },
-  { id:'Play Driving|RAPM xGA', label:'RAPM xGA' },
-  { id:'Play Driving|RAPM xG+/-', label:'RAPM xG+/-' },
+  { id:'Workload|FA', label:'FA' },
+  { id:'Workload|SA', label:'SA' },
+  { id:'Workload|xGA', label:'xGA' },
+  { id:'Workload|GA', label:'GA' },
 ];
 
 const SHOOTING_CONTEXT_METRICS = [
-  { id:'Shooting|iShots or iFenwick', label:'Individual Shots/Fenwick' },
-  { id:'Shooting|ixG', label:'Individual xG' },
-  { id:'Production|iGoals', label:'Individual Goals' },
-  { id:'Shooting|Sh% or FSh%', label:'Individual Sh%' },
-  { id:'Shooting|xSh% or xFSh%', label:'Individual xSh%' },
-  { id:'Shooting|dSh% or dFSh%', label:'Individual dSh%' },
-  { id:'Shooting|GAx', label:'Individual GAx' },
-  { id:'Context|Sh%', label:'On-ice Sh%' },
-  { id:'Context|Sv%', label:'On-ice Sv%' },
-  { id:'Context|PDO', label:'PDO' },
-  { id:'Context|GAx', label:'On-ice GAx' },
-  { id:'Context|GSAx', label:'GSAx' },
-  { id:'Context|QoT', label:'QoT' },
-  { id:'Context|QoC', label:'QoC' },
-  { id:'Context|ZS', label:'ZS' },
+  { id:'Save Percentage|Sv% or FSv%', label:'Sv%' },
+  { id:'Save Percentage|xSv% or xFSv%', label:'xSv%' },
+  { id:'Save Percentage|dSv% or dFSv%', label:'dSv%' },
+  { id:'Results|GSAA', label:'GSAA' },
+  { id:'Results|GSAx', label:'GSAx' },
 ];
 
 function metricLabel(metricId){
@@ -700,6 +582,9 @@ function metricLabel(metricId){
   const isRateLike = !isPercent && !['GP','TOI','QoT','QoC','ZS'].includes(m) && !m.startsWith('RAPM ');
 
   let base = m;
+  if(m === 'Sv% or FSv%') base = (xgVal === 'xG_S') ? 'Sv%' : 'FSv%';
+  if(m === 'xSv% or xFSv%') base = (xgVal === 'xG_S') ? 'xSv%' : 'xFSv%';
+  if(m === 'dSv% or dFSv%') base = (xgVal === 'xG_S') ? 'dSv%' : 'dFSv%';
   if(m === 'iShots or iFenwick') base = (xgVal === 'xG_S') ? 'iShots' : 'iFenwick';
   if(m === 'Sh% or FSh%') base = (xgVal === 'xG_S') ? 'Sh%' : 'FSh%';
   if(m === 'xSh% or xFS%' || m === 'xSh% or xFSh%') base = (xgVal === 'xG_S') ? 'xSh%' : 'xFSh%';
@@ -739,6 +624,9 @@ function metricBase(metricId){
   const m = String(parts[1]||parts[0]||'');
 
   let base = m;
+  if(m === 'Sv% or FSv%') base = (xgVal === 'xG_S') ? 'Sv%' : 'FSv%';
+  if(m === 'xSv% or xFSv%') base = (xgVal === 'xG_S') ? 'xSv%' : 'xFSv%';
+  if(m === 'dSv% or dFSv%') base = (xgVal === 'xG_S') ? 'dSv%' : 'dFSv%';
   if(m === 'iShots or iFenwick') base = (xgVal === 'xG_S') ? 'iShots' : 'iFenwick';
   if(m === 'Sh% or FSh%') base = (xgVal === 'xG_S') ? 'Sh%' : 'FSh%';
   if(m === 'xSh% or xFS%' || m === 'xSh% or xFSh%') base = (xgVal === 'xG_S') ? 'xSh%' : 'xFSh%';
@@ -750,10 +638,9 @@ function metricBase(metricId){
 function isAgainstMetric(metricId){
   const b = String(metricBase(metricId)||'');
   if(!b) return false;
-  // “Against” metrics should be inverted so Good is top-right.
-  if(b === 'CA' || b === 'GA' || b === 'xGA') return true;
-  if(b === 'RAPM CA' || b === 'RAPM xGA') return true;
-  return false;
+  // For goalies charts, only GA is inverted (lower is better).
+  // Workload metrics like xGA/SA/FA are not inverted.
+  return b === 'GA';
 }
 
 function fillMetricSelect(sel, items, defaultId){
@@ -769,10 +656,10 @@ function fillMetricSelect(sel, items, defaultId){
 
 function refreshChartMetricLabels(){
   // Defaults apply only when nothing is stored/selected yet.
-  fillMetricSelect(pdX, PLAY_DRIVING_METRICS, 'Play Driving|xGF%');
-  fillMetricSelect(pdY, PLAY_DRIVING_METRICS, 'Play Driving|GF%');
-  fillMetricSelect(scX, SHOOTING_CONTEXT_METRICS, 'Context|Sh%');
-  fillMetricSelect(scY, SHOOTING_CONTEXT_METRICS, 'Context|Sv%');
+  fillMetricSelect(pdX, PLAY_DRIVING_METRICS, 'Workload|xGA');
+  fillMetricSelect(pdY, PLAY_DRIVING_METRICS, 'Workload|GA');
+  fillMetricSelect(scX, SHOOTING_CONTEXT_METRICS, 'Results|GSAA');
+  fillMetricSelect(scY, SHOOTING_CONTEXT_METRICS, 'Results|GSAx');
 
   // Apply restored axis selections once options exist.
   if(__restoreChartAxes){
@@ -989,7 +876,7 @@ async function fetchScatter(xMetricId, yMetricId){
   const key = JSON.stringify({ season, seasonState, strengthState, xgModel, ratesVal, scopeVal, minGP, minTOI, xMetricId, yMetricId });
   if(__scatterCache.has(key)) return __scatterCache.get(key);
 
-  const url = `/api/skaters/scatter?season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&minGP=${encodeURIComponent(minGP)}&minTOI=${encodeURIComponent(minTOI)}&xMetricId=${encodeURIComponent(xMetricId)}&yMetricId=${encodeURIComponent(yMetricId)}`;
+  const url = `/api/goalies/scatter?season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&minGP=${encodeURIComponent(minGP)}&minTOI=${encodeURIComponent(minTOI)}&xMetricId=${encodeURIComponent(xMetricId)}&yMetricId=${encodeURIComponent(yMetricId)}`;
   const r = await fetch(url, { cache:'no-store' });
   const data = await r.json();
   __scatterCache.set(key, data);
@@ -1768,7 +1655,7 @@ function updateCardSlicerSummary(){
 }
 
 function projectionsEnabled(){
-  return String(seasonSelect?.value || '').trim() === '20252026';
+  return false;
 }
 
 function cardEnabled(){
@@ -1832,7 +1719,7 @@ function escapeHtml(value){
 async function ensureCardDefs(){
   if(__cardDefs) return __cardDefs;
   try{
-    const r = await fetch('/api/skaters/card/defs', { cache:'no-store' });
+    const r = await fetch('/api/goalies/card/defs', { cache:'no-store' });
     const js = await r.json();
     __cardDefs = js && typeof js === 'object' ? js : { categories:[], metrics:[] };
   }catch(_){
@@ -1933,7 +1820,7 @@ async function exportCardConfig(){
   const cfg = __cardConfig || loadCardConfig(defs);
   const norm = normalizeCardConfig(defs, cfg);
   const text = JSON.stringify(norm, null, 2);
-  downloadTextFile('skaters_card_config.json', text, 'application/json');
+  downloadTextFile('goalies_card_config.json', text, 'application/json');
   try{
     if(navigator?.clipboard?.writeText){
       await navigator.clipboard.writeText(text);
@@ -2170,7 +2057,7 @@ function fmtMetricValue(def, value, ratesSel){
     const s = (m.startsWith('d') && v > 0) ? '+' : '';
     return s + v.toFixed(1) + '%';
   }
-  if(m.endsWith('+/-') || m.includes('+/-') || m === 'GAx' || m === 'GSAx' || m === 'xG+/-' || m === 'xG+/-' || m === 'C+/-' || m === 'F+/-' || m === 'S+/-' || m === 'G+/-'){
+  if(m.endsWith('+/-') || m.includes('+/-') || m === 'GAx' || m === 'GSAx' || m === 'GSAA' || m === 'xG+/-' || m === 'xG+/-' || m === 'C+/-' || m === 'F+/-' || m === 'S+/-' || m === 'G+/-'){
     const s = v > 0 ? '+' : '';
     return s + v.toFixed(2);
   }
@@ -2183,11 +2070,37 @@ function fmtMetricValue(def, value, ratesSel){
 
 function displayMetricLabel(def, labels){
   const m = String(def?.metric||'');
+  if(m === 'Sv% or FSv%') return String(labels?.Sv || def?.name || 'Sv%');
+  if(m === 'xSv% or xFSv%') return String(labels?.xSv || def?.name || 'xSv%');
+  if(m === 'dSv% or dFSv%') return String(labels?.dSv || def?.name || 'dSv%');
   if(m === 'iShots or iFenwick') return String(labels?.Attempts || def?.name || 'Attempts');
   if(m === 'Sh% or FSh%') return String(labels?.Sh || def?.name || 'Sh%');
   if(m === 'xSh% or xFS%' || m === 'xSh% or xFSh%') return String(labels?.xSh || def?.name || 'xSh%');
   if(m === 'dSh% or dFSh%') return String(labels?.dSh || def?.name || 'dSh%');
   return String(def?.name || def?.metric || def?.id || '');
+}
+
+function fixedGoaliesCardConfig(defs){
+  const defsMetrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+  const byCat = {};
+  defsMetrics.forEach(m=>{
+    const c = String(m?.category||'').trim();
+    const id = String(m?.id||'').trim();
+    if(!c || !id) return;
+    (byCat[c] = byCat[c] || []).push(id);
+  });
+
+  const slots = {
+    L1: 'Workload',
+    C1: 'Save Percentage',
+    R1: 'Results',
+  };
+  const categorySelected = {
+    'Workload': (byCat['Workload'] || []).slice(),
+    'Save Percentage': (byCat['Save Percentage'] || []).slice(),
+    'Results': (byCat['Results'] || []).slice(),
+  };
+  return { version: 1, slots, categorySelected };
 }
 
 function renderCardMetric(def, metric, labels, ratesSel){
@@ -2290,31 +2203,11 @@ async function loadCardPanel(){
   cardPanelInner.textContent = 'Loading card...';
   try{
     const defs = await ensureCardDefs();
-    const cfg = (__cardConfig = loadCardConfig(defs));
-    // Build requested metric list from configured categories.
-    const defsMetrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
-    const byCat = {};
-    defsMetrics.forEach(m=>{
-      const c = String(m?.category||'').trim();
-      if(!c) return;
-      (byCat[c] = byCat[c] || []).push(m);
-    });
-    const metricIds = [];
-    const usedCats = new Set(Object.values(cfg?.slots||{}).filter(Boolean).map(String));
-    usedCats.forEach(cat=>{
-      let mids = Array.isArray(cfg?.categorySelected?.[cat]) ? cfg.categorySelected[cat].map(String).filter(Boolean) : [];
-      if(!mids.length){
-        const defaults = (byCat[cat] || []).filter(x=>String(x?.default||'').trim()==='1' || x?.default===true || String(x?.default||'').toLowerCase()==='true');
-        mids = defaults.map(x=>String(x?.id||'')).filter(Boolean);
-      }
-      mids.forEach(id=>{ if(id && !metricIds.includes(id)) metricIds.push(id); });
-    });
-    // Ensure GP is present if we need TOI/GP display.
-    if(String(rates) === 'PerGame' && metricIds.includes('Ice Time|TOI') && !metricIds.includes('Ice Time|GP')){
-      metricIds.push('Ice Time|GP');
-    }
+    const cfg = (__cardConfig = fixedGoaliesCardConfig(defs));
+    // Goalies page: always show all goalie metrics.
+    const metricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map(m=>String(m?.id||'')).filter(Boolean);
 
-    const url = `/api/skaters/card?season=${encodeURIComponent(season)}&playerId=${encodeURIComponent(playerId)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(rates)}&scope=${encodeURIComponent(scope)}&minGP=${encodeURIComponent(String(minGP))}&minTOI=${encodeURIComponent(String(minTOI))}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
+    const url = `/api/goalies/card?season=${encodeURIComponent(season)}&playerId=${encodeURIComponent(playerId)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(rates)}&scope=${encodeURIComponent(scope)}&minGP=${encodeURIComponent(String(minGP))}&minTOI=${encodeURIComponent(String(minTOI))}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
     const r = await fetch(url, { cache: 'no-store' });
     let data = null;
     try{
@@ -2345,38 +2238,12 @@ async function loadCardPanel(){
 // -----------------------------
 // Table View (no Edge metrics)
 // -----------------------------
-const TABLE_CONFIG_KEY = 'nhlSkatersTableConfig_v1';
+const TABLE_CONFIG_KEY = 'nhlGoaliesTableConfig_v1';
 let __tableRows = [];
 let __tableBusy = false;
 let __tableLastKey = '';
 
-const DEFAULT_TABLE_METRIC_IDS = [
-  'Ice Time|GP',
-  'Ice Time|TOI',
-  'Production|iGoals',
-  'Production|Assists1',
-  'Production|Assists2',
-  'Production|Points',
-  'Defense|RAPM GA',
-  'Defense|RAPM xGA',
-  'Offense|RAPM GF',
-  'Offense|RAPM xGF',
-  'Play Driving|RAPM G+/-',
-  'Play Driving|RAPM xG+/-',
-  'Play Driving|CF%',
-  'Play Driving|xGF%',
-  'Play Driving|GF%',
-  'Context|QoT',
-  'Context|QoC',
-  'Context|ZS',
-  'Context|PDO',
-  'Shooting|iShots or iFenwick',
-  'Shooting|ixG',
-  'Shooting|Sh% or FSh%',
-  'Shooting|xSh% or xFSh%',
-  'Shooting|dSh% or dFSh%',
-  'Shooting|GAx',
-];
+const DEFAULT_TABLE_METRIC_IDS = [];
 
 function getTableConfig(){
   try{
@@ -2402,7 +2269,7 @@ function saveTableConfig(cfg){
 function ensureTableConfig(){
   const cfg0 = getTableConfig();
   if(cfg0) return cfg0;
-  const cfg = { version: 1, metricIds: DEFAULT_TABLE_METRIC_IDS.slice(), sortMetricId: 'Production|Points', sortDir: 'desc' };
+  const cfg = { version: 1, metricIds: DEFAULT_TABLE_METRIC_IDS.slice(), sortMetricId: 'Results|GSAA', sortDir: 'desc' };
   saveTableConfig(cfg);
   return cfg;
 }
@@ -2418,11 +2285,15 @@ function __fmtTableValue(metricId, v){
   const ratesVal = String(cardRates?.value || 'Totals');
   const parts = String(metricId||'').split('|');
   const m = String(parts[1]||parts[0]||'');
-  const isXgLike = /(^|[^A-Za-z])xG|ixG|xGF|xGA|GAx|GSAx/i.test(m);
+  const isXgLike = /(^|[^A-Za-z])xG|ixG|xGF|xGA|GAx|GSAx|GSAA/i.test(m);
   const isPercent = m.includes('%') || m === 'PDO' || m === 'Sv%' || m === 'Sh%';
   if(m === 'GP') return String(Math.round(n));
   if(m === 'TOI') return String(Math.round(n));
   if(isPercent) return n.toFixed(1);
+  if(m === 'GAx' || m === 'GSAx' || m === 'GSAA'){
+    const s = n > 0 ? '+' : '';
+    return s + n.toFixed(2);
+  }
   if(m.startsWith('RAPM')) return n.toFixed(3);
   if(m === 'QoT' || m === 'QoC' || m === 'ZS') return n.toFixed(3);
   if(ratesVal === 'Totals'){
@@ -2433,7 +2304,7 @@ function __fmtTableValue(metricId, v){
 }
 
 async function fetchTablePlayers(season, seasonState){
-  const url = `/api/skaters/players?scope=league&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}`;
+  const url = `/api/goalies/players?scope=league&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}`;
   const r = await fetch(url, { cache:'no-store' });
   const js = await r.json();
   const list = Array.isArray(js?.players) ? js.players : [];
@@ -2456,7 +2327,7 @@ function __setTableError(text){
 function renderTable(cfg, defs){
   if(!skatersTable) return;
   const metricIds = Array.isArray(cfg?.metricIds) ? cfg.metricIds.map(String).filter(Boolean) : [];
-  const sortId = String(cfg?.sortMetricId || 'Production|Points');
+  const sortId = String(cfg?.sortMetricId || 'Results|GSAA');
   const dir = (String(cfg?.sortDir||'desc') === 'asc') ? 'asc' : 'desc';
 
   const byId = {};
@@ -2563,15 +2434,11 @@ async function loadTablePanel(){
 
   const defs = await ensureCardDefs();
   const cfg0 = ensureTableConfig();
-  const metricIds = (Array.isArray(cfg0.metricIds)?cfg0.metricIds:[]).map(String).filter(id=>id && !id.startsWith('Edge|'));
-  const sortMetricId = String(cfg0.sortMetricId||'Production|Points');
+  const metricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map(m=>String(m?.id||'')).filter(Boolean);
+  const sortMetricId = String(cfg0.sortMetricId||'Results|GSAA');
   const sortDir = (String(cfg0.sortDir||'desc') === 'asc') ? 'asc' : 'desc';
   const cfg = { ...cfg0, metricIds, sortMetricId, sortDir };
-  if(metricIds.length === 0){
-    if(skatersTable) skatersTable.innerHTML = '';
-    __setTableError('No table metrics selected.');
-    return;
-  }
+  // Goalies page: always show all goalie metrics.
 
   const key = __tableKey({ season, seasonState, strengthState, rates, xgModel, scope, minGP, minTOI, metricIds, sortMetricId, sortDir });
   if(key === __tableLastKey && __tableRows.length){
@@ -2594,7 +2461,7 @@ async function loadTablePanel(){
       return;
     }
 
-    const r = await fetch('/api/skaters/table', {
+    const r = await fetch('/api/goalies/table', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       cache: 'no-store',
@@ -2653,8 +2520,8 @@ function __csvEscape(v){
 async function exportTableCsv(){
   const defs = await ensureCardDefs();
   const cfg0 = ensureTableConfig();
-  const metricIds = (Array.isArray(cfg0.metricIds)?cfg0.metricIds:[]).map(String).filter(id=>id && !id.startsWith('Edge|'));
-  const sortMetricId = String(cfg0.sortMetricId||'Production|Points');
+  const metricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map(m=>String(m?.id||'')).filter(Boolean);
+  const sortMetricId = String(cfg0.sortMetricId||'Results|GSAA');
   const sortDir = (String(cfg0.sortDir||'desc') === 'asc') ? 'asc' : 'desc';
 
   const byId = {};
@@ -2695,7 +2562,7 @@ async function exportTableCsv(){
   const season = String(seasonSelect?.value||'').trim() || '20252026';
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
-  downloadTextFile(`skaters_table_${season}_${seasonState}_${strengthState}.csv`, lines.join('\n'), 'text/csv;charset=utf-8;');
+  downloadTextFile(`goalies_table_${season}_${seasonState}_${strengthState}.csv`, lines.join('\n'), 'text/csv;charset=utf-8;');
 }
 
 function openTableConfig(){
@@ -4040,11 +3907,11 @@ async function loadPlayers(){
   playerSelect.disabled = true;
   playerSelect.innerHTML = '<option value="">Loading...</option>';
   try{
-    const r = await fetch(`/api/skaters/players?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}`);
+    const r = await fetch(`/api/goalies/players?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}`);
     const data = await r.json();
     const list = Array.isArray(data?.players) ? data.players : [];
     list.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||'')));
-    const savedKey = `skaters_player_${team}`;
+    const savedKey = `goalies_player_${team}`;
     const saved = localStorage.getItem(savedKey);
     playerSelect.innerHTML = '<option value="">Select player</option>' + list.map(p=>`<option value="${p.playerId}">${p.name}</option>`).join('');
     if(__restorePlayerId && list.some(p=>String(p.playerId)===String(__restorePlayerId))){
@@ -4072,7 +3939,7 @@ async function loadPlayerCard(){
     setMsg('Choose Team, Season, and Player.');
     return;
   }
-  localStorage.setItem(`skaters_player_${team}`, String(playerId));
+  localStorage.setItem(`goalies_player_${team}`, String(playerId));
   setHeadshot(team, season, playerId);
   setMsg('Loading player info...');
   try{
@@ -4123,7 +3990,7 @@ tabProjections?.addEventListener('click', ()=> setActiveTab('projections'));
 
 cardSeasonState?.addEventListener('change', ()=> loadCardPanel());
 cardSeasonState?.addEventListener('change', async ()=>{
-  // Player list depends on seasonState in /api/skaters/players
+  // Player list depends on seasonState in /api/goalies/players
   await loadPlayers();
   await loadPlayerCard();
 });
@@ -4267,9 +4134,7 @@ projExportCsv?.addEventListener('click', ()=>{
 teamSelect?.addEventListener('change', async ()=>{
   await loadPlayers();
   await loadPlayerCard();
-  applyRAPMSelectTextColor();
   applyExportButtonTextColor();
-  if(projectionsEnabled()) loadProjectionsPanel();
   updateCardSlicerSummary();
   saveSkatersState();
 });
