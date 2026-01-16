@@ -236,24 +236,33 @@
   }
 
   .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:1px solid #232a3a; border-radius:12px; }
-  #tabPanelTable{ overflow-x:hidden; }
+  #tabPanelTable{ min-width:0; }
+  #tablePanelInner{ min-width:0; }
   .metrics-table{ width:max-content; min-width:100%; border-collapse:separate; border-spacing:0; font-size:14px; table-layout:auto; }
   .metrics-table th{ position:sticky; top:0; background:#0f1522; text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 12px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; user-select:none; white-space:nowrap; z-index:2; }
   .metrics-table td{ padding:10px 12px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric: tabular-nums; }
   .metrics-table th, .metrics-table td{ min-width:92px; }
   .metrics-table td.name, .metrics-table th.name{ text-align:left; }
-  .metrics-table td.rank, .metrics-table th.rank{ text-align:right; }
+  .metrics-table td.rank, .metrics-table th.rank{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ width:64px; min-width:64px; max-width:64px; }
-  .metrics-table th.rank, .metrics-table td.rank{ width:64px; min-width:64px; max-width:64px; }
-  .metrics-table th.name, .metrics-table td.name{ width:180px; min-width:180px; max-width:180px; }
+  .metrics-table td.rank, .metrics-table td.name{ position:sticky; background:#0f1522; z-index:1; }
+  .metrics-table td.rank{ left:0; border-right:2px solid #1a2230; }
+  .metrics-table td.name{ left:64px; width:180px; min-width:180px; max-width:180px; }
+  .metrics-table th.rank, .metrics-table th.name{ position:sticky; background:#0f1522; z-index:4; }
+  .metrics-table th.rank{ left:0; border-right:2px solid #222b37; }
+  .metrics-table th.name{ left:64px; width:180px; min-width:180px; max-width:180px; }
   .metrics-table tbody tr:hover{ background:rgba(255,255,255,0.04); }
+  .metrics-table th[data-mid]{ cursor:pointer; user-select:none; }
+  .metrics-table th[data-mid]:hover{ background:#141a28; }
 
   .table-metric-picker{ display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
   @media (max-width: 980px){ .table-metric-picker{ grid-template-columns:1fr; } }
   .table-metric-group{ border:1px solid #232a3a; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
   .table-metric-group .t{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:900; margin-bottom:10px; }
-  .table-metric{ display:flex; gap:8px; align-items:flex-start; font-size:13px; color:rgba(255,255,255,0.92); padding:4px 0; }
-  .table-metric input{ margin:0; flex:0 0 auto; }
+  .table-metrics-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:8px 12px; }
+  .table-metric{ display:flex; flex-direction:row; gap:8px; align-items:center; font-size:13px; color:rgba(255,255,255,0.92); padding:0; }
+  .table-metric input{ margin:0; flex:0 0 auto; cursor:pointer; }
+  .table-metric span{ cursor:pointer; flex:1 1 auto; }
 </style>
 {% endblock %}
 
@@ -423,24 +432,11 @@
       <button id="btnCloseTableConfig" class="btn" type="button">Close</button>
     </div>
     <div class="modal-bd">
-      <div class="cc-help">Select metrics (columns). Rank / Name / Pos are always included. Edge metrics are excluded for performance.</div>
-      <div class="cc-row" style="justify-content:space-between;">
-        <div class="cc-row" style="margin:0;">
-          <button id="btnTableDefaults" class="btn" type="button">Defaults</button>
-          <button id="btnTableNone" class="btn" type="button">None</button>
-          <button id="btnTableCardDefaults" class="btn" type="button">Card Defaults</button>
-        </div>
-        <div class="cc-row" style="margin:0;">
-          <label style="min-width:auto;">Sort by
-            <select id="tableSortMetric"></select>
-          </label>
-          <label style="min-width:auto;">Order
-            <select id="tableSortDir">
-              <option value="desc" selected>High → Low</option>
-              <option value="asc">Low → High</option>
-            </select>
-          </label>
-        </div>
+      <div class="cc-help">Select metrics (columns). Rank / Name / Pos are always included. Edge metrics are excluded for performance. Click column headers to sort.</div>
+      <div class="cc-row" style="justify-content:flex-start; gap:10px;">
+        <button id="btnTableDefaults" class="btn" type="button">Defaults</button>
+        <button id="btnTableNone" class="btn" type="button">None</button>
+        <button id="btnTableCardDefaults" class="btn" type="button">Card Defaults</button>
       </div>
       <div id="tableMetricPicker" class="table-metric-picker"></div>
     </div>
@@ -2488,7 +2484,9 @@ function renderTable(cfg, defs){
   for(const id of metricIds){
     const def = byId[id];
     const label = String(metricLabel(id) || def?.name || id);
-    head.push(`<th data-mid="${escapeHtml(id)}">${escapeHtml(label)}</th>`);
+    const isSorted = (id === sortId);
+    const arrow = isSorted ? (dir === 'asc' ? ' ▲' : ' ▼') : '';
+    head.push(`<th data-mid="${escapeHtml(id)}">${escapeHtml(label)}${arrow}</th>`);
   }
   head.push('</tr>');
 
@@ -2510,6 +2508,16 @@ function renderTable(cfg, defs){
   skatersTable.innerHTML = `<thead>${head.join('')}</thead><tbody>${body.join('')}</tbody>`;
 
   try{
+    skatersTable.querySelectorAll('thead th[data-mid]').forEach(th=>{      const mid = String(th.getAttribute('data-mid')||'');
+      if(!mid) return;
+      th.addEventListener('click', ()=>{
+        const cfg = ensureTableConfig();
+        const newDir = (cfg.sortMetricId === mid && cfg.sortDir === 'desc') ? 'asc' : 'desc';
+        saveTableConfig({ ...cfg, sortMetricId: mid, sortDir: newDir });
+        __tableLastKey = '';
+        loadTablePanel();
+      });
+    });
     skatersTable.querySelectorAll('tbody tr[data-pid]').forEach(tr=>{
       tr.addEventListener('click', async ()=>{
         const pid = String(tr.getAttribute('data-pid')||'');
@@ -2710,19 +2718,6 @@ async function showTableConfig(){
   const selected = new Set((Array.isArray(cfg.metricIds)?cfg.metricIds:[]).map(String).filter(Boolean));
   Array.from(selected).forEach(id=>{ if(id.startsWith('Edge|')) selected.delete(id); });
 
-  if(tableSortMetric){
-    tableSortMetric.innerHTML = metrics.map(m=>{
-      const id = String(m?.id||'');
-      const label = String(metricLabel(id)||m?.name||id);
-      return `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
-    }).join('');
-    const desired = String(cfg.sortMetricId||'Production|Points');
-    if(Array.from(tableSortMetric.options).some(o=>o.value===desired)) tableSortMetric.value = desired;
-  }
-  if(tableSortDir){
-    tableSortDir.value = (String(cfg.sortDir||'desc') === 'asc') ? 'asc' : 'desc';
-  }
-
   const byCat = {};
   metrics.forEach(m=>{
     const c = String(m?.category||'Other').trim() || 'Other';
@@ -2737,7 +2732,7 @@ async function showTableConfig(){
         const checked = selected.has(id) ? 'checked' : '';
         return `<label class="table-metric"><input type="checkbox" data-mid="${escapeHtml(id)}" ${checked}/> <span>${escapeHtml(label)}</span></label>`;
       }).join('');
-      return `<div class="table-metric-group"><div class="t">${escapeHtml(cat)}</div>${items}</div>`;
+      return `<div class="table-metric-group"><div class="t">${escapeHtml(cat)}</div><div class="table-metrics-grid">${items}</div></div>`;
     }).join('');
 
     tableMetricPicker.querySelectorAll('input[type="checkbox"][data-mid]').forEach(cb=>{
@@ -2785,11 +2780,12 @@ async function showTableConfig(){
   if(btnApplyTableConfig){
     btnApplyTableConfig.onclick = ()=>{
       const metricIds = Array.from(selected.values()).filter(id=>id && !id.startsWith('Edge|'));
+      const existingCfg = ensureTableConfig();
       const next = {
         version: 1,
         metricIds,
-        sortMetricId: String(tableSortMetric?.value || metricIds[0] || 'Production|Points'),
-        sortDir: (String(tableSortDir?.value||'desc') === 'asc') ? 'asc' : 'desc',
+        sortMetricId: String(existingCfg.sortMetricId || metricIds[0] || 'Production|Points'),
+        sortDir: String(existingCfg.sortDir || 'desc'),
       };
       saveTableConfig(next);
       __tableLastKey = '';
