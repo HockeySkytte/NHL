@@ -95,6 +95,14 @@
   .card-slot{ margin-bottom:14px; }
   .card-slot:last-child{ margin-bottom:0; }
 
+  .goalie-trend{ margin-top:18px; border-top:1px solid #232a3a; padding-top:14px; }
+  .goalie-trend-hd{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .goalie-trend-hd h3{ margin:0; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .goalie-trend-controls{ display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
+  .goalie-trend-controls .segmented{ margin-top:0; }
+  .goalie-trend-wrap{ position:relative; width:100%; height:280px; }
+  @media (max-width: 980px){ .goalie-trend-wrap{ height:240px; } }
+
   .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
   .config-btn:hover{ background:color-mix(in srgb, var(--panel-alt) 70%, black); }
 
@@ -500,6 +508,11 @@ let __logoImgCache = new Map();
 let __chartsLastKey = '';
 let __playerMugCache = new Map();
 
+let __goalieTrendChart = null;
+let __goalieTrendKey = '';
+let __goalieTrendSeries = null;
+const GOALIES_TREND_STATE_KEY = 'nhlGoaliesTrendState_v2';
+
 const teams = JSON.parse(document.getElementById('teams-data').textContent);
 
 function teamLogoUrl(abbrev){
@@ -519,6 +532,7 @@ function getTeamLogoImage(abbrev, onLoad){
   img.onload = ()=>{
     try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/}
     try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/}
+    try{ __goalieTrendChart && __goalieTrendChart.update('none'); }catch(_){/*noop*/}
   };
   img.onerror = ()=>{ /* noop */ };
   img.src = url;
@@ -554,6 +568,120 @@ function getPlayerMugImage(season, team, playerId){
   __playerMugCache.set(pid, img);
   return img;
 }
+
+// Draw team logos on the goalie trend chart points.
+// Sizing + render rules match the Chart tab team-logo badge.
+const __goalieTrendLogoPlugin = {
+  id: 'goalieTrendLogos',
+  afterDatasetsDraw(chart, args, pluginOptions){
+    try{
+      const series = chart?.$goalieTrendSeries;
+      if(!Array.isArray(series) || !series.length) return;
+      const meta = chart.getDatasetMeta(0);
+      if(!meta || !Array.isArray(meta.data) || !meta.data.length) return;
+
+      const outerR = clamp(Number(pluginOptions?.outerR ?? 14), 8, 28);
+      const innerR = clamp(Number(pluginOptions?.innerR ?? 12.6), 6, outerR);
+      const pad = clamp(Number(pluginOptions?.pad ?? 0.35), 0, 3);
+      const zoom = clamp(Number(pluginOptions?.zoom ?? 1.08), 0.75, 2.0);
+      const ctx = chart.ctx;
+      if(!ctx) return;
+
+      for(let i = 0; i < meta.data.length; i++){
+        const el = meta.data[i];
+        if(!el || el.skip) continue;
+        const x = Number(el.x);
+        const y = Number(el.y);
+        if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
+
+        const team = String(series?.[i]?.team || '').trim().toUpperCase();
+        const img = team ? getTeamLogoImage(team) : null;
+        if(!img || !img.complete) continue;
+
+        ctx.save();
+        // Backplate + ring
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(10,14,22,0.92)';
+        ctx.arc(x, y, outerR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+        ctx.stroke();
+
+        // Clip + image inside circle
+        ctx.beginPath();
+        ctx.arc(x, y, innerR, 0, Math.PI * 2);
+        ctx.clip();
+
+        const d = innerR * 2;
+        // Note: NHL team logos are often SVG, which may report naturalWidth=0.
+        // In that case, fall back to a simple drawImage without source-cropping.
+        const iw = Number(img.naturalWidth || img.width || 0);
+        const ih = Number(img.naturalHeight || img.height || 0);
+        const side = Math.min(iw, ih);
+
+        try{
+          if(side > 0 && Number.isFinite(zoom) && zoom > 0){
+            const crop = side / zoom;
+            if(crop > 0){
+              const sx = (iw - crop) / 2;
+              const sy = (ih - crop) / 2;
+              ctx.drawImage(
+                img,
+                sx, sy, crop, crop,
+                x - innerR + pad,
+                y - innerR + pad,
+                d - 2*pad,
+                d - 2*pad
+              );
+            }else{
+              ctx.drawImage(img, x - innerR + pad, y - innerR + pad, d - 2*pad, d - 2*pad);
+            }
+          }else{
+            ctx.drawImage(img, x - innerR + pad, y - innerR + pad, d - 2*pad, d - 2*pad);
+          }
+        }catch(_){
+          try{ ctx.drawImage(img, x - innerR + pad, y - innerR + pad, d - 2*pad, d - 2*pad); }catch(__){/*noop*/}
+        }
+        ctx.restore();
+      }
+    }catch(_){/*noop*/}
+  },
+};
+
+// Draw a horizontal baseline at y=0 for the goalie trend chart.
+const __goalieTrendZeroLinePlugin = {
+  id: 'goalieTrendZeroLine',
+  beforeDatasetsDraw(chart, args, pluginOptions){
+    try{
+      const yScale = chart?.scales?.y;
+      const ca = chart?.chartArea;
+      if(!yScale || !ca) return;
+
+      // Only draw if 0 is within the visible scale range.
+      const minV = Number(yScale.min);
+      const maxV = Number(yScale.max);
+      if(!Number.isFinite(minV) || !Number.isFinite(maxV)) return;
+      if(!(minV <= 0 && 0 <= maxV)) return;
+
+      const yPix = yScale.getPixelForValue(0);
+      if(!Number.isFinite(yPix)) return;
+
+      const ctx = chart.ctx;
+      const color = String(pluginOptions?.color || 'rgba(209,213,219,0.55)');
+      const w = clamp(Number(pluginOptions?.lineWidth ?? 2), 1, 4);
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.moveTo(ca.left, yPix);
+      ctx.lineTo(ca.right, yPix);
+      ctx.stroke();
+      ctx.restore();
+    }catch(_){/*noop*/}
+  },
+};
 
 const PLAY_DRIVING_METRICS = [
   { id:'Workload|FA', label:'FA' },
@@ -2068,6 +2196,222 @@ function fmtMetricValue(def, value, ratesSel){
   return (ratesSel === 'Totals') ? String(Math.round(v)) : v.toFixed(2);
 }
 
+function _seasonLabel(seasonId){
+  const s = String(seasonId || '').trim();
+  if(s.length === 8){
+    const a = s.slice(0,4);
+    const b = s.slice(6,8);
+    return `${a}-${b}`;
+  }
+  return s;
+}
+
+function _rgbaFromHex(hex, a){
+  const rgb = hexToRgb(hex);
+  if(!rgb) return `rgba(77,163,255,${String(a ?? 0.25)})`;
+  const alpha = clamp(Number(a ?? 0.25), 0, 1);
+  return `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+}
+
+function _darkenHex(hex, t){
+  const rgb = hexToRgb(hex);
+  if(!rgb) return 'rgb(33,42,64)';
+  const tt = clamp(Number(t ?? 0.35), 0, 1);
+  const c = mixRgb(rgb, {r:0,g:0,b:0}, tt);
+  return `rgb(${c.r},${c.g},${c.b})`;
+}
+
+function _getSelectedTeamColor(){
+  const ab = String(teamSelect?.value || '').trim().toUpperCase();
+  if(!ab) return null;
+  const teamObj = teams.find(tm=>{
+    const a = String(tm?.Abbreviation || tm?.abbrev || tm?.Team || tm?.team || tm?.TeamAbbrev || tm?.teamAbbrev || '').trim().toUpperCase();
+    return a === ab;
+  });
+  return teamObj?.Color || teamObj?.color || null;
+}
+
+function _loadGoaliesTrendState(){
+  try{
+    const raw = localStorage.getItem(GOALIES_TREND_STATE_KEY);
+    const js = raw ? JSON.parse(raw) : null;
+    const metric = (js && (js.metric === 'GSAA' || js.metric === 'GSAx')) ? js.metric : 'GSAA';
+    let mode = (js && (js.mode === 'running' || js.mode === 'total' || js.mode === 'season')) ? js.mode : 'season';
+    if(mode === 'running') mode = 'total';
+    return { metric, mode };
+  }catch(_){
+    return { metric:'GSAA', mode:'season' };
+  }
+}
+
+function _saveGoaliesTrendState(st){
+  try{
+    const metric = (st?.metric === 'GSAx') ? 'GSAx' : 'GSAA';
+    const mode = (st?.mode === 'total') ? 'total' : 'season';
+    localStorage.setItem(GOALIES_TREND_STATE_KEY, JSON.stringify({ metric, mode }));
+  }catch(_){/*noop*/}
+}
+
+function _applyTrendControlUI(st){
+  const metricWrap = document.getElementById('goalieTrendMetricButtons');
+  const modeWrap = document.getElementById('goalieTrendModeButtons');
+  if(metricWrap){
+    metricWrap.querySelectorAll('button[data-metric]').forEach(btn=>{
+      const m = String(btn.getAttribute('data-metric') || '');
+      btn.classList.toggle('active', m === st.metric);
+    });
+  }
+  if(modeWrap){
+    modeWrap.querySelectorAll('button[data-mode]').forEach(btn=>{
+      const m = String(btn.getAttribute('data-mode') || '');
+      btn.classList.toggle('active', m === st.mode);
+    });
+  }
+}
+
+async function _ensureGoalieTrendSeries(playerId, seasonState, strengthState, xgModel){
+  const key = JSON.stringify({ playerId:String(playerId||''), seasonState:String(seasonState||''), strengthState:String(strengthState||''), xgModel:String(xgModel||'') });
+  if(__goalieTrendSeries && __goalieTrendKey === key) return __goalieTrendSeries;
+  __goalieTrendKey = key;
+  __goalieTrendSeries = null;
+
+  const url = `/api/goalies/series?playerId=${encodeURIComponent(String(playerId))}`
+    + `&seasonState=${encodeURIComponent(String(seasonState||'regular'))}`
+    + `&strengthState=${encodeURIComponent(String(strengthState||'5v5'))}`
+    + `&xgModel=${encodeURIComponent(String(xgModel||'xG_F'))}`;
+  const r = await fetch(url, { cache:'no-store' });
+  const js = await r.json().catch(()=>null);
+  if(!r.ok || !js || js.error){
+    return null;
+  }
+  const rows = Array.isArray(js.seasons) ? js.seasons : [];
+  const cleaned = rows
+    .map(x=>({
+      season: Number(x?.season),
+      team: String(x?.team || '').trim().toUpperCase(),
+      GSAA: Number(x?.GSAA),
+      GSAx: Number(x?.GSAx),
+    }))
+    .filter(x=>Number.isFinite(x.season))
+    .sort((a,b)=>a.season-b.season);
+  __goalieTrendSeries = cleaned;
+  return cleaned;
+}
+
+function _renderGoalieTrendChart(series, st){
+  const canvas = document.getElementById('goalieTrendChart');
+  if(!canvas) return;
+  if(!Array.isArray(series) || !series.length){
+    try{ if(__goalieTrendChart){ __goalieTrendChart.destroy(); __goalieTrendChart = null; } }catch(_){/*noop*/}
+    const wrap = document.getElementById('goalieTrendEmpty');
+    if(wrap) wrap.hidden = false;
+    return;
+  }
+  const empty = document.getElementById('goalieTrendEmpty');
+  if(empty) empty.hidden = true;
+
+  const metricKey = (st.metric === 'GSAx') ? 'GSAx' : 'GSAA';
+  const labels = series.map(r=>_seasonLabel(r.season));
+  const base = series.map(r=> Number(r?.[metricKey]));
+
+  const y = [];
+  if(st.mode === 'total'){
+    let acc = 0;
+    for(const v of base){
+      const vv = Number.isFinite(v) ? Number(v) : 0;
+      acc += vv;
+      y.push(acc);
+    }
+  }else{
+    for(const v of base) y.push(Number.isFinite(v) ? Number(v) : 0);
+  }
+
+  const yTitle = `${metricKey}${st.mode === 'total' ? ' (Total)' : ' (Season)'} `;
+
+  const data = {
+    labels,
+    datasets: [
+      {
+        label: metricKey,
+        data: y,
+        borderColor: '#d1d5db',
+        backgroundColor: 'rgba(0,0,0,0)',
+        fill: false,
+        // Points are drawn by a custom plugin using team logos.
+        // Keep a small hit radius for hover/tooltip.
+        pointRadius: 10,
+        pointHoverRadius: 14,
+        tension: 0,
+        borderWidth: 2,
+        pointBorderWidth: 0,
+        pointBorderColor: 'rgba(0,0,0,0)',
+        pointBackgroundColor: 'rgba(0,0,0,0)',
+        pointStyle: 'circle',
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      goalieTrendLogos: { outerR: 14, innerR: 12.6, pad: 0.35, zoom: 1.08 },
+      goalieTrendZeroLine: { color: 'rgba(209,213,219,0.55)', lineWidth: 2 },
+      tooltip: {
+        callbacks: {
+          label: (ctx)=>{
+            const v = Number(ctx?.parsed?.y);
+            if(!Number.isFinite(v)) return '';
+            const s = v > 0 ? '+' : '';
+            let teamTxt = '';
+            try{
+              const idx = Number(ctx?.dataIndex);
+              const team = String(series?.[idx]?.team || '').trim().toUpperCase();
+              if(team) teamTxt = ` (${team})`;
+            }catch(_){/*noop*/}
+            return `${metricKey}${teamTxt}: ${s}${v.toFixed(2)}`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        title: { display: true, text: 'Season', color: 'rgba(255,255,255,0.78)', font: { weight: '700' } },
+        ticks: { color: 'rgba(255,255,255,0.75)' },
+        grid: { color: 'rgba(255,255,255,0.06)' },
+      },
+      y: {
+        title: { display: true, text: yTitle.trim(), color: 'rgba(255,255,255,0.78)', font: { weight: '700' } },
+        ticks: { color: 'rgba(255,255,255,0.75)' },
+        grid: { color: 'rgba(255,255,255,0.06)' },
+      },
+    },
+  };
+
+  try{
+    if(__goalieTrendChart){
+      try{ __goalieTrendChart.$goalieTrendSeries = series; }catch(_){/*noop*/}
+      __goalieTrendChart.data = data;
+      __goalieTrendChart.options = options;
+      __goalieTrendChart.update('none');
+      return;
+    }
+  }catch(_){
+    try{ __goalieTrendChart?.destroy(); }catch(__){/*noop*/}
+    __goalieTrendChart = null;
+  }
+
+  __goalieTrendChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data,
+    options,
+    plugins: [__goalieTrendZeroLinePlugin, __goalieTrendLogoPlugin],
+  });
+  try{ __goalieTrendChart.$goalieTrendSeries = series; }catch(_){/*noop*/}
+}
+
 function displayMetricLabel(def, labels){
   const m = String(def?.metric||'');
   if(m === 'Sv% or FSv%') return String(labels?.Sv || def?.name || 'Sv%');
@@ -2122,6 +2466,7 @@ function renderCardMetric(def, metric, labels, ratesSel){
 
 function renderCardUI(data, defs, cfg){
   if(!cardPanelInner) return;
+  try{ if(__goalieTrendChart){ __goalieTrendChart.destroy(); __goalieTrendChart = null; } }catch(_){ __goalieTrendChart = null; }
   const metrics = data?.metrics || {};
   const labels = data?.labels || {};
   const ratesSel = String(cardRates?.value || data?.rates || 'Totals');
@@ -2172,7 +2517,59 @@ function renderCardUI(data, defs, cfg){
     <div class="card-grid">
       ${columns.map(col=>`<div class="card-col">${col.map(slotHtml).join('')}</div>`).join('')}
     </div>
+
+    <div class="goalie-trend">
+      <div class="goalie-trend-hd">
+        <h3>Season Trend</h3>
+        <div class="goalie-trend-controls">
+          <div id="goalieTrendMetricButtons" class="segmented" role="group" aria-label="Trend metric">
+            <button type="button" class="seg-btn" data-metric="GSAA">GSAA</button>
+            <button type="button" class="seg-btn" data-metric="GSAx">GSAx</button>
+          </div>
+          <div id="goalieTrendModeButtons" class="segmented" role="group" aria-label="Trend mode">
+            <button type="button" class="seg-btn" data-mode="season">Season</button>
+            <button type="button" class="seg-btn" data-mode="total">Total</button>
+          </div>
+        </div>
+      </div>
+      <div id="goalieTrendEmpty" class="skater-empty" hidden style="padding:6px 2px 10px;">No season series available for this filter.</div>
+      <div class="goalie-trend-wrap">
+        <canvas id="goalieTrendChart" class="chart-canvas"></canvas>
+      </div>
+    </div>
   `;
+
+  // Wire up toggle buttons.
+  const st = _loadGoaliesTrendState();
+  _applyTrendControlUI(st);
+  const metricWrap = document.getElementById('goalieTrendMetricButtons');
+  const modeWrap = document.getElementById('goalieTrendModeButtons');
+  if(metricWrap && !metricWrap.dataset.bound){
+    metricWrap.dataset.bound = '1';
+    metricWrap.addEventListener('click', (e)=>{
+      const btn = e?.target?.closest?.('button[data-metric]');
+      if(!btn) return;
+      const metric = String(btn.getAttribute('data-metric') || 'GSAA');
+      const cur = _loadGoaliesTrendState();
+      const next = { ...cur, metric: (metric === 'GSAx' ? 'GSAx' : 'GSAA') };
+      _saveGoaliesTrendState(next);
+      _applyTrendControlUI(next);
+      _renderGoalieTrendChart(__goalieTrendSeries, next);
+    });
+  }
+  if(modeWrap && !modeWrap.dataset.bound){
+    modeWrap.dataset.bound = '1';
+    modeWrap.addEventListener('click', (e)=>{
+      const btn = e?.target?.closest?.('button[data-mode]');
+      if(!btn) return;
+      const mode = String(btn.getAttribute('data-mode') || 'season');
+      const cur = _loadGoaliesTrendState();
+      const next = { ...cur, mode: (mode === 'total' ? 'total' : 'season') };
+      _saveGoaliesTrendState(next);
+      _applyTrendControlUI(next);
+      _renderGoalieTrendChart(__goalieTrendSeries, next);
+    });
+  }
 }
 
 async function loadCardPanel(){
@@ -2229,6 +2626,14 @@ async function loadCardPanel(){
       return;
     }
     renderCardUI(data, defs, cfg);
+
+    // Load + render the season trend chart (career timeline).
+    try{
+      const st = _loadGoaliesTrendState();
+      const series = await _ensureGoalieTrendSeries(playerId, seasonState, strengthState, xgModel);
+      _applyTrendControlUI(st);
+      _renderGoalieTrendChart(series, st);
+    }catch(_){/*noop*/}
   }catch(e){
     try{ console.error('[card] loadCardPanel failed:', e); }catch(_){/*noop*/}
     cardPanelInner.textContent = 'Error loading Card.';

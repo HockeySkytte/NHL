@@ -316,6 +316,12 @@ _SKATERS_PLAYERS_CACHE: Dict[Tuple[int, str, str], Tuple[float, List[Dict[str, A
 # Goalies player-list cache: {(seasonId, teamAbbrev, seasonState): (timestamp, players)}
 _GOALIES_PLAYERS_CACHE: Dict[Tuple[int, str, str], Tuple[float, List[Dict[str, Any]]]] = {}
 
+# Goalie primary team per season (for trend charts): {(playerId, seasonId, seasonState): (timestamp, teamAbbrev)}
+_GOALIES_TEAM_BY_SEASON_CACHE: Dict[Tuple[int, int, str], Tuple[float, str]] = {}
+
+# Goalie team map (for trend charts): {(playerId, seasonState): (timestamp, {seasonId: teamAbbrev})}
+_GOALIES_TEAM_BY_SEASON_MAP_CACHE: Dict[Tuple[int, str], Tuple[float, Dict[int, str]]] = {}
+
 # Static CSV caches
 _RAPM_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
@@ -3064,6 +3070,219 @@ def api_goalies_card():
         'metrics': out_metrics,
     }
     j = jsonify(payload)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
+@main_bp.route('/api/goalies/series')
+def api_goalies_series():
+    """Per-season GSAA/GSAx series for a single goalie.
+
+    Query params:
+      playerId=<int>
+      seasonState=regular|playoffs|all
+      strengthState=5v5|PP|SH|Other|all
+      xgModel=xG_S|xG_F|xG_F2
+
+    Notes:
+      - GSAA is computed season-by-season using that season's league-average Sv% baseline.
+      - GSAx is 0 before 20102011.
+    """
+    player_id_q = str(request.args.get('playerId') or request.args.get('player_id') or '').strip()
+    season_state = str(request.args.get('seasonState') or 'regular').strip().lower()
+    strength_state = str(request.args.get('strengthState') or '5v5').strip()
+    xg_model = str(request.args.get('xgModel') or 'xG_F').strip()
+
+    pid = _safe_int(player_id_q)
+    if not pid or pid <= 0:
+        return jsonify({'error': 'missing_playerId'}), 400
+
+    if season_state not in {'regular', 'playoffs', 'all'}:
+        season_state = 'regular'
+    if strength_state not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
+        strength_state = '5v5'
+    if xg_model not in {'xG_S', 'xG_F', 'xG_F2'}:
+        xg_model = 'xG_F'
+
+    sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
+    sheet_rows: Optional[List[Dict[str, Any]]] = None
+    sheet_ok = False
+    if sheet_id:
+        try:
+            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
+            sheet_ok = True
+        except Exception:
+            sheet_rows = None
+            sheet_ok = False
+
+    by_pid_season, league_sa_ga = _build_goalies_career_season_matrix(
+        season_state=season_state,
+        strength_state=strength_state,
+        sheet_id=sheet_id,
+        worksheet=worksheet,
+        sheet_ok=sheet_ok,
+        sheet_rows=sheet_rows,
+    )
+
+    seasons = by_pid_season.get(int(pid)) or {}
+
+    def _goalie_team_map(pid_i: int, ss: str) -> Dict[int, str]:
+        """Best-effort {seasonId -> teamAbbrev} from NHL Stats API goalie summary (cached)."""
+        try:
+            ttl_s = max(60, int(os.getenv('GOALIES_TEAM_BY_SEASON_CACHE_TTL_SECONDS', str(7 * 86400)) or str(7 * 86400)))
+        except Exception:
+            ttl_s = 7 * 86400
+        ss_norm = (ss or 'regular').strip().lower()
+        if ss_norm not in {'regular', 'playoffs', 'all'}:
+            ss_norm = 'regular'
+        ck = (int(pid_i), ss_norm)
+        now2 = time.time()
+        cached = _GOALIES_TEAM_BY_SEASON_MAP_CACHE.get(ck)
+        if cached and (now2 - float(cached[0])) < float(ttl_s):
+            return cached[1] or {}
+
+        def _toi_to_seconds(x: Any) -> int:
+            try:
+                if isinstance(x, (int, float)):
+                    return int(x)
+                s = str(x or '').strip()
+                if not s:
+                    return 0
+                if ':' in s:
+                    parts = s.split(':')
+                    if len(parts) == 2:
+                        return int(parts[0]) * 60 + int(parts[1])
+                    if len(parts) == 3:
+                        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                return int(float(s))
+            except Exception:
+                return 0
+
+        # Fetch from NHL stats API.
+        try:
+            if ss_norm == 'regular':
+                cay = f'gameTypeId=2 and playerId={int(pid_i)}'
+            elif ss_norm == 'playoffs':
+                cay = f'gameTypeId=3 and playerId={int(pid_i)}'
+            else:
+                cay = f'(gameTypeId=2 or gameTypeId=3) and playerId={int(pid_i)}'
+            url = 'https://api.nhle.com/stats/rest/en/goalie/summary'
+            r = requests.get(
+                url,
+                params={'limit': -1, 'start': 0, 'cayenneExp': cay},
+                headers={'User-Agent': 'Mozilla/5.0'},
+                timeout=20,
+                allow_redirects=True,
+            )
+            if r.status_code == 200:
+                data = r.json() if r.content else {}
+                rows = data.get('data') if isinstance(data, dict) else None
+                if isinstance(rows, list) and rows:
+                    best: Dict[int, Tuple[int, str]] = {}
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        sid = row.get('seasonId')
+                        try:
+                            season_id = int(sid)
+                        except Exception:
+                            continue
+
+                        team_raw = row.get('teamAbbrev') or row.get('teamAbbrevs') or row.get('currentTeamAbbrev') or ''
+                        team_abbrev = ''
+                        if isinstance(team_raw, list) and team_raw:
+                            team_abbrev = str(team_raw[0] or '').strip().upper()
+                        else:
+                            team_abbrev = str(team_raw or '').strip().upper()
+                        if '/' in team_abbrev:
+                            team_abbrev = team_abbrev.split('/')[0].strip().upper()
+                        if not team_abbrev:
+                            continue
+
+                        gp = row.get('gamesPlayed') or row.get('games') or 0
+                        toi = row.get('timeOnIce') or row.get('toi') or 0
+                        weight = 0
+                        try:
+                            weight = int(gp) * 100000 + _toi_to_seconds(toi)
+                        except Exception:
+                            weight = _toi_to_seconds(toi)
+
+                        prev = best.get(season_id)
+                        if not prev or weight > int(prev[0]):
+                            best[season_id] = (int(weight), team_abbrev)
+
+                    team_map: Dict[int, str] = {sid: t for sid, (_, t) in best.items()}
+                    _GOALIES_TEAM_BY_SEASON_MAP_CACHE[ck] = (now2, team_map)
+                    return team_map
+        except Exception:
+            pass
+
+        try:
+            _GOALIES_TEAM_BY_SEASON_MAP_CACHE[ck] = (now2, {})
+        except Exception:
+            pass
+        return {}
+
+    def _goalie_primary_team_for_season(pid_i: int, season_i: int, ss: str) -> str:
+        try:
+            m = _goalie_team_map(pid_i, ss)
+            return str(m.get(int(season_i)) or '').strip().upper()
+        except Exception:
+            return ''
+
+    def _xga(v: Dict[str, Any]) -> float:
+        if xg_model == 'xG_F':
+            return float(v.get('xGA_F') or 0.0)
+        if xg_model == 'xG_F2':
+            return float(v.get('xGA_F2') or 0.0)
+        return float(v.get('xGA_S') or 0.0)
+
+    def _sv_frac(ga: float, att: float) -> float:
+        if att <= 0:
+            return 1.0 if ga <= 0 else 0.0
+        return 1.0 - (ga / att)
+
+    out: List[Dict[str, Any]] = []
+    for season_id in sorted(int(s) for s in seasons.keys()):
+        v = seasons.get(int(season_id)) or {}
+        try:
+            sa = float(v.get('SA') or 0.0)
+            ga = float(v.get('GA') or 0.0)
+        except Exception:
+            sa = 0.0
+            ga = 0.0
+
+        tot_sa, tot_ga = league_sa_ga.get(int(season_id), (0.0, 0.0))
+        avg_sv_s = _sv_frac(float(tot_ga or 0.0), float(tot_sa or 0.0))
+        sv_s = _sv_frac(float(ga or 0.0), float(sa or 0.0))
+        gsaa = (sv_s - avg_sv_s) * float(sa or 0.0)
+
+        gsax = 0.0
+        if int(season_id) >= 20102011:
+            try:
+                xga = float(_xga(v) or 0.0)
+                gsax = float(xga or 0.0) - float(ga or 0.0)
+            except Exception:
+                gsax = 0.0
+
+        out.append({
+            'season': int(season_id),
+            'team': _goalie_primary_team_for_season(int(pid), int(season_id), season_state),
+            'GSAA': float(gsaa),
+            'GSAx': float(gsax),
+        })
+
+    j = jsonify({
+        'playerId': int(pid),
+        'seasonState': season_state,
+        'strengthState': strength_state,
+        'xgModel': xg_model,
+        'seasons': out,
+    })
     try:
         j.headers['Cache-Control'] = 'no-store'
     except Exception:
