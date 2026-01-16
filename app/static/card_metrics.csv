@@ -45,7 +45,7 @@ Context	ZS		Zone Start Difficulty	0	0	Skaters
 Shooting	iShots or iFenwick		Shots or Fenwick	0	0	Skaters		
 Shooting	ixG		Individual xG	1	R2	Skaters		
 Shooting	Sh% or FSh%		Sh% or FSh%	1	R2	Skaters		
-Shooting	xSh% or xFS%		xSh% or xFSh%	1	R2	Skaters		
+Shooting	xSh% or xFSh%		xSh% or xFSh%	1	R2	Skaters		
 Shooting	dSh% or dFSh%		dSh% or dFSh%	1	R2	Skaters		
 Shooting	GAx		Goals Scored Above Expected	0	0	Skaters		
 Penalties	PIM_taken		PIM taken	0	0	Skaters		

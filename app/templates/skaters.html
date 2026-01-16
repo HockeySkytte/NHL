@@ -57,8 +57,8 @@
 
 {% block head %}
 <style>
-  .skater-wrap{ width:100%; margin-left:-10px; }
-  .skater-card{ width:100%; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:24px 26px 18px; }
+  .skater-wrap{ width:100%; margin-left:-10px; min-width:0; overflow-x:hidden; }
+  .skater-card{ width:100%; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:24px 26px 18px; min-width:0; overflow-x:hidden; }
   .skater-top{ display:flex; gap:22px; align-items:center; }
   .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
   .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
@@ -78,7 +78,7 @@
   .subtabs{ display:flex; gap:12px; align-items:center; margin-top:18px; }
   .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .subtab-btn.active{ outline:2px solid var(--accent); }
-  .panel{ margin-top:14px; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:16px 16px 12px; }
+  .panel{ margin-top:14px; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:16px 16px 12px; min-width:0; }
   .mini-table{ width:100%; border-collapse:collapse; font-size:14px; }
   .mini-table th{ text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; }
   .mini-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; }
@@ -234,6 +234,26 @@
   @media (max-width: 980px){
     .edge-grid{ grid-template-columns: 1fr; }
   }
+
+  .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:1px solid #232a3a; border-radius:12px; }
+  #tabPanelTable{ overflow-x:hidden; }
+  .metrics-table{ width:max-content; min-width:100%; border-collapse:separate; border-spacing:0; font-size:14px; table-layout:auto; }
+  .metrics-table th{ position:sticky; top:0; background:#0f1522; text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 12px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; user-select:none; white-space:nowrap; z-index:2; }
+  .metrics-table td{ padding:10px 12px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric: tabular-nums; }
+  .metrics-table th, .metrics-table td{ min-width:92px; }
+  .metrics-table td.name, .metrics-table th.name{ text-align:left; }
+  .metrics-table td.rank, .metrics-table th.rank{ text-align:right; }
+  .metrics-table td.rank, .metrics-table th.rank{ width:64px; min-width:64px; max-width:64px; }
+  .metrics-table th.rank, .metrics-table td.rank{ width:64px; min-width:64px; max-width:64px; }
+  .metrics-table th.name, .metrics-table td.name{ width:180px; min-width:180px; max-width:180px; }
+  .metrics-table tbody tr:hover{ background:rgba(255,255,255,0.04); }
+
+  .table-metric-picker{ display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
+  @media (max-width: 980px){ .table-metric-picker{ grid-template-columns:1fr; } }
+  .table-metric-group{ border:1px solid #232a3a; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
+  .table-metric-group .t{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:900; margin-bottom:10px; }
+  .table-metric{ display:flex; gap:8px; align-items:flex-start; font-size:13px; color:rgba(255,255,255,0.92); padding:4px 0; }
+  .table-metric input{ margin:0; flex:0 0 auto; }
 </style>
 {% endblock %}
 
@@ -254,6 +274,7 @@
       <button id="tabEdge" class="subtab-btn" type="button" role="tab" aria-selected="false">Edge</button>
       <button id="tabRAPM" class="subtab-btn" type="button" role="tab" aria-selected="false">RAPM</button>
       <button id="tabProjections" class="subtab-btn" type="button" role="tab" aria-selected="false">Projections</button>
+      <button id="tabTable" class="subtab-btn" type="button" role="tab" aria-selected="false">Table View</button>
     </div>
 
     <div id="tabPanelCard" class="panel" role="tabpanel">
@@ -262,6 +283,24 @@
         <button id="btnConfigureCard" class="config-btn" type="button">Configure Card</button>
       </div>
       <div id="cardPanelInner" class="skater-empty">Select a player to view Card.</div>
+    </div>
+
+    <div id="tabPanelTable" class="panel" role="tabpanel" style="display:none;">
+      <div class="card-panel-hd" style="padding-bottom: 8px;">
+        <div id="tableSlicerSummary" class="card-panel-meta"></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="btnConfigureTable" class="config-btn" type="button">Configure Table</button>
+          <button id="btnReloadTable" class="config-btn" type="button">Reload</button>
+          <button id="btnExportTableCsv" class="config-btn" type="button">Export CSV</button>
+        </div>
+      </div>
+      <div id="tablePanelInner">
+        <div id="tableLoading" class="skater-empty" style="display:none; padding:10px 0;">Loading table...</div>
+        <div id="tableError" class="skater-empty err" style="display:none; padding:10px 0;"></div>
+        <div class="table-wrap">
+          <table id="skatersTable" class="metrics-table"></table>
+        </div>
+      </div>
     </div>
 
     <div id="tabPanelCharts" class="panel" role="tabpanel" style="display:none;">
@@ -377,6 +416,41 @@
   </div>
 </div>
 
+<div id="tableConfigModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="tableConfigTitle">
+    <div class="modal-hd">
+      <div id="tableConfigTitle" class="modal-title">Configure Table</div>
+      <button id="btnCloseTableConfig" class="btn" type="button">Close</button>
+    </div>
+    <div class="modal-bd">
+      <div class="cc-help">Select metrics (columns). Rank / Name / Pos are always included. Edge metrics are excluded for performance.</div>
+      <div class="cc-row" style="justify-content:space-between;">
+        <div class="cc-row" style="margin:0;">
+          <button id="btnTableDefaults" class="btn" type="button">Defaults</button>
+          <button id="btnTableNone" class="btn" type="button">None</button>
+          <button id="btnTableCardDefaults" class="btn" type="button">Card Defaults</button>
+        </div>
+        <div class="cc-row" style="margin:0;">
+          <label style="min-width:auto;">Sort by
+            <select id="tableSortMetric"></select>
+          </label>
+          <label style="min-width:auto;">Order
+            <select id="tableSortDir">
+              <option value="desc" selected>High → Low</option>
+              <option value="asc">Low → High</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="tableMetricPicker" class="table-metric-picker"></div>
+    </div>
+    <div class="modal-ft">
+      <div id="tableConfigStatus" class="cc-help" style="margin:0; padding:0;"></div>
+      <button id="btnApplyTableConfig" class="btn primary" type="button">Apply</button>
+    </div>
+  </div>
+</div>
+
 <script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
 {% endblock %}
 
@@ -395,11 +469,13 @@ const skaterInfo = document.getElementById('skaterInfo');
 const skaterMsg = document.getElementById('skaterMsg');
 
 const tabCard = document.getElementById('tabCard');
+const tabTable = document.getElementById('tabTable');
 const tabCharts = document.getElementById('tabCharts');
 const tabEdge = document.getElementById('tabEdge');
 const tabRAPM = document.getElementById('tabRAPM');
 const tabProjections = document.getElementById('tabProjections');
 const tabPanelCard = document.getElementById('tabPanelCard');
+const tabPanelTable = document.getElementById('tabPanelTable');
 const tabPanelCharts = document.getElementById('tabPanelCharts');
 const tabPanelEdge = document.getElementById('tabPanelEdge');
 const tabPanelRAPM = document.getElementById('tabPanelRAPM');
@@ -475,6 +551,25 @@ const projPanelLeague = document.getElementById('projPanelLeague');
 const projPlayerKpis = document.getElementById('projPlayerKpis');
 const projLeagueTable = document.getElementById('projLeagueTable');
 const projExportCsv = document.getElementById('projExportCsv');
+
+const tableSlicerSummary = document.getElementById('tableSlicerSummary');
+const btnConfigureTable = document.getElementById('btnConfigureTable');
+const btnReloadTable = document.getElementById('btnReloadTable');
+const btnExportTableCsv = document.getElementById('btnExportTableCsv');
+const tableLoading = document.getElementById('tableLoading');
+const tableError = document.getElementById('tableError');
+const skatersTable = document.getElementById('skatersTable');
+
+const tableConfigModal = document.getElementById('tableConfigModal');
+const btnCloseTableConfig = document.getElementById('btnCloseTableConfig');
+const btnApplyTableConfig = document.getElementById('btnApplyTableConfig');
+const btnTableDefaults = document.getElementById('btnTableDefaults');
+const btnTableNone = document.getElementById('btnTableNone');
+const btnTableCardDefaults = document.getElementById('btnTableCardDefaults');
+const tableSortMetric = document.getElementById('tableSortMetric');
+const tableSortDir = document.getElementById('tableSortDir');
+const tableMetricPicker = document.getElementById('tableMetricPicker');
+const tableConfigStatus = document.getElementById('tableConfigStatus');
 
 let __projLeaguePlayers = null;
 let __projRadarChart = null;
@@ -584,7 +679,7 @@ const SHOOTING_CONTEXT_METRICS = [
   { id:'Shooting|ixG', label:'Individual xG' },
   { id:'Production|iGoals', label:'Individual Goals' },
   { id:'Shooting|Sh% or FSh%', label:'Individual Sh%' },
-  { id:'Shooting|xSh% or xFS%', label:'Individual xSh%' },
+  { id:'Shooting|xSh% or xFSh%', label:'Individual xSh%' },
   { id:'Shooting|dSh% or dFSh%', label:'Individual dSh%' },
   { id:'Shooting|GAx', label:'Individual GAx' },
   { id:'Context|Sh%', label:'On-ice Sh%' },
@@ -611,7 +706,7 @@ function metricLabel(metricId){
   let base = m;
   if(m === 'iShots or iFenwick') base = (xgVal === 'xG_S') ? 'iShots' : 'iFenwick';
   if(m === 'Sh% or FSh%') base = (xgVal === 'xG_S') ? 'Sh%' : 'FSh%';
-  if(m === 'xSh% or xFS%') base = (xgVal === 'xG_S') ? 'xSh%' : 'xFS%';
+  if(m === 'xSh% or xFS%' || m === 'xSh% or xFSh%') base = (xgVal === 'xG_S') ? 'xSh%' : 'xFSh%';
   if(m === 'dSh% or dFSh%') base = (xgVal === 'xG_S') ? 'dSh%' : 'dFSh%';
 
   // Clarify which metrics are individual vs on-ice in Charts.
@@ -620,7 +715,7 @@ function metricLabel(metricId){
     else if(m === 'ixG') base = 'Individual xG';
     else if(m === 'GAx') base = 'Individual GAx';
     else if(base === 'Sh%' || base === 'FSh%') base = `Individual ${base}`;
-    else if(base === 'xSh%' || base === 'xFS%') base = `Individual ${base}`;
+    else if(base === 'xSh%' || base === 'xFSh%' || base === 'xFS%') base = `Individual ${base}`;
     else if(base === 'dSh%' || base === 'dFSh%') base = `Individual ${base}`;
   }
   if(cat === 'Production'){
@@ -650,7 +745,7 @@ function metricBase(metricId){
   let base = m;
   if(m === 'iShots or iFenwick') base = (xgVal === 'xG_S') ? 'iShots' : 'iFenwick';
   if(m === 'Sh% or FSh%') base = (xgVal === 'xG_S') ? 'Sh%' : 'FSh%';
-  if(m === 'xSh% or xFS%') base = (xgVal === 'xG_S') ? 'xSh%' : 'xFS%';
+  if(m === 'xSh% or xFS%' || m === 'xSh% or xFSh%') base = (xgVal === 'xG_S') ? 'xSh%' : 'xFSh%';
   if(m === 'dSh% or dFSh%') base = (xgVal === 'xG_S') ? 'dSh%' : 'dFSh%';
   if(m === 'GAx') base = 'GAx';
   return base;
@@ -697,6 +792,7 @@ function refreshChartMetricLabels(){
 }
 
 function getActiveTabKey(){
+  if(tabTable?.classList.contains('active')) return 'table';
   if(tabCharts?.classList.contains('active')) return 'charts';
   if(tabEdge?.classList.contains('active')) return 'edge';
   if(tabRAPM?.classList.contains('active')) return 'rapm';
@@ -1334,35 +1430,40 @@ function renderPlayerLanding(landing){
 function setActiveTab(which){
   const w = String(which || '').toLowerCase();
   const isC = (w === 'card');
+  const isT = (w === 'table');
   const isH = (w === 'charts');
   const isE = (w === 'edge');
   const isR = (w === 'rapm');
   const isP = (w === 'projections');
   // default
-  const finalC = (isC || (!isH && !isE && !isR && !isP));
+  const finalC = (isC || (!isT && !isH && !isE && !isR && !isP));
+  const finalT = isT;
   const finalH = isH;
   const finalE = isE;
   const finalR = isR;
   const finalP = isP;
 
   tabCard?.classList.toggle('active', finalC);
+  tabTable?.classList.toggle('active', finalT);
   tabCharts?.classList.toggle('active', finalH);
   tabEdge?.classList.toggle('active', finalE);
   tabRAPM?.classList.toggle('active', finalR);
   tabProjections?.classList.toggle('active', finalP);
   if(tabCard) tabCard.setAttribute('aria-selected', finalC ? 'true' : 'false');
+  if(tabTable) tabTable.setAttribute('aria-selected', finalT ? 'true' : 'false');
   if(tabCharts) tabCharts.setAttribute('aria-selected', finalH ? 'true' : 'false');
   if(tabEdge) tabEdge.setAttribute('aria-selected', finalE ? 'true' : 'false');
   if(tabRAPM) tabRAPM.setAttribute('aria-selected', finalR ? 'true' : 'false');
   if(tabProjections) tabProjections.setAttribute('aria-selected', finalP ? 'true' : 'false');
   if(tabPanelCard) tabPanelCard.style.display = finalC ? '' : 'none';
+  if(tabPanelTable) tabPanelTable.style.display = finalT ? '' : 'none';
   if(tabPanelCharts) tabPanelCharts.style.display = finalH ? '' : 'none';
   if(tabPanelEdge) tabPanelEdge.style.display = finalE ? '' : 'none';
   if(tabPanelRAPM) tabPanelRAPM.style.display = finalR ? '' : 'none';
   if(tabPanelProjections) tabPanelProjections.style.display = finalP ? '' : 'none';
 
-  // Card slicers are shared by Card + Charts.
-  setCardSlicersVisible(finalC || finalH, { showConfig: finalC });
+  // Card slicers are shared by Card + Table + Charts.
+  setCardSlicersVisible(finalC || finalT || finalH, { showConfig: finalC });
   setEdgeSlicersVisible(finalE);
 
   // Keep Edge season state in sync with Card selection when possible.
@@ -1373,6 +1474,7 @@ function setActiveTab(which){
   }
 
   if(finalC) loadCardPanel();
+  if(finalT) loadTablePanel();
   if(finalH) {
     // Render charts when the tab becomes active.
     try{ __chartsLastKey=''; renderCharts(); }catch(_){ /* noop */ }
@@ -1600,8 +1702,6 @@ function renderEdgeStrengthPanels(){
 async function loadEdgePanel(){
   if(!edgePanelInner) return;
   if(!edgeEnabled()){
-    edgePanelInner.textContent = '';
-    return;
   }
   const playerId = String(playerSelect?.value || '').trim();
   const season = String(seasonSelect?.value || '').trim() || '20252026';
@@ -1720,6 +1820,17 @@ setCardSlicersVisible(true);
 
 function safeJsonParse(s){
   try{ return JSON.parse(String(s||'')); }catch(_){ return null; }
+}
+
+function escapeHtml(value){
+  const s = String(value ?? '');
+  return s.replace(/[&<>"']/g, (ch)=>({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch] || ch));
 }
 
 async function ensureCardDefs(){
@@ -2078,7 +2189,7 @@ function displayMetricLabel(def, labels){
   const m = String(def?.metric||'');
   if(m === 'iShots or iFenwick') return String(labels?.Attempts || def?.name || 'Attempts');
   if(m === 'Sh% or FSh%') return String(labels?.Sh || def?.name || 'Sh%');
-  if(m === 'xSh% or xFS%') return String(labels?.xSh || def?.name || 'xSh%');
+  if(m === 'xSh% or xFS%' || m === 'xSh% or xFSh%') return String(labels?.xSh || def?.name || 'xSh%');
   if(m === 'dSh% or dFSh%') return String(labels?.dSh || def?.name || 'dSh%');
   return String(def?.name || def?.metric || def?.id || '');
 }
@@ -2232,6 +2343,459 @@ async function loadCardPanel(){
   }catch(e){
     try{ console.error('[card] loadCardPanel failed:', e); }catch(_){/*noop*/}
     cardPanelInner.textContent = 'Error loading Card.';
+  }
+}
+
+// -----------------------------
+// Table View (no Edge metrics)
+// -----------------------------
+const TABLE_CONFIG_KEY = 'nhlSkatersTableConfig_v1';
+let __tableRows = [];
+let __tableBusy = false;
+let __tableLastKey = '';
+
+const DEFAULT_TABLE_METRIC_IDS = [
+  'Ice Time|GP',
+  'Ice Time|TOI',
+  'Production|iGoals',
+  'Production|Assists1',
+  'Production|Assists2',
+  'Production|Points',
+  'Defense|RAPM GA',
+  'Defense|RAPM xGA',
+  'Offense|RAPM GF',
+  'Offense|RAPM xGF',
+  'Play Driving|RAPM G+/-',
+  'Play Driving|RAPM xG+/-',
+  'Play Driving|CF%',
+  'Play Driving|xGF%',
+  'Play Driving|GF%',
+  'Context|QoT',
+  'Context|QoC',
+  'Context|ZS',
+  'Context|PDO',
+  'Shooting|iShots or iFenwick',
+  'Shooting|ixG',
+  'Shooting|Sh% or FSh%',
+  'Shooting|xSh% or xFSh%',
+  'Shooting|dSh% or dFSh%',
+  'Shooting|GAx',
+];
+
+function getTableConfig(){
+  try{
+    const raw = localStorage.getItem(TABLE_CONFIG_KEY);
+    if(!raw) return null;
+    const js = JSON.parse(raw);
+    if(!js || !Array.isArray(js.metricIds)) return null;
+    // Backward-compat: migrate old typo id to corrected id.
+    try{
+      js.metricIds = js.metricIds.map(id=> String(id) === 'Shooting|xSh% or xFS%' ? 'Shooting|xSh% or xFSh%' : id);
+      if(String(js.sortMetricId||'') === 'Shooting|xSh% or xFS%') js.sortMetricId = 'Shooting|xSh% or xFSh%';
+    }catch(_){/*noop*/}
+    return js;
+  }catch(_){
+    return null;
+  }
+}
+
+function saveTableConfig(cfg){
+  try{ localStorage.setItem(TABLE_CONFIG_KEY, JSON.stringify(cfg)); }catch(_){/*noop*/}
+}
+
+function ensureTableConfig(){
+  const cfg0 = getTableConfig();
+  if(cfg0) return cfg0;
+  const cfg = { version: 1, metricIds: DEFAULT_TABLE_METRIC_IDS.slice(), sortMetricId: 'Production|Points', sortDir: 'desc' };
+  saveTableConfig(cfg);
+  return cfg;
+}
+
+function isTableActive(){
+  return !!tabTable?.classList.contains('active');
+}
+
+function __fmtTableValue(metricId, v){
+  if(v == null) return '';
+  const n = Number(v);
+  if(!Number.isFinite(n)) return '';
+  const ratesVal = String(cardRates?.value || 'Totals');
+  const parts = String(metricId||'').split('|');
+  const m = String(parts[1]||parts[0]||'');
+  const isXgLike = /(^|[^A-Za-z])xG|ixG|xGF|xGA|GAx|GSAx/i.test(m);
+  const isPercent = m.includes('%') || m === 'PDO' || m === 'Sv%' || m === 'Sh%';
+  if(m === 'GP') return String(Math.round(n));
+  if(m === 'TOI') return String(Math.round(n));
+  if(isPercent) return n.toFixed(1);
+  if(m.startsWith('RAPM')) return n.toFixed(3);
+  if(m === 'QoT' || m === 'QoC' || m === 'ZS') return n.toFixed(3);
+  if(ratesVal === 'Totals'){
+    if(isXgLike) return n.toFixed(2);
+    return String(Math.round(n));
+  }
+  return (Math.abs(n) >= 1000) ? n.toFixed(0) : n.toFixed(2);
+}
+
+async function fetchTablePlayers(season, seasonState){
+  const url = `/api/skaters/players?scope=league&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}`;
+  const r = await fetch(url, { cache:'no-store' });
+  const js = await r.json();
+  const list = Array.isArray(js?.players) ? js.players : [];
+  return list
+    .map(p=>({ playerId: Number(p?.playerId), name: String(p?.name||''), pos: String(p?.pos||''), team: String(p?.team||'') }))
+    .filter(p=>Number.isFinite(p.playerId) && p.playerId > 0);
+}
+
+function __tableKey(obj){
+  try{ return JSON.stringify(obj); }catch(_){ return String(Date.now()); }
+}
+
+function __setTableError(text){
+  if(!tableError) return;
+  const t = String(text||'');
+  tableError.textContent = t;
+  tableError.style.display = t ? '' : 'none';
+}
+
+function renderTable(cfg, defs){
+  if(!skatersTable) return;
+  const metricIds = Array.isArray(cfg?.metricIds) ? cfg.metricIds.map(String).filter(Boolean) : [];
+  const sortId = String(cfg?.sortMetricId || 'Production|Points');
+  const dir = (String(cfg?.sortDir||'desc') === 'asc') ? 'asc' : 'desc';
+
+  const byId = {};
+  (Array.isArray(defs?.metrics) ? defs.metrics : []).forEach(m=>{
+    const id = String(m?.id||'');
+    if(id) byId[id] = m;
+  });
+
+  const rows = __tableRows.slice();
+  rows.sort((a,b)=>{
+    const av = Number(a?.metrics?.[sortId]);
+    const bv = Number(b?.metrics?.[sortId]);
+    const aOk = Number.isFinite(av);
+    const bOk = Number.isFinite(bv);
+    if(aOk && bOk && av !== bv) return (dir === 'asc') ? (av - bv) : (bv - av);
+    if(aOk !== bOk) return aOk ? -1 : 1;
+    return String(a?.name||'').localeCompare(String(b?.name||''));
+  });
+
+  const head = [];
+  head.push('<tr>');
+  head.push('<th class="rank">Rank</th>');
+  head.push('<th class="name">Name</th>');
+  head.push('<th class="pos">Pos</th>');
+  for(const id of metricIds){
+    const def = byId[id];
+    const label = String(metricLabel(id) || def?.name || id);
+    head.push(`<th data-mid="${escapeHtml(id)}">${escapeHtml(label)}</th>`);
+  }
+  head.push('</tr>');
+
+  let rank = 1;
+  const body = [];
+  const selectedPid = String(playerSelect?.value||'');
+  for(const r of rows){
+    const isSel = selectedPid && String(r.playerId) === selectedPid;
+    body.push(`<tr data-pid="${escapeHtml(String(r.playerId))}" data-team="${escapeHtml(String(r.team||''))}"${isSel?` style="background: var(--league-highlight-color, rgba(77,163,255,0.12));"`:''}>`);
+    body.push(`<td class="rank">${rank++}</td>`);
+    body.push(`<td class="name">${escapeHtml(String(r.name||r.playerId))}</td>`);
+    body.push(`<td class="pos">${escapeHtml(String(r.pos||''))}</td>`);
+    for(const id of metricIds){
+      body.push(`<td>${escapeHtml(__fmtTableValue(id, r.metrics?.[id]))}</td>`);
+    }
+    body.push('</tr>');
+  }
+
+  skatersTable.innerHTML = `<thead>${head.join('')}</thead><tbody>${body.join('')}</tbody>`;
+
+  try{
+    skatersTable.querySelectorAll('tbody tr[data-pid]').forEach(tr=>{
+      tr.addEventListener('click', async ()=>{
+        const pid = String(tr.getAttribute('data-pid')||'');
+        if(!pid) return;
+        if(playerSelect && Array.from(playerSelect.options).some(o=>String(o.value)===pid)){
+          playerSelect.value = pid;
+          playerSelect.dispatchEvent(new Event('change'));
+          return;
+        }
+
+        const team = String(tr.getAttribute('data-team')||'').toUpperCase();
+        if(teamSelect && team && Array.from(teamSelect.options).some(o=>String(o.value).toUpperCase()===team)){
+          teamSelect.value = team;
+          teamSelect.dispatchEvent(new Event('change'));
+          try{ await loadPlayers(); }catch(_){/*noop*/}
+          if(playerSelect && Array.from(playerSelect.options).some(o=>String(o.value)===pid)){
+            playerSelect.value = pid;
+            playerSelect.dispatchEvent(new Event('change'));
+          }
+        }
+      });
+    });
+  }catch(_){/*noop*/}
+}
+
+async function loadTablePanel(){
+  if(!tabPanelTable || !isTableActive()) return;
+  if(__tableBusy) return;
+
+  const team = String(teamSelect?.value||'').trim();
+  const season = String(seasonSelect?.value||'').trim() || '20252026';
+  const seasonState = String(cardSeasonState?.value||'regular');
+  const strengthState = String(cardStrengthState?.value||'5v5');
+  const rates = String(cardRates?.value||'Totals');
+  const xgModel = String(cardXgModel?.value||'xG_F');
+  const scope = String(cardScope?.value||'season');
+  let minGP = Number.parseInt(String(cardMinGp?.value||'0'), 10);
+  if(!Number.isFinite(minGP) || minGP < 0) minGP = 0;
+  let minTOI = Number(String(cardMinToi?.value||'0'));
+  if(!Number.isFinite(minTOI) || minTOI < 0) minTOI = 0;
+
+  if(tableSlicerSummary) tableSlicerSummary.textContent = String(cardSlicerSummary?.textContent||'');
+
+  const defs = await ensureCardDefs();
+  const cfg0 = ensureTableConfig();
+  const metricIds = (Array.isArray(cfg0.metricIds)?cfg0.metricIds:[]).map(String).filter(id=>id && !id.startsWith('Edge|'));
+  const sortMetricId = String(cfg0.sortMetricId||'Production|Points');
+  const sortDir = (String(cfg0.sortDir||'desc') === 'asc') ? 'asc' : 'desc';
+  const cfg = { ...cfg0, metricIds, sortMetricId, sortDir };
+  if(metricIds.length === 0){
+    if(skatersTable) skatersTable.innerHTML = '';
+    __setTableError('No table metrics selected.');
+    return;
+  }
+
+  const key = __tableKey({ season, seasonState, strengthState, rates, xgModel, scope, minGP, minTOI, metricIds, sortMetricId, sortDir });
+  if(key === __tableLastKey && __tableRows.length){
+    renderTable(cfg, defs);
+    return;
+  }
+
+  __tableBusy = true;
+  __tableLastKey = key;
+  try{
+    __setTableError('');
+    if(tableLoading) tableLoading.style.display = '';
+
+    const playersAll = await fetchTablePlayers(season, seasonState);
+    const playerIds = playersAll.map(p=>p.playerId);
+    if(!playerIds.length){
+      __tableRows = [];
+      if(skatersTable) skatersTable.innerHTML = '';
+      __setTableError('No players found for this season/season state.');
+      return;
+    }
+
+    const r = await fetch('/api/skaters/table', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({
+        season,
+        seasonState,
+        strengthState,
+        xgModel,
+        rates,
+        scope,
+        minGP,
+        minTOI,
+        playerIds,
+        metricIds,
+      }),
+    });
+    const js = await r.json();
+    if(!r.ok || js?.error){
+      const msg = String(js?.error || `${r.status} ${r.statusText}`);
+      __setTableError(`Error loading table: ${msg}`);
+      return;
+    }
+
+    const byPid = {};
+    (Array.isArray(js?.players) ? js.players : []).forEach(p=>{
+      const pid = Number(p?.playerId);
+      if(Number.isFinite(pid) && pid > 0) byPid[String(pid)] = (p.metrics && typeof p.metrics === 'object') ? p.metrics : {};
+    });
+
+    const eligiblePidSet = new Set(Object.keys(byPid));
+    const players = playersAll.filter(p=> eligiblePidSet.has(String(p.playerId)));
+
+    __tableRows = players.map(p=>({
+      playerId: p.playerId,
+      name: p.name,
+      pos: p.pos,
+      team: p.team,
+      metrics: byPid[String(p.playerId)] || {},
+    }));
+
+    renderTable(cfg, defs);
+  }catch(e){
+    try{ console.error('[table] loadTablePanel failed:', e); }catch(_){/*noop*/}
+    __setTableError('Error loading table.');
+  }finally{
+    if(tableLoading) tableLoading.style.display = 'none';
+    __tableBusy = false;
+  }
+}
+
+function __csvEscape(v){
+  const s = (v == null) ? '' : String(v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+async function exportTableCsv(){
+  const defs = await ensureCardDefs();
+  const cfg0 = ensureTableConfig();
+  const metricIds = (Array.isArray(cfg0.metricIds)?cfg0.metricIds:[]).map(String).filter(id=>id && !id.startsWith('Edge|'));
+  const sortMetricId = String(cfg0.sortMetricId||'Production|Points');
+  const sortDir = (String(cfg0.sortDir||'desc') === 'asc') ? 'asc' : 'desc';
+
+  const byId = {};
+  (Array.isArray(defs?.metrics) ? defs.metrics : []).forEach(m=>{
+    const id = String(m?.id||'');
+    if(id) byId[id] = m;
+  });
+
+  const rows = __tableRows.slice();
+  rows.sort((a,b)=>{
+    const av = Number(a?.metrics?.[sortMetricId]);
+    const bv = Number(b?.metrics?.[sortMetricId]);
+    const aOk = Number.isFinite(av);
+    const bOk = Number.isFinite(bv);
+    if(aOk && bOk && av !== bv) return (sortDir === 'asc') ? (av - bv) : (bv - av);
+    if(aOk !== bOk) return aOk ? -1 : 1;
+    return String(a?.name||'').localeCompare(String(b?.name||''));
+  });
+
+  const header = ['Rank','Name','Pos'].concat(metricIds.map(id=>{
+    const def = byId[id];
+    return String(metricLabel(id) || def?.name || id);
+  }));
+
+  const lines = [];
+  lines.push(header.map(__csvEscape).join(','));
+  let rank = 1;
+  for(const r of rows){
+    const row = [
+      String(rank++),
+      String(r?.name||r?.playerId||''),
+      String(r?.pos||''),
+      ...metricIds.map(id=>__fmtTableValue(id, r?.metrics?.[id]))
+    ];
+    lines.push(row.map(__csvEscape).join(','));
+  }
+
+  const season = String(seasonSelect?.value||'').trim() || '20252026';
+  const seasonState = String(cardSeasonState?.value||'regular');
+  const strengthState = String(cardStrengthState?.value||'5v5');
+  downloadTextFile(`skaters_table_${season}_${seasonState}_${strengthState}.csv`, lines.join('\n'), 'text/csv;charset=utf-8;');
+}
+
+function openTableConfig(){
+  if(tableConfigModal) tableConfigModal.hidden = false;
+}
+
+function closeTableConfig(){
+  if(tableConfigModal) tableConfigModal.hidden = true;
+}
+
+function __setTableConfigStatus(text){
+  if(tableConfigStatus) tableConfigStatus.textContent = String(text||'');
+}
+
+async function showTableConfig(){
+  const defs = await ensureCardDefs();
+  const metricsAll = Array.isArray(defs?.metrics) ? defs.metrics : [];
+  const metrics = metricsAll.filter(m=> String(m?.category||'') !== 'Edge' && !String(m?.id||'').startsWith('Edge|'));
+  const cfg = ensureTableConfig();
+  const selected = new Set((Array.isArray(cfg.metricIds)?cfg.metricIds:[]).map(String).filter(Boolean));
+  Array.from(selected).forEach(id=>{ if(id.startsWith('Edge|')) selected.delete(id); });
+
+  if(tableSortMetric){
+    tableSortMetric.innerHTML = metrics.map(m=>{
+      const id = String(m?.id||'');
+      const label = String(metricLabel(id)||m?.name||id);
+      return `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
+    }).join('');
+    const desired = String(cfg.sortMetricId||'Production|Points');
+    if(Array.from(tableSortMetric.options).some(o=>o.value===desired)) tableSortMetric.value = desired;
+  }
+  if(tableSortDir){
+    tableSortDir.value = (String(cfg.sortDir||'desc') === 'asc') ? 'asc' : 'desc';
+  }
+
+  const byCat = {};
+  metrics.forEach(m=>{
+    const c = String(m?.category||'Other').trim() || 'Other';
+    (byCat[c] = byCat[c] || []).push(m);
+  });
+  const cats = Object.keys(byCat).sort((a,b)=>a.localeCompare(b));
+  if(tableMetricPicker){
+    tableMetricPicker.innerHTML = cats.map(cat=>{
+      const items = (byCat[cat]||[]).map(m=>{
+        const id = String(m?.id||'');
+        const label = String(metricLabel(id)||m?.name||id);
+        const checked = selected.has(id) ? 'checked' : '';
+        return `<label class="table-metric"><input type="checkbox" data-mid="${escapeHtml(id)}" ${checked}/> <span>${escapeHtml(label)}</span></label>`;
+      }).join('');
+      return `<div class="table-metric-group"><div class="t">${escapeHtml(cat)}</div>${items}</div>`;
+    }).join('');
+
+    tableMetricPicker.querySelectorAll('input[type="checkbox"][data-mid]').forEach(cb=>{
+      cb.addEventListener('change', ()=>{
+        const id = String(cb.getAttribute('data-mid')||'');
+        if(!id) return;
+        if(cb.checked) selected.add(id);
+        else selected.delete(id);
+        __setTableConfigStatus(`${selected.size} selected`);
+      });
+    });
+  }
+
+  __setTableConfigStatus(`${selected.size} selected`);
+  openTableConfig();
+
+  if(btnTableDefaults){
+    btnTableDefaults.onclick = ()=>{
+      selected.clear();
+      DEFAULT_TABLE_METRIC_IDS.forEach(id=>selected.add(id));
+      try{ tableMetricPicker?.querySelectorAll('input[type="checkbox"][data-mid]').forEach(cb=>{ cb.checked = selected.has(String(cb.getAttribute('data-mid')||'')); }); }catch(_){/*noop*/}
+      __setTableConfigStatus(`${selected.size} selected`);
+    };
+  }
+  if(btnTableNone){
+    btnTableNone.onclick = ()=>{
+      selected.clear();
+      try{ tableMetricPicker?.querySelectorAll('input[type="checkbox"][data-mid]').forEach(cb=>{ cb.checked = false; }); }catch(_){/*noop*/}
+      __setTableConfigStatus(`${selected.size} selected`);
+    };
+  }
+  if(btnTableCardDefaults){
+    btnTableCardDefaults.onclick = ()=>{
+      selected.clear();
+      metrics.forEach(m=>{
+        const id = String(m?.id||'');
+        const d = (String(m?.default||'').trim()==='1' || m?.default===true || String(m?.default||'').toLowerCase()==='true');
+        if(id && d) selected.add(id);
+      });
+      try{ tableMetricPicker?.querySelectorAll('input[type="checkbox"][data-mid]').forEach(cb=>{ cb.checked = selected.has(String(cb.getAttribute('data-mid')||'')); }); }catch(_){/*noop*/}
+      __setTableConfigStatus(`${selected.size} selected`);
+    };
+  }
+
+  if(btnApplyTableConfig){
+    btnApplyTableConfig.onclick = ()=>{
+      const metricIds = Array.from(selected.values()).filter(id=>id && !id.startsWith('Edge|'));
+      const next = {
+        version: 1,
+        metricIds,
+        sortMetricId: String(tableSortMetric?.value || metricIds[0] || 'Production|Points'),
+        sortDir: (String(tableSortDir?.value||'desc') === 'asc') ? 'asc' : 'desc',
+      };
+      saveTableConfig(next);
+      __tableLastKey = '';
+      closeTableConfig();
+      loadTablePanel();
+    };
   }
 }
 
@@ -3537,6 +4101,7 @@ async function loadPlayerCard(){
 }
 
 tabCard?.addEventListener('click', ()=> setActiveTab('card'));
+tabTable?.addEventListener('click', ()=> setActiveTab('table'));
 tabCharts?.addEventListener('click', ()=> setActiveTab('charts'));
   // Charts interactions
   try{ pdX?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
@@ -3578,6 +4143,27 @@ cardMinToi?.addEventListener('change', ()=> loadCardPanel());
 cardStrengthState?.addEventListener('change', ()=> loadCardPanel());
 cardRates?.addEventListener('change', ()=> loadCardPanel());
 cardXgModel?.addEventListener('change', ()=> loadCardPanel());
+
+function __maybeReloadTable(){
+  if(isTableActive()){
+    __tableLastKey = '';
+    loadTablePanel();
+  }
+}
+cardSeasonState?.addEventListener('change', __maybeReloadTable);
+cardMinGp?.addEventListener('change', __maybeReloadTable);
+cardMinToi?.addEventListener('change', __maybeReloadTable);
+cardStrengthState?.addEventListener('change', __maybeReloadTable);
+cardRates?.addEventListener('change', __maybeReloadTable);
+cardXgModel?.addEventListener('change', __maybeReloadTable);
+seasonSelect?.addEventListener('change', __maybeReloadTable);
+
+btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
+btnConfigureTable?.addEventListener('click', async ()=>{ await showTableConfig(); });
+btnExportTableCsv?.addEventListener('click', async ()=>{ await exportTableCsv(); });
+btnCloseTableConfig?.addEventListener('click', ()=> closeTableConfig());
+tableConfigModal?.addEventListener('click', (e)=>{ if(e?.target === tableConfigModal) closeTableConfig(); });
+document.addEventListener('keydown', (e)=>{ if(e?.key === 'Escape' && tableConfigModal && !tableConfigModal.hidden) closeTableConfig(); });
 
 cardSeasonState?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
 cardMinGp?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
