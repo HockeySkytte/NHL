@@ -85,7 +85,9 @@
     .mobile-summary{ display:block; }
     .filters-hd{ display:flex; }
     .filters-hd{ cursor:pointer; user-select:none; }
-    .mobile-menu{ display:block; margin-top:10px; }
+    .mobile-menu{ margin-top:10px; }
+    .mobile-menu[hidden]{ display:none !important; }
+    .mobile-menu:not([hidden]){ display:block; }
     .filters{ margin-top:10px; }
     body.filters-collapsed .filters{ display:none; }
   }
