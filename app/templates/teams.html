@@ -163,6 +163,27 @@
   .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
   .btn:hover{ background:rgba(255,255,255,0.05); }
   .btn.primary{ outline:2px solid var(--accent); }
+
+  @media (max-width: 980px){
+    .team-wrap{ margin-left:0; }
+    .team-card{ padding:16px 14px 14px; }
+    .team-top{ flex-direction:column; align-items:center; text-align:center; gap:12px; }
+    .team-top > div{ display:contents; }
+    #teamName{ order:1; font-size:26px; }
+    #teamImg{ order:2; width:150px; height:150px; }
+    #teamInfo{ order:3; justify-content:center; gap:12px; font-size:14px; }
+    .subtabs{ justify-content:center; flex-wrap:wrap; }
+
+    /* Card header: action above filter context */
+    #tabPanelCard .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
+    #tabPanelCard .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelCard .config-btn{ width:100%; }
+
+    /* Projections: Radar above KPIs */
+    .proj-ov-grid{ display:flex; flex-direction:column; gap:12px; }
+    .proj-ov-grid > :nth-child(1){ order:2; }
+    .proj-ov-grid > :nth-child(2){ order:1; }
+  }
 </style>
 {% endblock %}
 

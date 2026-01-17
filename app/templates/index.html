@@ -17,11 +17,34 @@
   #monthControls button { background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; font-size:20px; line-height:1; border-radius:10px; font-weight:600; cursor:pointer; transition:.18s background; }
   #monthControls button:hover:not(:disabled){ background:var(--panel); }
   #monthControls button:disabled { opacity:.35; cursor:default; }
+
+  /* Mobile schedule table */
+  .schedule-grid-root{ display:block; }
+  .schedule-table-root{ display:none; }
+  .schedule-table-wrap{ width:100%; overflow:auto; border:1px solid #232a3a; border-radius:12px; background:rgba(255,255,255,0.02); }
+  .schedule-table{ width:100%; border-collapse:collapse; font-size:14px; }
+  .schedule-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 10px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; }
+  .schedule-table td{ padding:10px 10px; border-bottom:1px solid #1a2230; vertical-align:middle; }
+  .schedule-table td.num{ text-align:right; font-variant-numeric: tabular-nums; }
+  .schedule-table a{ color:inherit; text-decoration:none; font-weight:800; }
+  .schedule-table a:hover{ text-decoration:underline; }
+  .chip{ display:inline-flex; align-items:center; gap:8px; padding:5px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.16); background:rgba(0,0,0,0.18); font-weight:850; font-size:12px; letter-spacing:.2px; }
+
+  @media (max-width: 980px){
+    .schedule-grid-root{ display:none; }
+    .schedule-table-root{ display:block; }
+    #monthControls{ gap:.5rem !important; }
+    #monthControls select{ font-size:18px; }
+    #monthControls button{ font-size:18px; padding:8px 10px; }
+  }
 </style>
 {% endblock %}
 {% block content %}
 <div id="monthControls" style="display:flex; justify-content:center; align-items:center; gap:.75rem; margin:0 0 1rem 0;"></div>
-<div id="scheduleRoot"></div>
+<div id="scheduleRoot">
+  <div id="scheduleGridRoot" class="schedule-grid-root"></div>
+  <div id="scheduleTableRoot" class="schedule-table-root"></div>
+</div>
 <div id="scheduleLegend" style="margin-top:8px; font-size:16px; display:flex; gap:32px; align-items:center; justify-content:center; flex-wrap:wrap; font-weight:600;"></div>
 <script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
 {% endblock %}
@@ -32,7 +55,8 @@ const teams = JSON.parse(document.getElementById('teams-data').textContent);
 const teamSelect = document.getElementById('teamSelect');
 const seasonSelect = document.getElementById('seasonSelect');
 const seasonStateSelect = document.getElementById('seasonStateSelect');
-const scheduleRoot = document.getElementById('scheduleRoot');
+const scheduleGridRoot = document.getElementById('scheduleGridRoot');
+const scheduleTableRoot = document.getElementById('scheduleTableRoot');
 let seasonMeta = window.__seasonMeta || [];
 
 function lightenDarken(hex, factor){
@@ -55,9 +79,10 @@ let currentMonthIndex = 0;
 
 async function loadSchedule(){
   const team = teamSelect.value;
-  const season = seasonSelect.value;
-  if(!team||!season) return;
-  scheduleRoot.innerHTML = '<p>Loading schedule...</p>';
+  const season = String(seasonSelect.value||'').trim();
+  if(!team || !/^\d{8}$/.test(season)) return;
+  if(scheduleGridRoot) scheduleGridRoot.innerHTML = '<p>Loading schedule...</p>';
+  if(scheduleTableRoot) scheduleTableRoot.innerHTML = '<p>Loading schedule...</p>';
   const r = await fetch(`/api/schedule/${team}/${season}`);
   let games = await r.json();
   console.debug('Raw schedule sample:', games.slice(0,3));
@@ -169,12 +194,89 @@ function buildMonth(year, month, games, team){
   html+='</div></div>';
   return html;
 }
+
+function buildMonthTable(games, team){
+  const teamRow = teams.find(t=>t.Team===team);
+  const baseColor = teamRow?teamRow.Color:'#1d2735';
+  const homeColor = lightenDarken(baseColor, isLight(baseColor)?0.6:1.6);
+  const awayColor = lightenDarken(baseColor, isLight(baseColor)?0.35:0.8);
+
+  const rows = (games||[]).slice().sort((a,b)=>{
+    const da = a? a._dateObj : null;
+    const db = b? b._dateObj : null;
+    return (da?da.getTime():0) - (db?db.getTime():0);
+  });
+
+  const fmt = (d)=>{
+    try{ return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' }); }
+    catch(_){ return String(d); }
+  };
+
+  const body = rows.map(g=>{
+    const d = g._dateObj;
+    const opp = g.opponent;
+    const isHome = !!g.is_home;
+    const status = String(g.status||'').trim();
+    const statusUp = status.toUpperCase();
+    const haveScores = g.home_score!=null && g.away_score!=null && (statusUp.includes('FINAL') || statusUp==='OFF');
+    let score = '';
+    if(haveScores){
+      const teamScore = isHome? g.home_score : g.away_score;
+      const oppScore = isHome? g.away_score : g.home_score;
+      let outcome='';
+      if(teamScore>oppScore) outcome='W';
+      else if(teamScore<oppScore){
+        const lpt = (g.lastPeriodType||'').toUpperCase();
+        if(lpt==='SO' || lpt==='SHOOTOUT') outcome='SOL';
+        else if(lpt==='OT') outcome='OTL';
+        else outcome='L';
+      } else outcome='T';
+      score = `${outcome} ${teamScore}-${oppScore}`.trim();
+    }
+    const label = isHome? `vs ${opp}` : `at ${opp}`;
+    const bg = isHome? homeColor : awayColor;
+    const fg = isLight(bg)? '#081018' : '#f1f5f9';
+    const gameLink = `/game/${g.id}`;
+    return `
+      <tr style="background:${bg}; color:${fg};">
+        <td>${d && !isNaN(d) ? fmt(d) : ''}</td>
+        <td><a href="${gameLink}">${label}</a></td>
+        <td><span class="chip">${status || '—'}</span></td>
+        <td class="num">${score || '—'}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="schedule-table-wrap">
+      <table class="schedule-table">
+        <thead>
+          <tr>
+            <th style="width:120px;">Date</th>
+            <th>Matchup</th>
+            <th style="width:130px;">Status</th>
+            <th style="width:110px; text-align:right;">Result</th>
+          </tr>
+        </thead>
+        <tbody>${body || ''}</tbody>
+      </table>
+    </div>`;
+}
+
 function renderCurrentMonth(team){
-  if(!currentFilteredGames.length){ scheduleRoot.innerHTML='<p>No games.</p>'; return; }
-  if(!monthMeta.length){ scheduleRoot.innerHTML='<p>No games.</p>'; return; }
+  if(!currentFilteredGames.length){
+    if(scheduleGridRoot) scheduleGridRoot.innerHTML='<p>No games.</p>';
+    if(scheduleTableRoot) scheduleTableRoot.innerHTML='<p>No games.</p>';
+    return;
+  }
+  if(!monthMeta.length){
+    if(scheduleGridRoot) scheduleGridRoot.innerHTML='<p>No games.</p>';
+    if(scheduleTableRoot) scheduleTableRoot.innerHTML='<p>No games.</p>';
+    return;
+  }
   const meta = monthMeta[currentMonthIndex];
   const games = currentFilteredGames.map(g=>{ const d=new Date(g.date); return {...g, _dateObj:d}; }).filter(g=> g._dateObj.getFullYear()==meta.year && g._dateObj.getMonth()==meta.month);
-  scheduleRoot.innerHTML = buildMonth(meta.year, meta.month, games, team);
+  if(scheduleGridRoot) scheduleGridRoot.innerHTML = buildMonth(meta.year, meta.month, games, team);
+  if(scheduleTableRoot) scheduleTableRoot.innerHTML = buildMonthTable(games, team);
   renderLegend(team);
 }
 

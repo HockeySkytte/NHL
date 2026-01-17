@@ -263,6 +263,31 @@
   .table-metric{ display:flex; flex-direction:row; gap:8px; align-items:center; font-size:13px; color:rgba(255,255,255,0.92); padding:0; }
   .table-metric input{ margin:0; flex:0 0 auto; cursor:pointer; }
   .table-metric span{ cursor:pointer; flex:1 1 auto; }
+
+  @media (max-width: 980px){
+    .skater-wrap{ margin-left:0; }
+    .skater-card{ padding:16px 14px 14px; }
+    .skater-top{ flex-direction:column; align-items:center; text-align:center; gap:12px; }
+    .skater-top > div{ display:contents; }
+    #skaterName{ order:1; font-size:26px; }
+    #skaterImg{ order:2; width:140px; height:140px; }
+    #skaterInfo{ order:3; justify-content:center; gap:12px; font-size:14px; }
+    .subtabs{ justify-content:center; flex-wrap:wrap; }
+
+    /* Card header: button above filter context */
+    #tabPanelCard .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
+    #tabPanelCard .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelCard .config-btn{ width:100%; }
+
+    /* RAPM: 5v5 on top, PP/SH side-by-side */
+    .rapm-split{ grid-template-columns: 1fr 1fr; }
+    .rapm-split > :nth-child(1){ grid-column: 1 / -1; }
+
+    /* Projections: Radar above KPIs */
+    .proj-grid{ display:flex; flex-direction:column; gap:12px; }
+    .proj-grid > :nth-child(1){ order:2; }
+    .proj-grid > :nth-child(2){ order:1; }
+  }
 </style>
 {% endblock %}
 

@@ -14,6 +14,14 @@
 .team-cell{ display:flex; align-items:center; gap:10px; font-weight:650; }
 .team-cell.right{ justify-content:flex-end; }
 .team-cell img{ height:40px; width:40px; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+.team-name{ display:inline; }
+
+@media (max-width: 980px){
+  .live-table{ font-size:12px; }
+  .live-table th{ font-size:10px; padding:8px 6px; }
+  .live-table td{ padding:8px 6px; }
+  .team-cell img{ height:28px; width:28px; }
+}
 .status-chip{ font-size:11px; font-weight:700; padding:2px 6px; border-radius:6px; background:#263145; color:#d7deea; }
 /* limit link styling to anchors only to avoid breaking <tr> */
 a.link-row{ color:var(--text); text-decoration:none; display:block; }
@@ -38,12 +46,20 @@ const liveRoot = document.getElementById('liveRoot');
 const teamsData = JSON.parse(document.getElementById('teams-data').textContent||'[]');
 function teamLogo(abbrev){ const row = teamsData.find(t=> t.Team===abbrev); return row?.Logo || `https://assets.nhle.com/logos/nhl/svg/${abbrev}_light.svg`; }
 function fmtTime(iso){ try{ return new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }catch(e){ return iso; } }
+function isMobile(){ try{ return window.matchMedia && window.matchMedia('(max-width: 980px)').matches; }catch(_){ return false; } }
 function renderRows(games){
   if(!games || games.length===0){
     liveRoot.innerHTML = `<div class="live-empty">No live games right now.</div>`;
     return;
   }
-  const header = `<thead><tr>
+  const mobile = isMobile();
+  const header = mobile ? `<thead><tr>
+    <th class="col-center">Period</th>
+    <th class="col-center">Time Remaining</th>
+    <th class="col-center">Away</th>
+    <th class="col-center">Score</th>
+    <th class="col-center">Home</th>
+  </tr></thead>` : `<thead><tr>
     <th class="col-center">Period</th>
     <th class="col-center">Time Remaining</th>
     <th class="col-center">Intermission</th>
@@ -65,23 +81,40 @@ function renderRows(games){
   const intermission = (g.clock?.isIntermission ?? g.clock?.inIntermission) ? 'Yes' : 'No';
     const sogAway = away.sog ?? '';
     const sogHome = home.sog ?? '';
-    // Away: team name then logo
-    const awayName = `${away.placeName?.default||''} ${away.commonName?.default||away.abbrev||''}`.trim();
-  const awayCell = `<div class=\"team-cell right\">${awayName} <img src=\"${teamLogo(away.abbrev)}\" alt=\"${away.abbrev}\"/></div>`;
-    // Home: logo then team name
-    const homeName = `${home.placeName?.default||''} ${home.commonName?.default||home.abbrev||''}`.trim();
-    const homeCell = `<div class=\"team-cell\"><img src=\"${teamLogo(home.abbrev)}\" alt=\"${home.abbrev}\"/> ${homeName}</div>`;
+    const awayCellDesktop = (()=>{
+      const awayName = `${away.placeName?.default||''} ${away.commonName?.default||away.abbrev||''}`.trim();
+      return `<div class=\"team-cell right\"><span class=\"team-name\">${awayName}</span> <img src=\"${teamLogo(away.abbrev)}\" alt=\"${away.abbrev||''}\"/></div>`;
+    })();
+    const homeCellDesktop = (()=>{
+      const homeName = `${home.placeName?.default||''} ${home.commonName?.default||home.abbrev||''}`.trim();
+      return `<div class=\"team-cell\"><img src=\"${teamLogo(home.abbrev)}\" alt=\"${home.abbrev||''}\"/> <span class=\"team-name\">${homeName}</span></div>`;
+    })();
+    const awayCellMobile = `<div class=\"team-cell right\"><img src=\"${teamLogo(away.abbrev)}\" alt=\"${away.abbrev||''}\"/></div>`;
+    const homeCellMobile = `<div class=\"team-cell\"><img src=\"${teamLogo(home.abbrev)}\" alt=\"${home.abbrev||''}\"/></div>`;
+
+    if(mobile){
+      return `
+        <tr onclick=\"window.location='${link}'\">
+          <td class="col-center">${period}</td>
+          <td class="col-center">${timeRem}</td>
+          <td class="col-center">${awayCellMobile}</td>
+          <td class="col-center">${score}</td>
+          <td class="col-center">${homeCellMobile}</td>
+        </tr>
+      `;
+    }
+
     return `
       <tr onclick=\"window.location='${link}'\">
-  <td class="col-center">${period}</td>
-  <td class="col-center">${timeRem}</td>
-  <td class="col-center">${intermission}</td>
-  <td class="col-center">${sogAway}</td>
-  <td class="col-right">${awayCell}</td>
-  <td class="col-center">${score}</td>
-  <td class="col-left">${homeCell}</td>
-  <td class="col-center">${sogHome}</td>
-  <td class="col-center">${venue}</td>
+        <td class="col-center">${period}</td>
+        <td class="col-center">${timeRem}</td>
+        <td class="col-center">${intermission}</td>
+        <td class="col-center">${sogAway}</td>
+        <td class="col-right">${awayCellDesktop}</td>
+        <td class="col-center">${score}</td>
+        <td class="col-left">${homeCellDesktop}</td>
+        <td class="col-center">${sogHome}</td>
+        <td class="col-center">${venue}</td>
       </tr>
     `;
   }).join('');
