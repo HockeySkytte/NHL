@@ -1,0 +1,1997 @@
+{% extends 'base.html' %}
+
+{% block extra_filters %}
+<label id="cardSeasonStateWrap">Season State
+  <select id="cardSeasonState">
+    <option value="regular" selected>Regular</option>
+    <option value="playoffs">Playoffs</option>
+    <option value="all">All</option>
+  </select>
+</label>
+<label id="cardStrengthStateWrap">Strength State
+  <select id="cardStrengthState">
+    <option value="5v5" selected>5v5</option>
+    <option value="PP">PP</option>
+    <option value="SH">SH</option>
+    <option value="Other">Other</option>
+    <option value="all">All</option>
+  </select>
+</label>
+<label id="cardRatesWrap">Totals / Rates
+  <select id="cardRates">
+    <option value="Totals" selected>Totals</option>
+    <option value="PerGame">Per Game</option>
+  </select>
+</label>
+<label id="cardScopeWrap">Scope
+  <div id="cardScopeButtons" class="segmented" role="group" aria-label="Teams scope">
+    <button type="button" class="seg-btn active" data-scope="season">Season</button>
+    <button type="button" class="seg-btn" data-scope="total">Total</button>
+  </div>
+  <input id="cardScope" type="hidden" value="season" />
+</label>
+{% endblock %}
+
+{% block head %}
+<style>
+  .team-wrap{ width:100%; margin-left:-10px; min-width:0; overflow-x:hidden; }
+  .team-card{ width:100%; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:24px 26px 18px; min-width:0; overflow-x:hidden; }
+  .team-top{ display:flex; gap:22px; align-items:center; }
+  /* Smaller surrounding square while keeping the logo's effective size similar. */
+  .team-img{ width:190px; height:190px; border-radius:18px; object-fit:contain; object-position:center; background:var(--panel); border:1px solid #2a3142; padding:0; transform:none; }
+  .team-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
+  .team-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
+  .kv{ display:flex; gap:6px; align-items:baseline; }
+  .k{ text-transform:uppercase; font-size:12px; letter-spacing:1px; color:var(--text-dim); font-weight:750; }
+  .v{ font-weight:750; color:var(--text); }
+  .team-empty{ text-align:center; color:var(--text-dim); padding:30px 10px; }
+  .err{ color:#ff8f8f; font-weight:650; }
+
+  .segmented{ display:flex; gap:8px; margin-top:6px; }
+  .seg-btn{ flex:1; background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 10px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
+  .seg-btn.active{ outline:2px solid var(--accent); background:rgba(255,255,255,0.03); }
+
+  .subtabs{ display:flex; gap:12px; align-items:center; margin-top:18px; flex-wrap:wrap; }
+  .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
+  .subtab-btn.active{ outline:2px solid var(--accent); }
+  .panel{ margin-top:14px; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:16px 16px 12px; min-width:0; }
+
+  #tabPanelCard.panel{ padding:10px 10px 8px; }
+  .card-panel-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:2px 2px 10px; }
+  .card-panel-meta{ color:rgba(255,255,255,0.95); font-size:18px; font-style:italic; font-weight:800; letter-spacing:.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .card-grid{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:36px; width:100%; margin:0; }
+  @media (max-width: 980px){ .card-grid{ grid-template-columns: 1fr; } }
+  .card-col{ border:none; border-radius:0; padding:0; background:transparent; }
+  .card-col h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .metric{ padding:2px 0 10px; border:none; border-radius:0; background:transparent; margin-bottom:10px; }
+  .metric:last-child{ margin-bottom:0; }
+  .metric-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .metric-name{ font-size:12px; letter-spacing:.2px; text-transform:none; color:var(--text-dim); font-weight:850; }
+  .metric-val{ font-variant-numeric: tabular-nums; font-weight:850; color:rgba(255,255,255,0.95); }
+  .metric-bar{ position:relative; height:10px; border-radius:999px; background:transparent; border:1px solid rgba(255,255,255,0.16); overflow:hidden; margin-top:8px; }
+  .metric-fill{ position:absolute; top:0; left:0; height:100%; border-radius:999px; width:0%; background:#f7f7f7; }
+
+  .charts-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
+  @media (max-width: 1100px){ .charts-grid{ grid-template-columns:1fr; } }
+  .chart-block{ border:1px solid #232a3a; border-radius:12px; padding:12px 12px 10px; background:rgba(255,255,255,0.01); display:flex; flex-direction:column; min-width:0; }
+  .chart-hd{ display:flex; flex-direction:column; align-items:stretch; gap:10px; margin-bottom:10px; }
+  .chart-hd h3{ margin:0; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .chart-controls{ width:100%; display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:flex-end; }
+  @media (max-width: 640px){ .chart-controls{ grid-template-columns:1fr; } }
+  .chart-controls label{ min-width:0; }
+  .chart-controls select{ width:100%; }
+  .chart-area{ position:relative; width:100%; height:520px; flex:1 1 auto; }
+  @media (max-width: 980px){ .chart-area{ height:420px; } }
+  .chart-canvas{ width:100% !important; height:100% !important; display:block; }
+
+  .proj-subtabs{ display:flex; gap:12px; align-items:center; margin-top:6px; flex-wrap:wrap; }
+  .proj-subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
+  .proj-subtab-btn.active{ outline:2px solid var(--accent); }
+  .proj-subpanel{ margin-top:14px; background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:16px; }
+  .proj-subpanel[hidden]{ display:none !important; }
+  .proj-ov-grid{ display:grid; grid-template-columns: 360px 1fr; gap:14px; align-items:start; }
+  @media (max-width: 980px){ .proj-ov-grid{ grid-template-columns:1fr; } }
+  .proj-radar{ border:1px solid #232a3a; border-radius:12px; padding:10px; background:rgba(255,255,255,0.01); min-height:320px; height:360px; max-height:360px; overflow:hidden; }
+  @media (max-width: 980px){ .proj-radar{ height:340px; max-height:340px; } }
+  #projTeamRadar{ width:100% !important; height:100% !important; display:block; }
+  .kpi-card{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:12px 12px; text-align:center; }
+  .kpi-title{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
+  .kpi-value{ margin-top:6px; font-size:18px; font-weight:850; color:var(--text); font-variant-numeric: tabular-nums; }
+  .kpi-list{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .proj-table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:12px; }
+  .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
+  .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
+  .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
+  .proj-table{ width:100%; border-collapse:collapse; font-size:14px; }
+  .proj-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
+  .proj-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; }
+  .proj-table td.name{ text-align:left; }
+  .proj-table th.name{ text-align:left; }
+
+  .edge-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
+  .edge-card{ background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:14px; }
+  .edge-controls{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .edge-control{ display:flex; align-items:center; gap:8px; }
+  .edge-control label{ font-size:12px; color:var(--text-dim); font-weight:800; letter-spacing:.4px; text-transform:uppercase; }
+  .edge-select{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 10px; border-radius:10px; font-weight:750; }
+
+  .edge-zone-rink{ position:relative; width:100%; max-width:520px; margin:10px auto 2px; }
+  .edge-zone-rink img{ width:100%; height:auto; display:block; border-radius:14px; filter: saturate(0.92) contrast(1.05); opacity:0.95; }
+  .edge-zone-kpi-row{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:12px; padding:0 16px; }
+  .edge-zone-kpi{ position:static; transform:none; flex:1 1 0; max-width:170px; min-width:0; background:rgba(7,10,16,0.78); border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:10px 10px; text-align:center; box-shadow: 0 10px 28px rgba(0,0,0,0.35); }
+  .edge-zone-pill{ display:inline-block; padding:5px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.25); background:rgba(15,21,34,0.92); font-weight:900; font-size:14px; letter-spacing:.2px; margin-bottom:10px; }
+  .edge-zone-value{ font-size:30px; font-weight:950; line-height:1.0; font-variant-numeric:tabular-nums; margin:0 0 6px 0; color:#ffffff; }
+  .edge-zone-avg{ font-size:12px; font-weight:850; letter-spacing:.4px; color:rgba(255,255,255,0.72); margin:0 0 6px 0; }
+  .edge-zone-label{ font-size:12px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; color:rgba(255,255,255,0.82); }
+  @media (max-width: 560px){
+    .edge-zone-kpi-row{ flex-direction:column; justify-content:center; gap:10px; padding:12px; }
+    .edge-zone-kpi{ width:86%; max-width:260px; padding:8px 8px; }
+    .edge-zone-value{ font-size:24px; }
+    .edge-zone-pill{ font-size:13px; padding:4px 10px; }
+  }
+  @media (max-width: 980px){
+    .edge-grid{ grid-template-columns: 1fr; }
+  }
+
+  .table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:12px; }
+  .metrics-table{ width:100%; border-collapse:collapse; font-size:14px; }
+  .metrics-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
+  .metrics-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; }
+  .metrics-table td.num, .metrics-table th.num{ text-align:center; }
+  .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
+
+  .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .config-btn:hover{ background:color-mix(in srgb, var(--panel-alt) 70%, black); }
+
+  .modal{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:2000; }
+  .modal[hidden]{ display:none !important; }
+  .modal-card{ width:min(1100px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:#0f1522; border:1px solid #2a3142; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.6); }
+  .modal-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid #232a3a; }
+  .modal-title{ font-weight:900; letter-spacing:.2px; }
+  .modal-bd{ padding:14px 16px; }
+  .cc-help{ color:var(--text-dim); font-size:13px; margin-bottom:12px; }
+  .table-metric-picker{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; }
+  @media (max-width: 980px){ .table-metric-picker{ grid-template-columns:1fr; } }
+  .table-metric-group{ border:1px solid #232a3a; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
+  .table-metric-group .t{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:900; margin-bottom:10px; }
+  .table-metrics-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:8px 12px; }
+  @media (max-width: 980px){ .table-metrics-grid{ grid-template-columns:1fr; } }
+  .table-metric{ display:flex; flex-direction:row; gap:8px; align-items:center; font-size:13px; color:rgba(255,255,255,0.92); padding:0; }
+  .table-metric input{ margin:0; flex:0 0 auto; cursor:pointer; }
+  .table-metric span{ cursor:pointer; flex:1 1 auto; }
+  .modal-ft{ display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; border-top:1px solid #232a3a; align-items:center; flex-wrap:wrap; }
+  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .btn:hover{ background:rgba(255,255,255,0.05); }
+  .btn.primary{ outline:2px solid var(--accent); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="team-wrap">
+  <div class="team-card">
+    <div class="team-top">
+      <img id="teamImg" class="team-img" alt="Team" />
+      <div style="min-width:0;">
+        <h2 id="teamName" class="team-name">Teams</h2>
+        <div id="teamInfo" class="team-sub"></div>
+      </div>
+    </div>
+
+    <div class="subtabs" role="tablist" aria-label="Teams tabs">
+      <button id="tabCard" class="subtab-btn active" type="button" role="tab" aria-selected="true">Card</button>
+      <button id="tabCharts" class="subtab-btn" type="button" role="tab" aria-selected="false">Charts</button>
+      <button id="tabEdge" class="subtab-btn" type="button" role="tab" aria-selected="false">Edge</button>
+      <button id="tabProjections" class="subtab-btn" type="button" role="tab" aria-selected="false">Projections</button>
+      <button id="tabTable" class="subtab-btn" type="button" role="tab" aria-selected="false">Table View</button>
+    </div>
+
+    <div id="tabPanelCard" class="panel" role="tabpanel">
+      <div class="card-panel-hd">
+        <div id="cardSlicerSummary" class="card-panel-meta"></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="btnReloadCard" class="config-btn" type="button">Reload</button>
+        </div>
+      </div>
+      <div id="cardPanelInner" class="team-empty">Select a team to view Card.</div>
+    </div>
+
+    <div id="tabPanelCharts" class="panel" role="tabpanel" style="display:none;">
+      <div class="card-panel-hd" style="padding-bottom: 8px;">
+        <div id="chartsSlicerSummary" class="card-panel-meta"></div>
+      </div>
+      <div id="chartsEmpty" class="team-empty" hidden>Select a season to view Charts.</div>
+
+      <div id="chartsGrid" class="charts-grid">
+        <section class="chart-block" aria-label="Play Driving chart">
+          <div class="chart-hd">
+            <h3>Play Driving</h3>
+            <div class="chart-controls">
+              <label>X Axis
+                <select id="pdX"></select>
+              </label>
+              <label>Y Axis
+                <select id="pdY"></select>
+              </label>
+            </div>
+          </div>
+          <div class="chart-area">
+            <canvas id="pdChart" class="chart-canvas"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-block" aria-label="Shooting and Goaltending chart">
+          <div class="chart-hd">
+            <h3>Shooting / Goaltending</h3>
+            <div class="chart-controls">
+              <label>X Axis
+                <select id="scX"></select>
+              </label>
+              <label>Y Axis
+                <select id="scY"></select>
+              </label>
+            </div>
+          </div>
+          <div class="chart-area">
+            <canvas id="scChart" class="chart-canvas"></canvas>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="tabPanelEdge" class="panel" role="tabpanel" style="display:none;">
+      <div id="edgePanelInner" class="team-empty">Select a team to view Edge metrics.</div>
+    </div>
+
+    <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
+      <div id="projPanelInner">
+        <div class="proj-subtabs" role="tablist" aria-label="Team projections tabs">
+          <button id="projTabOverview" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Overview</button>
+          <button id="projTabTeam" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">Team</button>
+          <button id="projTabLeague" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">League</button>
+        </div>
+
+        <section id="projPanelOverview" class="proj-subpanel" role="tabpanel">
+          <div class="proj-ov-grid">
+            <div id="projOverviewKpis" class="kpi-list"></div>
+            <div class="proj-radar">
+              <canvas id="projTeamRadar"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section id="projPanelTeam" class="proj-subpanel" role="tabpanel" hidden>
+          <canvas id="projTeamStack" style="width:100%; height:420px;"></canvas>
+        </section>
+
+        <section id="projPanelLeague" class="proj-subpanel" role="tabpanel" hidden>
+          <div class="proj-export-wrap">
+            <button id="projExportCsv" class="proj-export-btn">Export CSV</button>
+          </div>
+          <div class="proj-table-wrap">
+            <table id="projLeagueTable" class="proj-table"></table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="tabPanelTable" class="panel" role="tabpanel" style="display:none;">
+      <div class="card-panel-hd" style="padding-bottom: 8px;">
+        <div id="tableSlicerSummary" class="card-panel-meta"></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="btnConfigureTable" class="config-btn" type="button">Configure Table</button>
+          <button id="btnReloadTable" class="config-btn" type="button">Reload</button>
+          <button id="btnExportTableCsv" class="config-btn" type="button">Export CSV</button>
+        </div>
+      </div>
+      <div id="tablePanelInner">
+        <div id="tableLoading" class="team-empty" style="display:none; padding:10px 0;">Loading table...</div>
+        <div id="tableError" class="team-empty err" style="display:none; padding:10px 0;"></div>
+        <div class="table-wrap">
+          <table id="teamsTable" class="metrics-table"></table>
+        </div>
+      </div>
+    </div>
+
+    <div id="teamMsg" class="team-empty" style="margin-top:10px;">Choose Team and Season.</div>
+  </div>
+</div>
+
+<div id="tableConfigModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="tableConfigTitle">
+    <div class="modal-hd">
+      <div id="tableConfigTitle" class="modal-title">Configure Table</div>
+      <button id="btnCloseTableConfig" class="btn" type="button">Close</button>
+    </div>
+    <div class="modal-bd">
+      <div class="cc-help">Select metrics (columns). Rank / Team are always included. Edge metrics are excluded for performance. Click column headers to sort.</div>
+      <div class="cc-help" style="display:flex; gap:10px; justify-content:flex-start; flex-wrap:wrap;">
+        <button id="btnTableDefaults" class="btn" type="button">Defaults</button>
+        <button id="btnTableNone" class="btn" type="button">None</button>
+        <button id="btnTableCardDefaults" class="btn" type="button">Card Defaults</button>
+      </div>
+      <div id="tableMetricPicker" class="table-metric-picker"></div>
+    </div>
+    <div class="modal-ft">
+      <div id="tableConfigStatus" class="cc-help" style="margin:0; padding:0;"></div>
+      <button id="btnApplyTableConfig" class="btn primary" type="button">Apply</button>
+    </div>
+  </div>
+</div>
+
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const TEAMS_STATE_KEY = 'nhlTeamsPageState_v1';
+const TABLE_CONFIG_KEY = 'nhlTeamsTableConfig_v1';
+
+const teamSelect = document.getElementById('teamSelect');
+const seasonSelect = document.getElementById('seasonSelect');
+const includeHistoric = document.getElementById('includeHistoric');
+
+const teamImg = document.getElementById('teamImg');
+const teamName = document.getElementById('teamName');
+const teamInfo = document.getElementById('teamInfo');
+const teamMsg = document.getElementById('teamMsg');
+
+const tabCard = document.getElementById('tabCard');
+const tabCharts = document.getElementById('tabCharts');
+const tabEdge = document.getElementById('tabEdge');
+const tabProjections = document.getElementById('tabProjections');
+const tabTable = document.getElementById('tabTable');
+const tabPanelCard = document.getElementById('tabPanelCard');
+const tabPanelCharts = document.getElementById('tabPanelCharts');
+const tabPanelEdge = document.getElementById('tabPanelEdge');
+const tabPanelProjections = document.getElementById('tabPanelProjections');
+const tabPanelTable = document.getElementById('tabPanelTable');
+
+const edgePanelInner = document.getElementById('edgePanelInner');
+
+const cardPanelInner = document.getElementById('cardPanelInner');
+const cardSlicerSummary = document.getElementById('cardSlicerSummary');
+const chartsSlicerSummary = document.getElementById('chartsSlicerSummary');
+const tableSlicerSummary = document.getElementById('tableSlicerSummary');
+
+const cardScope = document.getElementById('cardScope');
+const cardScopeButtons = document.getElementById('cardScopeButtons');
+const cardSeasonState = document.getElementById('cardSeasonState');
+const cardStrengthState = document.getElementById('cardStrengthState');
+const cardRates = document.getElementById('cardRates');
+
+const btnReloadCard = document.getElementById('btnReloadCard');
+
+const chartsEmpty = document.getElementById('chartsEmpty');
+const chartsGrid = document.getElementById('chartsGrid');
+const pdX = document.getElementById('pdX');
+const pdY = document.getElementById('pdY');
+const scX = document.getElementById('scX');
+const scY = document.getElementById('scY');
+const pdChartEl = document.getElementById('pdChart');
+const scChartEl = document.getElementById('scChart');
+
+const projTabOverview = document.getElementById('projTabOverview');
+const projTabTeam = document.getElementById('projTabTeam');
+const projTabLeague = document.getElementById('projTabLeague');
+const projPanelOverview = document.getElementById('projPanelOverview');
+const projPanelTeam = document.getElementById('projPanelTeam');
+const projPanelLeague = document.getElementById('projPanelLeague');
+const projOverviewKpis = document.getElementById('projOverviewKpis');
+const projLeagueTable = document.getElementById('projLeagueTable');
+const projExportCsv = document.getElementById('projExportCsv');
+
+const btnConfigureTable = document.getElementById('btnConfigureTable');
+const btnReloadTable = document.getElementById('btnReloadTable');
+const btnExportTableCsv = document.getElementById('btnExportTableCsv');
+const tableLoading = document.getElementById('tableLoading');
+const tableError = document.getElementById('tableError');
+const teamsTable = document.getElementById('teamsTable');
+
+const tableConfigModal = document.getElementById('tableConfigModal');
+const btnCloseTableConfig = document.getElementById('btnCloseTableConfig');
+const btnApplyTableConfig = document.getElementById('btnApplyTableConfig');
+const btnTableDefaults = document.getElementById('btnTableDefaults');
+const btnTableNone = document.getElementById('btnTableNone');
+const btnTableCardDefaults = document.getElementById('btnTableCardDefaults');
+const tableMetricPicker = document.getElementById('tableMetricPicker');
+const tableConfigStatus = document.getElementById('tableConfigStatus');
+
+const teams = JSON.parse(document.getElementById('teams-data').textContent);
+const teamNameByAbbrev = Object.fromEntries(teams.map(t=>[String(t.Team||'').toUpperCase(), String(t.Name||t.Team||'')]));
+
+let __cardDefs = null;
+let __pdChart = null;
+let __scChart = null;
+let __scatterCache = new Map();
+let __chartsLastKey = '';
+let __projLeaguePlayers = null;
+let __projTeamChart = null;
+let __projRadarChart = null;
+let __projLeagueSort = { key: 'total', dir: 'desc' };
+let __tableLastKey = '';
+let __logoImgCache = new Map();
+
+let __edgeCache = new Map();
+let __edgeState = { shotPos: 'all', skatePos: 'all', distPos: 'all', distStrength: '5v5', zoneStrength: '5v5' };
+
+let __restoreActiveTab = null;
+let __restoreProjSubtab = null;
+let __restoreChartAxes = null;
+
+function teamLogoUrl(abbrev){
+  const a = String(abbrev||'').toUpperCase();
+  return a ? `/api/team-logo/${encodeURIComponent(a)}.svg` : '';
+}
+
+function getTeamLogoImage(abbrev){
+  const a = String(abbrev||'').toUpperCase();
+  if(!a) return null;
+  if(__logoImgCache.has(a)) return __logoImgCache.get(a);
+  const url = teamLogoUrl(a);
+  if(!url) return null;
+  const img = new Image();
+  img.onload = ()=>{
+    try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/}
+    try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/}
+  };
+  img.onerror = ()=>{ /* noop */ };
+  img.src = url;
+  __logoImgCache.set(a, img);
+  return img;
+}
+
+function fmt3(x){
+  const n = Number(x);
+  if(!Number.isFinite(n)) return '';
+  return n.toFixed(3);
+}
+
+function themeTextDim(){
+  try{ return getComputedStyle(document.documentElement).getPropertyValue('--text-dim').trim() || '#9aa4b1'; }catch(_){ return '#9aa4b1'; }
+}
+
+function pctRank(values, v){
+  const arr = (values||[]).filter(n=>Number.isFinite(n)).slice().sort((a,b)=>a-b);
+  if(!arr.length || !Number.isFinite(v)) return null;
+  if(arr.length === 1) return 50;
+  let lo = 0, hi = arr.length;
+  while(lo < hi){
+    const mid = (lo+hi)>>1;
+    if(arr[mid] <= v) lo = mid + 1;
+    else hi = mid;
+  }
+  const rank = lo - 1;
+  return 100 * (rank / (arr.length - 1));
+}
+
+function clamp(v, lo, hi){
+  const x = Number(v);
+  if(!Number.isFinite(x)) return lo;
+  return Math.max(lo, Math.min(hi, x));
+}
+
+function pctToColor(p){
+  const pp = clamp(p, 0, 100);
+  const red = '#ff4d4d';
+  const white = '#ffffff';
+  const blue = '#4da3ff';
+  if(pp <= 50) return mixHex(red, white, pp / 50);
+  return mixHex(white, blue, (pp - 50) / 50);
+}
+
+function _ordinal(n){
+  const x = Math.round(Number(n));
+  if(!Number.isFinite(x)) return '';
+  const mod100 = x % 100;
+  if(mod100 >= 11 && mod100 <= 13) return `${x}th`;
+  const mod10 = x % 10;
+  if(mod10 === 1) return `${x}st`;
+  if(mod10 === 2) return `${x}nd`;
+  if(mod10 === 3) return `${x}rd`;
+  return `${x}th`;
+}
+
+function _edgePct(obj){
+  const p = Number(obj?.pct);
+  return Number.isFinite(p) ? p : null;
+}
+
+function _edgeFmtValue(metricKey, value){
+  const v = Number(value);
+  if(!Number.isFinite(v)) return '—';
+  const m = String(metricKey||'');
+  if(m === 'topShotSpeed' || m === 'avgShotSpeed' || m === 'maxSkatingSpeed') return v.toFixed(1);
+  if(m === 'distanceTotal' || m === 'distancePer60') return v.toFixed(1);
+  if(m.endsWith('Pctg')) return v.toFixed(1) + '%';
+  return String(Math.round(v));
+}
+
+function renderEdgeMetricBar(label, metricKey, obj){
+  const pct = _edgePct(obj);
+  const pctOk = Number.isFinite(Number(pct));
+  const width = pctOk ? clamp(Number(pct), 0, 100).toFixed(1) : '0.0';
+  const color = pctOk ? pctToColor(Number(pct)) : 'rgba(255,255,255,0.15)';
+  const valText = _edgeFmtValue(metricKey, obj?.value);
+  return `
+    <div class="metric">
+      <div class="metric-head">
+        <div class="metric-name">${label}</div>
+        <div class="metric-val">${valText}</div>
+      </div>
+      <div class="metric-bar"><div class="metric-fill" style="width:${width}%; background:${color};"></div></div>
+    </div>
+  `;
+}
+
+function renderEdgeZoneKpi(metricKey, obj, zoneLabel){
+  const pct = _edgePct(obj);
+  const pctOk = (pct != null);
+  const rank = Number(obj?.rank);
+  const pillText = Number.isFinite(rank) ? _ordinal(rank) : '—';
+  const accent = pctOk ? pctToColor(Number(pct)) : 'rgba(255,255,255,0.55)';
+  const valText = _edgeFmtValue(metricKey, obj?.value);
+  const avgText = _edgeFmtValue(metricKey, obj?.avg);
+  const showAvg = (obj?.avg != null) && avgText !== '—';
+  return `
+    <div class="edge-zone-pill" style="border-color:${accent}; color:${accent};">${pillText}</div>
+    <div class="edge-zone-value">${valText}</div>
+    ${showAvg ? `<div class="edge-zone-avg">NHL Avg ${avgText}</div>` : ''}
+    <div class="edge-zone-label">${zoneLabel}</div>
+  `;
+}
+
+function fmtSmart(x){
+  const n = Number(x);
+  if(!Number.isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  if(abs >= 100) return n.toFixed(0);
+  if(abs >= 10) return n.toFixed(1);
+  return n.toFixed(2);
+}
+
+function themeAccent(){
+  try{ return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4da3ff'; }catch(_){ return '#4da3ff'; }
+}
+
+function mixHex(a, b, t){
+  function p(h){ h=String(h||'').replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join(''); return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]; }
+  function c(v){ return Math.max(0, Math.min(255, Math.round(v))); }
+  const A=p(a), B=p(b);
+  const r=c(A[0] + (B[0]-A[0])*t), g=c(A[1] + (B[1]-A[1])*t), bb=c(A[2] + (B[2]-A[2])*t);
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bb.toString(16).padStart(2,'0')}`;
+}
+
+function setMsg(text, isError=false){
+  if(!teamMsg) return;
+  teamMsg.textContent = text || '';
+  teamMsg.className = 'team-empty' + (isError ? ' err' : '');
+}
+
+function setCardScope(scope){
+  const s = (String(scope||'').toLowerCase() === 'total') ? 'total' : 'season';
+  if(cardScope) cardScope.value = s;
+  try{
+    const btns = cardScopeButtons ? Array.from(cardScopeButtons.querySelectorAll('button[data-scope]')) : [];
+    btns.forEach(b=>{
+      const v = String(b.getAttribute('data-scope')||'').toLowerCase();
+      b.classList.toggle('active', v === s);
+      b.setAttribute('aria-pressed', v === s ? 'true' : 'false');
+    });
+  }catch(_){/*noop*/}
+  updateSlicerSummaries();
+  saveTeamsState();
+}
+
+try{
+  const btns = cardScopeButtons ? Array.from(cardScopeButtons.querySelectorAll('button[data-scope]')) : [];
+  btns.forEach(b=> b.addEventListener('click', ()=>{ setCardScope(b.getAttribute('data-scope')); reloadAll(); }));
+}catch(_){/*noop*/}
+
+function updateHeader(){
+  const ab = String(teamSelect?.value||'').toUpperCase();
+  const nm = teamNameByAbbrev[ab] || ab || 'Teams';
+  if(teamName) teamName.textContent = nm;
+  if(teamImg) teamImg.src = teamLogoUrl(ab) || '';
+
+  const season = String(seasonSelect?.value||'').trim();
+  const scope = String(cardScope?.value||'season');
+  const seasonState = String(cardSeasonState?.value||'regular');
+  const rates = String(cardRates?.value||'Totals');
+  const parts = [
+    ['Team', ab],
+    ['Season', season || '—'],
+    ['Scope', scope],
+    ['State', seasonState],
+    ['Rates', rates],
+  ];
+  if(teamInfo) teamInfo.innerHTML = parts.map(([k,v])=>`<div class="kv"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+}
+
+function updateSlicerSummaries(){
+  const season = String(seasonSelect?.value||'').trim();
+  const scope = String(cardScope?.value||'season');
+  const seasonState = String(cardSeasonState?.value||'regular');
+  const strengthState = String(cardStrengthState?.value||'5v5');
+  const rates = String(cardRates?.value||'Totals');
+  const txt = `Season ${season || '—'} · ${seasonState} · ${strengthState} · ${rates} · ${scope}`;
+  if(cardSlicerSummary) cardSlicerSummary.textContent = txt;
+  if(chartsSlicerSummary) chartsSlicerSummary.textContent = txt;
+  if(tableSlicerSummary) tableSlicerSummary.textContent = txt;
+  updateHeader();
+}
+
+function saveTeamsState(){
+  try{
+    const state = {
+      team: String(teamSelect?.value||''),
+      season: String(seasonSelect?.value||''),
+      activeTab: (tabCard?.classList.contains('active') ? 'card' : (tabCharts?.classList.contains('active') ? 'charts' : (tabEdge?.classList.contains('active') ? 'edge' : (tabProjections?.classList.contains('active') ? 'projections' : 'table')))),
+      scope: String(cardScope?.value||'season'),
+      seasonState: String(cardSeasonState?.value||'regular'),
+      strengthState: String(cardStrengthState?.value||'5v5'),
+      rates: String(cardRates?.value||'Totals'),
+      edge: { ...(__edgeState || {}) },
+      charts: { pdX:String(pdX?.value||''), pdY:String(pdY?.value||''), scX:String(scX?.value||''), scY:String(scY?.value||'') },
+      projectionsSubtab: (projTabOverview?.classList.contains('active') ? 'overview' : (projTabTeam?.classList.contains('active') ? 'team' : 'league')),
+    };
+    localStorage.setItem(TEAMS_STATE_KEY, JSON.stringify(state));
+  }catch(_){/*noop*/}
+}
+
+function restoreTeamsState(){
+  try{
+    const raw = localStorage.getItem(TEAMS_STATE_KEY);
+    if(!raw) return;
+    const s = JSON.parse(raw);
+    if(!s || typeof s !== 'object') return;
+
+    try{ if(s.team) localStorage.setItem('team', String(s.team)); }catch(_){/*noop*/}
+    try{ if(s.season) localStorage.setItem('season', String(s.season)); }catch(_){/*noop*/}
+
+    try{ if(cardSeasonState && s.seasonState) cardSeasonState.value = String(s.seasonState); }catch(_){/*noop*/}
+    try{ if(cardStrengthState && s.strengthState) cardStrengthState.value = String(s.strengthState); }catch(_){/*noop*/}
+    try{ if(cardRates && s.rates) cardRates.value = String(s.rates); }catch(_){/*noop*/}
+    try{ setCardScope(String(s.scope||'season')); }catch(_){/*noop*/}
+
+    try{
+      if(s.edge && typeof s.edge === 'object'){
+        const e = s.edge;
+        __edgeState = {
+          ...(__edgeState || {}),
+          shotPos: String(e.shotPos ?? __edgeState.shotPos ?? 'all'),
+          skatePos: String(e.skatePos ?? __edgeState.skatePos ?? 'all'),
+          distPos: String(e.distPos ?? __edgeState.distPos ?? 'all'),
+          distStrength: String(e.distStrength ?? __edgeState.distStrength ?? '5v5'),
+          zoneStrength: String(e.zoneStrength ?? __edgeState.zoneStrength ?? '5v5'),
+        };
+      }
+    }catch(_){/*noop*/}
+
+    try{ __restoreChartAxes = (s.charts && typeof s.charts === 'object') ? s.charts : null; }catch(_){/*noop*/}
+    try{ __restoreProjSubtab = String(s.projectionsSubtab||'') || null; }catch(_){/*noop*/}
+    try{ __restoreActiveTab = String(s.activeTab||'') || null; }catch(_){/*noop*/}
+  }catch(_){/*noop*/}
+}
+
+function setActiveTab(which){
+  const t = String(which||'card').toLowerCase();
+  const isCard = t === 'card';
+  const isCharts = t === 'charts';
+  const isEdge = t === 'edge';
+  const isProj = t === 'projections';
+  const isTable = t === 'table';
+
+  tabCard?.classList.toggle('active', isCard);
+  tabCharts?.classList.toggle('active', isCharts);
+  tabEdge?.classList.toggle('active', isEdge);
+  tabProjections?.classList.toggle('active', isProj);
+  tabTable?.classList.toggle('active', isTable);
+
+  tabCard?.setAttribute('aria-selected', isCard ? 'true':'false');
+  tabCharts?.setAttribute('aria-selected', isCharts ? 'true':'false');
+  tabEdge?.setAttribute('aria-selected', isEdge ? 'true':'false');
+  tabProjections?.setAttribute('aria-selected', isProj ? 'true':'false');
+  tabTable?.setAttribute('aria-selected', isTable ? 'true':'false');
+
+  if(tabPanelCard) tabPanelCard.style.display = isCard ? '' : 'none';
+  if(tabPanelCharts) tabPanelCharts.style.display = isCharts ? '' : 'none';
+  if(tabPanelEdge) tabPanelEdge.style.display = isEdge ? '' : 'none';
+  if(tabPanelProjections) tabPanelProjections.style.display = isProj ? '' : 'none';
+  if(tabPanelTable) tabPanelTable.style.display = isTable ? '' : 'none';
+
+  if(isCard) loadCardPanel();
+  if(isCharts) renderCharts();
+  if(isEdge) loadEdgePanel();
+  if(isProj) renderProjections();
+  if(isTable) loadTablePanel();
+
+  saveTeamsState();
+}
+
+try{
+  tabCard?.addEventListener('click', ()=> setActiveTab('card'));
+  tabCharts?.addEventListener('click', ()=> setActiveTab('charts'));
+  tabEdge?.addEventListener('click', ()=> setActiveTab('edge'));
+  tabProjections?.addEventListener('click', ()=> setActiveTab('projections'));
+  tabTable?.addEventListener('click', ()=> setActiveTab('table'));
+}catch(_){/*noop*/}
+
+async function loadEdgePanel(){
+  if(!edgePanelInner) return;
+
+  const team = String(teamSelect?.value||'').trim();
+  const season = String(seasonSelect?.value||'').trim();
+  if(!team){
+    edgePanelInner.textContent = 'Select a team to view Edge metrics.';
+    return;
+  }
+
+  const seasonInt = parseInt(season, 10);
+  if(Number.isFinite(seasonInt) && seasonInt < 20212022){
+    edgePanelInner.innerHTML = `<div class="team-empty" style="padding:10px 0;">NHL Edge data is available starting in 2021/22. (Selected season: ${season || '—'})</div>`;
+    return;
+  }
+
+  edgePanelInner.textContent = 'Loading Edge metrics...';
+
+  try{
+    const defs = await loadCardDefs();
+    const metrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+    const edgeDefs = metrics.filter(m=> String(m?.id||'').startsWith('Edge|'));
+    const byKey = new Map(edgeDefs.map(m=>[String(m.id||'').split('|')[1], m]));
+
+    const wantKeys = {
+      shot: ['topShotSpeed','avgShotSpeed','shotAttemptsOver100','shotAttempts90to100'],
+      skate: ['maxSkatingSpeed','burstsOver22','bursts20to22','bursts18to20'],
+      dist: ['distanceTotal','distancePer60'],
+      zone: ['defensiveZonePctg','neutralZonePctg','offensiveZonePctg'],
+    };
+
+    const shotMetricIds = wantKeys.shot.filter(k=>byKey.has(k)).map(k=>`Edge|${k}`);
+    const skateMetricIds = wantKeys.skate.filter(k=>byKey.has(k)).map(k=>`Edge|${k}`);
+    const distMetricIds = wantKeys.dist.filter(k=>byKey.has(k)).map(k=>`Edge|${k}`);
+    const zoneMetricIds = wantKeys.zone.filter(k=>byKey.has(k)).map(k=>`Edge|${k}`);
+
+    const seasonState = String(cardSeasonState?.value||'regular');
+    const ratesVal = String(cardRates?.value||'Totals');
+
+    async function fetchEdge(metricIds, strengthState, positionCode){
+      const mids = Array.isArray(metricIds) ? metricIds.filter(Boolean) : [];
+      if(!mids.length) return { metrics: {} };
+
+      const params = new URLSearchParams();
+      params.set('team', team);
+      params.set('season', season);
+      params.set('seasonState', seasonState);
+      params.set('strengthState', String(strengthState || 'all'));
+      params.set('rates', ratesVal);
+      params.set('scope', 'season');
+      params.set('metricIds', mids.join(','));
+      if(positionCode != null && String(positionCode).trim() !== '') params.set('positionCode', String(positionCode));
+
+      const cacheKey = params.toString();
+      if(__edgeCache?.has(cacheKey)) return __edgeCache.get(cacheKey);
+
+      const r = await fetch(`/api/teams/card?${cacheKey}`, { cache:'no-store' });
+      const data = await r.json();
+      if(!r.ok) throw new Error(String(data?.error || r.status));
+      __edgeCache?.set(cacheKey, data);
+      return data;
+    }
+
+    const [shotData, skateData, distData, zoneData] = await Promise.all([
+      fetchEdge(shotMetricIds, 'all', __edgeState?.shotPos ?? 'all'),
+      fetchEdge(skateMetricIds, 'all', __edgeState?.skatePos ?? 'all'),
+      fetchEdge(distMetricIds, __edgeState?.distStrength ?? '5v5', __edgeState?.distPos ?? 'all'),
+      fetchEdge(zoneMetricIds, __edgeState?.zoneStrength ?? '5v5', null),
+    ]);
+
+    const mmShot = (shotData && typeof shotData === 'object') ? (shotData.metrics || {}) : {};
+    const mmSkate = (skateData && typeof skateData === 'object') ? (skateData.metrics || {}) : {};
+    const mmDist = (distData && typeof distData === 'object') ? (distData.metrics || {}) : {};
+    const mmZone = (zoneData && typeof zoneData === 'object') ? (zoneData.metrics || {}) : {};
+
+    const anyValue = (
+      shotMetricIds.some(mid => mmShot?.[mid]?.value != null) ||
+      skateMetricIds.some(mid => mmSkate?.[mid]?.value != null) ||
+      distMetricIds.some(mid => mmDist?.[mid]?.value != null) ||
+      zoneMetricIds.some(mid => mmZone?.[mid]?.value != null)
+    );
+    if(!anyValue){
+      edgePanelInner.innerHTML = `<div class="team-empty" style="padding:10px 0;">No Edge data available for this selection.</div>`;
+      return;
+    }
+
+    const posOpts = [
+      ['all','All'],
+      ['f','Forwards'],
+      ['d','Defense'],
+    ];
+    const strengthOpts = [
+      ['all','All'],
+      ['5v5','EV'],
+      ['PP','PP'],
+      ['SH','SH'],
+    ];
+    const posOptionsHtml = posOpts.map(([v,lab])=>`<option value="${v}">${lab}</option>`).join('');
+    const strengthOptionsHtml = strengthOpts.map(([v,lab])=>`<option value="${v}">${lab}</option>`).join('');
+
+    edgePanelInner.innerHTML = `
+      <div class="edge-grid">
+        <div class="edge-card card-col">
+          <div class="card-slot">
+            <div class="edge-controls">
+              <h3 style="margin:0;">Shot Speed</h3>
+              <div class="edge-control">
+                <label for="edgeShotPos">Position</label>
+                <select id="edgeShotPos" class="edge-select">${posOptionsHtml}</select>
+              </div>
+            </div>
+            <div id="edgeShotBars"></div>
+          </div>
+          <div class="card-slot">
+            <div class="edge-controls">
+              <h3 style="margin:0;">Skating Speed</h3>
+              <div class="edge-control">
+                <label for="edgeSkatePos">Position</label>
+                <select id="edgeSkatePos" class="edge-select">${posOptionsHtml}</select>
+              </div>
+            </div>
+            <div id="edgeSkateBars"></div>
+          </div>
+        </div>
+
+        <div class="edge-card card-col">
+          <div class="card-slot">
+            <div class="edge-controls">
+              <h3 style="margin:0;">Skating Distance</h3>
+              <div class="edge-control">
+                <label for="edgeDistStrength">Strength</label>
+                <select id="edgeDistStrength" class="edge-select">${strengthOptionsHtml}</select>
+              </div>
+              <div class="edge-control">
+                <label for="edgeDistPos">Position</label>
+                <select id="edgeDistPos" class="edge-select">${posOptionsHtml}</select>
+              </div>
+            </div>
+            <div id="edgeDistanceBars"></div>
+          </div>
+          <div class="card-slot">
+            <div class="edge-controls">
+              <h3 style="margin:0;">Zone Time</h3>
+              <div class="edge-control">
+                <label for="edgeZoneStrength">Strength</label>
+                <select id="edgeZoneStrength" class="edge-select">${strengthOptionsHtml}</select>
+              </div>
+            </div>
+            <div class="edge-zone-rink">
+              <img src="/static/hockey-rink.png" alt="Hockey rink" loading="lazy" />
+              <div class="edge-zone-kpi-row">
+                <div id="edgeZoneDef" class="edge-zone-kpi"></div>
+                <div id="edgeZoneNeu" class="edge-zone-kpi"></div>
+                <div id="edgeZoneOff" class="edge-zone-kpi"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const bind = (id, val, setter)=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.value = String(val ?? 'all');
+      el.onchange = ()=>{
+        setter(String(el.value||''));
+        saveTeamsState();
+        loadEdgePanel();
+      };
+    };
+    bind('edgeShotPos', __edgeState?.shotPos ?? 'all', (v)=>{ __edgeState.shotPos = v; });
+    bind('edgeSkatePos', __edgeState?.skatePos ?? 'all', (v)=>{ __edgeState.skatePos = v; });
+    bind('edgeDistStrength', __edgeState?.distStrength ?? '5v5', (v)=>{ __edgeState.distStrength = v; });
+    bind('edgeDistPos', __edgeState?.distPos ?? 'all', (v)=>{ __edgeState.distPos = v; });
+    bind('edgeZoneStrength', __edgeState?.zoneStrength ?? '5v5', (v)=>{ __edgeState.zoneStrength = v; });
+
+    const shotWrap = document.getElementById('edgeShotBars');
+    const skateWrap = document.getElementById('edgeSkateBars');
+    const distWrap = document.getElementById('edgeDistanceBars');
+    const zoneDef = document.getElementById('edgeZoneDef');
+    const zoneNeu = document.getElementById('edgeZoneNeu');
+    const zoneOff = document.getElementById('edgeZoneOff');
+
+    const objShot = (k)=> mmShot?.[`Edge|${k}`];
+    const objSkate = (k)=> mmSkate?.[`Edge|${k}`];
+    const objDist = (k)=> mmDist?.[`Edge|${k}`];
+    const objZone = (k)=> mmZone?.[`Edge|${k}`];
+    if(shotWrap){
+      shotWrap.innerHTML = [
+        renderEdgeMetricBar('Top Shot Speed', 'topShotSpeed', objShot('topShotSpeed')),
+        renderEdgeMetricBar('Average Shot Speed', 'avgShotSpeed', objShot('avgShotSpeed')),
+        renderEdgeMetricBar('Shots over 100 MPH', 'shotAttemptsOver100', objShot('shotAttemptsOver100')),
+        renderEdgeMetricBar('Shots 90 to 100 MPH', 'shotAttempts90to100', objShot('shotAttempts90to100')),
+      ].join('');
+    }
+    if(skateWrap){
+      skateWrap.innerHTML = [
+        renderEdgeMetricBar('Top Skating Speed', 'maxSkatingSpeed', objSkate('maxSkatingSpeed')),
+        renderEdgeMetricBar('Speed Bursts 22+ MPH', 'burstsOver22', objSkate('burstsOver22')),
+        renderEdgeMetricBar('Speed Bursts 20 to 22 MPH', 'bursts20to22', objSkate('bursts20to22')),
+        renderEdgeMetricBar('Speed Bursts 18 to 20 MPH', 'bursts18to20', objSkate('bursts18to20')),
+      ].join('');
+    }
+    if(distWrap){
+      distWrap.innerHTML = [
+        renderEdgeMetricBar('Total Skating Distance', 'distanceTotal', objDist('distanceTotal')),
+        renderEdgeMetricBar('Skating Distance Per 60', 'distancePer60', objDist('distancePer60')),
+      ].join('');
+    }
+    if(zoneDef) zoneDef.innerHTML = renderEdgeZoneKpi('defensiveZonePctg', objZone('defensiveZonePctg'), 'Defensive Zone');
+    if(zoneNeu) zoneNeu.innerHTML = renderEdgeZoneKpi('neutralZonePctg', objZone('neutralZonePctg'), 'Neutral Zone');
+    if(zoneOff) zoneOff.innerHTML = renderEdgeZoneKpi('offensiveZonePctg', objZone('offensiveZonePctg'), 'Offensive Zone');
+
+  }catch(_e){
+    edgePanelInner.textContent = 'Error loading Edge metrics.';
+  }
+}
+
+async function loadCardDefs(){
+  if(__cardDefs) return __cardDefs;
+  const r = await fetch('/api/teams/card/defs', { cache:'no-store' });
+  __cardDefs = await r.json();
+  return __cardDefs;
+}
+
+function buildSlotMap(defs){
+  const slots = {};
+  const metrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+  for(const m of metrics){
+    const slot = String(m?.slot||'').trim();
+    if(!slot) continue;
+    if(!slots[slot]) slots[slot] = [];
+    slots[slot].push(m);
+  }
+  return slots;
+}
+
+function sectionTitleForSlot(slot){
+  const s = String(slot||'');
+  if(s.startsWith('L')) return 'Defense';
+  if(s.startsWith('C')) return 'Play Driving';
+  if(s.startsWith('R')) return 'Offense / Context';
+  return '';
+}
+
+function metricValueText(mid, val){
+  const m = String(mid||'');
+  if(m.endsWith('%') || m.includes('Sv%') || m.includes('Sh%') || m.endsWith('Pctg')){
+    return val==null ? '—' : `${fmtSmart(val)}%`;
+  }
+  if(m.includes('PDO')) return val==null ? '—' : fmtSmart(val);
+  return val==null ? '—' : fmtSmart(val);
+}
+
+function fillPctBar(fillEl, pct){
+  if(!fillEl) return;
+  const p = Number(pct);
+  if(!Number.isFinite(p)){
+    fillEl.style.width = '0%';
+    fillEl.style.opacity = '0.2';
+    fillEl.style.background = 'rgba(255,255,255,0.35)';
+    return;
+  }
+  fillEl.style.opacity = '1';
+  fillEl.style.width = `${Math.max(0, Math.min(100, p)).toFixed(1)}%`;
+  const accent = themeAccent();
+  fillEl.style.background = mixHex(accent, '#ffffff', 0.10);
+}
+
+async function loadCardPanel(){
+  if(!cardPanelInner) return;
+  updateSlicerSummaries();
+
+  const team = String(teamSelect?.value||'').trim();
+  const season = String(seasonSelect?.value||'').trim();
+  if(!team){
+    cardPanelInner.innerHTML = '<div class="team-empty">Select a team to view Card.</div>';
+    return;
+  }
+
+  cardPanelInner.innerHTML = '<div class="team-empty">Loading card...</div>';
+
+  try{
+    const defs = await loadCardDefs();
+    const scopeVal = String(cardScope?.value||'season');
+    const seasonState = String(cardSeasonState?.value||'regular');
+    const strengthState = String(cardStrengthState?.value||'5v5');
+    const ratesVal = String(cardRates?.value||'Totals');
+
+    const metricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map(m=>String(m.id||'')).filter(Boolean);
+    const url = `/api/teams/card?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
+    const r = await fetch(url, { cache:'no-store' });
+    const data = await r.json();
+    if(!r.ok){
+      cardPanelInner.innerHTML = `<div class="team-empty err">Error loading card: ${data?.error || r.status}</div>`;
+      return;
+    }
+
+    const bySlot = buildSlotMap(defs);
+    const slotsOrder = ['L1','L2','L3','C1','C2','C3','R1','R2','R3'];
+
+    const colL = ['L1','L2','L3'];
+    const colC = ['C1','C2','C3'];
+    const colR = ['R1','R2','R3'];
+
+    function renderCol(title, slots){
+      const rows = [];
+      for(const slot of slots){
+        const items = bySlot[slot] || [];
+        for(const m of items){
+          const id = String(m.id||'');
+          const label = String(m.label||m.metric||id);
+          const entry = data?.metrics?.[id];
+          const val = entry ? entry.value : null;
+          const pct = entry ? entry.pct : null;
+          rows.push(`
+            <div class="metric">
+              <div class="metric-head">
+                <div class="metric-name">${label}</div>
+                <div class="metric-val">${metricValueText(id, val)}${(pct!=null&&Number.isFinite(Number(pct)))?` <span style=\"color:rgba(255,255,255,0.6); font-weight:800; font-size:12px;\">(${Number(pct).toFixed(0)}p)</span>`:''}</div>
+              </div>
+              <div class="metric-bar"><div class="metric-fill" data-pct="${pct==null?'':pct}"></div></div>
+            </div>
+          `);
+        }
+      }
+      return `<div class="card-col"><h3>${title}</h3>${rows.join('')}</div>`;
+    }
+
+    const html = `
+      <div class="card-grid">
+        ${renderCol('Defense', colL)}
+        ${renderCol('Play Driving', colC)}
+        ${renderCol('Context / Edge', colR)}
+      </div>
+    `;
+    cardPanelInner.innerHTML = html;
+    try{
+      cardPanelInner.querySelectorAll('.metric-fill').forEach(el=>{
+        const p = el.getAttribute('data-pct');
+        fillPctBar(el, p==null?null:Number(p));
+      });
+    }catch(_){/*noop*/}
+  }catch(e){
+    cardPanelInner.innerHTML = '<div class="team-empty err">Error loading card.</div>';
+  }
+}
+
+function isAgainstMetric(metricId){
+  const raw = String(metricId||'');
+  const parts = raw.split('|');
+  const m = String(parts[1]||parts[0]||'');
+  return ['CA','FA','SA','GA','xGA'].includes(m);
+}
+
+function fillMetricSelect(sel, items, defaultId){
+  if(!sel) return;
+  const opts = (items||[]).map(m=>`<option value="${m.id}">${m.label}</option>`).join('');
+  sel.innerHTML = opts;
+  if(defaultId && items.some(m=>m.id===defaultId)) sel.value = defaultId;
+}
+
+async function initChartsMetricSelects(){
+  const defs = await loadCardDefs();
+  const metrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+
+  function pick(cat){
+    return metrics.filter(m=>String(m.category||'')===cat && !String(m.id||'').startsWith('Edge|')).map(m=>({ id:String(m.id), label:String(m.label||m.metric||m.id) }));
+  }
+
+  const pdItems = [...pick('Defense'), ...pick('Offense'), ...pick('Play Driving')];
+  const scItems = [...pick('Context')];
+
+  fillMetricSelect(pdX, pdItems, 'Play Driving|CF%');
+  fillMetricSelect(pdY, pdItems, 'Play Driving|GF%');
+  fillMetricSelect(scX, scItems, 'Context|Sv%');
+  fillMetricSelect(scY, scItems, 'Context|PDO');
+}
+
+async function fetchScatter(xMetricId, yMetricId){
+  const season = String(seasonSelect?.value||'').trim();
+  const seasonState = String(cardSeasonState?.value||'regular');
+  const ratesVal = String(cardRates?.value||'Totals');
+  const scopeVal = String(cardScope?.value||'season');
+  const includeHist = includeHistoric && includeHistoric.checked ? '1' : '0';
+
+  if(!season){
+    return { points: [] };
+  }
+
+  const key = JSON.stringify({ season, seasonState, ratesVal, scopeVal, includeHist, xMetricId, yMetricId });
+  if(__scatterCache.has(key)) return __scatterCache.get(key);
+
+  const url = `/api/teams/scatter?season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&includeHistoric=${encodeURIComponent(includeHist)}&xMetricId=${encodeURIComponent(xMetricId)}&yMetricId=${encodeURIComponent(yMetricId)}`;
+  const r = await fetch(url, { cache:'no-store' });
+  const data = await r.json();
+  __scatterCache.set(key, data);
+  return data;
+}
+
+function makeScatterChart(canvasEl, title){
+  if(!canvasEl || typeof Chart === 'undefined') return null;
+
+  const highlightBadgePlugin = {
+    id: 'highlightBadge',
+    afterDatasetsDraw(chart){
+      try{
+        const ctx = chart.ctx;
+        const meta = chart.getDatasetMeta(0);
+        const wantTeam = String(teamSelect?.value||'').toUpperCase();
+        meta.data.forEach((ptEl, i)=>{
+          const raw = chart.data.datasets[0].data[i];
+          if(!raw) return;
+          const isHit = (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          if(!isHit) return;
+          const p = ptEl.getProps(['x','y'], true);
+
+          const outerR = 14;
+          const innerR = 12.6;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.fillStyle = 'rgba(10,14,22,0.92)';
+          ctx.arc(p.x, p.y, outerR, 0, Math.PI*2);
+          ctx.fill();
+          ctx.lineWidth = 3.5;
+          ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, innerR, 0, Math.PI*2);
+          ctx.clip();
+
+          const img = getTeamLogoImage(raw.team);
+          if(img && img.complete){
+            const d = innerR * 2;
+            try{ ctx.drawImage(img, p.x - innerR, p.y - innerR, d, d); }catch(_){/*noop*/}
+          }
+          ctx.restore();
+        });
+      }catch(_){/*noop*/}
+    }
+  };
+
+  const chart = new Chart(canvasEl.getContext('2d'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: title,
+        data: [],
+        pointBackgroundColor: (ctx)=>{
+          const raw = ctx.raw || {};
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const isHit = wantTeam && String(raw.team||'').toUpperCase() === wantTeam;
+          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.16)';
+        },
+        pointBorderColor: (ctx)=>{
+          const raw = ctx.raw || {};
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const isHit = wantTeam && String(raw.team||'').toUpperCase() === wantTeam;
+          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.10)';
+        },
+        pointBorderWidth: (ctx)=>{
+          const raw = ctx.raw || {};
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const isHit = wantTeam && String(raw.team||'').toUpperCase() === wantTeam;
+          return isHit ? 0 : 1;
+        },
+        pointRadius: (ctx)=>{
+          const raw = ctx.raw || {};
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const isHit = wantTeam && String(raw.team||'').toUpperCase() === wantTeam;
+          return isHit ? 10 : 4;
+        },
+        pointHoverRadius: 10,
+        pointStyle: 'circle',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            label: (t)=>{
+              const r = t.raw || {};
+              const nm = r.name || '';
+              const tm = r.team ? ` (${r.team})` : '';
+              return `${nm}${tm}: ${t.parsed.x.toFixed(3)}, ${t.parsed.y.toFixed(3)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { title: { display:true, text:'X', color:'rgba(255,255,255,0.95)' }, grid: { color:'rgba(255,255,255,0.06)' }, ticks:{ color:'rgba(255,255,255,0.75)' } },
+        y: { title: { display:true, text:'Y', color:'rgba(255,255,255,0.95)' }, grid: { color:'rgba(255,255,255,0.06)' }, ticks:{ color:'rgba(255,255,255,0.75)' } },
+      }
+    },
+    plugins: [highlightBadgePlugin]
+  });
+
+  return chart;
+}
+
+async function renderCharts(){
+  updateSlicerSummaries();
+  const season = String(seasonSelect?.value||'').trim();
+  if(!season){
+    if(chartsEmpty) chartsEmpty.hidden = false;
+    if(chartsGrid) chartsGrid.style.display = 'none';
+    return;
+  }
+
+  function setChartsLoading(on, text){
+    if(chartsEmpty){
+      chartsEmpty.hidden = !on;
+      if(on) chartsEmpty.textContent = text || 'Loading charts...';
+    }
+    if(chartsGrid){
+      chartsGrid.style.display = '';
+      chartsGrid.style.opacity = on ? '0.35' : '';
+      chartsGrid.style.pointerEvents = on ? 'none' : '';
+    }
+  }
+
+  setChartsLoading(true, 'Loading charts...');
+
+  if(!__pdChart && pdChartEl) __pdChart = makeScatterChart(pdChartEl, 'Play Driving');
+  if(!__scChart && scChartEl) __scChart = makeScatterChart(scChartEl, 'Shooting / Goaltending');
+
+  const keyNow = JSON.stringify({
+    tab:'charts',
+    season,
+    seasonState:String(cardSeasonState?.value||''),
+    rates:String(cardRates?.value||''),
+    scope:String(cardScope?.value||''),
+    includeHistoric: includeHistoric && includeHistoric.checked ? '1':'0',
+    pdX:String(pdX?.value||''),
+    pdY:String(pdY?.value||''),
+    scX:String(scX?.value||''),
+    scY:String(scY?.value||''),
+  });
+  if(keyNow === __chartsLastKey){
+    setChartsLoading(false);
+    return;
+  }
+  __chartsLastKey = keyNow;
+
+  try{
+    const [pd, sc] = await Promise.all([
+      fetchScatter(String(pdX?.value||''), String(pdY?.value||'')),
+      fetchScatter(String(scX?.value||''), String(scY?.value||'')),
+    ]);
+
+    if(__pdChart){
+      __pdChart.options.scales.x.title.text = String(pdX?.selectedOptions?.[0]?.textContent||'X');
+      __pdChart.options.scales.y.title.text = String(pdY?.selectedOptions?.[0]?.textContent||'Y');
+      __pdChart.options.scales.x.reverse = isAgainstMetric(String(pdX?.value||''));
+      __pdChart.options.scales.y.reverse = isAgainstMetric(String(pdY?.value||''));
+      __pdChart.data.datasets[0].data = Array.isArray(pd?.points) ? pd.points : [];
+      __pdChart.update('none');
+    }
+    if(__scChart){
+      __scChart.options.scales.x.title.text = String(scX?.selectedOptions?.[0]?.textContent||'X');
+      __scChart.options.scales.y.title.text = String(scY?.selectedOptions?.[0]?.textContent||'Y');
+      __scChart.options.scales.x.reverse = isAgainstMetric(String(scX?.value||''));
+      __scChart.options.scales.y.reverse = isAgainstMetric(String(scY?.value||''));
+      __scChart.data.datasets[0].data = Array.isArray(sc?.points) ? sc.points : [];
+      __scChart.update('none');
+    }
+
+    setChartsLoading(false);
+    saveTeamsState();
+  }catch(e){
+    if(chartsEmpty){
+      chartsEmpty.hidden = false;
+      chartsEmpty.textContent = 'Error loading charts.';
+    }
+    if(chartsGrid){
+      chartsGrid.style.display = 'none';
+      chartsGrid.style.opacity = '';
+      chartsGrid.style.pointerEvents = '';
+    }
+  }
+}
+
+function setActiveProjSubtab(which){
+  const w = String(which||'overview').toLowerCase();
+  const isO = w === 'overview';
+  const isT = w === 'team';
+  const isL = w === 'league';
+  projTabOverview?.classList.toggle('active', isO);
+  projTabTeam?.classList.toggle('active', isT);
+  projTabLeague?.classList.toggle('active', isL);
+  projTabOverview?.setAttribute('aria-selected', isO ? 'true' : 'false');
+  projTabTeam?.setAttribute('aria-selected', isT ? 'true' : 'false');
+  projTabLeague?.setAttribute('aria-selected', isL ? 'true' : 'false');
+  if(projPanelOverview) projPanelOverview.hidden = !isO;
+  if(projPanelTeam) projPanelTeam.hidden = !isT;
+  if(projPanelLeague) projPanelLeague.hidden = !isL;
+  saveTeamsState();
+}
+
+try{
+  projTabOverview?.addEventListener('click', ()=>{ setActiveProjSubtab('overview'); renderProjections(); });
+  projTabTeam?.addEventListener('click', ()=>{ setActiveProjSubtab('team'); renderProjections(); });
+  projTabLeague?.addEventListener('click', ()=>{ setActiveProjSubtab('league'); renderProjections(); });
+}catch(_){/*noop*/}
+
+async function ensureProjLeaguePlayers(){
+  if(__projLeaguePlayers) return __projLeaguePlayers;
+  let js = null;
+  try{
+    const r = await fetch('/api/player-projections/league?include_goalies=1', { cache:'no-store' });
+    if(!r.ok){
+      __projLeaguePlayers = [];
+      return __projLeaguePlayers;
+    }
+    js = await r.json();
+  }catch(e){
+    __projLeaguePlayers = [];
+    return __projLeaguePlayers;
+  }
+  __projLeaguePlayers = Array.isArray(js?.players) ? js.players : [];
+  return __projLeaguePlayers;
+}
+
+function buildTeamAggsFromLeague(leaguePlayers){
+  const teamsMap = new Map();
+  for(const p of (leaguePlayers||[])){
+    const team = String(p?.team||'').toUpperCase();
+    if(!team) continue;
+    if(!teamsMap.has(team)){
+      teamsMap.set(team, {
+        team,
+        teamName: teamNameByAbbrev[team] || team,
+        players: 0,
+        Age: 0,
+        Rookie: 0,
+        EVO: 0,
+        EVD: 0,
+        PP: 0,
+        SH: 0,
+        GSAx: 0,
+        total: 0,
+        totalWithGSAx: 0,
+      });
+    }
+    const row = teamsMap.get(team);
+    row.players += 1;
+    for(const k of ['Age','Rookie','EVO','EVD','PP','SH','total','GSAx']){
+      const v = Number(p?.[k]);
+      if(Number.isFinite(v)) row[k] += v;
+    }
+  }
+  const out = Array.from(teamsMap.values());
+  out.forEach(t=>{ t.totalWithGSAx = (Number(t.total)||0) + (Number(t.GSAx)||0); });
+  out.sort((a,b)=> Number(b.totalWithGSAx||0) - Number(a.totalWithGSAx||0));
+  out.forEach((t,i)=>{ t.rank = i+1; });
+  return out;
+}
+
+function renderOverviewKpis(teamAbbrev, teamAgg){
+  if(!projOverviewKpis) return;
+  const ab = String(teamAbbrev||'').toUpperCase();
+  const row = (teamAgg||[]).find(t=>String(t.team||'').toUpperCase() === ab) || null;
+  if(!row){
+    projOverviewKpis.innerHTML = '<div class="team-empty" style="grid-column:1 / -1; padding:8px 2px;">Select a team to view projections.</div>';
+    return;
+  }
+
+  const items = [
+    ['Players', row.players],
+    ['Total', fmt3(row.totalWithGSAx)],
+    ['Age', fmt3(row.Age)],
+    ['Rookie', fmt3(row.Rookie)],
+    ['EVO', fmt3(row.EVO)],
+    ['EVD', fmt3(row.EVD)],
+    ['PP', fmt3(row.PP)],
+    ['SH', fmt3(row.SH)],
+    ['GSAx', fmt3(row.GSAx)],
+  ];
+
+  projOverviewKpis.innerHTML = items.map(([k,v])=> (
+    `<div class="kpi-card"><div class="kpi-title">${k}</div><div class="kpi-value">${(v==null||v==='')?'—':v}</div></div>`
+  )).join('');
+}
+
+function renderTeamRadar(teamAbbrev, teamAgg, teamColor){
+  const ctx = document.getElementById('projTeamRadar')?.getContext('2d');
+  if(!ctx || typeof Chart === 'undefined') return;
+  if(__projRadarChart){ try{ __projRadarChart.destroy(); }catch(_){/*noop*/} __projRadarChart=null; }
+
+  const ab = String(teamAbbrev||'').toUpperCase();
+  const row = (teamAgg||[]).find(t=>String(t.team||'').toUpperCase() === ab) || null;
+  if(!row) return;
+
+  const metrics = ['Age','Rookie','EVO','EVD','PP','SH','GSAx'];
+  const valuesByMetric = {};
+  for(const m of metrics){ valuesByMetric[m] = (teamAgg||[]).map(t=> Number(t[m])); }
+  const pct = metrics.map(m=>{
+    const v = Number(row[m]);
+    const pr = pctRank(valuesByMetric[m], v);
+    return pr==null ? 0 : pr;
+  });
+
+  const accent = teamColor || themeAccent();
+  const grid = 'rgba(154,164,177,0.16)';
+  const tick = themeTextDim();
+  __projRadarChart = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: metrics,
+      datasets: [{
+        label: `${row.teamName} (${ab})`,
+        data: pct,
+        borderColor: mixHex(accent, '#ffffff', 0.10),
+        backgroundColor: mixHex(accent, '#ffffff', 0.35),
+        pointBackgroundColor: mixHex(accent, '#ffffff', 0.10),
+        pointRadius: 3,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: { labels: { color: tick, font: { size: 13, weight:'700' } } },
+        tooltip: {
+          callbacks: {
+            title: () => '',
+            label: () => '',
+            afterBody: () => metrics.map((m, i) => `${m}: ${pct[i].toFixed(1)}%`).join('\n'),
+          }
+        }
+      },
+      scales: {
+        r: {
+          min: 0,
+          max: 100,
+          ticks: { display: false },
+          grid: { color: grid },
+          angleLines: { color: grid },
+          pointLabels: { color: tick, font: { size: 12, weight:'800' } },
+        }
+      }
+    }
+  });
+}
+
+function renderProjTeamStack(teamAbbrev, leaguePlayers){
+  const ctx = document.getElementById('projTeamStack')?.getContext('2d');
+  if(!ctx || typeof Chart === 'undefined') return;
+  const ab = String(teamAbbrev||'').toUpperCase();
+
+  const list = (leaguePlayers||[])
+    .filter(p=>String(p.team||'').toUpperCase() === ab)
+    .slice()
+    .sort((a,b)=>{
+      const at = (Number(a.total)||0) + (Number(a.GSAx)||0);
+      const bt = (Number(b.total)||0) + (Number(b.GSAx)||0);
+      return bt - at;
+    });
+
+  const labels = list.map(p=>p.name || String(p.playerId));
+  const metrics = ['Age','Rookie','EVO','EVD','PP','SH','GSAx'];
+  const accent = themeAccent();
+  const tick = themeTextDim();
+  const grid = 'rgba(154,164,177,0.14)';
+
+  const colors = [
+    mixHex(accent,'#ffffff',0.05),
+    mixHex(accent,'#ffffff',0.18),
+    mixHex(accent,'#ffffff',0.32),
+    mixHex(accent,'#ffffff',0.46),
+    mixHex(accent,'#ffffff',0.60),
+    mixHex(accent,'#ffffff',0.74),
+    mixHex(accent,'#ffffff',0.88),
+  ];
+
+  const datasets = metrics.map((m, idx)=>({
+    label: m,
+    data: list.map(p=>Number(p[m]||0)),
+    backgroundColor: colors[idx % colors.length],
+    borderColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+  }));
+
+  if(__projTeamChart){ try{ __projTeamChart.destroy(); }catch(_){/*noop*/} __projTeamChart=null; }
+  __projTeamChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: {
+        legend: { labels: { color: tick, font:{ size: 12, weight:'800' } } },
+        tooltip: { callbacks: { footer: (items)=>{
+          const i = items?.[0]?.dataIndex;
+          if(i==null) return '';
+          const t = Number(list[i]?.total);
+          const g = Number(list[i]?.GSAx);
+          const tw = (Number.isFinite(t)?t:0) + (Number.isFinite(g)?g:0);
+          const parts = [];
+          if(Number.isFinite(t)) parts.push(`Total: ${t.toFixed(3)}`);
+          if(Number.isFinite(g)) parts.push(`GSAx: ${g.toFixed(3)}`);
+          parts.push(`Total+GSAx: ${tw.toFixed(3)}`);
+          return parts.join(' · ');
+        } } }
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: tick }, grid: { color: grid } },
+        y: { stacked: true, ticks: { color: tick, autoSkip: false }, grid: { display:false } },
+      }
+    }
+  });
+}
+
+function exportRowsToCsv(filename, rows){
+  const esc = (v)=>{
+    const s = String(v==null?'':v);
+    if(s.includes('"') || s.includes(',') || s.includes('\n')) return `"${s.replace(/\"/g,'"').replace(/"/g,'""')}"`;
+    return s;
+  };
+  const cols = Object.keys(rows[0]||{});
+  const out = [cols.join(',')].concat(rows.map(r=> cols.map(c=> esc(r[c])).join(','))).join('\n');
+  const blob = new Blob([out], { type:'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function renderLeagueTable(teamAgg){
+  if(!projLeagueTable) return;
+  const sortKey = String(__projLeagueSort.key||'totalWithGSAx');
+  const sortDir = String(__projLeagueSort.dir||'desc');
+  const ab = String(teamSelect?.value||'').toUpperCase();
+
+  const rows = (teamAgg||[]).slice();
+  rows.sort((a,b)=>{
+    const va = (sortKey === 'teamName') ? String(a?.teamName||'') : Number(a?.[sortKey]);
+    const vb = (sortKey === 'teamName') ? String(b?.teamName||'') : Number(b?.[sortKey]);
+    if(sortKey === 'teamName'){
+      const cmp = String(va).localeCompare(String(vb));
+      return sortDir==='asc' ? cmp : -cmp;
+    }
+    if(Number.isFinite(va) && Number.isFinite(vb)) return (sortDir==='asc' ? (va-vb) : (vb-va));
+    return 0;
+  });
+
+  const cols = [
+    { key:'rank', label:'Rank', cls:'num' },
+    { key:'teamName', label:'Team', cls:'name' },
+    { key:'players', label:'Players', cls:'num' },
+    { key:'totalWithGSAx', label:'Total', cls:'num' },
+    { key:'Age', label:'Age', cls:'num' },
+    { key:'Rookie', label:'Rookie', cls:'num' },
+    { key:'EVO', label:'EVO', cls:'num' },
+    { key:'EVD', label:'EVD', cls:'num' },
+    { key:'PP', label:'PP', cls:'num' },
+    { key:'SH', label:'SH', cls:'num' },
+    { key:'GSAx', label:'GSAx', cls:'num' },
+  ];
+
+  const th = cols.map(c=>{
+    const isS = c.key === sortKey;
+    const ind = isS ? (sortDir==='asc'?'▲':'▼') : '';
+    return `<th class="${c.cls||''} ${c.cls==='num'?'num':''}" data-sort="${c.key}">${c.label}${ind?`<span class="sort-ind">${ind}</span>`:''}</th>`;
+  }).join('');
+
+  const tb = rows.map(p=>{
+    const isTeam = ab && String(p.team||'').toUpperCase() === ab;
+    return `<tr style="${isTeam?'background:rgba(77,163,255,0.10);':''}">` + cols.map(c=>{
+      if(c.key === 'teamName'){
+        const logo = teamLogoUrl(p.team);
+        const name = String(p.teamName||p.team||'');
+        const cell = `<div style="display:flex; align-items:center; gap:10px;">
+          <img src="${logo}" alt="${String(p.team||'')}" style="width:32px; height:32px; object-fit:contain;" />
+          <span>${name}</span>
+        </div>`;
+        return `<td class="name">${cell}</td>`;
+      }
+      const v = p?.[c.key];
+      const txt = (c.key==='rank' || c.key==='players') ? String(Number(v)||0) : (Number.isFinite(Number(v)) ? fmt3(v) : (v==null?'':String(v)));
+      return `<td class="${c.cls||''} ${(c.cls==='num'?'num':'')}">${txt}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+
+  projLeagueTable.innerHTML = `<thead><tr>${th}</tr></thead><tbody>${tb}</tbody>`;
+
+  try{
+    projLeagueTable.querySelectorAll('th[data-sort]').forEach(thEl=>{
+      thEl.onclick = ()=>{
+        const k = thEl.getAttribute('data-sort');
+        if(!k) return;
+        if(__projLeagueSort.key === k){
+          __projLeagueSort.dir = (__projLeagueSort.dir === 'asc') ? 'desc' : 'asc';
+        }else{
+          __projLeagueSort.key = k;
+          __projLeagueSort.dir = (k === 'teamName') ? 'asc' : 'desc';
+        }
+        renderLeagueTable(teamAgg);
+      };
+    });
+  }catch(_){/*noop*/}
+}
+
+async function renderProjections(){
+  updateSlicerSummaries();
+  const team = String(teamSelect?.value||'').trim();
+  const leaguePlayers = await ensureProjLeaguePlayers();
+  const teamAgg = buildTeamAggsFromLeague(leaguePlayers);
+  const active = projTabOverview?.classList.contains('active') ? 'overview' : (projTabTeam?.classList.contains('active') ? 'team' : 'league');
+
+  if(active === 'overview'){
+    renderOverviewKpis(team, teamAgg);
+    renderTeamRadar(team, teamAgg);
+  } else if(active === 'team'){
+    renderProjTeamStack(team, leaguePlayers);
+  } else {
+    renderLeagueTable(teamAgg);
+  }
+}
+
+try{
+  projExportCsv?.addEventListener('click', async ()=>{
+    const leaguePlayers = await ensureProjLeaguePlayers();
+    const teamAgg = buildTeamAggsFromLeague(leaguePlayers);
+    if(!teamAgg.length) return;
+    exportRowsToCsv('team_projections_league.csv', teamAgg);
+  });
+}catch(_){/*noop*/}
+
+function ensureTableConfig(){
+  try{
+    const raw = localStorage.getItem(TABLE_CONFIG_KEY);
+    if(raw){
+      const obj = JSON.parse(raw);
+      if(obj && typeof obj === 'object' && Array.isArray(obj.metricIds)) return obj;
+    }
+  }catch(_){/*noop*/}
+  return { version: 1, metricIds: [], sortMetricId: 'Offense|GF', sortDir: 'desc' };
+}
+
+function saveTableConfig(cfg){
+  try{ localStorage.setItem(TABLE_CONFIG_KEY, JSON.stringify(cfg)); }catch(_){/*noop*/}
+}
+
+function openTableConfig(){
+  if(tableConfigModal) tableConfigModal.hidden = false;
+}
+
+function closeTableConfig(){
+  if(tableConfigModal) tableConfigModal.hidden = true;
+}
+
+function __setTableConfigStatus(txt){
+  if(tableConfigStatus) tableConfigStatus.textContent = txt || '';
+}
+
+async function buildTableMetricPicker(){
+  const defs = await loadCardDefs();
+  const metrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
+  const nonEdge = metrics.filter(m=>!String(m.id||'').startsWith('Edge|'));
+  const byCat = {};
+  nonEdge.forEach(m=>{
+    const cat = String(m.category||'Other');
+    if(!byCat[cat]) byCat[cat] = [];
+    byCat[cat].push(m);
+  });
+
+  const cfg = ensureTableConfig();
+  const selected = new Set((cfg.metricIds||[]).map(String));
+
+  const cats = Object.keys(byCat).sort();
+  tableMetricPicker.innerHTML = cats.map(cat=>{
+    const items = byCat[cat].slice().sort((a,b)=> String(a.label||a.metric||'').localeCompare(String(b.label||b.metric||'')));
+    const checks = items.map(m=>{
+      const id = String(m.id||'');
+      const label = String(m.label||m.metric||id);
+      const checked = selected.has(id) ? 'checked' : '';
+      return `<label class="table-metric"><input type="checkbox" data-mid="${id}" ${checked} /> <span>${label}</span></label>`;
+    }).join('');
+    return `<div class="table-metric-group"><div class="t">${cat}</div><div class="table-metrics-grid">${checks}</div></div>`;
+  }).join('');
+
+  try{
+    tableMetricPicker.querySelectorAll('input[type="checkbox"][data-mid]').forEach(cb=>{
+      cb.addEventListener('change', ()=>{
+        const id = String(cb.getAttribute('data-mid')||'');
+        if(!id) return;
+        if(cb.checked) selected.add(id);
+        else selected.delete(id);
+        __setTableConfigStatus(`${selected.size} selected`);
+      });
+    });
+  }catch(_){/*noop*/}
+
+  __setTableConfigStatus(`${selected.size} selected`);
+
+  if(btnTableDefaults){
+    btnTableDefaults.onclick = ()=>{
+      selected.clear();
+      // Reasonable default columns
+      ['Offense|GF','Defense|GA','Play Driving|GF%','Play Driving|CF%','Context|Sv%','Context|PDO'].forEach(id=>selected.add(id));
+      try{ tableMetricPicker.querySelectorAll('input[type="checkbox"][data-mid]').forEach(cb=> cb.checked = selected.has(String(cb.getAttribute('data-mid')||''))); }catch(_){/*noop*/}
+      __setTableConfigStatus(`${selected.size} selected`);
+    };
+  }
+  if(btnTableNone){
+    btnTableNone.onclick = ()=>{
+      selected.clear();
+      try{ tableMetricPicker.querySelectorAll('input[type="checkbox"][data-mid]').forEach(cb=>{ cb.checked = false; }); }catch(_){/*noop*/}
+      __setTableConfigStatus(`${selected.size} selected`);
+    };
+  }
+  if(btnTableCardDefaults){
+    btnTableCardDefaults.onclick = ()=>{
+      selected.clear();
+      nonEdge.forEach(m=>{
+        const id = String(m?.id||'');
+        const d = (String(m?.default||'').trim()==='1' || m?.default===true || String(m?.default||'').toLowerCase()==='true');
+        if(id && d) selected.add(id);
+      });
+      try{ tableMetricPicker.querySelectorAll('input[type="checkbox"][data-mid]').forEach(cb=>{ cb.checked = selected.has(String(cb.getAttribute('data-mid')||'')); }); }catch(_){/*noop*/}
+      __setTableConfigStatus(`${selected.size} selected`);
+    };
+  }
+
+  if(btnApplyTableConfig){
+    btnApplyTableConfig.onclick = ()=>{
+      const metricIds = Array.from(selected.values()).filter(id=>id && !id.startsWith('Edge|'));
+      const existingCfg = ensureTableConfig();
+      const next = {
+        version: 1,
+        metricIds,
+        sortMetricId: String(existingCfg.sortMetricId || metricIds[0] || 'Offense|GF'),
+        sortDir: String(existingCfg.sortDir || 'desc'),
+      };
+      saveTableConfig(next);
+      __tableLastKey = '';
+      closeTableConfig();
+      loadTablePanel();
+    };
+  }
+}
+
+function openAndBuildTableConfig(){
+  openTableConfig();
+  buildTableMetricPicker();
+}
+
+try{
+  btnConfigureTable?.addEventListener('click', openAndBuildTableConfig);
+  btnCloseTableConfig?.addEventListener('click', closeTableConfig);
+}catch(_){/*noop*/}
+
+function applyExportButtonTextColor(){
+  try{
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--value-text').trim();
+    if(btnExportTableCsv) btnExportTableCsv.style.color = v;
+    if(projExportCsv) projExportCsv.style.color = v;
+  }catch(_){/*noop*/}
+}
+
+async function loadTablePanel(){
+  if(!teamsTable) return;
+  updateSlicerSummaries();
+
+  const season = String(seasonSelect?.value||'').trim();
+  const seasonState = String(cardSeasonState?.value||'regular');
+  const strengthState = String(cardStrengthState?.value||'5v5');
+  const ratesVal = String(cardRates?.value||'Totals');
+  const scopeVal = String(cardScope?.value||'season');
+  const includeHist = includeHistoric && includeHistoric.checked ? '1' : '0';
+
+  const cfg = ensureTableConfig();
+  const metricIds = Array.isArray(cfg.metricIds) && cfg.metricIds.length ? cfg.metricIds : ['Offense|GF','Defense|GA','Play Driving|GF%','Play Driving|CF%','Context|Sv%','Context|PDO'];
+
+  const keyNow = JSON.stringify({ season, seasonState, strengthState, ratesVal, scopeVal, includeHist, metricIds });
+  if(keyNow === __tableLastKey) return;
+  __tableLastKey = keyNow;
+
+  if(tableError){ tableError.style.display = 'none'; tableError.textContent=''; }
+  if(tableLoading) tableLoading.style.display = '';
+
+  try{
+    const url = `/api/teams/table?season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&includeHistoric=${encodeURIComponent(includeHist)}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
+    const r = await fetch(url, { cache:'no-store' });
+    const data = await r.json();
+    if(!r.ok){
+      if(tableError){ tableError.style.display = ''; tableError.textContent = `Error loading table: ${data?.error||r.status}`; }
+      if(tableLoading) tableLoading.style.display = 'none';
+      return;
+    }
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+
+    const sortMetricId = String(cfg.sortMetricId || metricIds[0] || 'Offense|GF');
+    const sortDir = String(cfg.sortDir || 'desc');
+
+    function sortRows(){
+      rows.sort((a,b)=>{
+        const va = (sortMetricId==='team') ? String(a.team||'') : Number(a[sortMetricId]);
+        const vb = (sortMetricId==='team') ? String(b.team||'') : Number(b[sortMetricId]);
+        if(sortMetricId==='team') return sortDir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+        if(Number.isFinite(va) && Number.isFinite(vb)) return sortDir==='asc' ? (va-vb) : (vb-va);
+        if(Number.isFinite(va)) return -1;
+        if(Number.isFinite(vb)) return 1;
+        return 0;
+      });
+    }
+
+    sortRows();
+
+    const cols = [{ key:'rank', label:'#', cls:'num' }, { key:'team', label:'Team', cls:'' }].concat(metricIds.map(id=>({ key:id, label:String(id.split('|')[1]||id), cls:'num' })));
+
+    function renderTable(activeSortKey, activeSortDir){
+      const head = cols.map(c=>{
+        const isS = c.key === activeSortKey;
+        const ind = isS ? (activeSortDir==='asc'?'▲':'▼') : '';
+        return `<th class="${c.cls||''} ${c.cls==='num'?'num':''}" data-sort="${c.key}">${c.label}${ind?`<span class=\"sort-ind\">${ind}</span>`:''}</th>`;
+      }).join('');
+
+      const body = rows.map((r, idx)=>{
+        const isSel = String(r.team||'').toUpperCase() === String(teamSelect?.value||'').toUpperCase();
+        return `<tr style="${isSel?'background:rgba(77,163,255,0.10);':''}">` + cols.map(c=>{
+          if(c.key==='rank') return `<td class="num">${idx+1}</td>`;
+          if(c.key==='team') return `<td>${String(r.team||'')}</td>`;
+          const v = r[c.key];
+          const txt = Number.isFinite(Number(v)) ? fmtSmart(v) : '—';
+          return `<td class="num">${txt}</td>`;
+        }).join('') + '</tr>';
+      }).join('');
+
+      teamsTable.innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
+
+      try{
+        teamsTable.querySelectorAll('th[data-sort]').forEach(thEl=>{
+          thEl.onclick = ()=>{
+            const key = thEl.getAttribute('data-sort');
+            if(!key) return;
+            let nextDir = 'desc';
+            if(key === activeSortKey) nextDir = (activeSortDir==='asc') ? 'desc' : 'asc';
+
+            cfg.sortMetricId = key;
+            cfg.sortDir = nextDir;
+            saveTableConfig(cfg);
+
+            __tableLastKey = '';
+            loadTablePanel();
+          };
+        });
+      }catch(_){/*noop*/}
+    }
+
+    renderTable(sortMetricId, sortDir);
+    if(tableLoading) tableLoading.style.display = 'none';
+  }catch(e){
+    if(tableError){ tableError.style.display=''; tableError.textContent='Error loading table.'; }
+    if(tableLoading) tableLoading.style.display = 'none';
+  }
+}
+
+try{
+  btnReloadCard?.addEventListener('click', ()=>{ __scatterCache.clear(); __chartsLastKey=''; loadCardPanel(); });
+  btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
+}catch(_){/*noop*/}
+
+try{
+  btnExportTableCsv?.addEventListener('click', async ()=>{
+    const season = String(seasonSelect?.value||'').trim();
+    const seasonState = String(cardSeasonState?.value||'regular');
+    const strengthState = String(cardStrengthState?.value||'5v5');
+    const ratesVal = String(cardRates?.value||'Totals');
+    const scopeVal = String(cardScope?.value||'season');
+    const includeHist = includeHistoric && includeHistoric.checked ? '1' : '0';
+
+    const cfg = ensureTableConfig();
+    const metricIds = Array.isArray(cfg.metricIds) && cfg.metricIds.length ? cfg.metricIds : ['Offense|GF','Defense|GA','Play Driving|GF%','Play Driving|CF%','Context|Sv%','Context|PDO'];
+
+    const url = `/api/teams/table?season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&includeHistoric=${encodeURIComponent(includeHist)}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
+    const r = await fetch(url, { cache:'no-store' });
+    const data = await r.json();
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    if(!rows.length) return;
+
+    const out = rows.map(rr=>{
+      const o = { Team: rr.team };
+      metricIds.forEach(id=>{ o[id] = rr[id]; });
+      return o;
+    });
+    exportRowsToCsv('teams_table.csv', out);
+  });
+}catch(_){/*noop*/}
+
+function reloadAll(){
+  __scatterCache.clear();
+  __chartsLastKey = '';
+  __tableLastKey = '';
+  updateSlicerSummaries();
+  loadCardPanel();
+  if(tabCharts?.classList.contains('active')) renderCharts();
+  if(tabEdge?.classList.contains('active')) loadEdgePanel();
+  if(tabProjections?.classList.contains('active')) renderProjections();
+  if(tabTable?.classList.contains('active')) loadTablePanel();
+}
+
+try{
+  cardSeasonState?.addEventListener('change', reloadAll);
+  cardStrengthState?.addEventListener('change', reloadAll);
+  cardRates?.addEventListener('change', reloadAll);
+}catch(_){/*noop*/}
+
+try{
+  teamSelect?.addEventListener('change', ()=>{ updateHeader(); reloadAll(); });
+  seasonSelect?.addEventListener('change', ()=>{ updateHeader(); reloadAll(); });
+  includeHistoric?.addEventListener('change', ()=>{ __scatterCache.clear(); __chartsLastKey=''; __tableLastKey=''; if(tabCharts?.classList.contains('active')) renderCharts(); if(tabTable?.classList.contains('active')) loadTablePanel(); });
+}catch(_){/*noop*/}
+
+async function initTeamsPage(){
+  restoreTeamsState();
+  updateSlicerSummaries();
+  applyExportButtonTextColor();
+
+  // Wait for base.html to populate selects.
+  const sleep = (ms)=>new Promise(r=>setTimeout(r, ms));
+  const t0 = Date.now();
+  while(Date.now() - t0 < 6000){
+    if(teamSelect && teamSelect.options && teamSelect.options.length) break;
+    await sleep(60);
+  }
+  const s0 = Date.now();
+  while(Date.now() - s0 < 8000){
+    const firstTxt = String(seasonSelect?.options?.[0]?.textContent || '').toLowerCase();
+    if(seasonSelect && seasonSelect.options && seasonSelect.options.length && firstTxt !== 'loading...') break;
+    await sleep(80);
+  }
+
+  await loadCardDefs();
+  await initChartsMetricSelects();
+
+  // Apply restored axes after options exist.
+  try{
+    if(__restoreChartAxes){
+      if(pdX && __restoreChartAxes.pdX && Array.from(pdX.options).some(o=>String(o.value)===String(__restoreChartAxes.pdX))) pdX.value = String(__restoreChartAxes.pdX);
+      if(pdY && __restoreChartAxes.pdY && Array.from(pdY.options).some(o=>String(o.value)===String(__restoreChartAxes.pdY))) pdY.value = String(__restoreChartAxes.pdY);
+      if(scX && __restoreChartAxes.scX && Array.from(scX.options).some(o=>String(o.value)===String(__restoreChartAxes.scX))) scX.value = String(__restoreChartAxes.scX);
+      if(scY && __restoreChartAxes.scY && Array.from(scY.options).some(o=>String(o.value)===String(__restoreChartAxes.scY))) scY.value = String(__restoreChartAxes.scY);
+    }
+  }catch(_){/*noop*/}
+
+  try{ if(__restoreProjSubtab) setActiveProjSubtab(__restoreProjSubtab); }catch(_){/*noop*/}
+  try{ if(__restoreActiveTab) setActiveTab(__restoreActiveTab); }catch(_){/*noop*/}
+  updateSlicerSummaries();
+
+  // Default tab to Card if not restored.
+  if(!tabCard?.classList.contains('active') && !tabCharts?.classList.contains('active') && !tabEdge?.classList.contains('active') && !tabProjections?.classList.contains('active') && !tabTable?.classList.contains('active')){
+    setActiveTab('card');
+  }else{
+    // Ensure current tab panel loads.
+    if(tabCard?.classList.contains('active')) loadCardPanel();
+    if(tabCharts?.classList.contains('active')) renderCharts();
+    if(tabEdge?.classList.contains('active')) loadEdgePanel();
+    if(tabProjections?.classList.contains('active')) renderProjections();
+    if(tabTable?.classList.contains('active')) loadTablePanel();
+  }
+}
+
+initTeamsPage();
+</script>
+{% endblock %}

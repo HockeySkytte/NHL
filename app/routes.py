@@ -822,6 +822,18 @@ def goalies_page():
     )
 
 
+@main_bp.route('/teams')
+def teams_page():
+    """Teams page (team card + team table/charts)."""
+    return render_template(
+        'teams.html',
+        teams=TEAM_ROWS,
+        active_tab='Teams',
+        show_season_state=False,
+        show_include_historic=True,
+    )
+
+
 @main_bp.route('/odds/<int:game_id>')
 def odds_page(game_id: int):
     """Odds page showing ML history for a game (from Sheet1)."""
@@ -3068,6 +3080,1151 @@ def api_goalies_card():
             'dSv': label_dsv,
         },
         'metrics': out_metrics,
+    }
+    j = jsonify(payload)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
+# -----------------------------
+# Teams APIs
+# -----------------------------
+
+_TEAM_STATS_REST_CACHE: Dict[str, Tuple[float, Any]] = {}
+
+
+def _team_stats_rest_get(url: str) -> Optional[Dict[str, Any]]:
+    """Fetch NHL stats REST JSON with a small in-memory TTL cache."""
+    try:
+        ttl_s = max(30, int(os.getenv('TEAM_STATS_REST_CACHE_TTL_SECONDS', '3600') or '3600'))
+    except Exception:
+        ttl_s = 3600
+
+    now = time.time()
+    cached = _TEAM_STATS_REST_CACHE.get(url)
+    if cached and (now - cached[0]) < ttl_s:
+        try:
+            return cached[1]
+        except Exception:
+            return None
+
+    try:
+        r = requests.get(url, timeout=25)
+        if r.status_code != 200:
+            return None
+        j = r.json()
+        if not isinstance(j, dict):
+            return None
+        _TEAM_STATS_REST_CACHE[url] = (now, j)
+        return j
+    except Exception:
+        return None
+
+
+def _edge_rank_to_pct(rank: Any, total_teams: int = 32) -> Optional[float]:
+    try:
+        rr = int(float(rank))
+        if total_teams <= 1:
+            return None
+        if rr < 1 or rr > total_teams:
+            return None
+        return 100.0 * ((float(total_teams) - float(rr)) / float(total_teams - 1))
+    except Exception:
+        return None
+
+
+def _edge_team_extract_value_rank_avg(
+    payload: Dict[str, Any],
+    metric_key: str,
+    strength_code: Optional[str],
+    position_code: Optional[str],
+) -> Tuple[Optional[float], Optional[int], Optional[float]]:
+    """Extract {value, rank, leagueAvg} from NHL Edge team payloads."""
+    try:
+        # Find a list-of-rows node we can filter by strengthCode/positionCode.
+        rows: Optional[List[Dict[str, Any]]] = None
+        for v in payload.values():
+            if isinstance(v, list) and v and isinstance(v[0], dict):
+                keys0 = {str(k).lower() for k in v[0].keys()}
+                has_sc = 'strengthcode' in keys0
+                # Some team endpoints (e.g. shot speed) use `position` instead of `positionCode`.
+                has_pc = ('positioncode' in keys0) or ('position' in keys0)
+                if (strength_code and has_sc) or (position_code and has_pc):
+                    rows = v  # type: ignore[assignment]
+                    break
+                if has_sc or has_pc:
+                    rows = v  # type: ignore[assignment]
+
+        row: Optional[Dict[str, Any]] = None
+        if rows:
+            candidates = rows
+            sc = str(strength_code).lower() if strength_code else None
+            pc = str(position_code).lower() if position_code else None
+
+            def _sc(rr0: Dict[str, Any]) -> str:
+                return str(rr0.get('strengthCode') or '').lower()
+
+            def _pc(rr0: Dict[str, Any]) -> str:
+                return str(rr0.get('positionCode') or rr0.get('position') or '').lower()
+
+            # Best match: strength + position together.
+            if sc and pc:
+                for rr in candidates:
+                    if _sc(rr) == sc and _pc(rr) == pc:
+                        row = rr
+                        break
+            # Fallbacks: exact strength, exact position, then mixed "all".
+            if row is None and sc:
+                for rr in candidates:
+                    if _sc(rr) == sc:
+                        row = rr
+                        break
+            if row is None and pc:
+                for rr in candidates:
+                    if _pc(rr) == pc:
+                        row = rr
+                        break
+            if row is None and sc and pc:
+                for rr in candidates:
+                    if _sc(rr) == sc and _pc(rr) == 'all':
+                        row = rr
+                        break
+            if row is None and sc and pc:
+                for rr in candidates:
+                    if _sc(rr) == 'all' and _pc(rr) == pc:
+                        row = rr
+                        break
+            if row is None and sc:
+                for rr in candidates:
+                    if _sc(rr) == 'all':
+                        row = rr
+                        break
+            if row is None and pc:
+                for rr in candidates:
+                    if _pc(rr) == 'all':
+                        row = rr
+                        break
+            if row is None and candidates:
+                row = candidates[0]
+        else:
+            row = None
+
+        def _to_float(x: Any) -> Optional[float]:
+            try:
+                if x is None:
+                    return None
+                f = float(x)
+                if not math.isfinite(f):
+                    return None
+                return f
+            except Exception:
+                return None
+
+        def _pick_val(node: Any) -> Any:
+            if isinstance(node, dict):
+                return _ci_get(node, 'imperial') or _ci_get(node, 'value') or _ci_get(node, 'metric')
+            return node
+
+        def _pick_avg(node: Any) -> Any:
+            if isinstance(node, dict):
+                avg = _ci_get(node, 'leagueAvg') or _ci_get(node, 'leagueAverage')
+                if isinstance(avg, dict):
+                    return _ci_get(avg, 'imperial') or _ci_get(avg, 'value') or _ci_get(avg, 'metric')
+                return avg
+            return None
+
+        def _pick_rank_from_row(r0: Dict[str, Any]) -> Any:
+            mk = str(metric_key)
+            # zone time uses offensiveZoneRank for offensiveZonePctg
+            if mk.endswith('Pctg'):
+                base = mk[:-4]
+                return _ci_get(r0, f'{base}Rank') or _ci_get(r0, f'{mk}Rank')
+            return _ci_get(r0, f'{mk}Rank')
+
+        # Primary extraction: row-based if present.
+        if isinstance(row, dict):
+            node = _ci_get(row, metric_key)
+            rank_raw = None
+            avg_raw = None
+            if isinstance(node, dict):
+                rank_raw = _ci_get(node, 'rank')
+                avg_raw = _pick_avg(node)
+            if rank_raw is None:
+                rank_raw = _pick_rank_from_row(row)
+
+            val = _pick_val(node)
+            out_val = _to_float(val)
+            out_avg = _to_float(avg_raw)
+            out_rank = None
+            try:
+                if rank_raw is not None:
+                    out_rank = int(float(rank_raw))
+            except Exception:
+                out_rank = None
+
+            if out_val is not None and str(metric_key).endswith('Pctg') and 0.0 <= out_val <= 1.5:
+                out_val = 100.0 * out_val
+            if out_avg is not None and str(metric_key).endswith('Pctg') and 0.0 <= out_avg <= 1.5:
+                out_avg = 100.0 * out_avg
+            return (out_val, out_rank, out_avg)
+
+        # Fallback: nested dict-of-metrics (rare for team endpoints, but safe)
+        for v in payload.values():
+            if isinstance(v, dict):
+                node = _ci_get(v, metric_key)
+                if not isinstance(node, dict):
+                    continue
+                out_val = _to_float(_pick_val(node))
+                out_avg = _to_float(_pick_avg(node))
+                out_rank = None
+                try:
+                    out_rank = int(float(_ci_get(node, 'rank')))
+                except Exception:
+                    out_rank = None
+                if out_val is not None and str(metric_key).endswith('Pctg') and 0.0 <= out_val <= 1.5:
+                    out_val = 100.0 * out_val
+                if out_avg is not None and str(metric_key).endswith('Pctg') and 0.0 <= out_avg <= 1.5:
+                    out_avg = 100.0 * out_avg
+                return (out_val, out_rank, out_avg)
+
+        return (None, None, None)
+    except Exception:
+        return (None, None, None)
+
+
+def _team_id_by_abbrev() -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    for r in (TEAM_ROWS or []):
+        try:
+            ab = str(r.get('Team') or '').strip().upper()
+            tid = _safe_int(r.get('TeamID'))
+            if ab and tid and tid > 0:
+                out[ab] = int(tid)
+        except Exception:
+            continue
+    return out
+
+
+def _build_team_base_stats(*, scope: str, season_int: int, season_state: str) -> Dict[str, Dict[str, Any]]:
+    """Return per-team base totals keyed by team abbrev."""
+    scope_norm = (scope or 'season').strip().lower()
+    if scope_norm not in {'season', 'total'}:
+        scope_norm = 'season'
+    ss_norm = (season_state or 'regular').strip().lower()
+    if ss_norm not in {'regular', 'playoffs', 'all'}:
+        ss_norm = 'regular'
+
+    team_id_map = _team_id_by_abbrev()
+    abbrev_by_id = {tid: ab for ab, tid in team_id_map.items()}
+
+    def _summary_url(game_type_id: int) -> str:
+        return (
+            'https://api.nhle.com/stats/rest/en/team/summary'
+            '?isAggregate=false&isGame=false&reportType=basic&reportName=teamsummary'
+            f'&cayenneExp=seasonId={int(season_int)}%20and%20gameTypeId={int(game_type_id)}'
+        )
+
+    def _shoot_url(game_type_id: int) -> str:
+        return (
+            'https://api.nhle.com/stats/rest/en/team/summaryshooting'
+            '?isAggregate=false&isGame=false&reportType=basic&reportName=teamsummaryshooting'
+            f'&cayenneExp=seasonId={int(season_int)}%20and%20gameTypeId={int(game_type_id)}'
+        )
+
+    def _summary_url_total(team_id: int) -> str:
+        return (
+            'https://api.nhle.com/stats/rest/en/team/summary'
+            '?isAggregate=true&isGame=false&reportType=basic&reportName=teamsummary'
+            f'&cayenneExp=teamId={int(team_id)}'
+        )
+
+    def _shoot_url_total(team_id: int) -> str:
+        return (
+            'https://api.nhle.com/stats/rest/en/team/summaryshooting'
+            '?isAggregate=true&isGame=false&reportType=basic&reportName=teamsummaryshooting'
+            f'&cayenneExp=teamId={int(team_id)}'
+        )
+
+    def _flt(x: Any) -> float:
+        try:
+            f = float(x)
+            return f if math.isfinite(f) else 0.0
+        except Exception:
+            return 0.0
+
+    def _rows_by_teamid(j: Optional[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+        out: Dict[int, Dict[str, Any]] = {}
+        try:
+            rows = j.get('data') if isinstance(j, dict) else None
+            if not isinstance(rows, list):
+                return out
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                tid = _safe_int(r.get('teamId'))
+                if tid and tid > 0:
+                    out[int(tid)] = r
+        except Exception:
+            return out
+        return out
+
+    # Season scope: fetch league-wide in a handful of requests.
+    if scope_norm == 'season':
+        gtypes: List[int]
+        if ss_norm == 'regular':
+            gtypes = [2]
+        elif ss_norm == 'playoffs':
+            gtypes = [3]
+        else:
+            gtypes = [2, 3]
+
+        summary_by_tid: Dict[int, Dict[str, Any]] = {}
+        shoot_by_tid: Dict[int, Dict[str, Any]] = {}
+        for gt in gtypes:
+            js = _team_stats_rest_get(_summary_url(gt)) or {}
+            jj = _team_stats_rest_get(_shoot_url(gt)) or {}
+            for tid, r in _rows_by_teamid(js).items():
+                prev = summary_by_tid.get(tid)
+                if not prev:
+                    summary_by_tid[tid] = dict(r)
+                else:
+                    # Additive totals
+                    prev['gamesPlayed'] = _flt(prev.get('gamesPlayed')) + _flt(r.get('gamesPlayed'))
+                    prev['goalsFor'] = _flt(prev.get('goalsFor')) + _flt(r.get('goalsFor'))
+                    prev['goalsAgainst'] = _flt(prev.get('goalsAgainst')) + _flt(r.get('goalsAgainst'))
+                    prev['_shotsForTotal'] = _flt(prev.get('_shotsForTotal')) + (_flt(r.get('shotsForPerGame')) * _flt(r.get('gamesPlayed')))
+                    prev['_shotsAgainstTotal'] = _flt(prev.get('_shotsAgainstTotal')) + (_flt(r.get('shotsAgainstPerGame')) * _flt(r.get('gamesPlayed')))
+            for tid, r in _rows_by_teamid(jj).items():
+                prev = shoot_by_tid.get(tid)
+                if not prev:
+                    shoot_by_tid[tid] = dict(r)
+                else:
+                    prev['gamesPlayed'] = _flt(prev.get('gamesPlayed')) + _flt(r.get('gamesPlayed'))
+                    prev['satFor'] = _flt(prev.get('satFor')) + _flt(r.get('satFor'))
+                    prev['satAgainst'] = _flt(prev.get('satAgainst')) + _flt(r.get('satAgainst'))
+                    prev['usatFor'] = _flt(prev.get('usatFor')) + _flt(r.get('usatFor'))
+                    prev['usatAgainst'] = _flt(prev.get('usatAgainst')) + _flt(r.get('usatAgainst'))
+
+        out: Dict[str, Dict[str, Any]] = {}
+        for tid, rsum in summary_by_tid.items():
+            ab = abbrev_by_id.get(int(tid))
+            if not ab:
+                continue
+            gp = float(rsum.get('gamesPlayed') or 0.0)
+            sf_total = _flt(rsum.get('_shotsForTotal')) if '_shotsForTotal' in rsum else (_flt(rsum.get('shotsForPerGame')) * gp)
+            sa_total = _flt(rsum.get('_shotsAgainstTotal')) if '_shotsAgainstTotal' in rsum else (_flt(rsum.get('shotsAgainstPerGame')) * gp)
+            out[ab] = {
+                'team': ab,
+                'teamId': int(tid),
+                'scope': 'season',
+                'season': int(season_int),
+                'seasonState': ss_norm,
+                'GP': gp,
+                'GF': _flt(rsum.get('goalsFor')),
+                'GA': _flt(rsum.get('goalsAgainst')),
+                'SF': sf_total,
+                'SA': sa_total,
+                'xGF': None,
+                'xGA': None,
+            }
+
+        for tid, rsh in shoot_by_tid.items():
+            ab = abbrev_by_id.get(int(tid))
+            if not ab or ab not in out:
+                continue
+            out[ab].update({
+                'CF': _flt(rsh.get('satFor')),
+                'CA': _flt(rsh.get('satAgainst')),
+                'FF': _flt(rsh.get('usatFor')),
+                'FA': _flt(rsh.get('usatAgainst')),
+            })
+
+        return out
+
+    # Total scope: per-team (teamId-filtered) aggregate endpoints.
+    out2: Dict[str, Dict[str, Any]] = {}
+    for ab, tid in team_id_map.items():
+        js = _team_stats_rest_get(_summary_url_total(tid))
+        jj = _team_stats_rest_get(_shoot_url_total(tid))
+        try:
+            row_s = (js or {}).get('data')
+            row_j = (jj or {}).get('data')
+            rs = row_s[0] if isinstance(row_s, list) and row_s and isinstance(row_s[0], dict) else {}
+            rsh = row_j[0] if isinstance(row_j, list) and row_j and isinstance(row_j[0], dict) else {}
+
+            gp = _flt(rs.get('gamesPlayed'))
+            sf_total = _flt(rs.get('shotsForPerGame')) * gp
+            sa_total = _flt(rs.get('shotsAgainstPerGame')) * gp
+            out2[ab] = {
+                'team': ab,
+                'teamId': int(tid),
+                'scope': 'total',
+                'season': None,
+                'seasonState': 'all',
+                'GP': gp,
+                'GF': _flt(rs.get('goalsFor')),
+                'GA': _flt(rs.get('goalsAgainst')),
+                'SF': sf_total,
+                'SA': sa_total,
+                'CF': _flt(rsh.get('satFor')),
+                'CA': _flt(rsh.get('satAgainst')),
+                'FF': _flt(rsh.get('usatFor')),
+                'FA': _flt(rsh.get('usatAgainst')),
+                'xGF': None,
+                'xGA': None,
+            }
+        except Exception:
+            continue
+    return out2
+
+
+@main_bp.route('/api/teams/card')
+def api_teams_card():
+    """Team card metrics + league percentiles (32 teams) from NHL stats REST + NHL Edge (rank->pct).
+
+    Query params:
+      season=<int>
+      team=<abbrev>
+      seasonState=regular|playoffs|all
+      strengthState=5v5|PP|SH|Other|all
+      rates=Totals|PerGame
+      metricIds=<comma-separated Category|Metric ids>
+      scope=season|total
+    """
+    season = str(request.args.get('season') or '').strip()
+    team_ab = str(request.args.get('team') or request.args.get('teamAbbrev') or request.args.get('team_abbrev') or '').strip().upper()
+    season_state = str(request.args.get('seasonState') or 'regular').strip().lower()
+    strength_state = str(request.args.get('strengthState') or '5v5').strip()
+    position_code_req = str(request.args.get('positionCode') or request.args.get('posCode') or request.args.get('position') or 'all').strip().lower() or 'all'
+    rates = str(request.args.get('rates') or 'Totals').strip() or 'Totals'
+    scope = str(request.args.get('scope') or 'season').strip().lower()
+    metric_ids_raw = str(request.args.get('metricIds') or request.args.get('metrics') or '').strip()
+
+    try:
+        season_int = int(season) if season else 20252026
+    except Exception:
+        season_int = 20252026
+
+    if season_state not in {'regular', 'playoffs', 'all'}:
+        season_state = 'regular'
+    if strength_state not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
+        strength_state = '5v5'
+    if rates not in {'Totals', 'PerGame'}:
+        rates = 'Totals'
+    if scope not in {'season', 'total'}:
+        scope = 'season'
+
+    if not team_ab:
+        return jsonify({'error': 'missing_team'}), 400
+
+    metric_ids: List[str] = []
+    if metric_ids_raw:
+        metric_ids = [s.strip() for s in metric_ids_raw.split(',') if s and s.strip()]
+    if not metric_ids:
+        defs0 = _load_card_metrics_defs('teams')
+        metric_ids = [str(m.get('id')) for m in (defs0.get('metrics') or []) if isinstance(m, dict) and m.get('id')]
+
+    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state)
+    mine_base = base.get(team_ab)
+    if not mine_base:
+        return jsonify({'error': 'not_found', 'team': team_ab}), 404
+
+    defs = _load_card_metrics_defs('teams')
+    def_map: Dict[str, Dict[str, Any]] = {str(m.get('id')): m for m in (defs.get('metrics') or []) if isinstance(m, dict) and m.get('id')}
+
+    def _pct(n: Optional[float], d: Optional[float]) -> Optional[float]:
+        try:
+            if n is None or d is None:
+                return None
+            if d <= 0:
+                return None
+            return 100.0 * (float(n) / float(d))
+        except Exception:
+            return None
+
+    def _rate_from(gp: float, vv: Optional[float]) -> Optional[float]:
+        if rates == 'Totals':
+            return vv
+        if gp <= 0:
+            return None
+        try:
+            return float(vv) / float(gp) if vv is not None else None
+        except Exception:
+            return None
+
+    # For Edge metrics we compute percentiles directly from rank (not from league distributions).
+    special_pct: Dict[str, Optional[float]] = {}
+
+    def _compute_metric(metric_id: str, v: Dict[str, Any], team_id: int) -> Optional[float]:
+        gp = float(v.get('GP') or 0.0)
+        cf = float(v.get('CF') or 0.0)
+        ca = float(v.get('CA') or 0.0)
+        ff = float(v.get('FF') or 0.0)
+        fa = float(v.get('FA') or 0.0)
+        sf = float(v.get('SF') or 0.0)
+        sa = float(v.get('SA') or 0.0)
+        gf = float(v.get('GF') or 0.0)
+        ga = float(v.get('GA') or 0.0)
+        xgf = v.get('xGF')
+        xga = v.get('xGA')
+
+        category = None
+        metric = None
+        if '|' in metric_id:
+            category, metric = metric_id.split('|', 1)
+        else:
+            metric = metric_id
+
+        if category == 'Edge':
+            if int(season_int or 0) < 20212022 and scope == 'season':
+                special_pct[metric_id] = None
+                return None
+            mdef = def_map.get(metric_id) or {}
+            link = str(mdef.get('link') or '').strip()
+            if not link:
+                special_pct[metric_id] = None
+                return None
+            game_type = _edge_game_type(season_state)
+            url = _edge_format_url(link, int(team_id), int(season_int or 0), int(game_type))
+            if not url:
+                special_pct[metric_id] = None
+                return None
+            payload_edge = _edge_get_cached_json(url)
+            if not payload_edge:
+                special_pct[metric_id] = None
+                return None
+
+            strength_code = None
+            if str(mdef.get('strengthCode') or '').strip().lower() == 'strengthcode':
+                strength_code = _edge_strength_code(strength_state)
+            pos_code = None
+            if str(mdef.get('positionCode') or '').strip().lower() in {'positioncode', 'position'}:
+                pos_code = position_code_req or 'all'
+
+            val_e, rank_e, avg_e = _edge_team_extract_value_rank_avg(payload_edge, str(metric or ''), strength_code, pos_code)
+            if rank_e is not None:
+                special_pct[metric_id] = _edge_rank_to_pct(rank_e, 32)
+            else:
+                special_pct[metric_id] = None
+            # Percent-of-time fields come back as 0..1.
+            if val_e is not None and str(metric or '').lower().endswith('pctg') and 0.0 <= float(val_e) <= 1.5:
+                val_e = 100.0 * float(val_e)
+            # Keep leagueAvg in case the UI wants it later.
+            try:
+                if avg_e is not None:
+                    v.setdefault('_edgeAvg', {})[metric_id] = avg_e
+                if rank_e is not None:
+                    v.setdefault('_edgeRank', {})[metric_id] = rank_e
+            except Exception:
+                pass
+            return val_e
+
+        # Base totals
+        if metric == 'CA':
+            return _rate_from(gp, ca)
+        if metric == 'FA':
+            return _rate_from(gp, fa)
+        if metric == 'SA':
+            return _rate_from(gp, sa)
+        if metric == 'GA':
+            return _rate_from(gp, ga)
+        if metric == 'xGA':
+            return _rate_from(gp, float(xga) if xga is not None else None)
+
+        if metric == 'CF':
+            return _rate_from(gp, cf)
+        if metric == 'FF':
+            return _rate_from(gp, ff)
+        if metric == 'SF':
+            return _rate_from(gp, sf)
+        if metric == 'GF':
+            return _rate_from(gp, gf)
+        if metric == 'xGF':
+            return _rate_from(gp, float(xgf) if xgf is not None else None)
+
+        # Percentages
+        if metric == 'CF%':
+            return _pct(cf, (cf + ca))
+        if metric == 'FF%':
+            return _pct(ff, (ff + fa))
+        if metric == 'SF%':
+            return _pct(sf, (sf + sa))
+        if metric == 'GF%':
+            return _pct(gf, (gf + ga))
+        if metric == 'xGF%':
+            if xgf is None or xga is None:
+                return None
+            return _pct(float(xgf), float(xgf) + float(xga))
+
+        # Differentials
+        if metric == 'C+/-':
+            return _rate_from(gp, (cf - ca))
+        if metric == 'F+/-':
+            return _rate_from(gp, (ff - fa))
+        if metric == 'S+/-':
+            return _rate_from(gp, (sf - sa))
+        if metric == 'G+/-':
+            return _rate_from(gp, (gf - ga))
+        if metric == 'xG+/-':
+            if xgf is None or xga is None:
+                return None
+            return _rate_from(gp, (float(xgf) - float(xga)))
+
+        # Context
+        if category == 'Context' and metric == 'Sh%':
+            return _pct(gf, sf)
+        if category == 'Context' and metric == 'Sv%':
+            if sa <= 0:
+                return 100.0 if ga <= 0 else 0.0
+            return 100.0 * (1.0 - (ga / sa))
+        if category == 'Context' and metric == 'PDO':
+            sh_oi = _pct(gf, sf)
+            sv_oi = 100.0 if sa <= 0 and ga <= 0 else (0.0 if sa <= 0 else 100.0 * (1.0 - (ga / sa)))
+            return (sh_oi + sv_oi) if (sh_oi is not None and sv_oi is not None) else None
+        if category == 'Context' and metric == 'GAx':
+            if xgf is None:
+                return None
+            return _rate_from(gp, (gf - float(xgf)))
+        if category == 'Context' and metric == 'GSAx':
+            if xga is None:
+                return None
+            return _rate_from(gp, (float(xga) - ga))
+
+        return None
+
+    edge_metric_ids = {mid for mid in metric_ids if str(mid).startswith('Edge|')}
+
+    # If the request is Edge-only, do NOT compute Edge for all teams.
+    # Edge endpoints already provide league rank, so we can render rank-based bars
+    # without expensive 32-team fanout.
+    if edge_metric_ids and len(edge_metric_ids) == len(metric_ids):
+        team_id_i = int(mine_base.get('teamId') or 0)
+        mine_edge: Dict[str, Optional[float]] = {}
+        for mid in metric_ids:
+            mine_edge[mid] = _compute_metric(mid, mine_base, team_id_i)
+
+        edge_rank_map = (mine_base.get('_edgeRank') or {}) if isinstance(mine_base, dict) else {}
+        edge_avg_map = (mine_base.get('_edgeAvg') or {}) if isinstance(mine_base, dict) else {}
+        out_metrics_edge: Dict[str, Any] = {}
+        for mid in metric_ids:
+            out_metrics_edge[mid] = {
+                'value': mine_edge.get(mid),
+                'pct': special_pct.get(mid),
+                'rank': edge_rank_map.get(mid),
+                'avg': edge_avg_map.get(mid),
+            }
+
+        payload = {
+            'team': team_ab,
+            'teamId': team_id_i,
+            'season': int(season_int) if scope == 'season' else None,
+            'scope': scope,
+            'seasonState': season_state,
+            'strengthState': strength_state,
+            'rates': rates,
+            'metrics': out_metrics_edge,
+        }
+        j = jsonify(payload)
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j
+
+    # Compute derived metrics for all teams (for percentile pools).
+    derived: Dict[str, Dict[str, Optional[float]]] = {}
+    for ab, v in base.items():
+        tid = int(v.get('teamId') or 0)
+        per_team: Dict[str, Optional[float]] = {}
+        for mid in metric_ids:
+            per_team[mid] = _compute_metric(mid, v, tid)
+        derived[ab] = per_team
+
+    def _percentile(values: List[float], v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return None
+        if not values:
+            return None
+        import bisect
+        arr = sorted(values)
+        idx = bisect.bisect_right(arr, float(v))
+        return 100.0 * (idx / float(len(arr)))
+
+    # Build distributions excluding Edge (Edge percentiles come from rank).
+    dist_all: Dict[str, List[float]] = {mid: [] for mid in metric_ids}
+    for _ab, mm in derived.items():
+        for mid in metric_ids:
+            if mid in edge_metric_ids:
+                continue
+            vv = mm.get(mid)
+            if vv is None:
+                continue
+            try:
+                fv = float(vv)
+                if not math.isfinite(fv):
+                    continue
+                dist_all[mid].append(fv)
+            except Exception:
+                continue
+
+    mine = derived.get(team_ab) or {}
+
+    def _lower_is_better_team(metric_id: str) -> bool:
+        m = metric_id
+        if '|' in metric_id:
+            _, m = metric_id.split('|', 1)
+        m = str(m or '').strip()
+        return m in {
+            'CA', 'FA', 'SA', 'GA', 'xGA',
+        }
+
+    edge_rank_map = (mine_base.get('_edgeRank') or {}) if isinstance(mine_base, dict) else {}
+    edge_avg_map = (mine_base.get('_edgeAvg') or {}) if isinstance(mine_base, dict) else {}
+
+    out_metrics: Dict[str, Any] = {}
+    for mid in metric_ids:
+        val = mine.get(mid)
+        pct = special_pct.get(mid)
+        if pct is None and mid not in edge_metric_ids:
+            pool = dist_all.get(mid) or []
+            pct = _percentile(pool, val)
+            if pct is not None and _lower_is_better_team(mid):
+                pct = 100.0 - pct
+        mm: Dict[str, Any] = {'value': val, 'pct': pct}
+        if mid in edge_metric_ids:
+            mm['rank'] = edge_rank_map.get(mid)
+            mm['avg'] = edge_avg_map.get(mid)
+        out_metrics[mid] = mm
+
+    payload = {
+        'team': team_ab,
+        'teamId': int(mine_base.get('teamId') or 0),
+        'season': int(season_int) if scope == 'season' else None,
+        'scope': scope,
+        'seasonState': season_state,
+        'strengthState': strength_state,
+        'rates': rates,
+        'metrics': out_metrics,
+    }
+    j = jsonify(payload)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
+@main_bp.route('/api/teams/table', methods=['GET', 'POST'])
+def api_teams_table():
+    """Bulk team table metrics for the selected season/scope.
+
+    Query params:
+      season=<int>
+      seasonState=regular|playoffs|all
+      strengthState=5v5|PP|SH|Other|all
+      rates=Totals|PerGame
+      scope=season|total
+      metricIds=<comma separated Category|Metric>
+      includeHistoric=0|1
+
+    Notes:
+      - Does not compute NHL Edge metrics in bulk by default (those require upstream calls).
+    """
+    body: Optional[Dict[str, Any]] = None
+    try:
+        if request.method == 'POST':
+            maybe = request.get_json(silent=True)
+            if isinstance(maybe, dict):
+                body = maybe
+    except Exception:
+        body = None
+
+    def _get(key: str, default: Any = None) -> Any:
+        try:
+            if isinstance(body, dict) and key in body and body.get(key) is not None:
+                return body.get(key)
+        except Exception:
+            pass
+        return request.args.get(key, default)
+
+    season = str(_get('season') or '').strip()
+    season_state = str(_get('seasonState', 'regular') or 'regular').strip().lower()
+    strength_state = str(_get('strengthState', '5v5') or '5v5').strip()
+    rates = str(_get('rates') or 'Totals').strip() or 'Totals'
+    scope = str(_get('scope', 'season') or 'season').strip().lower()
+    include_historic = str(_get('includeHistoric') or _get('include_historic') or '').strip()
+    metric_ids_val = _get('metricIds') or _get('metrics')
+
+    try:
+        season_int = int(season) if season else 20252026
+    except Exception:
+        season_int = 20252026
+
+    if season_state not in {'regular', 'playoffs', 'all'}:
+        season_state = 'regular'
+    if strength_state not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
+        strength_state = '5v5'
+    if rates not in {'Totals', 'PerGame'}:
+        rates = 'Totals'
+    if scope not in {'season', 'total'}:
+        scope = 'season'
+
+    metric_ids: List[str] = []
+    if isinstance(metric_ids_val, list):
+        metric_ids = [str(s).strip() for s in metric_ids_val if s is not None and str(s).strip()]
+    else:
+        metric_ids_raw = str(metric_ids_val or '').strip()
+        if metric_ids_raw:
+            metric_ids = [s.strip() for s in metric_ids_raw.split(',') if s and s.strip()]
+    if not metric_ids:
+        defs0 = _load_card_metrics_defs('teams')
+        metric_ids = [str(m.get('id')) for m in (defs0.get('metrics') or []) if isinstance(m, dict) and m.get('id')]
+
+    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state)
+
+    # Filter historic teams (based on Teams.csv Active flag) unless requested.
+    show_hist = include_historic in {'1', 'true', 'True', 'yes', 'YES'}
+    if not show_hist:
+        active = {str(r.get('Team') or '').strip().upper() for r in (TEAM_ROWS or []) if str(r.get('Active') or '').strip() == '1'}
+        base = {ab: v for ab, v in base.items() if ab in active}
+
+    def _pct(n: Optional[float], d: Optional[float]) -> Optional[float]:
+        try:
+            if n is None or d is None:
+                return None
+            if d <= 0:
+                return None
+            return 100.0 * (float(n) / float(d))
+        except Exception:
+            return None
+
+    def _rate_from(gp: float, vv: Optional[float]) -> Optional[float]:
+        if rates == 'Totals':
+            return vv
+        if gp <= 0:
+            return None
+        try:
+            return float(vv) / float(gp) if vv is not None else None
+        except Exception:
+            return None
+
+    def _compute_non_edge(metric_id: str, v: Dict[str, Any]) -> Optional[float]:
+        gp = float(v.get('GP') or 0.0)
+        cf = float(v.get('CF') or 0.0)
+        ca = float(v.get('CA') or 0.0)
+        ff = float(v.get('FF') or 0.0)
+        fa = float(v.get('FA') or 0.0)
+        sf = float(v.get('SF') or 0.0)
+        sa = float(v.get('SA') or 0.0)
+        gf = float(v.get('GF') or 0.0)
+        ga = float(v.get('GA') or 0.0)
+        xgf = v.get('xGF')
+        xga = v.get('xGA')
+
+        category = None
+        metric = None
+        if '|' in metric_id:
+            category, metric = metric_id.split('|', 1)
+        else:
+            metric = metric_id
+
+        if category == 'Edge':
+            return None
+
+        if metric == 'CA':
+            return _rate_from(gp, ca)
+        if metric == 'FA':
+            return _rate_from(gp, fa)
+        if metric == 'SA':
+            return _rate_from(gp, sa)
+        if metric == 'GA':
+            return _rate_from(gp, ga)
+        if metric == 'xGA':
+            return _rate_from(gp, float(xga) if xga is not None else None)
+
+        if metric == 'CF':
+            return _rate_from(gp, cf)
+        if metric == 'FF':
+            return _rate_from(gp, ff)
+        if metric == 'SF':
+            return _rate_from(gp, sf)
+        if metric == 'GF':
+            return _rate_from(gp, gf)
+        if metric == 'xGF':
+            return _rate_from(gp, float(xgf) if xgf is not None else None)
+
+        if metric == 'CF%':
+            return _pct(cf, (cf + ca))
+        if metric == 'FF%':
+            return _pct(ff, (ff + fa))
+        if metric == 'SF%':
+            return _pct(sf, (sf + sa))
+        if metric == 'GF%':
+            return _pct(gf, (gf + ga))
+        if metric == 'xGF%':
+            if xgf is None or xga is None:
+                return None
+            return _pct(float(xgf), float(xgf) + float(xga))
+
+        if metric == 'C+/-':
+            return _rate_from(gp, (cf - ca))
+        if metric == 'F+/-':
+            return _rate_from(gp, (ff - fa))
+        if metric == 'S+/-':
+            return _rate_from(gp, (sf - sa))
+        if metric == 'G+/-':
+            return _rate_from(gp, (gf - ga))
+        if metric == 'xG+/-':
+            if xgf is None or xga is None:
+                return None
+            return _rate_from(gp, (float(xgf) - float(xga)))
+
+        if category == 'Context' and metric == 'Sh%':
+            return _pct(gf, sf)
+        if category == 'Context' and metric == 'Sv%':
+            if sa <= 0:
+                return 100.0 if ga <= 0 else 0.0
+            return 100.0 * (1.0 - (ga / sa))
+        if category == 'Context' and metric == 'PDO':
+            sh_oi = _pct(gf, sf)
+            sv_oi = 100.0 if sa <= 0 and ga <= 0 else (0.0 if sa <= 0 else 100.0 * (1.0 - (ga / sa)))
+            return (sh_oi + sv_oi) if (sh_oi is not None and sv_oi is not None) else None
+        if category == 'Context' and metric == 'GAx':
+            if xgf is None:
+                return None
+            return _rate_from(gp, (gf - float(xgf)))
+        if category == 'Context' and metric == 'GSAx':
+            if xga is None:
+                return None
+            return _rate_from(gp, (float(xga) - ga))
+
+        return None
+
+    rows_out: List[Dict[str, Any]] = []
+    for ab, v in base.items():
+        d = {
+            'team': ab,
+            'teamId': int(v.get('teamId') or 0),
+        }
+        for mid in metric_ids:
+            d[mid] = _compute_non_edge(mid, v)
+        rows_out.append(d)
+
+    # Stable ordering: team name.
+    rows_out.sort(key=lambda x: str(x.get('team') or ''))
+    payload = {
+        'season': int(season_int) if scope == 'season' else None,
+        'scope': scope,
+        'seasonState': season_state,
+        'strengthState': strength_state,
+        'rates': rates,
+        'metricIds': metric_ids,
+        'rows': rows_out,
+    }
+    j = jsonify(payload)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
+@main_bp.route('/api/teams/scatter')
+def api_teams_scatter():
+    """League-wide scatter data for the Teams 'Charts' tab.
+
+    Query params:
+      season=<int>
+      seasonState=regular|playoffs|all
+      rates=Totals|PerGame
+      scope=season|total
+      includeHistoric=0|1
+      xMetricId=<Category|Metric>
+      yMetricId=<Category|Metric>
+
+    Notes:
+      - Uses NHL stats REST aggregates (non-Edge metrics only).
+      - Does NOT support NHL Edge metrics.
+    """
+    season = str(request.args.get('season') or '').strip()
+    season_state = str(request.args.get('seasonState') or 'regular').strip().lower()
+    rates = str(request.args.get('rates') or 'Totals').strip() or 'Totals'
+    scope = str(request.args.get('scope') or 'season').strip().lower()
+    include_historic = str(request.args.get('includeHistoric') or request.args.get('include_historic') or '').strip()
+    x_metric_id = str(request.args.get('xMetricId') or request.args.get('xMetric') or '').strip()
+    y_metric_id = str(request.args.get('yMetricId') or request.args.get('yMetric') or '').strip()
+
+    try:
+        season_int = int(season) if season else 20252026
+    except Exception:
+        season_int = 20252026
+
+    if season_state not in {'regular', 'playoffs', 'all'}:
+        season_state = 'regular'
+    if rates not in {'Totals', 'PerGame'}:
+        rates = 'Totals'
+    if scope not in {'season', 'total'}:
+        scope = 'season'
+
+    if not x_metric_id or not y_metric_id:
+        return jsonify({'error': 'missing_metric', 'hint': 'Provide xMetricId and yMetricId'}), 400
+    if str(x_metric_id).startswith('Edge|') or str(y_metric_id).startswith('Edge|'):
+        return jsonify({'error': 'edge_not_supported'}), 400
+
+    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state)
+
+    # Filter historic teams (based on Teams.csv Active flag) unless requested.
+    show_hist = include_historic in {'1', 'true', 'True', 'yes', 'YES'}
+    if not show_hist:
+        active = {str(r.get('Team') or '').strip().upper() for r in (TEAM_ROWS or []) if str(r.get('Active') or '').strip() == '1'}
+        base = {ab: v for ab, v in base.items() if ab in active}
+
+    team_name_by_ab = {str(r.get('Team') or '').strip().upper(): str(r.get('Name') or '').strip() for r in (TEAM_ROWS or [])}
+
+    def _pct(n: Optional[float], d: Optional[float]) -> Optional[float]:
+        try:
+            if n is None or d is None:
+                return None
+            if d <= 0:
+                return None
+            return 100.0 * (float(n) / float(d))
+        except Exception:
+            return None
+
+    def _rate_from(gp: float, vv: Optional[float]) -> Optional[float]:
+        if rates == 'Totals':
+            return vv
+        if gp <= 0:
+            return None
+        try:
+            return float(vv) / float(gp) if vv is not None else None
+        except Exception:
+            return None
+
+    def _compute_non_edge(metric_id: str, v: Dict[str, Any]) -> Optional[float]:
+        gp = float(v.get('GP') or 0.0)
+        cf = float(v.get('CF') or 0.0)
+        ca = float(v.get('CA') or 0.0)
+        ff = float(v.get('FF') or 0.0)
+        fa = float(v.get('FA') or 0.0)
+        sf = float(v.get('SF') or 0.0)
+        sa = float(v.get('SA') or 0.0)
+        gf = float(v.get('GF') or 0.0)
+        ga = float(v.get('GA') or 0.0)
+        xgf = v.get('xGF')
+        xga = v.get('xGA')
+
+        category = None
+        metric = None
+        if '|' in metric_id:
+            category, metric = metric_id.split('|', 1)
+        else:
+            metric = metric_id
+
+        if category == 'Edge':
+            return None
+
+        if metric == 'CA':
+            return _rate_from(gp, ca)
+        if metric == 'FA':
+            return _rate_from(gp, fa)
+        if metric == 'SA':
+            return _rate_from(gp, sa)
+        if metric == 'GA':
+            return _rate_from(gp, ga)
+        if metric == 'xGA':
+            return _rate_from(gp, float(xga) if xga is not None else None)
+
+        if metric == 'CF':
+            return _rate_from(gp, cf)
+        if metric == 'FF':
+            return _rate_from(gp, ff)
+        if metric == 'SF':
+            return _rate_from(gp, sf)
+        if metric == 'GF':
+            return _rate_from(gp, gf)
+        if metric == 'xGF':
+            return _rate_from(gp, float(xgf) if xgf is not None else None)
+
+        if metric == 'CF%':
+            return _pct(cf, (cf + ca))
+        if metric == 'FF%':
+            return _pct(ff, (ff + fa))
+        if metric == 'SF%':
+            return _pct(sf, (sf + sa))
+        if metric == 'GF%':
+            return _pct(gf, (gf + ga))
+        if metric == 'xGF%':
+            if xgf is None or xga is None:
+                return None
+            return _pct(float(xgf), float(xgf) + float(xga))
+
+        if metric == 'C+/-':
+            return _rate_from(gp, (cf - ca))
+        if metric == 'F+/-':
+            return _rate_from(gp, (ff - fa))
+        if metric == 'S+/-':
+            return _rate_from(gp, (sf - sa))
+        if metric == 'G+/-':
+            return _rate_from(gp, (gf - ga))
+        if metric == 'xG+/-':
+            if xgf is None or xga is None:
+                return None
+            return _rate_from(gp, (float(xgf) - float(xga)))
+
+        if category == 'Context' and metric == 'Sh%':
+            return _pct(gf, sf)
+        if category == 'Context' and metric == 'Sv%':
+            if sa <= 0:
+                return 100.0 if ga <= 0 else 0.0
+            return 100.0 * (1.0 - (ga / sa))
+        if category == 'Context' and metric == 'PDO':
+            sh_oi = _pct(gf, sf)
+            sv_oi = 100.0 if sa <= 0 and ga <= 0 else (0.0 if sa <= 0 else 100.0 * (1.0 - (ga / sa)))
+            return (sh_oi + sv_oi) if (sh_oi is not None and sv_oi is not None) else None
+        if category == 'Context' and metric == 'GAx':
+            if xgf is None:
+                return None
+            return _rate_from(gp, (gf - float(xgf)))
+        if category == 'Context' and metric == 'GSAx':
+            if xga is None:
+                return None
+            return _rate_from(gp, (float(xga) - ga))
+
+        return None
+
+    points: List[Dict[str, Any]] = []
+    for ab, v in base.items():
+        x = _compute_non_edge(x_metric_id, v)
+        y = _compute_non_edge(y_metric_id, v)
+        try:
+            fx = float(x) if x is not None else None
+            fy = float(y) if y is not None else None
+        except Exception:
+            fx = None
+            fy = None
+        if fx is None or fy is None:
+            continue
+        if not (math.isfinite(fx) and math.isfinite(fy)):
+            continue
+        points.append({
+            'team': ab,
+            'name': team_name_by_ab.get(ab) or ab,
+            'x': fx,
+            'y': fy,
+        })
+
+    payload = {
+        'season': int(season_int) if scope == 'season' else None,
+        'scope': scope,
+        'seasonState': season_state,
+        'rates': rates,
+        'xMetricId': x_metric_id,
+        'yMetricId': y_metric_id,
+        'points': points,
     }
     j = jsonify(payload)
     try:
@@ -7197,6 +8354,7 @@ def _load_card_metrics_defs(card: str = 'skaters') -> Dict[str, Any]:
                     'place': place,
                     'link': str(row.get('Link') or row.get('link') or '').strip(),
                     'strengthCode': str(row.get('StrengthCode') or row.get('strengthCode') or '').strip(),
+                    'positionCode': str(row.get('PositionCode') or row.get('positionCode') or row.get('') or '').strip(),
                 })
                 if category not in seen_cat:
                     seen_cat.add(category)
@@ -7666,6 +8824,18 @@ def api_goalies_card_defs():
     return j
 
 
+@main_bp.route('/api/teams/card/defs')
+def api_teams_card_defs():
+    """Return the available Team Card categories/metrics (from app/static/card_metrics.csv)."""
+    defs = _load_card_metrics_defs('teams')
+    j = jsonify(defs)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
 def _parse_locale_float(v: Any) -> Optional[float]:
     """Parse numbers that may use either decimal comma or decimal dot.
 
@@ -7822,6 +8992,65 @@ def _load_skater_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
     return out
 
 
+def _load_goalie_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]:
+    """Build a playerId->info map from NHL stats goalie bios for a season.
+
+    Uses: https://api.nhle.com/stats/rest/en/goalie/bios
+    This provides currentTeamAbbrev and positionCode for goalies.
+    """
+    global _SKATER_BIOS_CACHE
+    try:
+        ttl_s = max(60, int(os.getenv('SKATER_BIOS_CACHE_TTL_SECONDS', '21600') or '21600'))
+    except Exception:
+        ttl_s = 21600
+
+    try:
+        season_i = int(season_id)
+    except Exception:
+        season_i = 0
+    if season_i <= 0:
+        try:
+            season_i = int(current_season_id())
+        except Exception:
+            season_i = 0
+
+    cache_key = -int(season_i or 0)
+    now = time.time()
+    cached = _SKATER_BIOS_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
+    out: Dict[int, Dict[str, str]] = {}
+    url = f'https://api.nhle.com/stats/rest/en/goalie/bios?limit=-1&start=0&cayenneExp=seasonId={season_i}'
+    try:
+        r = requests.get(url, timeout=20, allow_redirects=True)
+        if r.status_code == 200:
+            data = r.json() if r.content else {}
+            rows = data.get('data') if isinstance(data, dict) else None
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    pid = _safe_int(row.get('playerId'))
+                    if not pid or pid <= 0:
+                        continue
+                    team = str(row.get('currentTeamAbbrev') or '').strip().upper()
+                    name = str(row.get('goalieFullName') or row.get('playerFullName') or row.get('skaterFullName') or '').strip()
+                    pos_raw = str(row.get('positionCode') or 'G').strip().upper()
+                    out[pid] = {
+                        'playerId': str(pid),
+                        'name': name,
+                        'team': team,
+                        'position': 'G',
+                        'positionCode': pos_raw,
+                    }
+    except Exception:
+        out = {}
+
+    _SKATER_BIOS_CACHE[cache_key] = (now, out)
+    return out
+
+
 def _load_all_rosters_cached() -> Dict[int, Dict[str, str]]:
     """Build a playerId->info map by fetching current rosters for all teams.
 
@@ -7843,6 +9072,14 @@ def _load_all_rosters_cached() -> Dict[int, Dict[str, str]]:
     except Exception:
         season_i = 0
     out = _load_skater_bios_season_cached(season_i)
+
+    # Merge goalie bios (current season)
+    try:
+        g = _load_goalie_bios_season_cached(season_i) or {}
+        if g:
+            out = {**out, **g}
+    except Exception:
+        pass
 
     _ALL_ROSTERS_CACHE = (now, out)
     return out
@@ -7888,6 +9125,12 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
     # Current season: bios has fast, complete coverage.
     if current_i and season_i == current_i:
         out = _load_skater_bios_season_cached(season_i)
+        try:
+            g = _load_goalie_bios_season_cached(season_i) or {}
+            if g:
+                out = {**out, **g}
+        except Exception:
+            pass
         _ALL_ROSTERS_BY_SEASON_CACHE[season_i] = (now, out)
         return out
 
@@ -7906,7 +9149,8 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
                 continue
             forwards = data.get('forwards') or []
             defensemen = data.get('defensemen') or []
-            for p in list(forwards) + list(defensemen):
+            goalies = data.get('goalies') or []
+            for p in list(forwards) + list(defensemen) + list(goalies):
                 if not isinstance(p, dict):
                     continue
                 pid = _safe_int(p.get('id') or p.get('playerId'))
@@ -7916,7 +9160,7 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
                 ln = (p.get('lastName') or {}).get('default') if isinstance(p.get('lastName'), dict) else (p.get('lastName') or '')
                 name = (str(fn).strip() + ' ' + str(ln).strip()).strip() or str(pid)
                 pos_raw = str(p.get('positionCode') or p.get('position') or '').strip().upper()
-                pos = 'D' if pos_raw.startswith('D') else 'F'
+                pos = 'G' if pos_raw.startswith('G') else ('D' if pos_raw.startswith('D') else 'F')
                 out[int(pid)] = {
                     'playerId': str(int(pid)),
                     'name': name,
@@ -7958,6 +9202,7 @@ def _parse_proj_row(row: Dict[str, Any]) -> Dict[str, Any]:
     evd = _parse_locale_float(row.get('EVD'))
     pp = _parse_locale_float(row.get('PP'))
     sh = _parse_locale_float(row.get('SH'))
+    gsax = _parse_locale_float(row.get('GSAx') or row.get('gsax') or row.get('Gsax') or row.get('GsaX'))
     # Total excludes GSAx per spec
     total = sum([(age or 0.0), (rookie or 0.0), (evo or 0.0), (evd or 0.0), (pp or 0.0), (sh or 0.0)])
     return {
@@ -7970,18 +9215,21 @@ def _parse_proj_row(row: Dict[str, Any]) -> Dict[str, Any]:
         'EVD': evd,
         'PP': pp,
         'SH': sh,
+        'GSAx': gsax,
         'total': total,
     }
 
 
 @main_bp.route('/api/player-projections/league')
 def api_player_projections_league():
-    """League-wide skater projections.
+    """League-wide player projections.
 
     Query params:
       team=EDM (optional)
+      include_goalies=1 (optional)
     """
     team = str(request.args.get('team') or '').strip().upper()
+    include_goalies = str(request.args.get('include_goalies') or '').strip().lower() in ('1', 'true', 'yes', 'y')
 
     proj_map = _load_player_projections_cached()
     roster_map = _load_all_rosters_cached()
@@ -7993,8 +9241,8 @@ def api_player_projections_league():
             if not row.get('playerId'):
                 continue
             pos = str(row.get('position') or '').upper()
-            if pos.startswith('G'):
-                continue  # skaters only
+            if (not include_goalies) and pos.startswith('G'):
+                continue  # skaters only by default
             info = roster_map.get(int(row['playerId'])) or {}
             t = (info.get('team') or '').upper()
             if team and t and t != team:
@@ -8007,7 +9255,7 @@ def api_player_projections_league():
                 'name': info.get('name') or '',
                 'team': t,
                 # prefer CSV position for skaters, but ensure a fallback
-                'position': pos if pos in ('F', 'D') else (info.get('position') or 'F'),
+                'position': pos if pos in ('F', 'D', 'G') else (info.get('position') or 'F'),
             })
         except Exception:
             continue
