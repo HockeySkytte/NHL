@@ -16,9 +16,10 @@ def create_app():
         # Never block app startup on preload issues
         pass
 
-    # Start background prestart snapshot logger (safe to call multiple times)
+    # Start background prestart snapshot logger (toggle via PRESTART_LOGGER=0)
     try:
-        start_prestart_logger()
+        if os.getenv('PRESTART_LOGGER', '1') == '1':
+            start_prestart_logger()
     except Exception:
         # Never block app startup on background thread issues
         pass

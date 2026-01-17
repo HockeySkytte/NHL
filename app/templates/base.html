@@ -124,6 +124,46 @@
     const seasonStateSelect = document.getElementById('seasonStateSelect');
     const includeHistoric = document.getElementById('includeHistoric');
     if(!teamSelect || !seasonSelect) return;
+
+    // Global slicers: Team + Season must stay consistent across pages.
+    // Priority: URL params (if present) -> localStorage.
+    let __urlTeam = null;
+    let __urlSeason = null;
+    try{
+      const sp = new URLSearchParams(window.location.search || '');
+      const t = String(sp.get('team') || '').trim();
+      const s = String(sp.get('season') || '').trim();
+      __urlTeam = t || null;
+      __urlSeason = s || null;
+      if(t) localStorage.setItem('team', t);
+      if(s) localStorage.setItem('season', s);
+    }catch(_){/*noop*/}
+
+    function syncUrlAndNav(){
+      try{
+        const team = String(teamSelect.value||'').trim();
+        const seasonRaw = String(seasonSelect.value||'').trim();
+        const season = /^\d{8}$/.test(seasonRaw) ? seasonRaw : '';
+
+        const u = new URL(window.location.href);
+        if(team) u.searchParams.set('team', team);
+        if(season) u.searchParams.set('season', season);
+        else u.searchParams.delete('season');
+        history.replaceState({}, '', u);
+
+        const links = Array.from(document.querySelectorAll('nav.tabs a[href^="/"]'));
+        links.forEach(a=>{
+          const href = a.getAttribute('href');
+          if(!href || href === '#') return;
+          const basePath = href.split('?')[0];
+          const nu = new URL(basePath, window.location.origin);
+          if(team) nu.searchParams.set('team', team);
+          if(season) nu.searchParams.set('season', season);
+          else nu.searchParams.delete('season');
+          a.setAttribute('href', nu.pathname + nu.search);
+        });
+      }catch(_){/*noop*/}
+    }
     function parseTeams(){
       const tag = document.getElementById('teams-data');
       if(!tag) return [];
@@ -158,10 +198,11 @@
       const showHistoric = includeHistoric && includeHistoric.checked;
       const list = teamsData.filter(t=> showHistoric || String(t.Active)==='1');
       list.sort((a,b)=>a.Name.localeCompare(b.Name));
-      const prev = teamSelect.value || localStorage.getItem('team');
+      const prev = teamSelect.value || __urlTeam || localStorage.getItem('team');
       teamSelect.innerHTML = list.map(t=>`<option value="${t.Team}">${t.Name}</option>`).join('');
       if(prev && list.find(t=>t.Team===prev)) teamSelect.value = prev; else if(list.length) teamSelect.value = list[0].Team;
       localStorage.setItem('team', teamSelect.value);
+      __urlTeam = null;
     }
     async function loadSeasons(){
       const team = teamSelect.value; if(!team) return;
@@ -170,9 +211,11 @@
         const r = await fetch(`/api/seasons/${team}`); const meta = await r.json();
         window.__seasonMeta = meta;
         seasonSelect.innerHTML = meta.map(o=>`<option value="${o.season}">${o.season}</option>`).join('');
-        const saved = localStorage.getItem('season');
+        const saved = __urlSeason || localStorage.getItem('season');
         if(saved && meta.find(m=>String(m.season)===saved)) seasonSelect.value = saved; else if(meta.length) seasonSelect.value = meta[0].season;
+        __urlSeason = null;
         handleSeasonStateAvailability();
+        syncUrlAndNav();
       } catch(e){ seasonSelect.innerHTML='<option>Error</option>'; }
     }
     function handleSeasonStateAvailability(){
@@ -185,12 +228,12 @@
       if(typeof loadStandings==='function') loadStandings();
     }
     // Event listeners
-    teamSelect.addEventListener('change', ()=>{ localStorage.setItem('team', teamSelect.value); setTheme(); loadSeasons(); });
-    seasonSelect.addEventListener('change', ()=>{ localStorage.setItem('season', seasonSelect.value); handleSeasonStateAvailability(); triggerDataReload(); });
+    teamSelect.addEventListener('change', ()=>{ localStorage.setItem('team', teamSelect.value); setTheme(); syncUrlAndNav(); loadSeasons(); });
+    seasonSelect.addEventListener('change', ()=>{ localStorage.setItem('season', seasonSelect.value); syncUrlAndNav(); handleSeasonStateAvailability(); triggerDataReload(); });
     if(seasonStateSelect) seasonStateSelect.addEventListener('change', ()=> triggerDataReload());
     if(includeHistoric) includeHistoric.addEventListener('change', ()=>{ populateTeams(); setTheme(); loadSeasons(); });
     // Init
-    populateTeams(); setTheme(); loadSeasons();
+    populateTeams(); setTheme(); loadSeasons(); syncUrlAndNav();
   })();
   </script>
   {% block scripts %}{% endblock %}

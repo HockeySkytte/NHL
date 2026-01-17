@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections import Counter
 from dataclasses import dataclass
 from importlib import util as _importlib_util
 from pathlib import Path

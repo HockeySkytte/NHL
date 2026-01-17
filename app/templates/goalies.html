@@ -450,8 +450,6 @@ let __restoreActiveTab = null;
 let __restorePlayerId = null;
 let __restoreChartAxes = null;
 let __restoreProjSubtab = null;
-let __restoreTeam = null;
-let __restoreSeason = null;
 let __isRestoringSkatersState = false;
 let __isBootingSkatersPage = true;
 
@@ -821,8 +819,6 @@ function saveSkatersState(){
   try{
     if(__isBootingSkatersPage || __isRestoringSkatersState) return;
     const state = {
-      team: String(teamSelect?.value||''),
-      season: String(seasonSelect?.value||''),
       playerId: String(playerSelect?.value||''),
       activeTab: getActiveTabKey(),
       edge: {
@@ -847,10 +843,6 @@ function saveSkatersState(){
       projectionsSubtab: getActiveProjSubtabKey(),
     };
     localStorage.setItem(SKATERS_STATE_KEY, JSON.stringify(state));
-
-    // base.html reads these keys during its own init; keep them aligned.
-    try{ if(state.team) localStorage.setItem('team', String(state.team)); }catch(_){/*noop*/}
-    try{ if(state.season) localStorage.setItem('season', String(state.season)); }catch(_){/*noop*/}
   }catch(_){/*noop*/}
 }
 
@@ -861,19 +853,6 @@ function restoreSkatersState(){
     if(!raw) return;
     const state = JSON.parse(raw);
     if(state && typeof state === 'object'){
-      const t = String(state.team||'');
-      const s = String(state.season||'');
-      __restoreTeam = t || null;
-      __restoreSeason = s || null;
-
-      // base.html chooses its initial values from these keys.
-      try{ if(t) localStorage.setItem('team', t); }catch(_){/*noop*/}
-      try{ if(s) localStorage.setItem('season', s); }catch(_){/*noop*/}
-
-      // Best-effort immediate apply (base.html may overwrite until its async load completes).
-      if(teamSelect && t) teamSelect.value = t;
-      if(seasonSelect && s) seasonSelect.value = s;
-
       const c = state.card || {};
       if(c && typeof c === 'object'){
         try{ setCardScope(String(c.scope||'season')); }catch(_){/*noop*/}
@@ -928,14 +907,6 @@ async function initSkatersPage(){
       await __sleep(60);
     }
 
-    // If we need to switch teams, dispatch change so base.html reloads seasons for that team.
-    try{
-      if(__restoreTeam && teamSelect && Array.from(teamSelect.options).some(o=>String(o.value)===String(__restoreTeam)) && teamSelect.value !== __restoreTeam){
-        teamSelect.value = __restoreTeam;
-        teamSelect.dispatchEvent(new Event('change'));
-      }
-    }catch(_){/*noop*/}
-
     // Wait for base.html to finish loading seasons.
     const s0 = Date.now();
     while(Date.now() - s0 < 8000){
@@ -943,13 +914,6 @@ async function initSkatersPage(){
       if(seasonSelect && seasonSelect.options && seasonSelect.options.length && firstTxt !== 'loading...') break;
       await __sleep(80);
     }
-
-    // Apply season selection (no need to dispatch change; we'll load ourselves next).
-    try{
-      if(__restoreSeason && seasonSelect && Array.from(seasonSelect.options).some(o=>String(o.value)===String(__restoreSeason))){
-        seasonSelect.value = __restoreSeason;
-      }
-    }catch(_){/*noop*/}
 
     // Load player list + card.
     await loadPlayers();

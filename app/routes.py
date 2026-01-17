@@ -14,7 +14,6 @@ import time
 from typing import Dict, List, Tuple, Optional, Any, Iterable, Iterator
 
 import requests
-import numpy as np  # for numeric handling in model inference
 import joblib       # to load pickled models
 from flask import Blueprint, jsonify, render_template, request, current_app, make_response
 import subprocess
@@ -73,13 +72,13 @@ def admin_db_check():
             if host_override and '@localhost' in db_url:
                 db_url = db_url.replace('@localhost', f'@{host_override}')
         # Optional SSL
-        connect_args = {}
+        connect_args: Dict[str, Any] = {}
         if os.getenv('DB_SSL_CA'):
-            connect_args['ssl_ca'] = os.getenv('DB_SSL_CA')
+            connect_args['ssl_ca'] = str(os.getenv('DB_SSL_CA') or '')
         if os.getenv('DB_SSL_CERT'):
-            connect_args['ssl_cert'] = os.getenv('DB_SSL_CERT')
+            connect_args['ssl_cert'] = str(os.getenv('DB_SSL_CERT') or '')
         if os.getenv('DB_SSL_KEY'):
-            connect_args['ssl_key'] = os.getenv('DB_SSL_KEY')
+            connect_args['ssl_key'] = str(os.getenv('DB_SSL_KEY') or '')
         if connect_args:
             eng = create_engine(db_url, connect_args=connect_args)
         else:
@@ -235,13 +234,13 @@ def run_update_data():
                     if host_override and '@localhost' in db_url:
                         db_url = db_url.replace('@localhost', f'@{host_override}')
 
-                connect_args = {'connection_timeout': 3}
+                connect_args: Dict[str, Any] = {'connection_timeout': 3}
                 if os.getenv('DB_SSL_CA'):
-                    connect_args['ssl_ca'] = os.getenv('DB_SSL_CA')
+                    connect_args['ssl_ca'] = str(os.getenv('DB_SSL_CA') or '')
                 if os.getenv('DB_SSL_CERT'):
-                    connect_args['ssl_cert'] = os.getenv('DB_SSL_CERT')
+                    connect_args['ssl_cert'] = str(os.getenv('DB_SSL_CERT') or '')
                 if os.getenv('DB_SSL_KEY'):
-                    connect_args['ssl_key'] = os.getenv('DB_SSL_KEY')
+                    connect_args['ssl_key'] = str(os.getenv('DB_SSL_KEY') or '')
 
                 eng = create_engine(db_url, connect_args=connect_args)
                 with eng.connect() as conn:
@@ -315,9 +314,6 @@ _SKATERS_PLAYERS_CACHE: Dict[Tuple[int, str, str], Tuple[float, List[Dict[str, A
 
 # Goalies player-list cache: {(seasonId, teamAbbrev, seasonState): (timestamp, players)}
 _GOALIES_PLAYERS_CACHE: Dict[Tuple[int, str, str], Tuple[float, List[Dict[str, Any]]]] = {}
-
-# Goalie primary team per season (for trend charts): {(playerId, seasonId, seasonState): (timestamp, teamAbbrev)}
-_GOALIES_TEAM_BY_SEASON_CACHE: Dict[Tuple[int, int, str], Tuple[float, str]] = {}
 
 # Goalie team map (for trend charts): {(playerId, seasonState): (timestamp, {seasonId: teamAbbrev})}
 _GOALIES_TEAM_BY_SEASON_MAP_CACHE: Dict[Tuple[int, str], Tuple[float, Dict[int, str]]] = {}
@@ -733,6 +729,92 @@ def _cache_set(cache: Dict, key, val) -> None:
         cache[key] = (time.time(), val)
     except Exception:
         pass
+
+
+def _cache_prune_ttl_and_size(cache: Dict, *, ttl_s: Optional[float] = None, max_items: Optional[int] = None) -> None:
+    """Best-effort pruning for caches storing (timestamp, ...) tuples."""
+    try:
+        now = time.time()
+
+        if ttl_s is not None:
+            try:
+                ttl_f = float(ttl_s)
+            except Exception:
+                ttl_f = None
+            if ttl_f and ttl_f > 0:
+                expired: List[Any] = []
+                for k, v in list(cache.items()):
+                    try:
+                        ts = float(v[0] or 0.0)
+                        if ts <= 0 or (now - ts) >= ttl_f:
+                            expired.append(k)
+                    except Exception:
+                        continue
+                for k in expired:
+                    try:
+                        cache.pop(k, None)
+                    except Exception:
+                        pass
+
+        if max_items is not None:
+            try:
+                m = int(max_items)
+            except Exception:
+                m = 0
+            if m > 0 and len(cache) > m:
+                try:
+                    items = sorted(cache.items(), key=lambda kv: float((kv[1] or (0,))[0] or 0.0))
+                    to_drop = max(0, len(items) - m)
+                    for i in range(to_drop):
+                        try:
+                            cache.pop(items[i][0], None)
+                        except Exception:
+                            pass
+                except Exception:
+                    while len(cache) > m:
+                        try:
+                            cache.pop(next(iter(cache)), None)
+                        except Exception:
+                            break
+    except Exception:
+        return
+
+
+def _cache_set_multi_bounded(cache: Dict, key, *vals, ttl_s: Optional[float] = None, max_items: Optional[int] = None) -> None:
+    """Set cache entry as (timestamp, *vals) and prune by TTL and size."""
+    try:
+        cache[key] = (time.time(), *vals)
+    except Exception:
+        return
+    _cache_prune_ttl_and_size(cache, ttl_s=ttl_s, max_items=max_items)
+
+
+def _dict_set_bounded(cache: Dict, key, val, *, max_items: Optional[int] = None) -> None:
+    """Best-effort size bounding for plain dict caches (no timestamp tuples).
+
+    Uses insertion order as a cheap LRU approximation.
+    """
+    try:
+        if key in cache:
+            try:
+                cache.pop(key, None)
+            except Exception:
+                pass
+        cache[key] = val
+        if max_items is None:
+            return
+        try:
+            m = int(max_items)
+        except Exception:
+            m = 0
+        if m > 0:
+            while len(cache) > m:
+                try:
+                    cache.pop(next(iter(cache)), None)
+                except Exception:
+                    break
+    except Exception:
+        return
     
 # --- Small on-disk cache utilities (persist across restarts) ---
 def _disk_cache_base() -> str:
@@ -857,8 +939,13 @@ def _load_sheet_rows_cached(sheet_id: str, worksheet: str, ttl_env: str = 'SHEET
         ttl_s = max(1, int(os.getenv(ttl_env, str(default_ttl)) or str(default_ttl)))
     except Exception:
         ttl_s = default_ttl
+    try:
+        max_items = max(1, int(os.getenv('SHEET_ROWS_CACHE_MAX_ITEMS', '12') or '12'))
+    except Exception:
+        max_items = 12
     now = time.time()
     key = (sheet_id or '', worksheet or '')
+    _cache_prune_ttl_and_size(_SHEET_ROWS_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _SHEET_ROWS_CACHE.get(key)
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
@@ -867,7 +954,7 @@ def _load_sheet_rows_cached(sheet_id: str, worksheet: str, ttl_env: str = 'SHEET
         import gspread  # type: ignore
         from google.oauth2.service_account import Credentials  # type: ignore
     except Exception:
-        _SHEET_ROWS_CACHE[key] = (now, [])
+        _cache_set_multi_bounded(_SHEET_ROWS_CACHE, key, [], ttl_s=ttl_s, max_items=max_items)
         return []
 
     info = _load_google_service_account_info_from_env()
@@ -885,7 +972,7 @@ def _load_sheet_rows_cached(sheet_id: str, worksheet: str, ttl_env: str = 'SHEET
         rows = ws.get_all_records(numericise_ignore=['all']) or []
     except Exception:
         rows = ws.get_all_records() or []
-    _SHEET_ROWS_CACHE[key] = (now, rows)
+    _cache_set_multi_bounded(_SHEET_ROWS_CACHE, key, rows, ttl_s=ttl_s, max_items=max_items)
     return rows
 
 
@@ -1527,15 +1614,27 @@ def api_skaters_players():
     except Exception:
         players_ttl_s = 21600
 
+    try:
+        players_cache_max = max(1, int(os.getenv('SKATERS_PLAYERS_CACHE_MAX_ITEMS', '12') or '12'))
+    except Exception:
+        players_cache_max = 12
+
     if season_state not in {'regular', 'playoffs', 'all'}:
         season_state = 'regular'
 
     cache_key = (int(season_i or 0), '__LEAGUE__' if is_league else team, season_state)
     now = time.time()
     try:
+        _cache_prune_ttl_and_size(_SKATERS_PLAYERS_CACHE, ttl_s=players_ttl_s, max_items=players_cache_max)
         cached = _SKATERS_PLAYERS_CACHE.get(cache_key)
         if cached and (now - float(cached[0])) < float(players_ttl_s):
-            players = list(cached[1] or [])
+            players = cached[1] or []
+            j = jsonify({'players': players})
+            try:
+                j.headers['Cache-Control'] = 'no-store'
+            except Exception:
+                pass
+            return j
     except Exception:
         pass
 
@@ -1608,7 +1707,7 @@ def api_skaters_players():
             pass
 
         try:
-            _SKATERS_PLAYERS_CACHE[cache_key] = (now, players)
+            _cache_set_multi_bounded(_SKATERS_PLAYERS_CACHE, cache_key, players, ttl_s=players_ttl_s, max_items=players_cache_max)
         except Exception:
             pass
 
@@ -1697,16 +1796,29 @@ def api_goalies_players():
     except Exception:
         players_ttl_s = 21600
 
-    cache_key = (int(season_i or 0), '__LEAGUE__' if is_league else team, season_state)
-    now = time.time()
-    players: List[Dict[str, Any]] = []
     try:
-        cached = _GOALIES_PLAYERS_CACHE.get(cache_key)
-        if cached and (now - float(cached[0])) < float(players_ttl_s):
-            players = list(cached[1] or [])
+        players_cache_max = max(1, int(os.getenv('GOALIES_PLAYERS_CACHE_MAX_ITEMS', '12') or '12'))
     except Exception:
-        players = []
+        players_cache_max = 12
 
+    cache_key = (int(season_i or 0), '__LEAGUE__' if is_league else team, season_state)
+    # Cache hit: return immediately (avoids extra allocations/work)
+    if True:
+        try:
+            _cache_prune_ttl_and_size(_GOALIES_PLAYERS_CACHE, ttl_s=players_ttl_s, max_items=players_cache_max)
+            cached_players = _cache_get(_GOALIES_PLAYERS_CACHE, cache_key, int(players_ttl_s))
+            if cached_players is not None:
+                j = jsonify({'players': cached_players})
+                try:
+                    j.headers['Cache-Control'] = 'no-store'
+                except Exception:
+                    pass
+                return j
+        except Exception:
+            pass
+
+    players: List[Dict[str, Any]] = []
+    now = time.time()
     if not players:
         try:
             if is_league:
@@ -1794,7 +1906,7 @@ def api_goalies_players():
             pass
 
         try:
-            _GOALIES_PLAYERS_CACHE[cache_key] = (now, players)
+            _cache_set_multi_bounded(_GOALIES_PLAYERS_CACHE, cache_key, players, ttl_s=players_ttl_s, max_items=players_cache_max)
         except Exception:
             pass
 
@@ -1817,6 +1929,13 @@ def api_player_landing(player_id: int):
         ttl_s = max(10, int(os.getenv('PLAYER_LANDING_CACHE_TTL_SECONDS', '3600') or '3600'))
     except Exception:
         ttl_s = 3600
+
+    try:
+        max_items = max(1, int(os.getenv('PLAYER_LANDING_CACHE_MAX_ITEMS', '512') or '512'))
+    except Exception:
+        max_items = 512
+
+    _cache_prune_ttl_and_size(_PLAYER_LANDING_CACHE, ttl_s=ttl_s, max_items=max_items)
 
     cached = _cache_get(_PLAYER_LANDING_CACHE, pid, ttl_s)
     if cached is not None:
@@ -1841,7 +1960,7 @@ def api_player_landing(player_id: int):
     if not isinstance(data, dict):
         return jsonify({'error': 'invalid_upstream'}), 502
 
-    _cache_set(_PLAYER_LANDING_CACHE, pid, data)
+    _cache_set_multi_bounded(_PLAYER_LANDING_CACHE, pid, data, ttl_s=ttl_s, max_items=max_items)
     j = jsonify(data)
     try:
         j.headers['Cache-Control'] = 'no-store'
@@ -2648,15 +2767,16 @@ def api_skaters_card():
         derived[pid_i] = per_player
 
     # Percentiles (higher is better).
-    def _percentile(values: List[float], v: Optional[float]) -> Optional[float]:
+    def _percentile_sorted(values_sorted: List[float], v: Optional[float]) -> Optional[float]:
         if v is None:
             return None
-        if not values:
+        if not values_sorted:
             return None
-        import bisect
-        arr = sorted(values)
-        idx = bisect.bisect_right(arr, float(v))
-        return 100.0 * (idx / float(len(arr)))
+        try:
+            idx = bisect.bisect_right(values_sorted, float(v))
+            return 100.0 * (idx / float(len(values_sorted)))
+        except Exception:
+            return None
 
     # Prepare distributions per metric, grouped by position (F vs D).
     # (Skater Card is skaters-only; goalies are excluded above.)
@@ -2681,6 +2801,18 @@ def api_skaters_card():
                 dist_by_pos.setdefault((g, mid), []).append(fv)
             except Exception:
                 continue
+
+    # Sort pools once; avoids repeated allocations inside percentile calls.
+    for mid, arr in dist_all.items():
+        try:
+            arr.sort()
+        except Exception:
+            continue
+    for k, arr in dist_by_pos.items():
+        try:
+            arr.sort()
+        except Exception:
+            continue
 
     mine = derived.get(int(pid))
     seasonstats_missing = False
@@ -2723,8 +2855,6 @@ def api_skaters_card():
                 'Takeaways': 0.0,
                 'Giveaways': 0.0,
             }
-            if int(pid) not in pos_group_by_pid:
-                pos_group_by_pid[int(pid)] = 'F'
             mine = {mid: _compute_metric(mid, empty_v, int(pid)) for mid in metric_ids}
             derived[int(pid)] = mine
         else:
@@ -2741,7 +2871,7 @@ def api_skaters_card():
             pool = dist_by_pos.get((my_group, mid))
             if not pool:
                 pool = dist_all.get(mid) or []
-            pct = _percentile(pool, val)
+            pct = _percentile_sorted(pool, val)
             if pct is not None and _lower_is_better(mid):
                 pct = 100.0 - pct
         out_metrics[mid] = {
@@ -3103,7 +3233,13 @@ def _team_stats_rest_get(url: str) -> Optional[Dict[str, Any]]:
     except Exception:
         ttl_s = 3600
 
+    try:
+        max_items = max(1, int(os.getenv('TEAM_STATS_REST_CACHE_MAX_ITEMS', '128') or '128'))
+    except Exception:
+        max_items = 128
+
     now = time.time()
+    _cache_prune_ttl_and_size(_TEAM_STATS_REST_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _TEAM_STATS_REST_CACHE.get(url)
     if cached and (now - cached[0]) < ttl_s:
         try:
@@ -3118,7 +3254,7 @@ def _team_stats_rest_get(url: str) -> Optional[Dict[str, Any]]:
         j = r.json()
         if not isinstance(j, dict):
             return None
-        _TEAM_STATS_REST_CACHE[url] = (now, j)
+        _cache_set_multi_bounded(_TEAM_STATS_REST_CACHE, url, j, ttl_s=ttl_s, max_items=max_items)
         return j
     except Exception:
         return None
@@ -4293,11 +4429,16 @@ def api_goalies_series():
             ttl_s = max(60, int(os.getenv('GOALIES_TEAM_BY_SEASON_CACHE_TTL_SECONDS', str(7 * 86400)) or str(7 * 86400)))
         except Exception:
             ttl_s = 7 * 86400
+        try:
+            max_items = max(1, int(os.getenv('GOALIES_TEAM_BY_SEASON_MAP_CACHE_MAX_ITEMS', '128') or '128'))
+        except Exception:
+            max_items = 128
         ss_norm = (ss or 'regular').strip().lower()
         if ss_norm not in {'regular', 'playoffs', 'all'}:
             ss_norm = 'regular'
         ck = (int(pid_i), ss_norm)
         now2 = time.time()
+        _cache_prune_ttl_and_size(_GOALIES_TEAM_BY_SEASON_MAP_CACHE, ttl_s=ttl_s, max_items=max_items)
         cached = _GOALIES_TEAM_BY_SEASON_MAP_CACHE.get(ck)
         if cached and (now2 - float(cached[0])) < float(ttl_s):
             return cached[1] or {}
@@ -4344,10 +4485,10 @@ def api_goalies_series():
                         if not isinstance(row, dict):
                             continue
                         sid = row.get('seasonId')
-                        try:
-                            season_id = int(sid)
-                        except Exception:
+                        season_id = _safe_int(sid)
+                        if not season_id:
                             continue
+                        season_id_i = int(season_id)
 
                         team_raw = row.get('teamAbbrev') or row.get('teamAbbrevs') or row.get('currentTeamAbbrev') or ''
                         team_abbrev = ''
@@ -4368,18 +4509,18 @@ def api_goalies_series():
                         except Exception:
                             weight = _toi_to_seconds(toi)
 
-                        prev = best.get(season_id)
+                        prev = best.get(season_id_i)
                         if not prev or weight > int(prev[0]):
-                            best[season_id] = (int(weight), team_abbrev)
+                            best[season_id_i] = (int(weight), team_abbrev)
 
                     team_map: Dict[int, str] = {sid: t for sid, (_, t) in best.items()}
-                    _GOALIES_TEAM_BY_SEASON_MAP_CACHE[ck] = (now2, team_map)
+                    _cache_set_multi_bounded(_GOALIES_TEAM_BY_SEASON_MAP_CACHE, ck, team_map, ttl_s=ttl_s, max_items=max_items)
                     return team_map
         except Exception:
             pass
 
         try:
-            _GOALIES_TEAM_BY_SEASON_MAP_CACHE[ck] = (now2, {})
+            _cache_set_multi_bounded(_GOALIES_TEAM_BY_SEASON_MAP_CACHE, ck, {}, ttl_s=ttl_s, max_items=max_items)
         except Exception:
             pass
         return {}
@@ -4609,6 +4750,8 @@ def api_skaters_table():
     needs_rapm = any(('|RAPM ' in mid) for mid in metric_ids)
     needs_ctx = any((mid in {'Context|QoT', 'Context|QoC', 'Context|ZS'}) for mid in metric_ids)
 
+    want_pid_set: set[int] = set(int(pid) for pid in player_ids)
+
     def _norm_rates_totals(v: Any) -> str:
         s = str(v or '').strip().lower()
         if s.startswith('tot'):
@@ -4648,6 +4791,8 @@ def api_skaters_table():
                 pid_i = _safe_int(r.get('PlayerID'))
                 if not pid_i or pid_i <= 0:
                     continue
+                if int(pid_i) not in want_pid_set:
+                    continue
                 rapm_by_pid.setdefault(int(pid_i), []).append(r)
             except Exception:
                 continue
@@ -4678,6 +4823,8 @@ def api_skaters_table():
                         continue
                 pid_i = _safe_int(r.get('PlayerID'))
                 if not pid_i or pid_i <= 0:
+                    continue
+                if int(pid_i) not in want_pid_set:
                     continue
                 ctx_by_pid.setdefault(int(pid_i), []).append(r)
             except Exception:
@@ -6103,12 +6250,19 @@ def api_goalies_scatter():
             ttl_s = max(60, int(os.getenv('GOALIES_PLAYERS_CACHE_TTL_SECONDS', '21600') or '21600'))
         except Exception:
             ttl_s = 21600
+        try:
+            max_items = max(1, int(os.getenv('GOALIES_PLAYERS_CACHE_MAX_ITEMS', '12') or '12'))
+        except Exception:
+            max_items = 12
         ck = (int(season_int or 0), '__LEAGUE__', season_state)
         now2 = time.time()
-        cached = _GOALIES_PLAYERS_CACHE.get(ck)
-        if cached and (now2 - float(cached[0])) < float(ttl_s):
-            rows = list(cached[1] or [])
-            return {int(r.get('playerId') or 0): r for r in rows if int(r.get('playerId') or 0) > 0}
+        try:
+            _cache_prune_ttl_and_size(_GOALIES_PLAYERS_CACHE, ttl_s=ttl_s, max_items=max_items)
+            cached_players = _cache_get(_GOALIES_PLAYERS_CACHE, ck, int(ttl_s))
+            if cached_players is not None:
+                return {int(r.get('playerId') or 0): r for r in (cached_players or []) if int(r.get('playerId') or 0) > 0}
+        except Exception:
+            pass
 
         players: List[Dict[str, Any]] = []
         try:
@@ -6149,7 +6303,7 @@ def api_goalies_scatter():
             players = []
 
         try:
-            _GOALIES_PLAYERS_CACHE[ck] = (now2, players)
+            _cache_set_multi_bounded(_GOALIES_PLAYERS_CACHE, ck, players, ttl_s=ttl_s, max_items=max_items)
         except Exception:
             pass
         return {int(r.get('playerId') or 0): r for r in players if int(r.get('playerId') or 0) > 0}
@@ -6246,7 +6400,16 @@ def api_rapm_scale():
         ttl_s = max(30, int(os.getenv('RAPM_SCALE_CACHE_TTL_SECONDS', '300') or '300'))
     except Exception:
         ttl_s = 300
+    try:
+        max_items = max(1, int(os.getenv('RAPM_SCALE_CACHE_MAX_ITEMS', '24') or '24'))
+    except Exception:
+        max_items = 24
     now = time.time()
+
+    try:
+        _cache_prune_ttl_and_size(_RAPM_SCALE_CACHE, ttl_s=ttl_s, max_items=max_items)
+    except Exception:
+        pass
     cached = _RAPM_SCALE_CACHE.get(cache_key)
     if cached and (now - cached[0]) < ttl_s:
         payload, dists = cached[1], cached[2]
@@ -6502,7 +6665,11 @@ def api_rapm_scale():
         payload['playerId'] = player_id_int
         payload['player'] = _player_payload(player_id_int)
 
-    _RAPM_SCALE_CACHE[cache_key] = (now, payload if player_id_int is None else {k: v for k, v in payload.items() if k not in {'player', 'playerId'}}, dists)
+    try:
+        payload_base = payload if player_id_int is None else {k: v for k, v in payload.items() if k not in {'player', 'playerId'}}
+        _cache_set_multi_bounded(_RAPM_SCALE_CACHE, cache_key, payload_base, dists, ttl_s=ttl_s, max_items=max_items)
+    except Exception:
+        pass
     j = jsonify(payload)
     try:
         j.headers['Cache-Control'] = 'no-store'
@@ -6647,11 +6814,20 @@ def api_rapm_career():
         ttl_s = max(30, int(os.getenv('RAPM_CAREER_CACHE_TTL_SECONDS', '300') or '300'))
     except Exception:
         ttl_s = 300
+    try:
+        max_items = max(1, int(os.getenv('RAPM_CAREER_CACHE_MAX_ITEMS', '24') or '24'))
+    except Exception:
+        max_items = 24
     now = time.time()
-    cached = _RAPM_CAREER_CACHE.get(cache_key)
-    if cached and (now - cached[0]) < ttl_s:
-        league = cached[1]
-    else:
+
+    league = None
+    try:
+        _cache_prune_ttl_and_size(_RAPM_CAREER_CACHE, ttl_s=ttl_s, max_items=max_items)
+        league = _cache_get(_RAPM_CAREER_CACHE, cache_key, int(ttl_s))
+    except Exception:
+        league = None
+
+    if league is None:
         # Load RAPM rows: static + (optional) replace 20252026 with Sheets4.
         rapm_rows = _load_rapm_static_csv() or []
         try:
@@ -6867,7 +7043,10 @@ def api_rapm_career():
                 'z_sh': z_sh,
             },
         }
-        _RAPM_CAREER_CACHE[cache_key] = (now, league)
+        try:
+            _cache_set_multi_bounded(_RAPM_CAREER_CACHE, cache_key, league, ttl_s=ttl_s, max_items=max_items)
+        except Exception:
+            pass
 
     # Pull this player's per-season series from RAPM rows
     # For correctness and simplicity, re-read relevant player rows from sources.
@@ -7514,16 +7693,20 @@ def api_team_logo_svg(team_abbrev: str):
         return ('', 404)
 
     # Cache for 30 days in-process
+    ttl_s = 30 * 24 * 3600
+    try:
+        max_items = max(1, int(os.getenv('TEAM_LOGO_PROXY_CACHE_MAX_ITEMS', '64') or '64'))
+    except Exception:
+        max_items = 64
     now = time.time()
     try:
-        cached = _TEAM_LOGO_PROXY_CACHE.get(a)
+        _cache_prune_ttl_and_size(_TEAM_LOGO_PROXY_CACHE, ttl_s=ttl_s, max_items=max_items)
+        cached = _cache_get(_TEAM_LOGO_PROXY_CACHE, a, int(ttl_s))
         if cached:
-            ts, data = cached
-            if (now - ts) < (30 * 24 * 3600):
-                resp = make_response(data)
-                resp.headers['Content-Type'] = 'image/svg+xml'
-                resp.headers['Cache-Control'] = 'public, max-age=86400'
-                return resp
+            resp = make_response(cached)
+            resp.headers['Content-Type'] = 'image/svg+xml'
+            resp.headers['Cache-Control'] = 'public, max-age=86400'
+            return resp
     except Exception:
         pass
 
@@ -7552,7 +7735,7 @@ def api_team_logo_svg(team_abbrev: str):
         except Exception:
             data = raw
         try:
-            _TEAM_LOGO_PROXY_CACHE[a] = (now, data)
+            _cache_set_multi_bounded(_TEAM_LOGO_PROXY_CACHE, a, data, ttl_s=ttl_s, max_items=max_items)
         except Exception:
             pass
         resp = make_response(data)
@@ -7700,8 +7883,13 @@ def _load_rapm_player_rows_static(player_id: int, season: Optional[int]) -> List
         ttl_s = max(30, int(os.getenv('RAPM_PLAYER_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
     except Exception:
         ttl_s = 600
+    try:
+        max_items = max(1, int(os.getenv('RAPM_PLAYER_STATIC_CACHE_MAX_ITEMS', '512') or '512'))
+    except Exception:
+        max_items = 512
     key = (int(player_id), int(season) if season is not None else None)
     now = time.time()
+    _cache_prune_ttl_and_size(_RAPM_PLAYER_STATIC_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _RAPM_PLAYER_STATIC_CACHE.get(key)
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
@@ -7723,7 +7911,7 @@ def _load_rapm_player_rows_static(player_id: int, season: Optional[int]) -> List
         except Exception:
             continue
 
-    _RAPM_PLAYER_STATIC_CACHE[key] = (now, out)
+    _cache_set_multi_bounded(_RAPM_PLAYER_STATIC_CACHE, key, out, ttl_s=ttl_s, max_items=max_items)
     return out
 
 
@@ -7734,8 +7922,13 @@ def _load_context_player_rows_static(player_id: int, season: Optional[int]) -> L
         ttl_s = max(30, int(os.getenv('CONTEXT_PLAYER_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
     except Exception:
         ttl_s = 600
+    try:
+        max_items = max(1, int(os.getenv('CONTEXT_PLAYER_STATIC_CACHE_MAX_ITEMS', '512') or '512'))
+    except Exception:
+        max_items = 512
     key = (int(player_id), int(season) if season is not None else None)
     now = time.time()
+    _cache_prune_ttl_and_size(_CONTEXT_PLAYER_STATIC_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _CONTEXT_PLAYER_STATIC_CACHE.get(key)
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
@@ -7757,7 +7950,7 @@ def _load_context_player_rows_static(player_id: int, season: Optional[int]) -> L
         except Exception:
             continue
 
-    _CONTEXT_PLAYER_STATIC_CACHE[key] = (now, out)
+    _cache_set_multi_bounded(_CONTEXT_PLAYER_STATIC_CACHE, key, out, ttl_s=ttl_s, max_items=max_items)
     return out
 
 
@@ -7802,6 +7995,11 @@ def _build_seasonstats_agg(
     except Exception:
         ttl_s = 1800
 
+    try:
+        max_items = max(1, int(os.getenv('SEASONSTATS_AGG_CACHE_MAX_ITEMS', '6') or '6'))
+    except Exception:
+        max_items = 6
+
     scope_norm = (scope or 'season').strip().lower()
     if scope_norm not in {'season', 'career'}:
         scope_norm = 'season'
@@ -7833,6 +8031,7 @@ def _build_seasonstats_agg(
         sheet_rev[:40],
     )
     now = time.time()
+    _cache_prune_ttl_and_size(_SEASONSTATS_AGG_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _SEASONSTATS_AGG_CACHE.get(key)
     if cached and (now - cached[0]) < ttl_s:
         return cached[1], cached[2]
@@ -7855,7 +8054,7 @@ def _build_seasonstats_agg(
                 if isinstance(loaded, tuple) and len(loaded) == 2:
                     agg0, pos0 = loaded
                     if isinstance(agg0, dict) and isinstance(pos0, dict):
-                        _SEASONSTATS_AGG_CACHE[key] = (now, agg0, pos0)
+                        _cache_set_multi_bounded(_SEASONSTATS_AGG_CACHE, key, agg0, pos0, ttl_s=ttl_s, max_items=max_items)
                         return agg0, pos0
     except Exception:
         cache_path = None
@@ -8011,7 +8210,7 @@ def _build_seasonstats_agg(
     for pid_k, d in agg.items():
         d['GP'] = int(gp_sum_by_pid.get(pid_k, 0))
 
-    _SEASONSTATS_AGG_CACHE[key] = (now, agg, pos_group_by_pid)
+    _cache_set_multi_bounded(_SEASONSTATS_AGG_CACHE, key, agg, pos_group_by_pid, ttl_s=ttl_s, max_items=max_items)
 
     if cache_path:
         try:
@@ -8593,7 +8792,12 @@ def _edge_get_cached_json(url: str) -> Optional[Dict[str, Any]]:
         ttl_s = max(30, int(os.getenv('EDGE_API_CACHE_TTL_SECONDS', '3600') or '3600'))
     except Exception:
         ttl_s = 3600
+    try:
+        max_items = max(1, int(os.getenv('EDGE_API_CACHE_MAX_ITEMS', '256') or '256'))
+    except Exception:
+        max_items = 256
     now = time.time()
+    _cache_prune_ttl_and_size(_EDGE_API_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _EDGE_API_CACHE.get(url)
     if cached and (now - cached[0]) < ttl_s:
         try:
@@ -8608,7 +8812,7 @@ def _edge_get_cached_json(url: str) -> Optional[Dict[str, Any]]:
         j = r.json()
         if not isinstance(j, dict):
             return None
-        _EDGE_API_CACHE[url] = (now, j)
+        _cache_set_multi_bounded(_EDGE_API_CACHE, url, j, ttl_s=ttl_s, max_items=max_items)
         return j
     except Exception:
         return None
@@ -8944,6 +9148,11 @@ def _load_skater_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
         ttl_s = 21600
 
     try:
+        max_items = max(1, int(os.getenv('SKATER_BIOS_CACHE_MAX_ITEMS', '4') or '4'))
+    except Exception:
+        max_items = 4
+
+    try:
         season_i = int(season_id)
     except Exception:
         season_i = 0
@@ -8954,6 +9163,7 @@ def _load_skater_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
             season_i = 0
 
     now = time.time()
+    _cache_prune_ttl_and_size(_SKATER_BIOS_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _SKATER_BIOS_CACHE.get(season_i)
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
@@ -8988,7 +9198,7 @@ def _load_skater_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
     except Exception:
         out = {}
 
-    _SKATER_BIOS_CACHE[season_i] = (now, out)
+    _cache_set_multi_bounded(_SKATER_BIOS_CACHE, season_i, out, ttl_s=ttl_s, max_items=max_items)
     return out
 
 
@@ -9005,6 +9215,11 @@ def _load_goalie_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
         ttl_s = 21600
 
     try:
+        max_items = max(1, int(os.getenv('SKATER_BIOS_CACHE_MAX_ITEMS', '4') or '4'))
+    except Exception:
+        max_items = 4
+
+    try:
         season_i = int(season_id)
     except Exception:
         season_i = 0
@@ -9016,6 +9231,7 @@ def _load_goalie_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
 
     cache_key = -int(season_i or 0)
     now = time.time()
+    _cache_prune_ttl_and_size(_SKATER_BIOS_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _SKATER_BIOS_CACHE.get(cache_key)
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
@@ -9047,7 +9263,7 @@ def _load_goalie_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
     except Exception:
         out = {}
 
-    _SKATER_BIOS_CACHE[cache_key] = (now, out)
+    _cache_set_multi_bounded(_SKATER_BIOS_CACHE, cache_key, out, ttl_s=ttl_s, max_items=max_items)
     return out
 
 
@@ -9103,6 +9319,11 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
         ttl_s = 21600
 
     try:
+        max_items = max(1, int(os.getenv('ALL_ROSTERS_BY_SEASON_CACHE_MAX_ITEMS', '6') or '6'))
+    except Exception:
+        max_items = 6
+
+    try:
         season_i = int(season_id)
     except Exception:
         season_i = 0
@@ -9118,6 +9339,7 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
         current_i = 0
 
     now = time.time()
+    _cache_prune_ttl_and_size(_ALL_ROSTERS_BY_SEASON_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _ALL_ROSTERS_BY_SEASON_CACHE.get(season_i)
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
@@ -9131,7 +9353,7 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
                 out = {**out, **g}
         except Exception:
             pass
-        _ALL_ROSTERS_BY_SEASON_CACHE[season_i] = (now, out)
+        _cache_set_multi_bounded(_ALL_ROSTERS_BY_SEASON_CACHE, season_i, out, ttl_s=ttl_s, max_items=max_items)
         return out
 
     out: Dict[int, Dict[str, str]] = {}
@@ -9181,13 +9403,33 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
                 continue
             if pid_i in out:
                 if (not out[pid_i].get('name')) and info.get('name'):
-                    out[pid_i]['name'] = info.get('name') or out[pid_i].get('name')
+                    out[pid_i]['name'] = str(info.get('name') or '')
                 continue
-            out[pid_i] = info
+            try:
+                info_d = info if isinstance(info, dict) else {}
+                name_s = str(info_d.get('name') or '').strip() or str(pid_i)
+                team_s = str(info_d.get('team') or '').strip().upper()
+                pos_raw = str(info_d.get('positionCode') or info_d.get('position') or '').strip().upper()
+                pos = 'G' if pos_raw.startswith('G') else ('D' if pos_raw.startswith('D') else ('F' if pos_raw else ''))
+                out[pid_i] = {
+                    'playerId': str(pid_i),
+                    'name': name_s,
+                    'team': team_s,
+                    'position': pos,
+                    'positionCode': pos_raw,
+                }
+            except Exception:
+                out[pid_i] = {
+                    'playerId': str(pid_i),
+                    'name': str(pid_i),
+                    'team': '',
+                    'position': '',
+                    'positionCode': '',
+                }
     except Exception:
         pass
 
-    _ALL_ROSTERS_BY_SEASON_CACHE[season_i] = (now, out)
+    _cache_set_multi_bounded(_ALL_ROSTERS_BY_SEASON_CACHE, season_i, out, ttl_s=ttl_s, max_items=max_items)
     return out
 
 
@@ -9972,7 +10214,11 @@ def load_model_file(fname: str) -> Optional[Any]:
         return None
     try:
         m = joblib.load(path)
-        _MODEL_CACHE[fname] = m
+        try:
+            max_items = max(1, int(os.getenv('MODEL_CACHE_MAX_ITEMS', '24') or '24'))
+        except Exception:
+            max_items = 24
+        _dict_set_bounded(_MODEL_CACHE, fname, m, max_items=max_items)
         return m
     except Exception:
         return None
@@ -10067,6 +10313,11 @@ def api_game_boxscore(game_id: int):
     if not force:
         try:
             ttl = int(os.getenv('BOX_CACHE_TTL_SECONDS', '600'))
+            try:
+                max_items = max(1, int(os.getenv('BOX_CACHE_MAX_ITEMS', '64') or '64'))
+            except Exception:
+                max_items = 64
+            _cache_prune_ttl_and_size(_BOX_CACHE, ttl_s=ttl, max_items=max_items)
             cached = _cache_get(_BOX_CACHE, int(game_id), ttl)
             if cached:
                 return jsonify(cached)
@@ -10084,7 +10335,15 @@ def api_game_boxscore(game_id: int):
     if 'id' in data and 'gameId' not in data:
         data['gameId'] = data['id']
     try:
-        _cache_set(_BOX_CACHE, int(game_id), data)
+        ttl = int(os.getenv('BOX_CACHE_TTL_SECONDS', '600'))
+    except Exception:
+        ttl = 600
+    try:
+        max_items = max(1, int(os.getenv('BOX_CACHE_MAX_ITEMS', '64') or '64'))
+    except Exception:
+        max_items = 64
+    try:
+        _cache_set_multi_bounded(_BOX_CACHE, int(game_id), data, ttl_s=ttl, max_items=max_items)
     except Exception:
         pass
     resp_json = jsonify(data)
@@ -10135,6 +10394,10 @@ def api_game_pbp(game_id: int):
         force = False
     live_ttl = 5  # seconds for live
     std_ttl = int(os.getenv('PBP_CACHE_TTL_SECONDS', '600'))
+    try:
+        max_items = max(1, int(os.getenv('PBP_CACHE_MAX_ITEMS', '24') or '24'))
+    except Exception:
+        max_items = 24
     disk_path = _disk_cache_path_pbp(int(game_id))
     if not force:
         try:
@@ -10149,6 +10412,7 @@ def api_game_pbp(game_id: int):
                 if ts and (time.time() - ts) < ttl:
                     return jsonify({k: v for k, v in js.items() if not k.startswith('_')})
             # Try in-memory cache if disk miss
+            _cache_prune_ttl_and_size(_PBP_CACHE, ttl_s=std_ttl, max_items=max_items)
             cached = _cache_get(_PBP_CACHE, int(game_id), std_ttl)
             if cached:
                 return jsonify(cached)
@@ -10754,8 +11018,6 @@ def api_game_pbp(game_id: int):
     try:
         if not compute_xg:
             raise Exception('xg_disabled')
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        model_dir = os.path.join(project_root, 'Model')
 
         # Helper: map season integer like 20142015 to previous, current, next for 3 sliding windows
         def season_prev(s: int) -> int:
@@ -10764,19 +11026,6 @@ def api_game_pbp(game_id: int):
         def season_next(s: int) -> int:
             a = int(str(s)[:4]); b = int(str(s)[4:])
             return (a+1)*10000 + (b+1)
-
-        def load_model(fname: str):
-            if fname in _MODEL_CACHE:
-                return _MODEL_CACHE[fname]
-            path = os.path.join(model_dir, fname)
-            if not os.path.exists(path):
-                return None
-            try:
-                m = joblib.load(path)
-                _MODEL_CACHE[fname] = m
-                return m
-            except Exception:
-                return None
 
         # Low-memory per-row one-hot encoding without building a full dummy matrix
         base_feature_cols = [
@@ -10796,7 +11045,11 @@ def api_game_pbp(game_id: int):
                     booster = m.get_booster()
                     cols = getattr(booster, 'feature_names', None)
                 if cols:
-                    _FEATURE_COLS_CACHE[key] = cols
+                    try:
+                        max_items = max(1, int(os.getenv('FEATURE_COLS_CACHE_MAX_ITEMS', '512') or '512'))
+                    except Exception:
+                        max_items = 512
+                    _dict_set_bounded(_FEATURE_COLS_CACHE, key, cols, max_items=max_items)
                 return cols
             except Exception:
                 return None
@@ -10851,7 +11104,7 @@ def api_game_pbp(game_id: int):
                 # Choose middle window first as most centered
                 order = [1, 0, 2]
                 names = [all_names[i] for i in order[:num_windows]]
-            models = [load_model(n) for n in names]
+            models = [load_model_file(n) for n in names]
             models = [m for m in models if m is not None]
             if not models:
                 return None
@@ -10946,7 +11199,7 @@ def api_game_pbp(game_id: int):
                     names = [f"{family}_20222023_20242025.pkl"]
                 else:
                     names = window_filenames_for_season(s_cur, family)
-                models = [load_model(n) for n in names]
+                models = [load_model_file(n) for n in names]
                 models = [m for m in models if m is not None]
                 if not models:
                     continue
@@ -11039,7 +11292,7 @@ def api_game_pbp(game_id: int):
         'gameState': game_state,
     }
     try:
-        _cache_set(_PBP_CACHE, int(game_id), out_obj)
+        _cache_set_multi_bounded(_PBP_CACHE, int(game_id), out_obj, ttl_s=std_ttl, max_items=max_items)
     except Exception:
         pass
     # Write to disk cache with metadata
@@ -11085,10 +11338,45 @@ def api_game_shifts(game_id: int):
         'home': f"https://www.nhl.com/scores/htmlreports/{season_dir}/TH{suffix}.HTM",
     }
 
-    # Disk cache check first (needs gameState awareness from boxscore)
+    # Cache TTLs
     live_ttl = 5
     std_ttl = int(os.getenv('SHIFTS_CACHE_TTL_SECONDS', '600'))
+    try:
+        max_items = max(1, int(os.getenv('SHIFTS_CACHE_MAX_ITEMS', '24') or '24'))
+    except Exception:
+        max_items = 24
     disk_path = _disk_cache_path_shifts(int(game_id))
+
+    # Disk cache first (contains gameState so we can pick live vs std TTL without fetching boxscore)
+    if not force:
+        try:
+            if os.path.exists(disk_path):
+                import json
+                js = None
+                with open(disk_path, 'r', encoding='utf-8') as f:
+                    js = json.load(f)
+                ts = float((js or {}).get('_cachedAt', 0.0) or 0.0)
+                gstate = str((js or {}).get('gameState') or '').upper()
+                ttl = live_ttl if gstate in ('LIVE', 'SCHEDULED', 'PREVIEW', 'INPROGRESS') else std_ttl
+                if ts and (time.time() - ts) < ttl:
+                    return jsonify({k: v for k, v in (js or {}).items() if not str(k).startswith('_')})
+        except Exception:
+            pass
+
+    # In-memory cache next (also includes gameState)
+    if not force:
+        try:
+            _cache_prune_ttl_and_size(_SHIFTS_CACHE, ttl_s=std_ttl, max_items=max_items)
+            cached = _SHIFTS_CACHE.get(int(game_id))
+            if cached:
+                ts = float((cached[0] or 0.0))
+                payload = cached[1]
+                gstate = str((payload or {}).get('gameState') or '').upper()
+                ttl = live_ttl if gstate in ('LIVE', 'SCHEDULED', 'PREVIEW', 'INPROGRESS') else std_ttl
+                if ts and (time.time() - ts) < ttl:
+                    return jsonify(payload)
+        except Exception:
+            pass
 
     def fetch_html(url: str) -> Optional[str]:
         try:
@@ -11105,8 +11393,6 @@ def api_game_shifts(game_id: int):
             return None
         return None
 
-    pages = {side: fetch_html(u) for side, u in urls.items()}
-
     # Fetch boxscore to map to player IDs
     try:
         r = requests.get(f'https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore', timeout=20)
@@ -11116,20 +11402,7 @@ def api_game_shifts(game_id: int):
     except Exception:
         return jsonify({'error': 'Failed to fetch boxscore'}), 502
 
-    # Try disk cache after knowing the gameState
-    if not force:
-        try:
-            if os.path.exists(disk_path):
-                import json, time
-                with open(disk_path, 'r', encoding='utf-8') as f:
-                    js = json.load(f)
-                ts = float(js.get('_cachedAt', 0.0))
-                gstate = str(js.get('gameState') or '').upper()
-                ttl = live_ttl if gstate in ('LIVE', 'SCHEDULED', 'PREVIEW', 'INPROGRESS') else std_ttl
-                if ts and (time.time() - ts) < ttl:
-                    return jsonify({k: v for k, v in js.items() if not k.startswith('_')})
-        except Exception:
-            pass
+    pages = {side: fetch_html(u) for side, u in urls.items()}
 
     def unify_roster(team_stats: Dict) -> List[Dict]:
         res: List[Dict] = []
@@ -11897,19 +12170,22 @@ def api_game_shifts(game_id: int):
         'source': urls,
         'shifts': split_rows,
     }
+
     try:
-        ttl = int(os.getenv('SHIFTS_CACHE_TTL_SECONDS', '600'))
-        _cache_set(_SHIFTS_CACHE, int(game_id), out)
-    except Exception:
-        pass
-    # Include gameState for disk cache TTL check and persist to disk
-    try:
+        # Include gameState for disk cache TTL check
         game_state = str((box.get('gameState') or box.get('gameStatus') or '')).upper()
         out['gameState'] = game_state
     except Exception:
         pass
+
     try:
-        import json, time
+        _cache_set_multi_bounded(_SHIFTS_CACHE, int(game_id), out, ttl_s=std_ttl, max_items=max_items)
+    except Exception:
+        pass
+
+    # Persist to disk
+    try:
+        import json
         js = dict(out)
         js['_cachedAt'] = time.time()
         with open(disk_path, 'w', encoding='utf-8') as f:
@@ -11923,245 +12199,5 @@ def api_game_shifts(game_id: int):
         except Exception:
             pass
     return resp
-    running_away = 0
-    running_home = 0
-
-    # Determine orientation using SUM(x) of shot attempts grouped by (period, event-owner team)
-    period_team_sum_x: Dict[Tuple[int, int], float] = {}
-    period_sum_all: Dict[int, float] = {}
-    for pl in plays_raw:
-        pd = ((pl.get('periodDescriptor') or {}).get('number'))
-        try:
-            pd_key = int(pd) if pd is not None else None
-        except Exception:
-            pd_key = None
-        if not pd_key:
-            continue
-        tc = pl.get('typeCode')
-        if tc not in (505, 506, 507, 508):  # shot attempts
-            continue
-        d0 = pl.get('details') or {}
-        x0 = d0.get('xCoord')
-        if x0 is None:
-            continue
-        try:
-            xx = float(x0)
-        except Exception:
-            continue
-        period_sum_all[pd_key] = period_sum_all.get(pd_key, 0.0) + xx
-        owner0 = d0.get('eventOwnerTeamId')
-        if isinstance(owner0, int) and owner0 in (home_id, away_id):
-            key_t = (pd_key, owner0)
-            period_team_sum_x[key_t] = period_team_sum_x.get(key_t, 0.0) + xx
-
-    mapped: List[Dict] = []
-    for pl in plays_raw:
-        period = ((pl.get('periodDescriptor') or {}).get('number'))
-        time_in_period = pl.get('timeInPeriod') or ''
-        type_code = pl.get('typeCode')
-        event_key = pl.get('typeDescKey')
-        details = pl.get('details') or {}
-        situation = pl.get('situationCode') or ''
-        strength = strength_from_situation(situation, details.get('eventOwnerTeamId'))
-        x = details.get('xCoord')
-        y = details.get('yCoord')
-        zone = details.get('zoneCode')
-        reason = details.get('reason')
-        secondary_reason = details.get('secondaryReason')
-        type_code2 = details.get('typeCode') if isinstance(details.get('typeCode'), str) else None
-        pen_dur = details.get('duration')
-        event_owner = details.get('eventOwnerTeamId')
-        event_team_abbrev = away_abbrev if event_owner == away_id else home_abbrev if event_owner == home_id else None
-        opponent_abbrev = home_abbrev if event_team_abbrev == away_abbrev else away_abbrev if event_team_abbrev == home_abbrev else None
-        goalie_id = details.get('goalieInNetId')
-        goalie_name = player_name(goalie_id) if goalie_id else None
-
-        # Collect involved player ids in priority order
-        candidate_ids: List[int] = []
-        for key in [
-            'scoringPlayerId', 'shootingPlayerId', 'playerId', 'hittingPlayerId', 'hitteePlayerId',
-            'assist1PlayerId', 'assist2PlayerId', 'blockingPlayerId', 'losingPlayerId', 'winningPlayerId',
-            'committedByPlayerId', 'drawnByPlayerId'
-        ]:
-            pid = details.get(key)
-            if pid and pid not in candidate_ids:
-                candidate_ids.append(pid)
-        p1_id = candidate_ids[0] if len(candidate_ids) > 0 else None
-        p2_id = candidate_ids[1] if len(candidate_ids) > 1 else None
-        p3_id = candidate_ids[2] if len(candidate_ids) > 2 else None
-        p1_name = player_name(p1_id) if p1_id else None
-        p2_name = player_name(p2_id) if p2_id else None
-        p3_name = player_name(p3_id) if p3_id else None
-
-        # Shot / goal classification
-        is_goal = (type_code == 505)
-        is_sog = (type_code == 506) or is_goal
-        is_miss = (type_code == 507)
-        is_block = (type_code == 508)
-        # Blocked shots: swap zone O <-> D for display only (coords are shooter-perspective upstream)
-        if is_block and zone in ('O', 'D'):
-            zone = 'O' if zone == 'D' else 'D'
-
-        # Normalize coordinates so offensive zone is to the right (positive x) for the period
-        nx: Optional[float] = None
-        ny: Optional[float] = None
-        try:
-            pd_key2 = int(period) if period is not None else None
-        except Exception:
-            pd_key2 = None
-        sign = 1
-        if pd_key2 is not None:
-            if isinstance(event_owner, int) and event_owner in (home_id, away_id):
-                key = (pd_key2, event_owner)
-                if key in period_team_sum_x:
-                    sign = 1 if period_team_sum_x[key] >= 0 else -1
-                else:
-                    opp = home_id if event_owner == away_id else away_id if event_owner == home_id else None
-                    if isinstance(opp, int) and (pd_key2, opp) in period_team_sum_x:
-                        sign = -1 if period_team_sum_x[(pd_key2, opp)] >= 0 else 1
-                    else:
-                        sign = 1 if period_sum_all.get(pd_key2, 0.0) >= 0 else -1
-            else:
-                sign = 1 if period_sum_all.get(pd_key2, 0.0) >= 0 else -1
-        try:
-            nx = (float(x) * sign) if x is not None else None
-        except Exception:
-            nx = None
-        try:
-            ny = (float(y) * sign) if y is not None else None
-        except Exception:
-            ny = None
-
-        # ScoreState: goal differential from perspective of event team BEFORE applying current event.
-        if event_owner == away_id:
-            score_state_val = running_away - running_home
-        elif event_owner == home_id:
-            score_state_val = running_home - running_away
-        else:
-            score_state_val = running_away - running_home
-
-        # Possession attempts (Corsi/Fenwick)
-        corsi = 1 if (is_goal or is_sog or is_miss or is_block) and event_team_abbrev else 0
-        fenwick = 1 if (is_goal or is_sog or is_miss) and event_team_abbrev else 0
-        shot = 1 if is_sog else 0
-
-        # Position & shoots from primary player if available
-        position = None
-        shoots = None
-        if p1_id and p1_id in roster:
-            pos_code = roster[p1_id].get('positionCode')
-            position = pos_code[0] if pos_code else None
-
-        # gameTime calculation in seconds
-        secs_elapsed = parse_time_to_seconds(time_in_period) or 0
-        try:
-            game_time = ((period - 1) * 20 * 60 + secs_elapsed) if period else secs_elapsed
-        except Exception:
-            game_time = secs_elapsed
-
-        # Venue from event team perspective: Home/Away
-        venue_ha = 'Home' if event_owner == home_id else ('Away' if event_owner == away_id else '')
-
-        # Shot geometry (feet/degrees) relative to net at (89,0), using normalized coords
-        shot_distance = None
-        shot_angle = None
-        if nx is not None and ny is not None and (is_goal or is_sog or is_miss or is_block):
-            try:
-                dx = 89.0 - float(nx)
-                dy = 0.0 - float(ny)
-                dist = (dx * dx + dy * dy) ** 0.5
-                ang = math.degrees(math.atan2(abs(dy), dx if dx != 0 else 1e-6))
-                shot_distance = round(dist, 2)
-                shot_angle = round(ang, 2)
-            except Exception:
-                pass
-
-        # SeasonState: map gameType to 'regular' or 'playoffs'
-        gt = data.get('gameType')
-        season_state = 'playoffs' if str(gt) == '3' else 'regular'
-
-        mapped.append({
-            'GameID': data.get('id'),
-            'Season': data.get('season'),
-            'SeasonState': season_state,
-            'Venue': venue_ha,
-            'Period': period,
-            'gameTime': int(game_time),
-            'StrengthState': strength,
-            'typeCode': type_code,
-            'Event': event_key,
-            'x': nx,
-            'y': ny,
-            'Zone': zone,
-            'reason': reason,
-            'shotType': details.get('shotType'),
-            'secondaryReason': secondary_reason,
-            'typeCode2': type_code2,
-            'PEN_duration': pen_dur,
-            'EventTeam': event_team_abbrev,
-            'Opponent': opponent_abbrev,
-            'Goalie_ID': goalie_id,
-            'Goalie': goalie_name,
-            'Player1_ID': p1_id,
-            'Player1': p1_name,
-            'Player2_ID': p2_id,
-            'Player2': p2_name,
-            'Player3_ID': p3_id,
-            'Player3': p3_name,
-            'Corsi': corsi,
-            'Fenwick': fenwick,
-            'Shot': shot,
-            'Goal': 1 if is_goal else 0,
-            'EventIndex': pl.get('eventId'),
-            'ShiftIndex': None,
-            'ScoreState': score_state_val,
-            'Home_Forwards_ID': None,
-            'Home_Forwards': None,
-            'Home_Defenders_ID': None,
-            'Home_Defenders': None,
-            'Home_Goalie_ID': None,
-            'Home_Goalie': None,
-            'Away_Forwards_ID': None,
-            'Away_Forwards': None,
-            'Away_Defenders_ID': None,
-            'Away_Defenders': None,
-            'Away_Goalie_ID': None,
-            'Away_Goalie': None,
-            'BoxID': None,
-            'BoxID_rev': None,
-            'BoxSize': None,
-            'ShotDistance': shot_distance,
-            'ShotAngle': shot_angle,
-            'Position': position,
-            'Shoots': shoots,
-            'xG_F': None,
-            'xG_S': None,
-            'xG_F2': None,
-        })
-
-        # AFTER mapping current play, update running score when this is a goal
-        if is_goal:
-            if 'awayScore' in details and 'homeScore' in details and details.get('awayScore') is not None and details.get('homeScore') is not None:
-                try:
-                    ra = details.get('awayScore')
-                    rh = details.get('homeScore')
-                    running_away = int(ra) if ra is not None else running_away
-                    running_home = int(rh) if rh is not None else running_home
-                except Exception:
-                    if event_owner == away_id:
-                        running_away += 1
-                    elif event_owner == home_id:
-                        running_home += 1
-            else:
-                if event_owner == away_id:
-                    running_away += 1
-                elif event_owner == home_id:
-                    running_home += 1
-
-    return jsonify({
-        'gameId': data.get('id'),
-        'plays': mapped,
-    })
 
 
- 
