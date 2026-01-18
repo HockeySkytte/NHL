@@ -275,6 +275,25 @@
     #skaterImg{ order:2; width:140px; height:140px; }
     #skaterInfo{ order:3; justify-content:center; gap:12px; font-size:14px; }
     .subtabs{ justify-content:center; flex-wrap:wrap; }
+
+    /* Filter context sizing + layout (match Skaters/Teams) */
+    #tabPanelCard .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelCharts .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelTable .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
+    #tabPanelTable .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelTable .panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #tabPanelTable .panel-actions .config-btn{ flex:1 1 120px; }
+
+    /* Table View: no sticky columns on mobile */
+    .metrics-table td.rank,
+    .metrics-table td.name,
+    .metrics-table th.rank,
+    .metrics-table th.name{
+      position:static !important;
+      left:auto !important;
+      z-index:auto !important;
+    }
+    .metrics-table td.rank{ border-right:none !important; }
   }
 </style>
 {% endblock %}
@@ -306,7 +325,7 @@
     <div id="tabPanelTable" class="panel" role="tabpanel" style="display:none;">
       <div class="card-panel-hd" style="padding-bottom: 8px;">
         <div id="tableSlicerSummary" class="card-panel-meta"></div>
-        <div style="display:flex; gap:10px; align-items:center;">
+        <div class="panel-actions">
           <button id="btnReloadTable" class="config-btn" type="button">Reload</button>
           <button id="btnExportTableCsv" class="config-btn" type="button">Export CSV</button>
         </div>

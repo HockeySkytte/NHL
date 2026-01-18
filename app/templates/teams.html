@@ -179,6 +179,24 @@
     #tabPanelCard .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
     #tabPanelCard .config-btn{ width:100%; }
 
+    /* Charts/Table: smaller context + (Table) buttons above context */
+    #tabPanelCharts .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelTable .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
+    #tabPanelTable .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelTable .panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #tabPanelTable .panel-actions .config-btn{ flex:1 1 120px; }
+
+    /* Table View: no sticky columns on mobile */
+    .metrics-table td.rank,
+    .metrics-table td.name,
+    .metrics-table th.rank,
+    .metrics-table th.name{
+      position:static !important;
+      left:auto !important;
+      z-index:auto !important;
+    }
+    .metrics-table td.rank{ border-right:none !important; }
+
     /* Projections: Radar above KPIs */
     .proj-ov-grid{ display:flex; flex-direction:column; gap:12px; }
     .proj-ov-grid > :nth-child(1){ order:2; }
@@ -209,7 +227,7 @@
     <div id="tabPanelCard" class="panel" role="tabpanel">
       <div class="card-panel-hd">
         <div id="cardSlicerSummary" class="card-panel-meta"></div>
-        <div style="display:flex; gap:10px; align-items:center;">
+        <div class="panel-actions">
           <button id="btnReloadCard" class="config-btn" type="button">Reload</button>
         </div>
       </div>
@@ -298,7 +316,7 @@
     <div id="tabPanelTable" class="panel" role="tabpanel" style="display:none;">
       <div class="card-panel-hd" style="padding-bottom: 8px;">
         <div id="tableSlicerSummary" class="card-panel-meta"></div>
-        <div style="display:flex; gap:10px; align-items:center;">
+        <div class="panel-actions">
           <button id="btnConfigureTable" class="config-btn" type="button">Configure Table</button>
           <button id="btnReloadTable" class="config-btn" type="button">Reload</button>
           <button id="btnExportTableCsv" class="config-btn" type="button">Export CSV</button>

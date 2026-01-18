@@ -70,6 +70,7 @@
 .zone-wrap { position:relative; width:100%; max-width:620px; margin:0 auto; aspect-ratio:75/85; border-radius:10px; overflow:hidden; background:#0d1117; }
 .zone-wrap canvas { position:absolute; inset:0; width:100%; height:100%; }
 @media (max-width: 1100px){ .report-rink-row { grid-template-columns:1fr; } }
+.xgmap-wrap{ max-width:none; margin:0; aspect-ratio:16/6; background:transparent; border:1px solid #222c3a; }
 .kpi-stack{ display:flex; flex-direction:column; height:100%; background:var(--panel); border:1px solid #222c3a; border-radius:10px; padding:8px; }
 .kpi-card { background:#1a212e; border:1px solid #222c3a; border-radius:12px; padding:10px; display:flex; flex-direction:column; gap:8px; }
 .kpi-card h5{ margin:0; font-size:15px; font-weight:800; text-align:center; color:#d6d3e9; }
@@ -89,6 +90,44 @@
 .shot-tooltip .meta { display:flex; flex-direction:column; gap:2px; font-size:12px; }
 .shot-tooltip .name { font-weight:700; font-size:13px; }
 .team-logo { width:34px; height:34px; object-fit:contain; filter:drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+
+@media (max-width: 980px){
+  .game-header{ margin-bottom:14px; }
+  .game-header h2{ font-size:24px; line-height:1.12; }
+  .subline, .final-line{ font-size:13px; }
+  .game-tabs{ gap:18px; margin-bottom:14px; }
+  .game-tabs button{ padding:12px 4px 14px; font-size:13px; }
+  .panel{ padding:14px 14px 18px; border-radius:12px; }
+
+  .report-slicers{ padding:8px 10px; gap:10px; }
+  .slicer select{ min-width:0; width:100%; }
+  .slicer .dropdown-btn{ min-width:0; width:100%; }
+
+  /* Report sub-tabs: fit all on mobile */
+  .report-subtabs{ gap:4px; }
+  .report-subtabs button{ flex:1 1 0; min-width:0; padding:8px 6px; font-size:12px; line-height:1.1; text-align:center; white-space:normal; }
+  .report-subtabs button.active::after{ left:4px; right:4px; height:2px; }
+
+  /* Shot/Heat Map: KPIs first on mobile */
+  .report-rink-row{ display:flex; flex-direction:column; }
+  .report-rink-row > .report-kpis{ order:1; }
+  .report-rink-row > .zone-def{ order:2; }
+  .report-rink-row > .zone-off{ order:3; }
+
+  /* xG Map: make it taller on phones */
+  .xgmap-wrap{ aspect-ratio:16/9; }
+}
+
+/* Shot/Heat Map: in landscape, show zones side-by-side under KPIs */
+@media (max-width: 980px) and (orientation: landscape){
+  .report-rink-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .report-rink-row > .report-kpis{ grid-column:1 / -1; grid-row:1; }
+  .report-rink-row > .zone-def{ grid-column:1; grid-row:2; }
+  .report-rink-row > .zone-off{ grid-column:2; grid-row:2; }
+
+  /* xG Map: landscape can stay wide */
+  .xgmap-wrap{ aspect-ratio:16/6; }
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -892,14 +931,14 @@ function renderReportView(view){
   if(view==='shot-map'){
     wrap.innerHTML = `
       <div class="report-rink-row">
-        <div class="zone">
+        <div class="zone zone-def">
           <h4>Defensive Zone</h4>
           <div class="zone-wrap">
             <canvas id="defBase"></canvas>
             <canvas id="defShots"></canvas>
           </div>
         </div>
-        <div class="kpi-stack">
+        <div class="kpi-stack report-kpis">
           <div style="display:flex; flex-direction:column; justify-content:space-between; gap:14px; flex:1;">
             <div class="kpi-card">
               <h5>Corsi</h5>
@@ -951,7 +990,7 @@ function renderReportView(view){
             </div>
           </div>
         </div>
-        <div class="zone">
+        <div class="zone zone-off">
           <h4>Offensive Zone</h4>
           <div class="zone-wrap">
             <canvas id="offBase"></canvas>
@@ -977,14 +1016,14 @@ function renderReportView(view){
   } else if(view==='heat-map'){
     wrap.innerHTML = `
       <div class="report-rink-row">
-        <div class="zone">
+        <div class="zone zone-def">
           <h4>Defensive Zone</h4>
           <div class="zone-wrap">
             <canvas id="defBase"></canvas>
             <canvas id="defHeat"></canvas>
           </div>
         </div>
-  <div class="kpi-stack">
+  <div class="kpi-stack report-kpis">
     <div style="display:flex; flex-direction:column; justify-content:space-between; gap:14px; flex:1;">
             <div class="kpi-card">
               <h5>Corsi</h5>
@@ -1036,7 +1075,7 @@ function renderReportView(view){
             </div>
           </div>
         </div>
-        <div class="zone">
+        <div class="zone zone-off">
           <h4>Offensive Zone</h4>
           <div class="zone-wrap">
             <canvas id="offBase"></canvas>
@@ -1607,6 +1646,24 @@ function buildXgDiffSeries(plays){
   if(series.length===0 || series[series.length-1].t < maxT){ series.push({t:maxT, y: series.length? series[series.length-1].y : 0}); }
   return series;
 }
+let _xgMapResizeObserver = null;
+function setupXgMapResizeObserver(container, ctx, series, team, opp, plays){
+  try{ if(_xgMapResizeObserver){ _xgMapResizeObserver.disconnect(); _xgMapResizeObserver=null; } }catch(_){ }
+  try{
+    if(!container || !ctx || !ctx.canvas || typeof ResizeObserver==='undefined') return;
+    _xgMapResizeObserver = new ResizeObserver(()=>{
+      const canvas = ctx.canvas;
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      if(!w || !h) return;
+      if(canvas.width===w && canvas.height===h) return;
+      canvas.width = w;
+      canvas.height = h;
+      drawXgMapArea(ctx, series, team, opp, plays);
+    });
+    _xgMapResizeObserver.observe(container);
+  }catch(e){ /* ignore */ }
+}
 function renderTeamsPage(wrap, plays){
   const team = getSelectedTeam(); const opp = getOpponentTeam(team);
   const series = buildXgDiffSeries(plays);
@@ -1616,7 +1673,7 @@ function renderTeamsPage(wrap, plays){
         <h3 style='margin:0;font-size:18px;'>xG Map</h3>
       </div>
       <div>
-        <div class="zone-wrap" style="max-width:none; aspect-ratio: 16/6; background:transparent; border:1px solid #222c3a;">
+        <div class="zone-wrap xgmap-wrap">
           <canvas id="xgMapCanvas"></canvas>
         </div>
       </div>
@@ -1624,6 +1681,7 @@ function renderTeamsPage(wrap, plays){
   const canvas = document.getElementById('xgMapCanvas'); if(!canvas) return;
   const ctx = canvas.getContext('2d'); canvas.width=canvas.clientWidth; canvas.height=canvas.clientHeight;
   drawXgMapArea(ctx, series, team, opp, plays);
+  setupXgMapResizeObserver(canvas.parentElement, ctx, series, team, opp, plays);
   // Tooltip interaction
   const tip = ensureShotTooltip(); // reuse tooltip shell
   const pad = {l:48,r:18,t:18,b:48};

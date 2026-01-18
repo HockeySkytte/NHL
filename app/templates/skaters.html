@@ -279,6 +279,26 @@
     #tabPanelCard .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
     #tabPanelCard .config-btn{ width:100%; }
 
+    /* Charts: smaller filter context (match Card) */
+    #tabPanelCharts .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+
+    /* Table View: buttons above filter context + smaller context */
+    #tabPanelTable .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
+    #tabPanelTable .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelTable .panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #tabPanelTable .panel-actions .config-btn{ flex:1 1 120px; }
+
+    /* Table View: no sticky columns on mobile */
+    .metrics-table td.rank,
+    .metrics-table td.name,
+    .metrics-table th.rank,
+    .metrics-table th.name{
+      position:static !important;
+      left:auto !important;
+      z-index:auto !important;
+    }
+    .metrics-table td.rank{ border-right:none !important; }
+
     /* RAPM: 5v5 on top, PP/SH side-by-side */
     .rapm-split{ grid-template-columns: 1fr 1fr; }
     .rapm-split > :nth-child(1){ grid-column: 1 / -1; }
@@ -322,7 +342,7 @@
     <div id="tabPanelTable" class="panel" role="tabpanel" style="display:none;">
       <div class="card-panel-hd" style="padding-bottom: 8px;">
         <div id="tableSlicerSummary" class="card-panel-meta"></div>
-        <div style="display:flex; gap:10px; align-items:center;">
+        <div class="panel-actions">
           <button id="btnConfigureTable" class="config-btn" type="button">Configure Table</button>
           <button id="btnReloadTable" class="config-btn" type="button">Reload</button>
           <button id="btnExportTableCsv" class="config-btn" type="button">Export CSV</button>

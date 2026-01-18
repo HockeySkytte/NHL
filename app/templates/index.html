@@ -28,6 +28,8 @@
   .schedule-table td.num{ text-align:right; font-variant-numeric: tabular-nums; }
   .schedule-table a{ color:inherit; text-decoration:none; font-weight:800; }
   .schedule-table a:hover{ text-decoration:underline; }
+  .schedule-table tbody tr{ cursor:pointer; }
+  .schedule-table tbody tr:hover{ filter:brightness(1.06); }
   .chip{ display:inline-flex; align-items:center; gap:8px; padding:5px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.16); background:rgba(0,0,0,0.18); font-weight:850; font-size:12px; letter-spacing:.2px; }
 
   @media (max-width: 980px){
@@ -238,9 +240,9 @@ function buildMonthTable(games, team){
     const fg = isLight(bg)? '#081018' : '#f1f5f9';
     const gameLink = `/game/${g.id}`;
     return `
-      <tr style="background:${bg}; color:${fg};">
+      <tr class="schedule-row" data-href="${gameLink}" tabindex="0" style="background:${bg}; color:${fg};">
         <td>${d && !isNaN(d) ? fmt(d) : ''}</td>
-        <td><a href="${gameLink}">${label}</a></td>
+        <td>${label}</td>
         <td><span class="chip">${status || '—'}</span></td>
         <td class="num">${score || '—'}</td>
       </tr>`;
@@ -280,6 +282,30 @@ function renderCurrentMonth(team){
   renderLegend(team);
 }
 
+// Mobile schedule table: make entire row clickable
+let __scheduleRowNavBound = false;
+function bindScheduleRowNav(){
+  if(__scheduleRowNavBound || !scheduleTableRoot) return;
+  __scheduleRowNavBound = true;
+  scheduleTableRoot.addEventListener('click', (e)=>{
+    const tr = e.target && e.target.closest ? e.target.closest('tr[data-href]') : null;
+    if(!tr) return;
+    // ignore clicks on real links if any appear
+    if(e.target && e.target.closest && e.target.closest('a')) return;
+    const href = tr.getAttribute('data-href');
+    if(href) window.location.href = href;
+  });
+  scheduleTableRoot.addEventListener('keydown', (e)=>{
+    const key = e.key || '';
+    if(key !== 'Enter' && key !== ' ') return;
+    const tr = e.target && e.target.closest ? e.target.closest('tr[data-href]') : null;
+    if(!tr) return;
+    e.preventDefault();
+    const href = tr.getAttribute('data-href');
+    if(href) window.location.href = href;
+  });
+}
+
 function renderLegend(team){
   const el = document.getElementById('scheduleLegend');
   if(!el) return;
@@ -293,6 +319,7 @@ function renderLegend(team){
 
 // Global init handles theme and data population; ensure schedule loads after meta.
 seasonStateSelect && seasonStateSelect.addEventListener('change', ()=> loadSchedule());
+bindScheduleRowNav();
 setTimeout(()=> loadSchedule(), 600);
 </script>
 {% endblock %}
