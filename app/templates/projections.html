@@ -398,17 +398,42 @@ function renderPlayerItems(list, preselectIds){
 
 function renderTable(games){
   if(!games || !games.length){ root.innerHTML = '<div class="live-empty">No games.</div>'; return; }
+  const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 980px)').matches);
   const panelAlt = (getComputedStyle(document.documentElement).getPropertyValue('--panel-alt').trim() || '#1c2233');
   const inputTextColor = getTextColorForBg(panelAlt);
-  const header = `<thead><tr>
-    <th class="col-center">Bet%</th>
-    <th class="col-center">Odds</th>
-    <th class="col-center">Away</th>
-    <th class="col-center">Win%</th>
-    <th class="col-center">Home</th>
-    <th class="col-center">Odds</th>
-    <th class="col-center">Bet%</th>
-  </tr></thead>`;
+
+  const fmtTime = (iso) => {
+    if(!iso) return '';
+    try{
+      const d = new Date(String(iso));
+      if(isNaN(d)) return '';
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }catch(_){
+      return '';
+    }
+  };
+
+  const header = isMobile
+    ? `<thead><tr>
+        <th class="col-center">Bet%</th>
+        <th class="col-center">Odds</th>
+        <th class="col-center">Away</th>
+        <th class="col-center">Win%</th>
+        <th class="col-center">Home</th>
+        <th class="col-center">Odds</th>
+        <th class="col-center">Bet%</th>
+      </tr></thead>`
+    : `<thead><tr>
+        <th class="col-center">Time</th>
+        <th class="col-center">Bet%</th>
+        <th class="col-center">Odds</th>
+        <th class="col-center">Away</th>
+        <th class="col-center">Win%</th>
+        <th class="col-center">Home</th>
+        <th class="col-center">Odds</th>
+        <th class="col-center">Bet%</th>
+        <th class="col-center">Lineups</th>
+      </tr></thead>`;
   window._oddsOverrides = window._oddsOverrides || {};
   const rows = games.map(g=>{
     const h = g.homeTeam||{}; const a = g.awayTeam||{};
@@ -444,8 +469,33 @@ function renderTable(games){
   const disAttr = started ? ' disabled' : '';
   const oddsAInput = `<input class="odds-input" style="color:${inputTextColor};" type="number" step="${step}"${minAttr} value="${displayOddsA}" data-game="${g.id}" data-side="away"${disAttr} />`;
   const oddsHInput = `<input class="odds-input" style="color:${inputTextColor};" type="number" step="${step}"${minAttr} value="${displayOddsH}" data-game="${g.id}" data-side="home"${disAttr} />`;
+    const timeCell = fmtTime(g.startTimeET || g.startTimeUTC);
+    const lineupDisabled = started ? ' disabled' : '';
+    const lineupCell = `<div style="display:flex; gap:8px; justify-content:center;">
+      <button class="lineup-btn" type="button" data-game="${g.id}" data-side="away" data-team="${a.abbrev||''}"${lineupDisabled}>${a.abbrev||'AWAY'}</button>
+      <button class="lineup-btn" type="button" data-game="${g.id}" data-side="home" data-team="${h.abbrev||''}"${lineupDisabled}>${h.abbrev||'HOME'}</button>
+    </div>`;
+
+    if(isMobile){
+      return `<tr class="proj-row" data-href="/odds/${g.id}" style="cursor:pointer;">
+        <td class="col-center">${(betA!=null && betA>0) ? `<span class="bet-chip" style="background:${betBgA}; color:${getTextColorForBg(betBgA)}">${(betA*100).toFixed(1)}%</span>` : ''}</td>
+        <td class="col-center">${oddsAInput}</td>
+        <td class="col-right">${awayCell}</td>
+        <td class="col-center">
+          <div class="win-duo">
+            <span class="win-chip" style="background:${winBgA}; color:${getTextColorForBg(winBgA)}">${winA}</span>
+            <span class="win-chip" style="background:${winBgH}; color:${getTextColorForBg(winBgH)}">${winH}</span>
+          </div>
+        </td>
+        <td class="col-left">${homeCell}</td>
+        <td class="col-center">${oddsHInput}</td>
+        <td class="col-center">${(betH!=null && betH>0) ? `<span class="bet-chip" style="background:${betBgH}; color:${getTextColorForBg(betBgH)}">${(betH*100).toFixed(1)}%</span>` : ''}</td>
+      </tr>`;
+    }
+
     return `<tr class="proj-row" data-href="/odds/${g.id}" style="cursor:pointer;">
-      <td class="col-center">${betA!=null ? `<span class="bet-chip" style="background:${betBgA}; color:${getTextColorForBg(betBgA)}">${(betA*100).toFixed(1)}%</span>` : ''}</td>
+      <td class="col-center">${timeCell}</td>
+      <td class="col-center">${(betA!=null && betA>0) ? `<span class="bet-chip" style="background:${betBgA}; color:${getTextColorForBg(betBgA)}">${(betA*100).toFixed(1)}%</span>` : ''}</td>
       <td class="col-center">${oddsAInput}</td>
       <td class="col-right">${awayCell}</td>
       <td class="col-center">
@@ -456,7 +506,8 @@ function renderTable(games){
       </td>
       <td class="col-left">${homeCell}</td>
       <td class="col-center">${oddsHInput}</td>
-      <td class="col-center">${betH!=null ? `<span class="bet-chip" style="background:${betBgH}; color:${getTextColorForBg(betBgH)}">${(betH*100).toFixed(1)}%</span>` : ''}</td>
+      <td class="col-center">${(betH!=null && betH>0) ? `<span class="bet-chip" style="background:${betBgH}; color:${getTextColorForBg(betBgH)}">${(betH*100).toFixed(1)}%</span>` : ''}</td>
+      <td class="col-center">${lineupCell}</td>
     </tr>`;
   }).join('');
   root.innerHTML = `<table class="live-table">${header}<tbody>${rows}</tbody></table>`;
@@ -485,6 +536,24 @@ function renderTable(games){
       }
       window._oddsOverrides[gameId][side] = americanVal;
       renderTable(games);
+    });
+  });
+
+  // Lineups buttons (desktop/tablet only)
+  root.querySelectorAll('.lineup-btn').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      if(btn.disabled) return;
+      const gameId = btn.getAttribute('data-game');
+      const side = btn.getAttribute('data-side');
+      const team = btn.getAttribute('data-team');
+      if(!gameId || !side || !team) return;
+      try{
+        await openLineupDialog(gameId, side, team);
+      }catch(err){
+        console.error('[lineup] open failed:', err);
+      }
     });
   });
 }
@@ -554,6 +623,22 @@ oddsDecimalBtn?.addEventListener('click', ()=>{
 setActiveWhich('today');
 loadGames('today');
 applyProjectionsTextColors();
+
+// Re-render table when crossing the mobile breakpoint so desktop/tablet shows Time/Lineups.
+try{
+  const mm = window.matchMedia('(max-width: 980px)');
+  const onBpChange = ()=>{
+    try{
+      const games = Object.values(window._currentGamesById || {});
+      if(games && games.length) renderTable(games);
+    }catch(_){/* ignore */}
+  };
+  if(mm && mm.addEventListener){
+    mm.addEventListener('change', onBpChange);
+  }else if(mm && mm.addListener){
+    mm.addListener(onBpChange);
+  }
+}catch(_){/* ignore */}
 
 // Re-apply after team theme changes (base.html sets CSS vars on teamSelect change)
 teamSelect?.addEventListener('change', ()=>{
