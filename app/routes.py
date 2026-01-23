@@ -3445,7 +3445,7 @@ def _team_id_by_abbrev() -> Dict[str, int]:
     return out
 
 
-def _build_team_base_stats(*, scope: str, season_int: int, season_state: str, strength_state: str = '5v5') -> Dict[str, Dict[str, Any]]:
+def _build_team_base_stats(*, scope: str, season_int: int, season_state: str, strength_state: str = '5v5', debug_meta: Optional[Dict[str, Any]] = None) -> Dict[str, Dict[str, Any]]:
     """Return per-team base totals keyed by team abbrev.
 
         For scope='season', prefers our derived team SeasonStats:
@@ -3477,26 +3477,80 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str, st
         except Exception:
             return 0.0
 
-    # Season scope: use derived team SeasonStats (static CSV + optional Sheets7 for 20252026)
+    # Season scope: prefer derived team SeasonStats (static CSV + optional Sheets7 for 20252026).
+    # If derived SeasonStats aren't available (e.g., Sheets7 not readable on Render and no static CSV for that season),
+    # we fall back to NHL stats REST season aggregates below.
     if scope_norm == 'season':
-        sheet_id = (os.getenv('TEAMSEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('SEASONSTATS_SHEET_ID') or '').strip()
+        # Prefer explicit TeamSeasonStats sheet id, then SeasonStats sheet id.
+        # Only fall back to GOOGLE_SHEETS_ID/PROJECTIONS_SHEET_ID so we don't accidentally
+        # read from a different doc that lacks the Teams worksheet (Sheets7).
+        sheet_id = (
+            os.getenv('TEAMSEASONSTATS_SHEET_ID')
+            or os.getenv('SEASONSTATS_SHEET_ID')
+            or os.getenv('GOOGLE_SHEETS_ID')
+            or os.getenv('PROJECTIONS_SHEET_ID')
+            or ''
+        ).strip()
         worksheet = (os.getenv('TEAMSEASONSTATS_WORKSHEET') or 'Sheets7').strip()
+
+        if isinstance(debug_meta, dict):
+            debug_meta.update({
+                'scope': scope_norm,
+                'season': int(season_int or 0),
+                'seasonState': ss_norm,
+                'strengthState': st_norm,
+                'teamSeasonStatsSheetId': sheet_id,
+                'teamSeasonStatsWorksheet': worksheet,
+            })
 
         sheet_rows: Optional[List[Dict[str, Any]]] = None
         sheet_ok = False
+        sheet_err: Optional[Exception] = None
         if sheet_id:
             try:
                 sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='TEAMSEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
                 sheet_ok = True
-            except Exception:
+            except Exception as e:
                 sheet_rows = None
                 sheet_ok = False
+                sheet_err = e
+        else:
+            sheet_err = None
+
+        if isinstance(debug_meta, dict):
+            debug_meta['teamSeasonStatsSheetAttempted'] = bool(sheet_id)
+            debug_meta['teamSeasonStatsSheetOk'] = bool(sheet_ok)
+            debug_meta['teamSeasonStatsSheetRowsCount'] = int(len(sheet_rows or []))
 
         rows_iter: Iterable[Dict[str, Any]]
         if int(season_int or 0) == 20252026 and sheet_ok and sheet_rows is not None:
             rows_iter = sheet_rows
+            if isinstance(debug_meta, dict):
+                debug_meta['teamSeasonStatsSource'] = 'sheets'
         else:
             rows_iter = _iter_teamseasonstats_static_rows(season=int(season_int))
+            if isinstance(debug_meta, dict):
+                debug_meta['teamSeasonStatsSource'] = 'static_csv'
+
+        # If Sheets7 was supposed to be used but isn't readable, capture a reason for debugging.
+        if isinstance(debug_meta, dict) and int(season_int or 0) == 20252026:
+            if not sheet_id:
+                debug_meta['teamSeasonStatsSheetErrorCode'] = 'missing_sheet_id'
+            elif not sheet_ok:
+                code = 'sheet_load_failed'
+                msg = str(sheet_err or '')
+                if 'Missing Google credentials' in msg:
+                    code = 'missing_google_credentials'
+                elif 'Invalid GOOGLE_SERVICE_ACCOUNT' in msg or 'Invalid Google service account JSON' in msg:
+                    code = 'invalid_google_credentials'
+                elif 'SpreadsheetNotFound' in msg:
+                    code = 'sheet_not_found_or_no_access'
+                elif 'WorksheetNotFound' in msg:
+                    code = 'worksheet_not_found'
+                debug_meta['teamSeasonStatsSheetErrorCode'] = code
+                msg2 = str(sheet_err or '')
+                if msg2:
+                    debug_meta['teamSeasonStatsSheetError'] = msg2[:400]
 
         def _ss_row(v: Any) -> str:
             raw = str(v or '').strip().lower()
@@ -3574,7 +3628,15 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str, st
         for team, d in acc.items():
             d['GP'] = int(gp_sum_by_team.get(team, 0))
 
-        return acc
+        # If we successfully built derived SeasonStats, we're done.
+        if acc:
+            if isinstance(debug_meta, dict):
+                debug_meta['teamSeasonStatsTeamsCount'] = int(len(acc))
+            return acc
+        # Else fall through to NHL stats REST season aggregates below.
+        if isinstance(debug_meta, dict):
+            debug_meta['teamSeasonStatsTeamsCount'] = 0
+            debug_meta['teamSeasonStatsSource'] = 'nhl_rest_fallback'
 
     def _summary_url(game_type_id: int) -> str:
         return (
@@ -3751,6 +3813,7 @@ def api_teams_card():
     rates = str(request.args.get('rates') or 'Totals').strip() or 'Totals'
     scope = str(request.args.get('scope') or 'season').strip().lower()
     metric_ids_raw = str(request.args.get('metricIds') or request.args.get('metrics') or '').strip()
+    want_debug = str(request.args.get('debug', '')).strip() in ('1', 'true', 'yes', 'y')
 
     try:
         season_int = int(season) if season else 20252026
@@ -3776,10 +3839,16 @@ def api_teams_card():
         defs0 = _load_card_metrics_defs('teams')
         metric_ids = [str(m.get('id')) for m in (defs0.get('metrics') or []) if isinstance(m, dict) and m.get('id')]
 
-    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state, strength_state=strength_state)
+    debug_meta: Optional[Dict[str, Any]] = {} if want_debug else None
+    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state, strength_state=strength_state, debug_meta=debug_meta)
     mine_base = base.get(team_ab)
     if not mine_base:
-        return jsonify({'error': 'not_found', 'team': team_ab}), 404
+        payload: Dict[str, Any] = {'error': 'not_found', 'team': team_ab}
+        if want_debug and isinstance(debug_meta, dict):
+            payload['debug'] = debug_meta
+            payload['debug']['baseTeamsCount'] = int(len(base or {}))
+            payload['debug']['baseTeamsSample'] = sorted(list((base or {}).keys()))[:10]
+        return jsonify(payload), 404
 
     defs = _load_card_metrics_defs('teams')
     def_map: Dict[str, Dict[str, Any]] = {str(m.get('id')): m for m in (defs.get('metrics') or []) if isinstance(m, dict) and m.get('id')}
@@ -3982,6 +4051,9 @@ def api_teams_card():
             'rates': rates,
             'metrics': out_metrics_edge,
         }
+        if want_debug and isinstance(debug_meta, dict):
+            payload['debug'] = debug_meta
+            payload['debug']['baseTeamsCount'] = int(len(base or {}))
         j = jsonify(payload)
         try:
             j.headers['Cache-Control'] = 'no-store'
@@ -4064,6 +4136,9 @@ def api_teams_card():
         'rates': rates,
         'metrics': out_metrics,
     }
+    if want_debug and isinstance(debug_meta, dict):
+        payload['debug'] = debug_meta
+        payload['debug']['baseTeamsCount'] = int(len(base or {}))
     j = jsonify(payload)
     try:
         j.headers['Cache-Control'] = 'no-store'
