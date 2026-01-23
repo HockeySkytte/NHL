@@ -977,6 +977,15 @@ def _load_sheet_rows_cached(sheet_id: str, worksheet: str, ttl_env: str = 'SHEET
     return rows
 
 
+def _seasonstats_sheet_id() -> str:
+    """Primary Google Sheets document id.
+
+    Convention: we default to PROJECTIONS_SHEET_ID so a single Render env var can power
+    projections + seasonstats + teams seasonstats (different worksheets in the same doc).
+    """
+    return (os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
+
+
 @main_bp.route('/api/odds/history/<int:game_id>')
 def api_odds_history(game_id: int):
     """Return ML history time series for both teams for a given game id.
@@ -2232,7 +2241,7 @@ def api_skaters_card():
     #   - all seasons: app/static/nhl_seasonstats.csv, with 20252026 replaced by Sheets6 when available
     rows_iter: Iterable[Dict[str, Any]]
     source = 'none'
-    sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    sheet_id = _seasonstats_sheet_id()
     worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
 
     sheet_rows: Optional[List[Dict[str, Any]]] = None
@@ -2979,7 +2988,7 @@ def api_goalies_card():
         defs0 = _load_card_metrics_defs('goalies')
         metric_ids = [str(m.get('id')) for m in (defs0.get('metrics') or []) if isinstance(m, dict) and m.get('id')]
 
-    sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    sheet_id = _seasonstats_sheet_id()
     worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
     sheet_rows: Optional[List[Dict[str, Any]]] = None
     sheet_ok = False
@@ -3481,16 +3490,9 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str, st
     # If derived SeasonStats aren't available (e.g., Sheets7 not readable on Render and no static CSV for that season),
     # we fall back to NHL stats REST season aggregates below.
     if scope_norm == 'season':
-        # Prefer explicit TeamSeasonStats sheet id, then SeasonStats sheet id.
-        # Only fall back to GOOGLE_SHEETS_ID/PROJECTIONS_SHEET_ID so we don't accidentally
-        # read from a different doc that lacks the Teams worksheet (Sheets7).
-        sheet_id = (
-            os.getenv('TEAMSEASONSTATS_SHEET_ID')
-            or os.getenv('SEASONSTATS_SHEET_ID')
-            or os.getenv('GOOGLE_SHEETS_ID')
-            or os.getenv('PROJECTIONS_SHEET_ID')
-            or ''
-        ).strip()
+        # Prefer explicit TeamSeasonStats sheet id, else default to the primary sheet doc id.
+        # This lets Render rely on PROJECTIONS_SHEET_ID alone (same doc, different worksheets).
+        sheet_id = (os.getenv('TEAMSEASONSTATS_SHEET_ID') or _seasonstats_sheet_id()).strip()
         worksheet = (os.getenv('TEAMSEASONSTATS_WORKSHEET') or 'Sheets7').strip()
 
         if isinstance(debug_meta, dict):
@@ -4597,7 +4599,7 @@ def api_goalies_series():
     if xg_model not in {'xG_S', 'xG_F', 'xG_F2'}:
         xg_model = 'xG_F'
 
-    sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    sheet_id = _seasonstats_sheet_id()
     worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
     sheet_rows: Optional[List[Dict[str, Any]]] = None
     sheet_ok = False
@@ -4902,7 +4904,7 @@ def api_skaters_table():
                 continue
 
     # SeasonStats source selection (same as Card).
-    sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    sheet_id = _seasonstats_sheet_id()
     worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
     sheet_rows: Optional[List[Dict[str, Any]]] = None
     sheet_ok = False
@@ -5442,7 +5444,7 @@ def api_goalies_table():
         defs0 = _load_card_metrics_defs('goalies')
         metric_ids = [str(m.get('id')) for m in (defs0.get('metrics') or []) if isinstance(m, dict) and m.get('id')]
 
-    sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    sheet_id = _seasonstats_sheet_id()
     worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
     sheet_rows: Optional[List[Dict[str, Any]]] = None
     sheet_ok = False
@@ -5829,7 +5831,7 @@ def api_skaters_scatter():
     if str(x_metric_id).startswith('Edge|') or str(y_metric_id).startswith('Edge|'):
         return jsonify({'error': 'edge_not_supported'}), 400
 
-    sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    sheet_id = _seasonstats_sheet_id()
     worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
     sheet_rows: Optional[List[Dict[str, Any]]] = None
     sheet_ok = False
@@ -6288,7 +6290,7 @@ def api_goalies_scatter():
     if not x_metric_id or not y_metric_id:
         return jsonify({'error': 'missing_metric', 'hint': 'Provide xMetricId and yMetricId'}), 400
 
-    sheet_id = (os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
+    sheet_id = _seasonstats_sheet_id()
     worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
     sheet_rows: Optional[List[Dict[str, Any]]] = None
     sheet_ok = False
