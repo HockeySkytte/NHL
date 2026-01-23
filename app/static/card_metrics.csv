@@ -95,16 +95,17 @@ Play Driving;FF%;FF/(FF+FA);FF%;0;;Teams;;;
 Play Driving;SF%;SF/(SF+SA);SF%;0;;Teams;;;
 Play Driving;GF%;GF/(GF+GA);GF%;1;C1;Teams;;;
 Play Driving;xGF%;xGF/(xGF+xGA);xGF%;1;C1;Teams;;;
-Play Driving;C+/-;CF-CA;Corsi Differential;0;;Teams;;;
+Play Driving;C+/-;CF-CA;Corsi Differential;1;C1;Teams;;;
 Play Driving;F+/-;FF-FA;Fenwick Differential;0;;Teams;;;
 Play Driving;S+/-;SF-SA;Shot Differential;0;;Teams;;;
-Play Driving;G+/-;GF-GA;Goal Differential;0;;Teams;;;
-Play Driving;xG+/-;xGF-xGA;xG Differential;0;;Teams;;;
+Play Driving;G+/-;GF-GA;Goal Differential;1;C1;Teams;;;
+Play Driving;xG+/-;xGF-xGA;xG Differential;1;C1;Teams;;;
 Context;Sh%;GF/SF;Sh%;1;R1;Teams;;;
 Context;Sv%;1-GA/SA;Sv%;1;R1;Teams;;;
 Context;PDO;Sh%+Sv%;PDO;1;R1;Teams;;;
 Context;GAx;GF-xGF;GAx;1;R1;Teams;;;
 Context;GSAx;xGA-GA;GSAx;1;R1;Teams;;;
+Context;GDAx;GAx+GSAx;GDAx;1;R1;Teams;;;
 Edge;distanceTotal;;Distance Skated Total;0;;Teams;api-web.nhle.com/v1/edge/team-skating-distance-detail/9/20242025/2;strengthCode;positionCode
 Edge;distancePer60;;Distance Skated Per 60;0;;Teams;api-web.nhle.com/v1/edge/team-skating-distance-detail/9/20242025/2;strengthCode;positionCode
 Edge;maxSkatingSpeed;;Top Skating Speed;0;;Teams;api-web.nhle.com/v1/edge/team-skating-speed-detail/9/20242025/2;;positionCode

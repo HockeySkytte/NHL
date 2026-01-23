@@ -62,7 +62,9 @@
   .card-grid{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:36px; width:100%; margin:0; }
   @media (max-width: 980px){ .card-grid{ grid-template-columns: 1fr; } }
   .card-col{ border:none; border-radius:0; padding:0; background:transparent; }
-  .card-col h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .card-slot{ margin-bottom:18px; }
+  .card-slot:last-child{ margin-bottom:0; }
+  .card-slot h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .metric{ padding:2px 0 10px; border:none; border-radius:0; background:transparent; margin-bottom:10px; }
   .metric:last-child{ margin-bottom:0; }
   .metric-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
@@ -138,6 +140,8 @@
   .metrics-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
   .metrics-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; }
   .metrics-table td.num, .metrics-table th.num{ text-align:center; }
+  .metrics-table td.pct, .metrics-table th.pct{ padding-left:6px; padding-right:6px; width:1%; }
+  .pct-chip{ display:inline-block; padding:3px 8px; border-radius:10px; min-width:48px; text-align:center; font-weight:850; font-size:16px; color:#0b0f16; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.20); }
   .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
 
   .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
@@ -231,14 +235,14 @@
           <button id="btnReloadCard" class="config-btn" type="button">Reload</button>
         </div>
       </div>
-      <div id="cardPanelInner" class="team-empty">Select a team to view Card.</div>
+      <div id="cardPanelInner" class="team-empty"></div>
     </div>
 
     <div id="tabPanelCharts" class="panel" role="tabpanel" style="display:none;">
       <div class="card-panel-hd" style="padding-bottom: 8px;">
         <div id="chartsSlicerSummary" class="card-panel-meta"></div>
       </div>
-      <div id="chartsEmpty" class="team-empty" hidden>Select a season to view Charts.</div>
+      <div id="chartsEmpty" class="team-empty" hidden></div>
 
       <div id="chartsGrid" class="charts-grid">
         <section class="chart-block" aria-label="Play Driving chart">
@@ -278,7 +282,7 @@
     </div>
 
     <div id="tabPanelEdge" class="panel" role="tabpanel" style="display:none;">
-      <div id="edgePanelInner" class="team-empty">Select a team to view Edge metrics.</div>
+      <div id="edgePanelInner" class="team-empty"></div>
     </div>
 
     <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
@@ -330,8 +334,7 @@
         </div>
       </div>
     </div>
-
-    <div id="teamMsg" class="team-empty" style="margin-top:10px;">Choose Team and Season.</div>
+    <div id="teamMsg" class="team-empty" style="margin-top:10px; display:none;"></div>
   </div>
 </div>
 
@@ -508,6 +511,20 @@ function clamp(v, lo, hi){
   const x = Number(v);
   if(!Number.isFinite(x)) return lo;
   return Math.max(lo, Math.min(hi, x));
+}
+
+function pct703050Color(v){
+  // Map value (as a percent 0..100) to red@<=30, white@50, blue@>=70.
+  const n = Number(v);
+  if(!Number.isFinite(n)) return null;
+  const p = clamp(n, 0, 100);
+  const red = '#ff4d4d';
+  const white = '#ffffff';
+  const blue = '#4da3ff';
+  if(p <= 30) return red;
+  if(p >= 70) return blue;
+  if(p <= 50) return mixHex(red, white, (p - 30) / 20);
+  return mixHex(white, blue, (p - 50) / 20);
 }
 
 function pctToColor(p){
@@ -762,7 +779,7 @@ async function loadEdgePanel(){
   const team = String(teamSelect?.value||'').trim();
   const season = String(seasonSelect?.value||'').trim();
   if(!team){
-    edgePanelInner.textContent = 'Select a team to view Edge metrics.';
+    edgePanelInner.textContent = '';
     return;
   }
 
@@ -986,8 +1003,8 @@ function buildSlotMap(defs){
   const slots = {};
   const metrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
   for(const m of metrics){
-    const slot = String(m?.slot||'').trim();
-    if(!slot) continue;
+    const slot = String(m?.place||m?.slot||'').trim();
+    if(!slot || slot === '0') continue;
     if(!slots[slot]) slots[slot] = [];
     slots[slot].push(m);
   }
@@ -996,9 +1013,13 @@ function buildSlotMap(defs){
 
 function sectionTitleForSlot(slot){
   const s = String(slot||'');
+  if(s === 'L1') return 'Defense';
+  if(s === 'L2') return 'Offense';
+  if(s === 'C1') return 'Play Driving';
+  if(s === 'R1') return 'Context';
   if(s.startsWith('L')) return 'Defense';
   if(s.startsWith('C')) return 'Play Driving';
-  if(s.startsWith('R')) return 'Offense / Context';
+  if(s.startsWith('R')) return 'Context';
   return '';
 }
 
@@ -1006,6 +1027,13 @@ function metricValueText(mid, val){
   const m = String(mid||'');
   if(m.endsWith('%') || m.includes('Sv%') || m.includes('Sh%') || m.endsWith('Pctg')){
     return val==null ? '—' : `${fmtSmart(val)}%`;
+  }
+  // For differential/above-expected style metrics, show a leading '+' when positive.
+  if(m.includes('+/-') || m.endsWith('Ax')){
+    if(val == null) return '—';
+    const n = Number(val);
+    if(!Number.isFinite(n)) return '—';
+    return n > 0 ? `+${fmtSmart(n)}` : fmtSmart(n);
   }
   if(m.includes('PDO')) return val==null ? '—' : fmtSmart(val);
   return val==null ? '—' : fmtSmart(val);
@@ -1022,8 +1050,8 @@ function fillPctBar(fillEl, pct){
   }
   fillEl.style.opacity = '1';
   fillEl.style.width = `${Math.max(0, Math.min(100, p)).toFixed(1)}%`;
-  const accent = themeAccent();
-  fillEl.style.background = mixHex(accent, '#ffffff', 0.10);
+  // Match Skaters/Goalies Card bar feel: red -> white -> blue by percentile.
+  fillEl.style.background = pctToColor(p);
 }
 
 async function loadCardPanel(){
@@ -1033,7 +1061,7 @@ async function loadCardPanel(){
   const team = String(teamSelect?.value||'').trim();
   const season = String(seasonSelect?.value||'').trim();
   if(!team){
-    cardPanelInner.innerHTML = '<div class="team-empty">Select a team to view Card.</div>';
+    cardPanelInner.innerHTML = '';
     return;
   }
 
@@ -1046,7 +1074,13 @@ async function loadCardPanel(){
     const strengthState = String(cardStrengthState?.value||'5v5');
     const ratesVal = String(cardRates?.value||'Totals');
 
-    const metricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map(m=>String(m.id||'')).filter(Boolean);
+    const metricIds = (Array.isArray(defs?.metrics) ? defs.metrics : [])
+      .filter(m=>{
+        const p = String(m?.place||m?.slot||'').trim();
+        return p && p !== '0';
+      })
+      .map(m=>String(m.id||''))
+      .filter(Boolean);
     const url = `/api/teams/card?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
     const r = await fetch(url, { cache:'no-store' });
     const data = await r.json();
@@ -1056,41 +1090,39 @@ async function loadCardPanel(){
     }
 
     const bySlot = buildSlotMap(defs);
-    const slotsOrder = ['L1','L2','L3','C1','C2','C3','R1','R2','R3'];
 
-    const colL = ['L1','L2','L3'];
-    const colC = ['C1','C2','C3'];
-    const colR = ['R1','R2','R3'];
-
-    function renderCol(title, slots){
+    function renderSlot(slot){
+      const title = sectionTitleForSlot(slot) || String(slot);
+      const items = bySlot[slot] || [];
       const rows = [];
-      for(const slot of slots){
-        const items = bySlot[slot] || [];
-        for(const m of items){
-          const id = String(m.id||'');
-          const label = String(m.label||m.metric||id);
-          const entry = data?.metrics?.[id];
-          const val = entry ? entry.value : null;
-          const pct = entry ? entry.pct : null;
-          rows.push(`
-            <div class="metric">
-              <div class="metric-head">
-                <div class="metric-name">${label}</div>
-                <div class="metric-val">${metricValueText(id, val)}${(pct!=null&&Number.isFinite(Number(pct)))?` <span style=\"color:rgba(255,255,255,0.6); font-weight:800; font-size:12px;\">(${Number(pct).toFixed(0)}p)</span>`:''}</div>
-              </div>
-              <div class="metric-bar"><div class="metric-fill" data-pct="${pct==null?'':pct}"></div></div>
+      for(const m of items){
+        const id = String(m.id||'');
+        const label = String(m.name||m.label||m.metric||id);
+        const entry = data?.metrics?.[id];
+        const val = entry ? entry.value : null;
+        const pct = entry ? entry.pct : null;
+        rows.push(`
+          <div class="metric">
+            <div class="metric-head">
+              <div class="metric-name">${label}</div>
+              <div class="metric-val">${metricValueText(id, val)}</div>
             </div>
-          `);
-        }
+            <div class="metric-bar"><div class="metric-fill" data-pct="${pct==null?'':pct}"></div></div>
+          </div>
+        `);
       }
-      return `<div class="card-col"><h3>${title}</h3>${rows.join('')}</div>`;
+      return `<div class="card-slot"><h3>${title}</h3>${rows.join('') || '<div class="team-empty">No metrics</div>'}</div>`;
+    }
+
+    function renderCol(slots){
+      return `<div class="card-col">${slots.map(renderSlot).join('')}</div>`;
     }
 
     const html = `
       <div class="card-grid">
-        ${renderCol('Defense', colL)}
-        ${renderCol('Play Driving', colC)}
-        ${renderCol('Context / Edge', colR)}
+        ${renderCol(['L1','L2'])}
+        ${renderCol(['C1'])}
+        ${renderCol(['R1'])}
       </div>
     `;
     cardPanelInner.innerHTML = html;
@@ -1139,6 +1171,7 @@ async function initChartsMetricSelects(){
 async function fetchScatter(xMetricId, yMetricId){
   const season = String(seasonSelect?.value||'').trim();
   const seasonState = String(cardSeasonState?.value||'regular');
+  const strengthState = String(cardStrengthState?.value||'5v5');
   const ratesVal = String(cardRates?.value||'Totals');
   const scopeVal = String(cardScope?.value||'season');
   const includeHist = includeHistoric && includeHistoric.checked ? '1' : '0';
@@ -1147,10 +1180,10 @@ async function fetchScatter(xMetricId, yMetricId){
     return { points: [] };
   }
 
-  const key = JSON.stringify({ season, seasonState, ratesVal, scopeVal, includeHist, xMetricId, yMetricId });
+  const key = JSON.stringify({ season, seasonState, strengthState, ratesVal, scopeVal, includeHist, xMetricId, yMetricId });
   if(__scatterCache.has(key)) return __scatterCache.get(key);
 
-  const url = `/api/teams/scatter?season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&includeHistoric=${encodeURIComponent(includeHist)}&xMetricId=${encodeURIComponent(xMetricId)}&yMetricId=${encodeURIComponent(yMetricId)}`;
+  const url = `/api/teams/scatter?season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&includeHistoric=${encodeURIComponent(includeHist)}&xMetricId=${encodeURIComponent(xMetricId)}&yMetricId=${encodeURIComponent(yMetricId)}`;
   const r = await fetch(url, { cache:'no-store' });
   const data = await r.json();
   __scatterCache.set(key, data);
@@ -1159,6 +1192,111 @@ async function fetchScatter(xMetricId, yMetricId){
 
 function makeScatterChart(canvasEl, title){
   if(!canvasEl || typeof Chart === 'undefined') return null;
+
+  const avgLinesPlugin = {
+    id: 'avgLines',
+    beforeDatasetsDraw(chart){
+      try{
+        const ds = chart?.data?.datasets?.[0];
+        const pts = Array.isArray(ds?.data) ? ds.data : [];
+        let sx = 0, sy = 0, n = 0;
+        for(const p of pts){
+          const x = Number(p?.x);
+          const y = Number(p?.y);
+          if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          sx += x; sy += y; n++;
+        }
+        if(n <= 0) return;
+        const mx = sx / n;
+        const my = sy / n;
+        const xScale = chart.scales?.x;
+        const yScale = chart.scales?.y;
+        if(!xScale || !yScale) return;
+
+        const xPix = xScale.getPixelForValue(mx);
+        const yPix = yScale.getPixelForValue(my);
+        const ca = chart.chartArea;
+        if(!ca) return;
+
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(ca.left, ca.top, ca.right - ca.left, ca.bottom - ca.top);
+        ctx.clip();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 2;
+
+        // vertical avg line
+        ctx.beginPath();
+        ctx.moveTo(xPix, ca.top);
+        ctx.lineTo(xPix, ca.bottom);
+        ctx.stroke();
+
+        // horizontal avg line
+        ctx.beginPath();
+        ctx.moveTo(ca.left, yPix);
+        ctx.lineTo(ca.right, yPix);
+        ctx.stroke();
+
+        ctx.restore();
+      }catch(_){/*noop*/}
+    }
+  };
+
+  const teamLogoPointsPlugin = {
+    id: 'teamLogoPoints',
+    afterDatasetsDraw(chart){
+      try{
+        const ctx = chart.ctx;
+        const meta = chart.getDatasetMeta(0);
+        const wantTeam = String(teamSelect?.value||'').toUpperCase();
+
+        meta.data.forEach((ptEl, i)=>{
+          const raw = chart.data.datasets[0].data[i];
+          if(!raw) return;
+          const team = String(raw.team||'').toUpperCase();
+          if(wantTeam && team === wantTeam) return; // selected is handled by highlight badge
+
+          const p = ptEl.getProps(['x','y'], true);
+          const img = getTeamLogoImage(team);
+          if(!img || !img.complete) return;
+
+          const outerR = 13.5;
+          const d = outerR * 2;
+          const pad = 1.4;
+
+          ctx.save();
+          ctx.globalAlpha = 0.75;
+
+          // Draw logo "contained" in a square without any circle/ring.
+          const dw = d - 2*pad;
+          const dh = d - 2*pad;
+          const dx = p.x - outerR + pad;
+          const dy = p.y - outerR + pad;
+
+          // Note: NHL team logos are often SVG, which may report naturalWidth=0.
+          // In that case, fall back to a simple drawImage without source-cropping.
+          if(Number(img.naturalWidth) > 0 && Number(img.naturalHeight) > 0){
+            const sw = Number(img.naturalWidth);
+            const sh = Number(img.naturalHeight);
+            const ss = Math.min(sw, sh);
+            const sx = (sw - ss) / 2;
+            const sy = (sh - ss) / 2;
+            try{
+              ctx.drawImage(img, sx, sy, ss, ss, dx, dy, dw, dh);
+            }catch(_){
+              try{ ctx.drawImage(img, dx, dy, dw, dh); }catch(__){/*noop*/}
+            }
+          }else{
+            try{ ctx.drawImage(img, dx, dy, dw, dh); }catch(_){/*noop*/}
+          }
+
+          ctx.restore();
+        });
+      }catch(_){/*noop*/}
+    }
+  };
 
   const highlightBadgePlugin = {
     id: 'highlightBadge',
@@ -1174,8 +1312,8 @@ function makeScatterChart(canvasEl, title){
           if(!isHit) return;
           const p = ptEl.getProps(['x','y'], true);
 
-          const outerR = 14;
-          const innerR = 12.6;
+          const outerR = 15.5;
+          const innerR = 14.1;
 
           ctx.save();
           ctx.beginPath();
@@ -1193,7 +1331,27 @@ function makeScatterChart(canvasEl, title){
           const img = getTeamLogoImage(raw.team);
           if(img && img.complete){
             const d = innerR * 2;
-            try{ ctx.drawImage(img, p.x - innerR, p.y - innerR, d, d); }catch(_){/*noop*/}
+            const pad = 1.4;
+            const dx = p.x - innerR + pad;
+            const dy = p.y - innerR + pad;
+            const dw = d - 2*pad;
+            const dh = d - 2*pad;
+
+            // Note: SVG logos may report naturalWidth=0.
+            if(Number(img.naturalWidth) > 0 && Number(img.naturalHeight) > 0){
+              const sw = Number(img.naturalWidth);
+              const sh = Number(img.naturalHeight);
+              const ss = Math.min(sw, sh);
+              const sx = (sw - ss) / 2;
+              const sy = (sh - ss) / 2;
+              try{
+                ctx.drawImage(img, sx, sy, ss, ss, dx, dy, dw, dh);
+              }catch(_){
+                try{ ctx.drawImage(img, dx, dy, dw, dh); }catch(__){/*noop*/}
+              }
+            }else{
+              try{ ctx.drawImage(img, dx, dy, dw, dh); }catch(_){/*noop*/}
+            }
           }
           ctx.restore();
         });
@@ -1207,32 +1365,14 @@ function makeScatterChart(canvasEl, title){
       datasets: [{
         label: title,
         data: [],
-        pointBackgroundColor: (ctx)=>{
-          const raw = ctx.raw || {};
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const isHit = wantTeam && String(raw.team||'').toUpperCase() === wantTeam;
-          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.16)';
-        },
-        pointBorderColor: (ctx)=>{
-          const raw = ctx.raw || {};
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const isHit = wantTeam && String(raw.team||'').toUpperCase() === wantTeam;
-          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.10)';
-        },
-        pointBorderWidth: (ctx)=>{
-          const raw = ctx.raw || {};
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const isHit = wantTeam && String(raw.team||'').toUpperCase() === wantTeam;
-          return isHit ? 0 : 1;
-        },
-        pointRadius: (ctx)=>{
-          const raw = ctx.raw || {};
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const isHit = wantTeam && String(raw.team||'').toUpperCase() === wantTeam;
-          return isHit ? 10 : 4;
-        },
-        pointHoverRadius: 10,
-        pointStyle: 'circle',
+        // We draw logo markers ourselves via plugins; keep the actual points invisible but hoverable.
+        pointBackgroundColor: 'rgba(0,0,0,0)',
+        pointBorderColor: 'rgba(0,0,0,0)',
+        pointBorderWidth: 0,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        pointHitRadius: 13,
+        pointStyle: 'circle'
       }]
     },
     options: {
@@ -1256,7 +1396,8 @@ function makeScatterChart(canvasEl, title){
         y: { title: { display:true, text:'Y', color:'rgba(255,255,255,0.95)' }, grid: { color:'rgba(255,255,255,0.06)' }, ticks:{ color:'rgba(255,255,255,0.75)' } },
       }
     },
-    plugins: [highlightBadgePlugin]
+    // Order matters: avg lines behind points; logos behind selected badge.
+    plugins: [avgLinesPlugin, teamLogoPointsPlugin, highlightBadgePlugin]
   });
 
   return chart;
@@ -1266,7 +1407,7 @@ async function renderCharts(){
   updateSlicerSummaries();
   const season = String(seasonSelect?.value||'').trim();
   if(!season){
-    if(chartsEmpty) chartsEmpty.hidden = false;
+    if(chartsEmpty) chartsEmpty.hidden = true;
     if(chartsGrid) chartsGrid.style.display = 'none';
     return;
   }
@@ -1425,7 +1566,7 @@ function renderOverviewKpis(teamAbbrev, teamAgg){
   const ab = String(teamAbbrev||'').toUpperCase();
   const row = (teamAgg||[]).find(t=>String(t.team||'').toUpperCase() === ab) || null;
   if(!row){
-    projOverviewKpis.innerHTML = '<div class="team-empty" style="grid-column:1 / -1; padding:8px 2px;">Select a team to view projections.</div>';
+    projOverviewKpis.innerHTML = '';
     return;
   }
 
@@ -1877,13 +2018,17 @@ async function loadTablePanel(){
 
     sortRows();
 
-    const cols = [{ key:'rank', label:'#', cls:'num' }, { key:'team', label:'Team', cls:'' }].concat(metricIds.map(id=>({ key:id, label:String(id.split('|')[1]||id), cls:'num' })));
+    const cols = [{ key:'rank', label:'#', cls:'num' }, { key:'team', label:'Team', cls:'' }].concat(metricIds.map(id=>{
+      const metricName = String(String(id||'').split('|')[1] || id || '');
+      const isPct = (metricName === 'CF%' || metricName === 'xGF%' || metricName === 'GF%');
+      return { key:id, label:metricName, cls: isPct ? 'num pct' : 'num' };
+    }));
 
     function renderTable(activeSortKey, activeSortDir){
       const head = cols.map(c=>{
         const isS = c.key === activeSortKey;
         const ind = isS ? (activeSortDir==='asc'?'▲':'▼') : '';
-        return `<th class="${c.cls||''} ${c.cls==='num'?'num':''}" data-sort="${c.key}">${c.label}${ind?`<span class=\"sort-ind\">${ind}</span>`:''}</th>`;
+        return `<th class="${c.cls||''}" data-sort="${c.key}">${c.label}${ind?`<span class=\"sort-ind\">${ind}</span>`:''}</th>`;
       }).join('');
 
       const body = rows.map((r, idx)=>{
@@ -1893,6 +2038,14 @@ async function loadTablePanel(){
           if(c.key==='team') return `<td>${String(r.team||'')}</td>`;
           const v = r[c.key];
           const txt = Number.isFinite(Number(v)) ? fmtSmart(v) : '—';
+          const metricName = String((c.key||'').split('|')[1] || c.key || '');
+          const isPctHeat = (metricName === 'CF%' || metricName === 'xGF%' || metricName === 'GF%');
+          const bg = isPctHeat ? pct703050Color(v) : null;
+          if(isPctHeat){
+            const disp = Number.isFinite(Number(v)) ? `${fmtSmart(v)}%` : '—';
+            const pillBg = bg || 'rgba(255,255,255,0.10)';
+            return `<td class="num pct"><span class="pct-chip" style="background:${pillBg};">${disp}</span></td>`;
+          }
           return `<td class="num">${txt}</td>`;
         }).join('') + '</tr>';
       }).join('');

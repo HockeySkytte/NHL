@@ -1,6 +1,36 @@
 #Run update without RAPM/Context update:
-$env:GOOGLE_SHEETS_ID='1HcVuRJGKI8xanZV3nr3JggNrj1NvTHEv9hskWZyGcZE'; $dates = @('2026-01-07','2026-01-08','2026-01-09'); foreach($d in $dates){ Write-Host "\n=== Running update_data.py for $d (xG ON) ==="; C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe scripts\update_data.py --date $d --export --season 20252026 --replace-date; if($LASTEXITCODE -ne 0){ throw "update_data.py failed for $d (exit $LASTEXITCODE)" } }
+$env:GOOGLE_SHEETS_ID='1HcVuRJGKI8xanZV3nr3JggNrj1NvTHEv9hskWZyGcZE';
+$season = '20252026';
+$teamWorksheet = 'Sheets7';
+$python = 'C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe';
+
+$dates = @('2026-01-07','2026-01-08','2026-01-09');
+foreach($d in $dates){
+	Write-Host "\n=== Running update_data.py for $d (xG ON) ===";
+	& $python scripts\update_data.py --date $d --export --season $season --replace-date;
+	if($LASTEXITCODE -ne 0){ throw "update_data.py failed for $d (exit $LASTEXITCODE)" }
+}
+
+Write-Host "\n=== Rebuilding team seasonstats -> $teamWorksheet ===";
+& $python scripts\build_seasonstats_team.py --season $season --sheet-id $env:GOOGLE_SHEETS_ID --worksheet $teamWorksheet;
+if($LASTEXITCODE -ne 0){ throw "build_seasonstats_team.py failed (exit $LASTEXITCODE)" }
 
 
 #Run update WITH RAPM/Context refresh (writes Sheets4 + Sheets5):
-$env:GOOGLE_SHEETS_ID='1HcVuRJGKI8xanZV3nr3JggNrj1NvTHEv9hskWZyGcZE'; $dates = @('2026-01-07','2026-01-08','2026-01-09'); foreach($d in $dates){ Write-Host "\n=== Running update_data.py for $d (xG ON + RAPM/Context) ==="; C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe scripts\update_data.py --date $d --export --season 20252026 --replace-date --run-rapm --rapm-sheets-id $env:GOOGLE_SHEETS_ID --rapm-worksheet Sheets4 --context-worksheet Sheets5; if($LASTEXITCODE -ne 0){ throw "update_data.py failed for $d (exit $LASTEXITCODE)" } }
+$env:GOOGLE_SHEETS_ID='1HcVuRJGKI8xanZV3nr3JggNrj1NvTHEv9hskWZyGcZE';
+$season = '20252026';
+$rapmWorksheet = 'Sheets4';
+$contextWorksheet = 'Sheets5';
+$teamWorksheet = 'Sheets7';
+$python = 'C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe';
+
+$dates = @('2026-01-07','2026-01-08','2026-01-09');
+foreach($d in $dates){
+	Write-Host "\n=== Running update_data.py for $d (xG ON + RAPM/Context) ===";
+	& $python scripts\update_data.py --date $d --export --season $season --replace-date --run-rapm --rapm-sheets-id $env:GOOGLE_SHEETS_ID --rapm-worksheet $rapmWorksheet --context-worksheet $contextWorksheet;
+	if($LASTEXITCODE -ne 0){ throw "update_data.py failed for $d (exit $LASTEXITCODE)" }
+}
+
+Write-Host "\n=== Rebuilding team seasonstats -> $teamWorksheet ===";
+& $python scripts\build_seasonstats_team.py --season $season --sheet-id $env:GOOGLE_SHEETS_ID --worksheet $teamWorksheet;
+if($LASTEXITCODE -ne 0){ throw "build_seasonstats_team.py failed (exit $LASTEXITCODE)" }

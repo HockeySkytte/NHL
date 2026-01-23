@@ -323,6 +323,7 @@ _RAPM_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
 _CONTEXT_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _SEASONSTATS_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
+_TEAMSEASONSTATS_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _CARD_METRICS_DEF_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _RAPM_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
 _CONTEXT_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
@@ -3444,17 +3445,136 @@ def _team_id_by_abbrev() -> Dict[str, int]:
     return out
 
 
-def _build_team_base_stats(*, scope: str, season_int: int, season_state: str) -> Dict[str, Dict[str, Any]]:
-    """Return per-team base totals keyed by team abbrev."""
+def _build_team_base_stats(*, scope: str, season_int: int, season_state: str, strength_state: str = '5v5') -> Dict[str, Dict[str, Any]]:
+    """Return per-team base totals keyed by team abbrev.
+
+        For scope='season', prefers our derived team SeasonStats:
+            - seasons != 20252026: app/static/nhl_seasonstats_teams.csv
+            - season 20252026: Google Sheets worksheet (default Sheets7)
+
+        For scope='total', falls back to NHL stats REST aggregates.
+    """
     scope_norm = (scope or 'season').strip().lower()
     if scope_norm not in {'season', 'total'}:
         scope_norm = 'season'
     ss_norm = (season_state or 'regular').strip().lower()
     if ss_norm not in {'regular', 'playoffs', 'all'}:
         ss_norm = 'regular'
+    st_norm = (strength_state or '5v5').strip()
+    if st_norm not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
+        st_norm = '5v5'
 
     team_id_map = _team_id_by_abbrev()
     abbrev_by_id = {tid: ab for ab, tid in team_id_map.items()}
+
+    def _flt_num(v: Any) -> float:
+        x = _parse_locale_float(v)
+        if x is None:
+            return 0.0
+        try:
+            f = float(x)
+            return f if math.isfinite(f) else 0.0
+        except Exception:
+            return 0.0
+
+    # Season scope: use derived team SeasonStats (static CSV + optional Sheets7 for 20252026)
+    if scope_norm == 'season':
+        sheet_id = (os.getenv('TEAMSEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or os.getenv('SEASONSTATS_SHEET_ID') or '').strip()
+        worksheet = (os.getenv('TEAMSEASONSTATS_WORKSHEET') or 'Sheets7').strip()
+
+        sheet_rows: Optional[List[Dict[str, Any]]] = None
+        sheet_ok = False
+        if sheet_id:
+            try:
+                sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='TEAMSEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
+                sheet_ok = True
+            except Exception:
+                sheet_rows = None
+                sheet_ok = False
+
+        rows_iter: Iterable[Dict[str, Any]]
+        if int(season_int or 0) == 20252026 and sheet_ok and sheet_rows is not None:
+            rows_iter = sheet_rows
+        else:
+            rows_iter = _iter_teamseasonstats_static_rows(season=int(season_int))
+
+        def _ss_row(v: Any) -> str:
+            raw = str(v or '').strip().lower()
+            if raw in {'2', 'reg', 'regular', 'regularseason', 'regular_season'}:
+                return 'regular'
+            if raw in {'3', 'po', 'playoffs', 'playoff'}:
+                return 'playoffs'
+            return raw or 'regular'
+
+        def _st_row(v: Any) -> str:
+            s = str(v or '').strip()
+            return s or 'Other'
+
+        acc: Dict[str, Dict[str, Any]] = {}
+        gp_max_by_team_ss: Dict[Tuple[str, str], int] = {}
+
+        for r in rows_iter:
+            try:
+                team = str(r.get('Team') or _ci_get(r, 'Team') or '').strip().upper()
+                if not team:
+                    continue
+
+                ss_row = _ss_row(r.get('SeasonState') or _ci_get(r, 'SeasonState') or _ci_get(r, 'seasonState'))
+                st_row = _st_row(r.get('StrengthState') or _ci_get(r, 'StrengthState') or _ci_get(r, 'strengthState'))
+                if ss_norm != 'all' and ss_row != ss_norm:
+                    continue
+                if st_norm != 'all' and st_row != st_norm:
+                    continue
+
+                d = acc.setdefault(team, {
+                    'team': team,
+                    'teamId': int(team_id_map.get(team) or 0),
+                    'scope': 'season',
+                    'season': int(season_int),
+                    'seasonState': ss_norm,
+                    'GP': 0,
+                    'TOI': 0.0,
+                    'CF': 0.0,
+                    'CA': 0.0,
+                    'FF': 0.0,
+                    'FA': 0.0,
+                    'SF': 0.0,
+                    'SA': 0.0,
+                    'GF': 0.0,
+                    'GA': 0.0,
+                    'xGF': 0.0,
+                    'xGA': 0.0,
+                })
+
+                gp_row = int(_safe_int(r.get('GP') or _ci_get(r, 'GP')) or 0)
+                k = (team, ss_row)
+                prev = gp_max_by_team_ss.get(k)
+                if prev is None or gp_row > prev:
+                    gp_max_by_team_ss[k] = gp_row
+
+                d['TOI'] = float(d.get('TOI') or 0.0) + _flt_num(r.get('TOI') or _ci_get(r, 'TOI'))
+                d['CF'] = float(d.get('CF') or 0.0) + _flt_num(r.get('CF') or _ci_get(r, 'CF'))
+                d['CA'] = float(d.get('CA') or 0.0) + _flt_num(r.get('CA') or _ci_get(r, 'CA'))
+                d['FF'] = float(d.get('FF') or 0.0) + _flt_num(r.get('FF') or _ci_get(r, 'FF'))
+                d['FA'] = float(d.get('FA') or 0.0) + _flt_num(r.get('FA') or _ci_get(r, 'FA'))
+                d['SF'] = float(d.get('SF') or 0.0) + _flt_num(r.get('SF') or _ci_get(r, 'SF'))
+                d['SA'] = float(d.get('SA') or 0.0) + _flt_num(r.get('SA') or _ci_get(r, 'SA'))
+                d['GF'] = float(d.get('GF') or 0.0) + _flt_num(r.get('GF') or _ci_get(r, 'GF'))
+                d['GA'] = float(d.get('GA') or 0.0) + _flt_num(r.get('GA') or _ci_get(r, 'GA'))
+
+                # Default xG model for Teams page: xG_F columns (matches skaters default).
+                d['xGF'] = float(d.get('xGF') or 0.0) + _flt_num(r.get('xGF_F') or _ci_get(r, 'xGF_F'))
+                d['xGA'] = float(d.get('xGA') or 0.0) + _flt_num(r.get('xGA_F') or _ci_get(r, 'xGA_F'))
+            except Exception:
+                continue
+
+        gp_sum_by_team: Dict[str, int] = {}
+        for (team, _ss), gp in gp_max_by_team_ss.items():
+            gp_sum_by_team[team] = int(gp_sum_by_team.get(team, 0) + int(gp or 0))
+        for team, d in acc.items():
+            d['GP'] = int(gp_sum_by_team.get(team, 0))
+
+        return acc
 
     def _summary_url(game_type_id: int) -> str:
         return (
@@ -3483,13 +3603,6 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str) ->
             '?isAggregate=true&isGame=false&reportType=basic&reportName=teamsummaryshooting'
             f'&cayenneExp=teamId={int(team_id)}'
         )
-
-    def _flt(x: Any) -> float:
-        try:
-            f = float(x)
-            return f if math.isfinite(f) else 0.0
-        except Exception:
-            return 0.0
 
     def _rows_by_teamid(j: Optional[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
         out: Dict[int, Dict[str, Any]] = {}
@@ -3528,21 +3641,21 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str) ->
                     summary_by_tid[tid] = dict(r)
                 else:
                     # Additive totals
-                    prev['gamesPlayed'] = _flt(prev.get('gamesPlayed')) + _flt(r.get('gamesPlayed'))
-                    prev['goalsFor'] = _flt(prev.get('goalsFor')) + _flt(r.get('goalsFor'))
-                    prev['goalsAgainst'] = _flt(prev.get('goalsAgainst')) + _flt(r.get('goalsAgainst'))
-                    prev['_shotsForTotal'] = _flt(prev.get('_shotsForTotal')) + (_flt(r.get('shotsForPerGame')) * _flt(r.get('gamesPlayed')))
-                    prev['_shotsAgainstTotal'] = _flt(prev.get('_shotsAgainstTotal')) + (_flt(r.get('shotsAgainstPerGame')) * _flt(r.get('gamesPlayed')))
+                    prev['gamesPlayed'] = _flt_num(prev.get('gamesPlayed')) + _flt_num(r.get('gamesPlayed'))
+                    prev['goalsFor'] = _flt_num(prev.get('goalsFor')) + _flt_num(r.get('goalsFor'))
+                    prev['goalsAgainst'] = _flt_num(prev.get('goalsAgainst')) + _flt_num(r.get('goalsAgainst'))
+                    prev['_shotsForTotal'] = _flt_num(prev.get('_shotsForTotal')) + (_flt_num(r.get('shotsForPerGame')) * _flt_num(r.get('gamesPlayed')))
+                    prev['_shotsAgainstTotal'] = _flt_num(prev.get('_shotsAgainstTotal')) + (_flt_num(r.get('shotsAgainstPerGame')) * _flt_num(r.get('gamesPlayed')))
             for tid, r in _rows_by_teamid(jj).items():
                 prev = shoot_by_tid.get(tid)
                 if not prev:
                     shoot_by_tid[tid] = dict(r)
                 else:
-                    prev['gamesPlayed'] = _flt(prev.get('gamesPlayed')) + _flt(r.get('gamesPlayed'))
-                    prev['satFor'] = _flt(prev.get('satFor')) + _flt(r.get('satFor'))
-                    prev['satAgainst'] = _flt(prev.get('satAgainst')) + _flt(r.get('satAgainst'))
-                    prev['usatFor'] = _flt(prev.get('usatFor')) + _flt(r.get('usatFor'))
-                    prev['usatAgainst'] = _flt(prev.get('usatAgainst')) + _flt(r.get('usatAgainst'))
+                    prev['gamesPlayed'] = _flt_num(prev.get('gamesPlayed')) + _flt_num(r.get('gamesPlayed'))
+                    prev['satFor'] = _flt_num(prev.get('satFor')) + _flt_num(r.get('satFor'))
+                    prev['satAgainst'] = _flt_num(prev.get('satAgainst')) + _flt_num(r.get('satAgainst'))
+                    prev['usatFor'] = _flt_num(prev.get('usatFor')) + _flt_num(r.get('usatFor'))
+                    prev['usatAgainst'] = _flt_num(prev.get('usatAgainst')) + _flt_num(r.get('usatAgainst'))
 
         out: Dict[str, Dict[str, Any]] = {}
         for tid, rsum in summary_by_tid.items():
@@ -3550,8 +3663,8 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str) ->
             if not ab:
                 continue
             gp = float(rsum.get('gamesPlayed') or 0.0)
-            sf_total = _flt(rsum.get('_shotsForTotal')) if '_shotsForTotal' in rsum else (_flt(rsum.get('shotsForPerGame')) * gp)
-            sa_total = _flt(rsum.get('_shotsAgainstTotal')) if '_shotsAgainstTotal' in rsum else (_flt(rsum.get('shotsAgainstPerGame')) * gp)
+            sf_total = _flt_num(rsum.get('_shotsForTotal')) if '_shotsForTotal' in rsum else (_flt_num(rsum.get('shotsForPerGame')) * gp)
+            sa_total = _flt_num(rsum.get('_shotsAgainstTotal')) if '_shotsAgainstTotal' in rsum else (_flt_num(rsum.get('shotsAgainstPerGame')) * gp)
             out[ab] = {
                 'team': ab,
                 'teamId': int(tid),
@@ -3559,8 +3672,8 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str) ->
                 'season': int(season_int),
                 'seasonState': ss_norm,
                 'GP': gp,
-                'GF': _flt(rsum.get('goalsFor')),
-                'GA': _flt(rsum.get('goalsAgainst')),
+                'GF': _flt_num(rsum.get('goalsFor')),
+                'GA': _flt_num(rsum.get('goalsAgainst')),
                 'SF': sf_total,
                 'SA': sa_total,
                 'xGF': None,
@@ -3572,10 +3685,10 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str) ->
             if not ab or ab not in out:
                 continue
             out[ab].update({
-                'CF': _flt(rsh.get('satFor')),
-                'CA': _flt(rsh.get('satAgainst')),
-                'FF': _flt(rsh.get('usatFor')),
-                'FA': _flt(rsh.get('usatAgainst')),
+                'CF': _flt_num(rsh.get('satFor')),
+                'CA': _flt_num(rsh.get('satAgainst')),
+                'FF': _flt_num(rsh.get('usatFor')),
+                'FA': _flt_num(rsh.get('usatAgainst')),
             })
 
         return out
@@ -3591,9 +3704,9 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str) ->
             rs = row_s[0] if isinstance(row_s, list) and row_s and isinstance(row_s[0], dict) else {}
             rsh = row_j[0] if isinstance(row_j, list) and row_j and isinstance(row_j[0], dict) else {}
 
-            gp = _flt(rs.get('gamesPlayed'))
-            sf_total = _flt(rs.get('shotsForPerGame')) * gp
-            sa_total = _flt(rs.get('shotsAgainstPerGame')) * gp
+            gp = _flt_num(rs.get('gamesPlayed'))
+            sf_total = _flt_num(rs.get('shotsForPerGame')) * gp
+            sa_total = _flt_num(rs.get('shotsAgainstPerGame')) * gp
             out2[ab] = {
                 'team': ab,
                 'teamId': int(tid),
@@ -3601,14 +3714,14 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str) ->
                 'season': None,
                 'seasonState': 'all',
                 'GP': gp,
-                'GF': _flt(rs.get('goalsFor')),
-                'GA': _flt(rs.get('goalsAgainst')),
+                'GF': _flt_num(rs.get('goalsFor')),
+                'GA': _flt_num(rs.get('goalsAgainst')),
                 'SF': sf_total,
                 'SA': sa_total,
-                'CF': _flt(rsh.get('satFor')),
-                'CA': _flt(rsh.get('satAgainst')),
-                'FF': _flt(rsh.get('usatFor')),
-                'FA': _flt(rsh.get('usatAgainst')),
+                'CF': _flt_num(rsh.get('satFor')),
+                'CA': _flt_num(rsh.get('satAgainst')),
+                'FF': _flt_num(rsh.get('usatFor')),
+                'FA': _flt_num(rsh.get('usatAgainst')),
                 'xGF': None,
                 'xGA': None,
             }
@@ -3663,7 +3776,7 @@ def api_teams_card():
         defs0 = _load_card_metrics_defs('teams')
         metric_ids = [str(m.get('id')) for m in (defs0.get('metrics') or []) if isinstance(m, dict) and m.get('id')]
 
-    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state)
+    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state, strength_state=strength_state)
     mine_base = base.get(team_ab)
     if not mine_base:
         return jsonify({'error': 'not_found', 'team': team_ab}), 404
@@ -3828,6 +3941,12 @@ def api_teams_card():
             if xga is None:
                 return None
             return _rate_from(gp, (float(xga) - ga))
+
+        if category == 'Context' and metric == 'GDAx':
+            if xgf is None or xga is None:
+                return None
+            # Goal differential above expected = (GF - xGF) + (xGA - GA)
+            return _rate_from(gp, (gf - float(xgf)) + (float(xga) - ga))
 
         return None
 
@@ -4019,7 +4138,7 @@ def api_teams_table():
         defs0 = _load_card_metrics_defs('teams')
         metric_ids = [str(m.get('id')) for m in (defs0.get('metrics') or []) if isinstance(m, dict) and m.get('id')]
 
-    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state)
+    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state, strength_state=strength_state)
 
     # Filter historic teams (based on Teams.csv Active flag) unless requested.
     show_hist = include_historic in {'1', 'true', 'True', 'yes', 'YES'}
@@ -4187,6 +4306,7 @@ def api_teams_scatter():
     """
     season = str(request.args.get('season') or '').strip()
     season_state = str(request.args.get('seasonState') or 'regular').strip().lower()
+    strength_state = str(request.args.get('strengthState') or '5v5').strip()
     rates = str(request.args.get('rates') or 'Totals').strip() or 'Totals'
     scope = str(request.args.get('scope') or 'season').strip().lower()
     include_historic = str(request.args.get('includeHistoric') or request.args.get('include_historic') or '').strip()
@@ -4200,6 +4320,8 @@ def api_teams_scatter():
 
     if season_state not in {'regular', 'playoffs', 'all'}:
         season_state = 'regular'
+    if strength_state not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
+        strength_state = '5v5'
     if rates not in {'Totals', 'PerGame'}:
         rates = 'Totals'
     if scope not in {'season', 'total'}:
@@ -4210,7 +4332,7 @@ def api_teams_scatter():
     if str(x_metric_id).startswith('Edge|') or str(y_metric_id).startswith('Edge|'):
         return jsonify({'error': 'edge_not_supported'}), 400
 
-    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state)
+    base = _build_team_base_stats(scope=scope, season_int=season_int, season_state=season_state, strength_state=strength_state)
 
     # Filter historic teams (based on Teams.csv Active flag) unless requested.
     show_hist = include_historic in {'1', 'true', 'True', 'yes', 'YES'}
@@ -7957,6 +8079,26 @@ def _load_context_player_rows_static(player_id: int, season: Optional[int]) -> L
 def _iter_seasonstats_static_rows(*, season: Optional[int] = None, skip_season: Optional[int] = None) -> Iterator[Dict[str, Any]]:
     """Yield SeasonStats rows from app/static/nhl_seasonstats.csv, optionally filtered by season."""
     path = _static_path('nhl_seasonstats.csv')
+    season_i = int(season) if season is not None else None
+    skip_i = int(skip_season) if skip_season is not None else None
+    for r in _iter_csv_dict_rows(path, delimiter=',', encoding='utf-8-sig'):
+        if season_i is None and skip_i is None:
+            yield r
+            continue
+        try:
+            s = int(str(r.get('Season') or '').strip())
+        except Exception:
+            continue
+        if skip_i is not None and s == skip_i:
+            continue
+        if season_i is not None and s != season_i:
+            continue
+        yield r
+
+
+def _iter_teamseasonstats_static_rows(*, season: Optional[int] = None, skip_season: Optional[int] = None) -> Iterator[Dict[str, Any]]:
+    """Yield Team SeasonStats rows from app/static/nhl_seasonstats_teams.csv, optionally filtered by season."""
+    path = _static_path('nhl_seasonstats_teams.csv')
     season_i = int(season) if season is not None else None
     skip_i = int(skip_season) if skip_season is not None else None
     for r in _iter_csv_dict_rows(path, delimiter=',', encoding='utf-8-sig'):
