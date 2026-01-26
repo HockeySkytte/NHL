@@ -27,6 +27,7 @@ import re
 import requests
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy import BigInteger, Integer, String, Date
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -139,6 +140,141 @@ def _fetch_birthdays_for_game(game_id: int) -> Dict[int, Optional[str]]:
         except Exception:
             continue
     return out
+
+
+def _fetch_stats_rest_rows(url: str, *, timeout: int = 30) -> List[Dict[str, Any]]:
+    try:
+        r = requests.get(url, timeout=timeout)
+        r.raise_for_status()
+        js = r.json() or {}
+        rows = js.get('data') or []
+        return rows if isinstance(rows, list) else []
+    except Exception:
+        return []
+
+
+def fetch_player_bios_for_season(season: str = '20252026') -> pd.DataFrame:
+    """Fetch all player bios (skaters + goalies) from NHL stats REST for a season.
+
+    Output columns match the MySQL export schema:
+      playerId, Player, Position, shootsCatches, Birthday, Nationality,
+      height, weight, DraftPosition, draftYear
+    """
+    season_id = str(season).strip()
+    base = "https://api.nhle.com/stats/rest/en"
+    sk_url = f"{base}/skater/bios?limit=-1&start=0&cayenneExp=seasonId={season_id}"
+    g_url = f"{base}/goalie/bios?limit=-1&start=0&cayenneExp=seasonId={season_id}"
+
+    sk_rows = _fetch_stats_rest_rows(sk_url)
+    g_rows = _fetch_stats_rest_rows(g_url)
+
+    out: List[Dict[str, Any]] = []
+    for row in sk_rows:
+        out.append(
+            {
+                'playerId': row.get('playerId'),
+                'Player': row.get('skaterFullName') or row.get('playerFullName') or row.get('fullName'),
+                'Position': row.get('positionCode'),
+                'shootsCatches': row.get('shootsCatches'),
+                'Birthday': row.get('birthDate') or row.get('BirthDate') or row.get('playerBirthDate'),
+                'Nationality': row.get('nationalityCode'),
+                'height': row.get('height'),
+                'weight': row.get('weight'),
+                'DraftPosition': row.get('draftOverall'),
+                'draftYear': row.get('draftYear'),
+            }
+        )
+
+    for row in g_rows:
+        out.append(
+            {
+                'playerId': row.get('playerId'),
+                'Player': row.get('goalieFullName') or row.get('playerFullName') or row.get('fullName'),
+                'Position': row.get('positionCode') or 'G',
+                'shootsCatches': row.get('shootsCatches'),
+                'Birthday': row.get('birthDate') or row.get('BirthDate') or row.get('playerBirthDate'),
+                'Nationality': row.get('nationalityCode'),
+                'height': row.get('height'),
+                'weight': row.get('weight'),
+                'DraftPosition': row.get('draftOverall'),
+                'draftYear': row.get('draftYear'),
+            }
+        )
+
+    df = pd.DataFrame(out)
+    if df.empty:
+        return df
+
+    # Normalize + coerce types
+    df['playerId'] = pd.to_numeric(df['playerId'], errors='coerce').astype('Int64')
+    df['height'] = pd.to_numeric(df['height'], errors='coerce').astype('Int64')
+    df['weight'] = pd.to_numeric(df['weight'], errors='coerce').astype('Int64')
+    df['DraftPosition'] = pd.to_numeric(df['DraftPosition'], errors='coerce').astype('Int64')
+    df['draftYear'] = pd.to_numeric(df['draftYear'], errors='coerce').astype('Int64')
+
+    # Parse Birthday as date (DATE column in MySQL)
+    df['Birthday'] = pd.to_datetime(df['Birthday'], errors='coerce').dt.date
+
+    # Ensure Position for goalies
+    df.loc[df['Position'].isna() & df['Player'].notna(), 'Position'] = df['Position'].fillna('')
+    df['Position'] = df['Position'].fillna('').astype(str).str.strip()
+    df.loc[df['Position'].eq(''), 'Position'] = None
+
+    # Deduplicate on playerId, preferring non-null values
+    if 'playerId' in df.columns:
+        df = df.sort_values(['playerId']).drop_duplicates(subset=['playerId'], keep='first')
+
+    # Reorder columns
+    cols = [
+        'playerId',
+        'Player',
+        'Position',
+        'shootsCatches',
+        'Birthday',
+        'Nationality',
+        'height',
+        'weight',
+        'DraftPosition',
+        'draftYear',
+    ]
+    return df[[c for c in cols if c in df.columns]]
+
+
+def export_players_to_mysql(season: str = '20252026') -> None:
+    """Export season player bios into nhl_players_<season> (replace each run)."""
+    season_id = str(season).strip()
+    df = fetch_player_bios_for_season(season_id)
+    if df.empty:
+        raise RuntimeError(f"No player bios returned for season {season_id}")
+
+    eng = _create_mysql_engine('rw')
+    if eng is None:
+        raise RuntimeError("MySQL engine not available")
+
+    tbl = f"nhl_players_{season_id}"
+    dtype = cast(Dict[str, Any], {
+        'playerId': BigInteger(),
+        'Player': String(length=255),
+        'Position': String(length=2),
+        'shootsCatches': String(length=2),
+        'Birthday': Date(),
+        'Nationality': String(length=3),
+        'height': Integer(),
+        'weight': Integer(),
+        'DraftPosition': Integer(),
+        'draftYear': Integer(),
+    })
+
+    df.to_sql(
+        tbl,
+        con=eng,
+        if_exists='replace',
+        index=False,
+        chunksize=5000,
+        method='multi',
+        dtype=cast(Any, dtype),
+    )
+    print(f"[mysql] wrote {len(df)} player bios rows -> {tbl}")
 
 
 def fetch_day(date_str: str, with_xg: bool = True) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -1807,6 +1943,14 @@ def main(argv: List[str] | None = None) -> int:
         except Exception as e:
             print(f"[error] export failed: {e}", file=sys.stderr)
             return 3
+
+        # Post-step: export player bios (skaters + goalies) for the active season.
+        # This is lightweight and ensures nhl_players_<season> stays current.
+        if str(args.season).strip() == '20252026':
+            try:
+                export_players_to_mysql(season=str(args.season).strip())
+            except Exception as e:
+                print(f"[warn] players export failed: {e}", file=sys.stderr)
 
         # Post-step: rebuild seasonstats from MySQL and write to Google Sheets (Sheets6)
         if str(args.season).strip() == '20252026':

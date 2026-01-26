@@ -4,9 +4,10 @@ $season = '20252026';
 $teamWorksheet = 'Sheets7';
 $python = 'C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe';
 
-$dates = @('2026-01-07','2026-01-08','2026-01-09');
+$dates = @('2026-01-23','2026-01-24','2026-01-25');
 foreach($d in $dates){
 	Write-Host "\n=== Running update_data.py for $d (xG ON) ===";
+	# Also exports player bios to MySQL table nhl_players_20252026
 	& $python scripts\update_data.py --date $d --export --season $season --replace-date;
 	if($LASTEXITCODE -ne 0){ throw "update_data.py failed for $d (exit $LASTEXITCODE)" }
 }
@@ -24,9 +25,10 @@ $contextWorksheet = 'Sheets5';
 $teamWorksheet = 'Sheets7';
 $python = 'C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe';
 
-$dates = @('2026-01-07','2026-01-08','2026-01-09');
+$dates = @('2026-01-26');
 foreach($d in $dates){
 	Write-Host "\n=== Running update_data.py for $d (xG ON + RAPM/Context) ===";
+	# Also exports player bios to MySQL table nhl_players_20252026
 	& $python scripts\update_data.py --date $d --export --season $season --replace-date --run-rapm --rapm-sheets-id $env:GOOGLE_SHEETS_ID --rapm-worksheet $rapmWorksheet --context-worksheet $contextWorksheet;
 	if($LASTEXITCODE -ne 0){ throw "update_data.py failed for $d (exit $LASTEXITCODE)" }
 }

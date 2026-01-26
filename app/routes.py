@@ -11542,6 +11542,18 @@ def api_game_shifts(game_id: int):
         force = str(request.args.get('force', '')).lower() in ('1', 'true', 'yes', 'y', 'force')
     except Exception:
         force = False
+
+    # Optional controls for scripts/backfills:
+    # - cache=0 / nocache=1: bypass in-memory cache and do not populate it
+    # - disk=0 / nodisk=1: bypass on-disk cache and do not write it
+    try:
+        no_cache = str(request.args.get('nocache', '')).lower() in ('1', 'true', 'yes', 'y') or str(request.args.get('cache', '')).strip() in ('0', 'false', 'False')
+    except Exception:
+        no_cache = False
+    try:
+        no_disk = str(request.args.get('nodisk', '')).lower() in ('1', 'true', 'yes', 'y') or str(request.args.get('disk', '')).strip() in ('0', 'false', 'False')
+    except Exception:
+        no_disk = False
     gid = str(game_id)
     if len(gid) < 10:
         return jsonify({'error': 'Invalid gameId'}), 400
@@ -11567,7 +11579,7 @@ def api_game_shifts(game_id: int):
     disk_path = _disk_cache_path_shifts(int(game_id))
 
     # Disk cache first (contains gameState so we can pick live vs std TTL without fetching boxscore)
-    if not force:
+    if (not force) and (not no_disk):
         try:
             if os.path.exists(disk_path):
                 import json
@@ -11583,7 +11595,7 @@ def api_game_shifts(game_id: int):
             pass
 
     # In-memory cache next (also includes gameState)
-    if not force:
+    if (not force) and (not no_cache):
         try:
             _cache_prune_ttl_and_size(_SHIFTS_CACHE, ttl_s=std_ttl, max_items=max_items)
             cached = _SHIFTS_CACHE.get(int(game_id))
@@ -12397,20 +12409,22 @@ def api_game_shifts(game_id: int):
     except Exception:
         pass
 
-    try:
-        _cache_set_multi_bounded(_SHIFTS_CACHE, int(game_id), out, ttl_s=std_ttl, max_items=max_items)
-    except Exception:
-        pass
+    if not no_cache:
+        try:
+            _cache_set_multi_bounded(_SHIFTS_CACHE, int(game_id), out, ttl_s=std_ttl, max_items=max_items)
+        except Exception:
+            pass
 
     # Persist to disk
-    try:
-        import json
-        js = dict(out)
-        js['_cachedAt'] = time.time()
-        with open(disk_path, 'w', encoding='utf-8') as f:
-            json.dump(js, f)
-    except Exception:
-        pass
+    if not no_disk:
+        try:
+            import json
+            js = dict(out)
+            js['_cachedAt'] = time.time()
+            with open(disk_path, 'w', encoding='utf-8') as f:
+                json.dump(js, f)
+        except Exception:
+            pass
     resp = jsonify(out)
     if force:
         try:
