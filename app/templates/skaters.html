@@ -58,7 +58,7 @@
 {% block head %}
 <style>
   .skater-wrap{ width:100%; margin-left:-10px; min-width:0; overflow-x:hidden; }
-  .skater-card{ width:100%; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:24px 26px 18px; min-width:0; overflow-x:hidden; }
+  .skater-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:24px 26px 18px; min-width:0; overflow-x:hidden; }
   .skater-top{ display:flex; gap:22px; align-items:center; }
   .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
   .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
@@ -78,7 +78,7 @@
   .subtabs{ display:flex; gap:12px; align-items:center; margin-top:18px; }
   .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .subtab-btn.active{ outline:2px solid var(--accent); }
-  .panel{ margin-top:14px; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:16px 16px 12px; min-width:0; }
+  .panel{ margin-top:14px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:16px 16px 12px; min-width:0; }
   .mini-table{ width:100%; border-collapse:collapse; font-size:14px; }
   .mini-table th{ text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; }
   .mini-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; }
@@ -112,7 +112,7 @@
   .modal-bd{ padding:14px 16px; }
   .cc-grid{ display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
   @media (max-width: 980px){ .cc-grid{ grid-template-columns:1fr; } }
-  .cc-slot{ border:1px solid #232a3a; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
+  .cc-slot{ border:none; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
   .cc-slot .s{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
   .cc-slot .n{ margin-top:6px; font-weight:850; }
   .cc-help{ color:var(--text-dim); font-size:13px; margin-bottom:12px; }
@@ -135,13 +135,13 @@
   .rapm-controls select{ color:var(--value-text, var(--text)); }
 
   .rapm-split{ display:grid; grid-template-columns: 1.4fr 0.8fr 0.8fr; gap:14px; max-width:1150px; margin:0 auto; }
-  .rapm-sect{ --rapmBarH: 340px; border:1px solid #232a3a; border-radius:12px; padding:12px 12px 10px; background:rgba(255,255,255,0.01); }
+  .rapm-sect{ --rapmBarH: 340px; border:none; border-radius:12px; padding:12px 12px 10px; background:transparent; }
   .rapm-sect h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .toi{ margin-top:8px; font-size:12px; color:rgba(255,255,255,0.90); text-align:center; font-weight:750; }
 
   .charts-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
   @media (max-width: 1100px){ .charts-grid{ grid-template-columns:1fr; } }
-  .chart-block{ border:1px solid #232a3a; border-radius:12px; padding:12px 12px 10px; background:rgba(255,255,255,0.01); display:flex; flex-direction:column; min-width:0; }
+  .chart-block{ border:none; border-radius:12px; padding:12px 12px 10px; background:transparent; display:flex; flex-direction:column; min-width:0; }
   .chart-hd{ display:flex; flex-direction:column; align-items:stretch; gap:10px; margin-bottom:10px; }
   .chart-hd h3{ margin:0; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .chart-controls{ width:100%; display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:flex-end; }
@@ -165,7 +165,7 @@
   .bar-col{ width:112px; }
   .bar-label{ text-align:center; font-size:12px; color:var(--text-dim); margin-top:8px; }
   .bar-value{ text-align:center; font-size:12px; font-weight:750; margin-top:6px; }
-  .bar-area{ position:relative; height:var(--rapmBarH); border-radius:10px; background:rgba(255,255,255,0.02); border:1px solid #1f2734; overflow:hidden; }
+  .bar-area{ position:relative; height:var(--rapmBarH); border-radius:10px; background:rgba(255,255,255,0.02); border:none; overflow:hidden; }
   .bar-line{ position:absolute; left:0; right:0; height:1px; background:#273246; }
   .bar{ position:absolute; left:14%; width:72%; border-radius:8px; background:var(--accent); opacity:1; }
   .bar.neg{ background:#ff6a6a; opacity:1; }
@@ -185,17 +185,17 @@
   .proj-subtabs{ display:flex; gap:12px; align-items:center; margin-top:6px; }
   .proj-subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .proj-subtab-btn.active{ outline:2px solid var(--accent); }
-  .proj-subpanel{ margin-top:14px; background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:16px; }
+  .proj-subpanel{ margin-top:14px; background:transparent; border:none; border-radius:12px; padding:16px; }
   .proj-subpanel[hidden]{ display:none !important; }
   .proj-grid{ display:grid; grid-template-columns: 320px 1fr; gap:16px; align-items:start; }
-  .kpi-card{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:12px 12px; text-align:center; }
+  .kpi-card{ background:rgba(0,0,0,.12); border:none; border-radius:12px; padding:12px 12px; text-align:center; }
   .kpi-title{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
   .kpi-value{ margin-top:6px; font-size:18px; font-weight:850; color:var(--text); font-variant-numeric: tabular-nums; }
   .kpi-list{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
   .proj-canvas{ width:100%; height:360px; }
   #projPlayerRadar{ height:500px; }
   #projTeamStack{ height:600px; }
-  .proj-table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:12px; }
+  .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
   .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
   .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
   .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
@@ -209,7 +209,7 @@
   .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
 
   .edge-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
-  .edge-card{ background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:14px; }
+  .edge-card{ background:transparent; border:none; border-radius:12px; padding:14px; }
   .edge-title{ font-size:12px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; margin:0 0 10px 0; }
   .edge-controls{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
   .edge-control{ display:flex; align-items:center; gap:8px; }
@@ -250,7 +250,7 @@
     .edge-grid{ grid-template-columns: 1fr; }
   }
 
-  .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:1px solid #232a3a; border-radius:12px; }
+  .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:none; border-radius:12px; }
   #tabPanelTable{ min-width:0; }
   #tablePanelInner{ min-width:0; }
   .metrics-table{ width:max-content; min-width:100%; border-collapse:separate; border-spacing:0; font-size:14px; table-layout:auto; }
@@ -272,12 +272,73 @@
 
   .table-metric-picker{ display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
   @media (max-width: 980px){ .table-metric-picker{ grid-template-columns:1fr; } }
-  .table-metric-group{ border:1px solid #232a3a; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
+  .table-metric-group{ border:none; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
   .table-metric-group .t{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:900; margin-bottom:10px; }
   .table-metrics-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:8px 12px; }
   .table-metric{ display:flex; flex-direction:row; gap:8px; align-items:center; font-size:13px; color:rgba(255,255,255,0.92); padding:0; }
   .table-metric input{ margin:0; flex:0 0 auto; cursor:pointer; }
   .table-metric span{ cursor:pointer; flex:1 1 auto; }
+
+  /* ── Shooting tab ── */
+  .shoot-kpis{ display:grid; grid-template-columns: repeat(8, 1fr); gap:10px; margin-bottom:14px; }
+  @media (max-width:980px){ .shoot-kpis{ grid-template-columns: repeat(4, 1fr); } }
+  .shoot-kpi{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:10px 8px; text-align:center; }
+  .shoot-kpi .lbl{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
+  .shoot-kpi .val{ margin-top:4px; font-size:22px; font-weight:950; color:var(--text); font-variant-numeric:tabular-nums; }
+  .shoot-kpi .val.pos{ color:#4da3ff; }
+  .shoot-kpi .val.neg{ color:#ff6a6a; }
+  .shoot-tbl .val.pos{ color:#4da3ff; }
+  .shoot-tbl .val.neg{ color:#ff6a6a; }
+  .shoot-body{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
+  @media (max-width:980px){ .shoot-body{ grid-template-columns: 1fr; } }
+  .shoot-left{ position:relative; min-height:0; }
+  .shoot-left-inner{ position:absolute; inset:0; display:flex; flex-direction:column; gap:10px; overflow:hidden; }
+  .shoot-tbl-wrap{ flex:1; min-height:0; overflow:auto; border-radius:10px; border:1px solid #232a3a; }
+  .shoot-tbl{ width:100%; border-collapse:collapse; font-size:13px; }
+  .shoot-tbl th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.8px; padding:8px 8px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
+  .shoot-tbl td{ padding:7px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .shoot-tbl th.num, .shoot-tbl td.num{ text-align:right; }
+  .shoot-tbl tbody tr{ cursor:pointer; }
+  .shoot-tbl tbody tr:hover{ background:rgba(255,255,255,0.04); }
+  .shoot-tbl tbody tr.active{ background:rgba(77,163,255,0.12); }
+  .shoot-video-btn{ display:inline-flex; align-items:center; gap:6px; background:#e53935; color:#fff; border:none; border-radius:8px; padding:9px 18px; font-size:13px; font-weight:800; cursor:pointer; letter-spacing:.3px; }
+  .shoot-video-btn:hover{ background:#c62828; }
+  .shoot-video-btn:disabled{ opacity:0.35; cursor:default; }
+  .shoot-video-list{ display:none; margin-top:6px; max-height:180px; overflow:auto; background:rgba(15,21,34,0.97); border:1px solid #2a3142; border-radius:10px; }
+  .shoot-video-list.open{ display:block; }
+  .shoot-video-list a{ display:block; padding:7px 12px; color:#4da3ff; font-size:12px; font-weight:700; text-decoration:none; border-bottom:1px solid #1a2230; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .shoot-video-list a:hover{ background:rgba(77,163,255,0.10); }
+  .shoot-map-toggle{ display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid #2a3142; width:fit-content; margin:0 auto 8px; }
+  .shoot-type-toggle{ display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid #2a3142; width:fit-content; margin:8px auto 0; }
+  .shoot-type-btn{ background:transparent; color:var(--text-dim); border:none; padding:8px 16px; font-size:12px; font-weight:750; cursor:pointer; letter-spacing:.3px; }
+  .shoot-type-btn.active{ background:var(--accent); color:#0b0f16; }
+  .shoot-map-btn{ background:transparent; color:var(--text-dim); border:none; padding:8px 16px; font-size:12px; font-weight:750; cursor:pointer; letter-spacing:.3px; }
+  .shoot-map-btn.active{ background:var(--accent); color:#0b0f16; }
+  .shoot-rink-wrap{ position:relative; width:100%; aspect-ratio:75/85; border-radius:12px; overflow:hidden; }
+  .shoot-rink-wrap img{ position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none; }
+  .shoot-rink-canvas{ position:absolute; inset:0; width:100%; height:100%; }
+  .shoot-heat-svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .shoot-heat-svg polygon, .shoot-heat-svg path{ cursor:pointer; stroke:rgba(0,0,0,0.1); stroke-width:0.3; }
+  .shoot-heat-svg polygon:hover, .shoot-heat-svg path:hover{ stroke:#fff; stroke-width:0.6; }
+  .zone-label{ font-size:2.2px; fill:rgba(0,0,0,0.7); font-weight:900; text-anchor:middle; dominant-baseline:central; pointer-events:none; }
+  .shoot-heat-svg polygon.zone-selected, .shoot-heat-svg path.zone-selected{ stroke:#fff; stroke-width:0.8; }
+
+  /* Video player dialog */
+  .video-overlay{ display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.75); align-items:center; justify-content:center; }
+  .video-overlay.open{ display:flex; }
+  .video-dialog{ background:#0f1522; border-radius:14px; width:96vw; max-width:1080px; overflow:hidden; box-shadow:0 8px 40px rgba(0,0,0,0.6); position:relative; }
+  .video-header{ display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #232a3a; }
+  .video-header .video-title{ font-size:13px; font-weight:800; color:var(--text); }
+  .video-header .video-close{ background:none; border:none; color:var(--text-dim); font-size:22px; cursor:pointer; padding:0 4px; line-height:1; }
+  .video-header .video-close:hover{ color:#fff; }
+  .video-frame-wrap{ position:relative; width:100%; padding-top:56.25%; background:#000; }
+  .video-frame-wrap iframe, .video-frame-wrap video-js, .video-frame-wrap .video-js{ position:absolute; inset:0; width:100%; height:100%; border:none; }
+  .video-controls{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid #232a3a; }
+  .video-controls button{ background:rgba(255,255,255,0.08); color:#fff; border:1px solid #2a3142; border-radius:8px; padding:7px 16px; font-size:12px; font-weight:800; cursor:pointer; }
+  .video-controls button:hover{ background:rgba(255,255,255,0.14); }
+  .video-controls button:disabled{ opacity:0.3; cursor:default; }
+  .video-controls .video-counter{ margin-left:auto; font-size:12px; color:var(--text-dim); font-weight:700; font-variant-numeric:tabular-nums; }
+  .video-controls .video-desc{ font-size:11px; color:var(--text-dim); flex:1; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   @media (max-width: 980px){
     .skater-wrap{ margin-left:0; }
@@ -340,6 +401,7 @@
     <div class="subtabs" role="tablist" aria-label="Skater tabs">
       <button id="tabCard" class="subtab-btn active" type="button" role="tab" aria-selected="true">Card</button>
       <button id="tabCharts" class="subtab-btn" type="button" role="tab" aria-selected="false">Charts</button>
+      <button id="tabShooting" class="subtab-btn" type="button" role="tab" aria-selected="false">Shooting</button>
       <button id="tabEdge" class="subtab-btn" type="button" role="tab" aria-selected="false">Edge</button>
       <button id="tabRAPM" class="subtab-btn" type="button" role="tab" aria-selected="false">RAPM</button>
       <button id="tabProjections" class="subtab-btn" type="button" role="tab" aria-selected="false">Projections</button>
@@ -386,7 +448,7 @@
       <div id="chartsEmpty" class="skater-empty" hidden>Select a season to view Charts.</div>
 
       <div id="chartsGrid" class="charts-grid">
-        <section class="chart-block" aria-label="Play Driving chart">
+        <section id="chartBlockPlayDriving" class="chart-block" aria-label="Play Driving chart">
           <div class="chart-hd">
             <h3>Play Driving</h3>
             <div class="chart-controls">
@@ -403,7 +465,7 @@
           </div>
         </section>
 
-        <section class="chart-block" aria-label="Shooting and Context chart">
+        <section id="chartBlockShooting" class="chart-block" aria-label="Shooting and Context chart">
           <div class="chart-hd">
             <h3>Shooting and Context</h3>
             <div class="chart-controls">
@@ -419,6 +481,64 @@
             <canvas id="scChart" class="chart-canvas"></canvas>
           </div>
         </section>
+      </div>
+    </div>
+
+    <!-- ── Shooting tab panel ── -->
+    <div id="tabPanelShooting" class="panel" role="tabpanel" style="display:none;">
+      <div id="shootSlicerSummary" class="card-panel-meta" style="margin-bottom:10px;"></div>
+      <div id="shootEmpty" class="skater-empty">Select a team and season to view shooting data.</div>
+      <div id="shootContent" style="display:none;">
+        <div class="shoot-kpis">
+          <div class="shoot-kpi"><div class="lbl">Shots</div><div id="shootKpiShots" class="val">0</div></div>
+          <div class="shoot-kpi"><div class="lbl">xG</div><div id="shootKpiXg" class="val">0</div></div>
+          <div class="shoot-kpi"><div class="lbl">Goals</div><div id="shootKpiGoals" class="val">0</div></div>
+          <div class="shoot-kpi"><div class="lbl">GAx</div><div id="shootKpiGax" class="val">0</div></div>
+          <div class="shoot-kpi"><div class="lbl">Sh%</div><div id="shootKpiShPct" class="val">0</div></div>
+          <div class="shoot-kpi"><div class="lbl">xSh%</div><div id="shootKpiXShPct" class="val">0</div></div>
+          <div class="shoot-kpi"><div class="lbl">dSh%</div><div id="shootKpiDShPct" class="val">0</div></div>
+        </div>
+        <div class="shoot-body">
+          <div class="shoot-left">
+            <div class="shoot-left-inner">
+            <div class="shoot-tbl-wrap">
+              <table class="shoot-tbl" id="shootGoalieTable">
+                <thead>
+                  <tr>
+                    <th>Goalie</th>
+                    <th class="num">Shots</th>
+                    <th class="num">xG</th>
+                    <th class="num">Goals</th>
+                    <th class="num">GAx &#x25BC;</th>
+                  </tr>
+                </thead>
+                <tbody id="shootGoalieTbody"></tbody>
+              </table>
+            </div>
+            <div>
+              <button class="shoot-video-btn" id="shootVideoBtn" type="button" disabled>&#9654; Video</button>
+              <div class="shoot-video-list" id="shootVideoList"></div>
+            </div>
+            </div>
+          </div>
+          <div class="shoot-right">
+            <div class="shoot-map-toggle">
+              <button class="shoot-map-btn active" data-map="shot" type="button">Shot Map</button>
+              <button class="shoot-map-btn" data-map="heat" type="button">Heat Map</button>
+            </div>
+            <div class="shoot-rink-wrap" id="shootRinkWrap">
+              <img id="shootRinkImg" src="/static/hockey-rink-half.png" alt="Rink" />
+              <canvas id="shootShotCanvas" class="shoot-rink-canvas"></canvas>
+              <svg id="shootHeatSvg" class="shoot-heat-svg" viewBox="25 -42.5 75 85" preserveAspectRatio="xMidYMid meet" style="display:none;"></svg>
+            </div>
+            <div class="shoot-type-toggle">
+              <button class="shoot-type-btn active" data-stype="all" type="button">All</button>
+              <button class="shoot-type-btn" data-stype="miss" type="button">Missed</button>
+              <button class="shoot-type-btn" data-stype="shot" type="button">On Net</button>
+              <button class="shoot-type-btn" data-stype="goal" type="button">Goals</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -508,10 +628,33 @@
 </div>
 
 <script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+
+<!-- Video player dialog -->
+<div class="video-overlay" id="videoOverlay">
+  <div class="video-dialog">
+    <div class="video-header">
+      <span class="video-title" id="videoTitle">Goal Highlights</span>
+      <button class="video-close" id="videoClose" type="button">&times;</button>
+    </div>
+    <div class="video-frame-wrap">
+      <iframe id="videoPlayer" allow="autoplay; encrypted-media" allowfullscreen
+        style="position:absolute; inset:0; width:100%; height:100%; border:none; background:#000;"></iframe>
+    </div>
+    <div class="video-controls">
+      <button id="videoPrev" type="button">&#9664; Prev</button>
+      <button id="videoPlay" type="button">&#9654; Play</button>
+      <button id="videoNext" type="button">Next &#9654;</button>
+      <span class="video-counter" id="videoCounter"></span>
+      <span class="video-desc" id="videoDesc"></span>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
 <script>
 const DEFAULT_SKATER_IMG = 'https://assets.nhle.com/mugs/nhl/default-skater.png';
 
@@ -527,15 +670,19 @@ const skaterMsg = document.getElementById('skaterMsg');
 const tabCard = document.getElementById('tabCard');
 const tabTable = document.getElementById('tabTable');
 const tabCharts = document.getElementById('tabCharts');
+const tabShooting = document.getElementById('tabShooting');
 const tabEdge = document.getElementById('tabEdge');
 const tabRAPM = document.getElementById('tabRAPM');
 const tabProjections = document.getElementById('tabProjections');
 const tabPanelCard = document.getElementById('tabPanelCard');
 const tabPanelTable = document.getElementById('tabPanelTable');
 const tabPanelCharts = document.getElementById('tabPanelCharts');
+const tabPanelShooting = document.getElementById('tabPanelShooting');
 const tabPanelEdge = document.getElementById('tabPanelEdge');
 const tabPanelRAPM = document.getElementById('tabPanelRAPM');
 const tabPanelProjections = document.getElementById('tabPanelProjections');
+const chartBlockPlayDriving = document.getElementById('chartBlockPlayDriving');
+const chartBlockShooting = document.getElementById('chartBlockShooting');
 const cardPanelInner = document.getElementById('cardPanelInner');
 const chartsEmpty = document.getElementById('chartsEmpty');
 const chartsGrid = document.getElementById('chartsGrid');
@@ -848,10 +995,15 @@ function refreshChartMetricLabels(){
 function getActiveTabKey(){
   if(tabTable?.classList.contains('active')) return 'table';
   if(tabCharts?.classList.contains('active')) return 'charts';
+  if(tabShooting?.classList.contains('active')) return 'shooting';
   if(tabEdge?.classList.contains('active')) return 'edge';
   if(tabRAPM?.classList.contains('active')) return 'rapm';
   if(tabProjections?.classList.contains('active')) return 'projections';
   return 'card';
+}
+
+function chartsViewActive(){
+  return !!(tabCharts?.classList.contains('active') || tabShooting?.classList.contains('active'));
 }
 
 function getActiveProjSubtabKey(){
@@ -926,7 +1078,7 @@ function restoreSkatersState(){
       }
 
       __restorePlayerId = String(state.playerId||'') || null;
-      __restoreActiveTab = String(state.activeTab||'') || null;
+      if(!__restoreActiveTab) __restoreActiveTab = String(state.activeTab||'') || null;
       __restoreProjSubtab = String(state.projectionsSubtab||'') || null;
     }
   }catch(_){/*noop*/}
@@ -1354,7 +1506,7 @@ try{
       loadCardPanel();
       try{
         __chartsLastKey='';
-        if(tabCharts?.classList.contains('active')) renderCharts();
+        if(chartsViewActive()) renderCharts();
       }catch(_){/*noop*/}
     });
   });
@@ -1452,13 +1604,15 @@ function setActiveTab(which){
   const isC = (w === 'card');
   const isT = (w === 'table');
   const isH = (w === 'charts');
+  const isS = (w === 'shooting');
   const isE = (w === 'edge');
   const isR = (w === 'rapm');
   const isP = (w === 'projections');
   // default
-  const finalC = (isC || (!isT && !isH && !isE && !isR && !isP));
+  const finalC = (isC || (!isT && !isH && !isS && !isE && !isR && !isP));
   const finalT = isT;
   const finalH = isH;
+  const finalS = isS;
   const finalE = isE;
   const finalR = isR;
   const finalP = isP;
@@ -1466,24 +1620,27 @@ function setActiveTab(which){
   tabCard?.classList.toggle('active', finalC);
   tabTable?.classList.toggle('active', finalT);
   tabCharts?.classList.toggle('active', finalH);
+  tabShooting?.classList.toggle('active', finalS);
   tabEdge?.classList.toggle('active', finalE);
   tabRAPM?.classList.toggle('active', finalR);
   tabProjections?.classList.toggle('active', finalP);
   if(tabCard) tabCard.setAttribute('aria-selected', finalC ? 'true' : 'false');
   if(tabTable) tabTable.setAttribute('aria-selected', finalT ? 'true' : 'false');
   if(tabCharts) tabCharts.setAttribute('aria-selected', finalH ? 'true' : 'false');
+  if(tabShooting) tabShooting.setAttribute('aria-selected', finalS ? 'true' : 'false');
   if(tabEdge) tabEdge.setAttribute('aria-selected', finalE ? 'true' : 'false');
   if(tabRAPM) tabRAPM.setAttribute('aria-selected', finalR ? 'true' : 'false');
   if(tabProjections) tabProjections.setAttribute('aria-selected', finalP ? 'true' : 'false');
   if(tabPanelCard) tabPanelCard.style.display = finalC ? '' : 'none';
   if(tabPanelTable) tabPanelTable.style.display = finalT ? '' : 'none';
   if(tabPanelCharts) tabPanelCharts.style.display = finalH ? '' : 'none';
+  if(tabPanelShooting) tabPanelShooting.style.display = finalS ? '' : 'none';
   if(tabPanelEdge) tabPanelEdge.style.display = finalE ? '' : 'none';
   if(tabPanelRAPM) tabPanelRAPM.style.display = finalR ? '' : 'none';
   if(tabPanelProjections) tabPanelProjections.style.display = finalP ? '' : 'none';
 
-  // Card slicers are shared by Card + Table + Charts.
-  setCardSlicersVisible(finalC || finalT || finalH, { showConfig: finalC });
+  // Card slicers are shared by Card + Table + Charts + Shooting.
+  setCardSlicersVisible(finalC || finalT || finalH || finalS, { showConfig: finalC });
   setEdgeSlicersVisible(finalE);
 
   // Keep Edge season state in sync with Card selection when possible.
@@ -1499,6 +1656,7 @@ function setActiveTab(which){
     // Render charts when the tab becomes active.
     try{ __chartsLastKey=''; renderCharts(); }catch(_){ /* noop */ }
   }
+  if(finalS) loadShootingPanel();
   if(finalE) loadEdgePanel();
   if(finalR) loadRAPMPanel();
   if(finalP && projectionsEnabled()) loadProjectionsPanel();
@@ -1805,6 +1963,7 @@ function updateTabsVisibility(){
   if(tabProjections) tabProjections.style.display = enabled ? '' : 'none';
   const projActive = tabProjections?.classList.contains('active');
   if(!enabled && projActive) setActiveTab('card');
+  if(typeof syncDropdownVisibility === 'function') syncDropdownVisibility();
 }
 
 // base.html populates seasonSelect asynchronously and sets seasonSelect.value
@@ -4120,24 +4279,437 @@ async function loadPlayerCard(){
   }
 }
 
+// ── Shooting Tab ──────────────────────────────────────────────
+let __shootData = null;      // raw API response
+let __shootLastKey = '';      // cache key to avoid refetch
+let __shootReqVer = 0;        // request version counter (race-condition guard)
+let __shootGeoJson = null;    // geojson zones (loaded once)
+let __shootActiveGoalie = null;  // selected goalie ID filter
+let __shootActiveZone = null;    // selected zone filter
+let __shootMapMode = 'shot';     // 'shot' | 'heat'
+let __shootShotType = 'all';     // 'all' | 'miss' | 'shot' | 'goal'
+
+const shootContent = document.getElementById('shootContent');
+const shootEmpty = document.getElementById('shootEmpty');
+const shootGoalieTbody = document.getElementById('shootGoalieTbody');
+const shootShotCanvas = document.getElementById('shootShotCanvas');
+const shootHeatSvg = document.getElementById('shootHeatSvg');
+const shootRinkWrap = document.getElementById('shootRinkWrap');
+const shootSlicerSummary = document.getElementById('shootSlicerSummary');
+const shootVideoBtn = document.getElementById('shootVideoBtn');
+const shootVideoList = document.getElementById('shootVideoList');
+
+// ── Shared Video Player (iframe-based Brightcove) ───────────
+const _vOverlay = document.getElementById('videoOverlay');
+const _vFrame   = document.getElementById('videoPlayer');
+const _vPrev    = document.getElementById('videoPrev');
+const _vPlay    = document.getElementById('videoPlay');
+const _vNext    = document.getElementById('videoNext');
+const _vCounter = document.getElementById('videoCounter');
+const _vDesc    = document.getElementById('videoDesc');
+const _vClose   = document.getElementById('videoClose');
+const _vTitle   = document.getElementById('videoTitle');
+let _vEvents = [];
+let _vIdx = 0;
+
+function _vHasVideo(nhlUrl){ return !!(nhlUrl && (nhlUrl).match(/(\d{8,})$/)); }
+
+function _vBrightcoveUrl(nhlUrl){
+  const m = (nhlUrl || '').match(/(\d{8,})$/);
+  if(!m) return '';
+  return `https://players.brightcove.net/6415718365001/EBZkr1uCil_default/index.html?videoId=${m[1]}&autoplay=true&muted=false`;
+}
+
+function _vLabel(nhlUrl){
+  const slug = (nhlUrl || '').split('/').pop() || '';
+  return slug.replace(/-?\d{8,}$/, '').replace(/-/g, ' ').trim() || 'Goal highlight';
+}
+
+function _vShow(events, title){
+  _vEvents = events;
+  _vIdx = 0;
+  _vTitle.textContent = title || 'Goal Highlights';
+  _vOverlay.classList.add('open');
+  _vRender();
+  document.addEventListener('keydown', _vKey);
+}
+
+function _vHide(){
+  _vOverlay.classList.remove('open');
+  if(_vFrame) _vFrame.src = '';
+  _vEvents = [];
+  document.removeEventListener('keydown', _vKey);
+}
+
+function _vRender(){
+  if(!_vEvents.length){ _vHide(); return; }
+  const e = _vEvents[_vIdx];
+  const src = _vBrightcoveUrl(e.highlightUrl);
+  _vCounter.textContent = `Event ${_vIdx+1} / ${_vEvents.length}`;
+  _vDesc.textContent = _vLabel(e.highlightUrl);
+  _vPrev.disabled = _vIdx <= 0;
+  _vNext.disabled = _vIdx >= _vEvents.length - 1;
+  if(_vFrame && src) _vFrame.src = src;
+}
+
+function _vKey(ev){
+  if(ev.key === 'Escape') _vHide();
+  else if(ev.key === 'ArrowLeft' && _vIdx > 0){ _vIdx--; _vRender(); }
+  else if(ev.key === 'ArrowRight' && _vIdx < _vEvents.length-1){ _vIdx++; _vRender(); }
+}
+
+_vClose.addEventListener('click', _vHide);
+_vOverlay.addEventListener('click', ev => { if(ev.target === _vOverlay) _vHide(); });
+_vPrev.addEventListener('click', () => { if(_vIdx > 0){ _vIdx--; _vRender(); } });
+_vNext.addEventListener('click', () => { if(_vIdx < _vEvents.length-1){ _vIdx++; _vRender(); } });
+_vPlay.addEventListener('click', () => { _vRender(); });
+// ── End Video Player ────────────────────────────────────────
+
+// Video button → open dialog
+shootVideoBtn.addEventListener('click', () => {
+  const evts = getFilteredShootEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+  if(evts.length) _vShow(evts, 'Goal Highlights');
+});
+
+// Map toggle
+document.querySelectorAll('.shoot-map-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.shoot-map-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    __shootMapMode = btn.dataset.map;
+    shootShotCanvas.style.display = __shootMapMode === 'shot' ? '' : 'none';
+    shootHeatSvg.style.display = __shootMapMode === 'heat' ? '' : 'none';
+    renderShootingVisuals();
+  });
+});
+
+// Shot type filter toggle
+document.querySelectorAll('.shoot-type-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.shoot-type-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    __shootShotType = btn.dataset.stype;
+    renderShootingVisuals();
+    updateShootVideoBtn();
+  });
+});
+
+async function loadGeoJson(){
+  if(__shootGeoJson) return __shootGeoJson;
+  try{
+    const r = await fetch('/static/zones.json');
+    if(!r.ok) throw new Error('zones.json fetch failed');
+    __shootGeoJson = await r.json();
+  }catch(_){
+    __shootGeoJson = {type:'FeatureCollection', features:[]};
+  }
+  return __shootGeoJson;
+}
+
+async function loadShootingPanel(){
+  const team = teamSelect?.value;
+  const season = seasonSelect?.value;
+  const ss = cardSeasonState?.value || 'regular';
+  const str = cardStrengthState?.value || '5v5';
+  const xm = cardXgModel?.value || 'xG_F';
+  const pid = playerSelect?.value || '';
+  const key = `${team}|${season}|${ss}|${str}|${xm}|${pid}`;
+
+  if(shootSlicerSummary){
+    const sn = season ? (season.slice(0,4)+'/'+season.slice(4)) : '';
+    shootSlicerSummary.textContent = `${sn} – ${ss==='playoffs'?'Playoffs':ss==='all'?'All':'Regular'} – ${str} – ${xm.replace('_',' ')}`;
+    shootSlicerSummary.style.fontStyle = 'italic';
+  }
+
+  if(!team || !season){
+    if(shootEmpty) shootEmpty.style.display = '';
+    if(shootContent) shootContent.style.display = 'none';
+    return;
+  }
+
+  if(key === __shootLastKey && __shootData){
+    renderShootingFull();
+    return;
+  }
+
+  if(shootEmpty){ shootEmpty.textContent = 'Loading shot data\u2026'; shootEmpty.style.display = ''; }
+  if(shootContent) shootContent.style.display = 'none';
+
+  try{
+    const ver = ++__shootReqVer;
+    // When no specific player is selected, send the full roster so KPIs
+    // only count events for current roster players (matches Table View).
+    let rosterParam = '';
+    if(!pid && playerSelect){
+      const ids = Array.from(playerSelect.options).map(o => o.value).filter(v => v);
+      if(ids.length) rosterParam = `&roster=${ids.join(',')}`;
+    }
+    const url = `/api/skaters/shooting?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${ss}&strengthState=${str}&xgModel=${xm}&player=${encodeURIComponent(pid)}${rosterParam}`;
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('API error');
+    if(ver !== __shootReqVer) return;   // stale response — discard
+    __shootData = await r.json();
+    __shootLastKey = key;
+    __shootActiveGoalie = null;
+    __shootActiveZone = null;
+    __shootShotType = 'all';
+    document.querySelectorAll('.shoot-type-btn').forEach(b => b.classList.toggle('active', b.dataset.stype==='all'));
+    await loadGeoJson();
+    renderShootingFull();
+  }catch(e){
+    if(shootEmpty){ shootEmpty.textContent = 'Error loading shooting data.'; shootEmpty.style.display = ''; }
+    if(shootContent) shootContent.style.display = 'none';
+  }
+}
+
+function renderShootingFull(){
+  if(!__shootData) return;
+  if(shootEmpty) shootEmpty.style.display = 'none';
+  if(shootContent) shootContent.style.display = '';
+  renderShootingKpis();
+  renderShootingTable();
+  renderShootingVisuals();
+  updateShootVideoBtn();
+}
+
+function getFilteredShootEvents(){
+  if(!__shootData) return [];
+  let evts = __shootData.events || [];
+  if(__shootActiveGoalie) evts = evts.filter(e => e.goalieId === __shootActiveGoalie);
+  if(__shootActiveZone) evts = evts.filter(e => e.boxId === __shootActiveZone);
+  if(__shootShotType === 'goal') evts = evts.filter(e => e.goal === 1);
+  else if(__shootShotType === 'shot') evts = evts.filter(e => e.shot === 1 && e.goal !== 1);
+  else if(__shootShotType === 'miss') evts = evts.filter(e => e.shot !== 1 && e.goal !== 1);
+  return evts;
+}
+
+function computeKpisFromEvents(evts){
+  let shots=0, xg=0, goals=0;
+  for(const e of evts){ shots++; xg += e.xG||0; if(e.goal) goals++; }
+  const shPct = shots? (goals/shots*100):0;
+  const xShPct = shots? (xg/shots*100):0;
+  return {shots, xG:xg, goals, gax:goals-xg, shPct, xShPct, dShPct:shPct-xShPct};
+}
+
+function renderShootingKpis(){
+  const evts = getFilteredShootEvents();
+  const k = computeKpisFromEvents(evts);
+  const set = (id, v, cls) => {
+    const el = document.getElementById(id);
+    if(el){ el.textContent = v; el.className = 'val' + (cls?' '+cls:''); }
+  };
+  set('shootKpiShots', k.shots);
+  set('shootKpiXg', k.xG.toFixed(2));
+  set('shootKpiGoals', k.goals);
+  const gaxStr = (k.gax>=0?'+':'')+k.gax.toFixed(2);
+  set('shootKpiGax', gaxStr, k.gax>=0?'pos':'neg');
+  set('shootKpiShPct', k.shPct.toFixed(1)+'%');
+  set('shootKpiXShPct', k.xShPct.toFixed(1)+'%');
+  const dStr = (k.dShPct>=0?'+':'')+k.dShPct.toFixed(1)+'%';
+  set('shootKpiDShPct', dStr, k.dShPct>=0?'pos':'neg');
+}
+
+function renderShootingTable(){
+  if(!shootGoalieTbody || !__shootData) return;
+  let goalies = __shootData.goalies || [];
+  // If zone filter is active, recompute goalie stats from filtered events
+  if(__shootActiveZone){
+    const evts = __shootData.events.filter(e => e.boxId === __shootActiveZone);
+    const nameMap = {};
+    for(const og of (__shootData.goalies||[])) nameMap[og.goalieId] = og.name || String(og.goalieId);
+    const agg = {};
+    for(const e of evts){
+      const gid = e.goalieId; if(!gid) continue;
+      if(!agg[gid]) agg[gid] = {goalieId:gid, name:nameMap[gid]||String(gid), shots:0, xG:0, goals:0};
+      agg[gid].shots++; agg[gid].xG += e.xG||0; if(e.goal) agg[gid].goals++;
+    }
+    goalies = Object.values(agg).map(g => ({...g, gax:+(g.goals-g.xG).toFixed(2), xG:+g.xG.toFixed(2)}));
+    goalies.sort((a,b) => b.gax - a.gax);
+  }
+  shootGoalieTbody.innerHTML = '';
+  for(const g of goalies){
+    const tr = document.createElement('tr');
+    tr.dataset.goalieId = g.goalieId;
+    if(__shootActiveGoalie === g.goalieId) tr.classList.add('active');
+    const gaxCls = g.gax >= 0 ? 'pos' : 'neg';
+    tr.innerHTML = `<td>${g.name||g.goalieId}</td><td class="num">${g.shots}</td><td class="num">${g.xG.toFixed(2)}</td><td class="num">${g.goals}</td><td class="num"><span class="val ${gaxCls}" style="font-size:13px;">${g.gax>=0?'+':''}${g.gax.toFixed(2)}</span></td>`;
+    tr.addEventListener('click', () => {
+      __shootActiveGoalie = (__shootActiveGoalie === g.goalieId) ? null : g.goalieId;
+      renderShootingKpis();
+      renderShootingTable();
+      renderShootingVisuals();
+      updateShootVideoBtn();
+    });
+    shootGoalieTbody.appendChild(tr);
+  }
+}
+
+function renderShootingVisuals(){
+  if(__shootMapMode === 'shot') renderShotMap();
+  else renderHeatMap();
+}
+
+function renderShotMap(){
+  if(!shootShotCanvas || !__shootData) return;
+  const wrap = shootRinkWrap;
+  const canvas = shootShotCanvas;
+  const rect = wrap.getBoundingClientRect();
+  const W = rect.width || 600;
+  const H = rect.height || 550;
+  canvas.width = W * (window.devicePixelRatio || 1);
+  canvas.height = H * (window.devicePixelRatio || 1);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  ctx.clearRect(0, 0, W, H);
+
+  const evts = getFilteredShootEvents();
+
+  // Map NHL coordinates to canvas pixels
+  // Offensive zone: x in [25, 100], y in [-42.5, 42.5]
+  // The rink image shows the right half-rink (offensive zone)
+  const xMin=25, xMax=100, yMin=-42.5, yMax=42.5;
+  const pad = 10;
+  const scaleX = (W - 2*pad) / (xMax - xMin);
+  const scaleY = (H - 2*pad) / (yMax - yMin);
+  const scale = Math.min(scaleX, scaleY);
+  const offX = (W - (xMax-xMin)*scale) / 2;
+  const offY = (H - (yMax-yMin)*scale) / 2;
+
+  function toCanvas(x, y){
+    return [ offX + (x - xMin) * scale, offY + (yMax - y) * scale ];
+  }
+
+  for(const e of evts){
+    const [cx, cy] = toCanvas(e.x, e.y);
+    const isGoal = e.goal === 1;
+    ctx.beginPath();
+    if(isGoal){
+      // Triangle for goals
+      const s = 6;
+      ctx.moveTo(cx, cy - s);
+      ctx.lineTo(cx - s, cy + s*0.7);
+      ctx.lineTo(cx + s, cy + s*0.7);
+      ctx.closePath();
+      ctx.fillStyle = '#22c55e';
+      ctx.fill();
+    } else {
+      // Circle for shots
+      ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.8)';
+      ctx.fill();
+    }
+  }
+}
+
+function renderHeatMap(){
+  if(!shootHeatSvg || !__shootData || !__shootGeoJson) return;
+  shootHeatSvg.innerHTML = '';
+
+  // Heat map always shows ALL events (filtered by goalie + shot type, but NOT by zone)
+  let heatEvts = __shootData.events || [];
+  if(__shootActiveGoalie) heatEvts = heatEvts.filter(e => e.goalieId === __shootActiveGoalie);
+  if(__shootShotType === 'goal') heatEvts = heatEvts.filter(e => e.goal === 1);
+  else if(__shootShotType === 'shot') heatEvts = heatEvts.filter(e => e.shot === 1 && e.goal !== 1);
+  else if(__shootShotType === 'miss') heatEvts = heatEvts.filter(e => e.shot !== 1 && e.goal !== 1);
+
+  const zoneCounts = {};
+  for(const e of heatEvts){
+    if(!e.boxId) continue;
+    if(!zoneCounts[e.boxId]) zoneCounts[e.boxId] = 0;
+    zoneCounts[e.boxId]++;
+  }
+
+  const vals = Object.values(zoneCounts);
+  const maxVal = Math.max(...vals, 1);
+
+  const features = (__shootGeoJson.features || []).filter(f => {
+    const id = f.id || (f.properties && f.properties.id) || '';
+    return id.startsWith('O');
+  });
+
+  for(const f of features){
+    const id = f.id || f.properties?.id || '';
+    const coords = f.geometry?.coordinates?.[0];
+    if(!coords) continue;
+    const count = zoneCounts[id] || 0;
+    const intensity = count / maxVal;
+    const color = heatColor(intensity);
+
+    const points = coords.map(([x,y]) => `${x},${-y}`).join(' ');
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', points);
+    poly.setAttribute('fill', color);
+    poly.dataset.zoneId = id;
+    if(__shootActiveZone === id) poly.classList.add('zone-selected');
+    poly.addEventListener('click', () => {
+      __shootActiveZone = (__shootActiveZone === id) ? null : id;
+      renderShootingKpis();
+      renderShootingTable();
+      renderHeatMap();
+      updateShootVideoBtn();
+    });
+    shootHeatSvg.appendChild(poly);
+
+    // Zone label — use polygon centroid for corner zones, bbox center otherwise
+    const xs = coords.map(c => c[0]);
+    const ys = coords.map(c => c[1]);
+    let cx, cy;
+    if(id === 'O04' || id === 'O10'){
+      // Polygon centroid (average of vertices) works better for triangular corner zones
+      cx = xs.reduce((a,b)=>a+b,0) / xs.length;
+      cy = ys.reduce((a,b)=>a+b,0) / ys.length;
+    } else {
+      cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    }
+    if(Math.max(...xs) >= 99) cx = Math.min(cx, 92);
+    if(Math.min(...ys) <= -41) cy = Math.max(cy, -38);
+    if(Math.max(...ys) >= 41) cy = Math.min(cy, 38);
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', cx);
+    text.setAttribute('y', -cy);
+    text.setAttribute('class', 'zone-label');
+    text.textContent = count;
+    shootHeatSvg.appendChild(text);
+  }
+}
+
+function heatColor(t){
+  // 0 = white/transparent, 1 = deep blue
+  if(t <= 0) return 'rgba(200,210,230,0.15)';
+  const r = Math.round(200 - 140*t);
+  const g = Math.round(210 - 140*t);
+  const b = Math.round(250 - 20*t);
+  const a = 0.2 + 0.6 * t;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function updateShootVideoBtn(){
+  const evts = getFilteredShootEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+  shootVideoBtn.disabled = evts.length === 0;
+}
+
 tabCard?.addEventListener('click', ()=> setActiveTab('card'));
 tabTable?.addEventListener('click', ()=> setActiveTab('table'));
 tabCharts?.addEventListener('click', ()=> setActiveTab('charts'));
+tabShooting?.addEventListener('click', ()=> setActiveTab('shooting'));
   // Charts interactions
   try{ pdX?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
   try{ pdY?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
   try{ scX?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
   try{ scY?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
   // Re-render charts when shared slicers change.
-  try{ seasonSelect?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
-  try{ teamSelect?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ seasonSelect?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ teamSelect?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
   try{ playerSelect?.addEventListener('change', ()=> { try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/} try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/} }); }catch(_){/*noop*/}
-  try{ cardSeasonState?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardStrengthState?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardRates?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardXgModel?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardMinGp?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardMinToi?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardSeasonState?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardStrengthState?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardRates?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardXgModel?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardMinGp?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardMinToi?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
   // Scope segmented buttons already call loadCardPanel(); extend to re-render charts too.
   // (Keep behavior localized: just trigger charts refresh after scope changes.)
   // NOTE: setCardScope() itself doesn't call renderCharts.
@@ -4178,6 +4750,19 @@ cardRates?.addEventListener('change', __maybeReloadTable);
 cardXgModel?.addEventListener('change', __maybeReloadTable);
 seasonSelect?.addEventListener('change', __maybeReloadTable);
 
+// Auto-update shooting panel when slicers change
+function __maybeReloadShooting(){
+  if(tabShooting?.classList.contains('active')){
+    __shootLastKey = '';
+    loadShootingPanel();
+  }
+}
+cardSeasonState?.addEventListener('change', __maybeReloadShooting);
+cardStrengthState?.addEventListener('change', __maybeReloadShooting);
+cardXgModel?.addEventListener('change', __maybeReloadShooting);
+playerSelect?.addEventListener('change', __maybeReloadShooting);
+seasonSelect?.addEventListener('change', __maybeReloadShooting);
+
 btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
 btnConfigureTable?.addEventListener('click', async ()=>{ await showTableConfig(); });
 btnExportTableCsv?.addEventListener('click', async ()=>{ await exportTableCsv(); });
@@ -4199,7 +4784,7 @@ function __scheduleMinFilterSave(){
   __minFilterSaveTimer = setTimeout(()=>{
     updateCardSlicerSummary();
     saveSkatersState();
-    if(tabCharts?.classList.contains('active')){
+    if(chartsViewActive()){
       __chartsLastKey='';
       renderCharts();
     }
@@ -4305,6 +4890,15 @@ seasonSelect?.addEventListener('change', async ()=>{
   saveSkatersState();
 });
 playerSelect?.addEventListener('change', ()=> { loadPlayerCard(); saveSkatersState(); });
+
+// Hash-based tab: override saved state BEFORE boot so initSkatersPage uses it
+(function(){
+  var h = location.hash.replace('#','');
+  if(!h) return;
+  var map = {Card:'card',Charts:'charts',Shooting:'shooting',Edge:'edge',RAPM:'rapm',Projections:'projections',Table:'table'};
+  var tab = map[h];
+  if(tab) __restoreActiveTab = tab;
+})();
 
 // Boot sequence: restore persisted state and load once base.html filters are ready.
 initSkatersPage();

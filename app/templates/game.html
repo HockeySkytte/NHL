@@ -328,7 +328,8 @@ async function renderPBP(){
   'BoxID','BoxID_rev','BoxSize',
   'ShotDistance','ShotAngle','Position','Shoots',
   // xG columns
-  'xG_F','xG_S','xG_F2'
+  'xG_F','xG_S','xG_F2',
+  'HighlightUrl'
   ];
   const header = cols.map(c=>`<th>${c}</th>`).join('');
   const body = (pbpData.plays||[]).map(pl=> `<tr>${cols.map(c=> `<td>${pl[c]!==undefined && pl[c]!==null ? pl[c] : ''}</td>`).join('')}</tr>`).join('');

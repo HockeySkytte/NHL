@@ -11,3 +11,6 @@ SQLAlchemy
 mysql-connector-python
 gspread
 google-auth
+supabase
+psycopg2-binary
+python-dotenv

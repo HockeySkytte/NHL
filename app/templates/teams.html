@@ -35,7 +35,7 @@
 {% block head %}
 <style>
   .team-wrap{ width:100%; margin-left:-10px; min-width:0; overflow-x:hidden; }
-  .team-card{ width:100%; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:24px 26px 18px; min-width:0; overflow-x:hidden; }
+  .team-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:24px 26px 18px; min-width:0; overflow-x:hidden; }
   .team-top{ display:flex; gap:22px; align-items:center; }
   /* Smaller surrounding square while keeping the logo's effective size similar. */
   .team-img{ width:190px; height:190px; border-radius:18px; object-fit:contain; object-position:center; background:var(--panel); border:1px solid #2a3142; padding:0; transform:none; }
@@ -54,7 +54,7 @@
   .subtabs{ display:flex; gap:12px; align-items:center; margin-top:18px; flex-wrap:wrap; }
   .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .subtab-btn.active{ outline:2px solid var(--accent); }
-  .panel{ margin-top:14px; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:16px 16px 12px; min-width:0; }
+  .panel{ margin-top:14px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:16px 16px 12px; min-width:0; }
 
   #tabPanelCard.panel{ padding:10px 10px 8px; }
   .card-panel-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:2px 2px 10px; }
@@ -75,7 +75,7 @@
 
   .charts-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
   @media (max-width: 1100px){ .charts-grid{ grid-template-columns:1fr; } }
-  .chart-block{ border:1px solid #232a3a; border-radius:12px; padding:12px 12px 10px; background:rgba(255,255,255,0.01); display:flex; flex-direction:column; min-width:0; }
+  .chart-block{ border:none; border-radius:12px; padding:12px 12px 10px; background:transparent; display:flex; flex-direction:column; min-width:0; }
   .chart-hd{ display:flex; flex-direction:column; align-items:stretch; gap:10px; margin-bottom:10px; }
   .chart-hd h3{ margin:0; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .chart-controls{ width:100%; display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:flex-end; }
@@ -89,18 +89,18 @@
   .proj-subtabs{ display:flex; gap:12px; align-items:center; margin-top:6px; flex-wrap:wrap; }
   .proj-subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .proj-subtab-btn.active{ outline:2px solid var(--accent); }
-  .proj-subpanel{ margin-top:14px; background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:16px; }
+  .proj-subpanel{ margin-top:14px; background:transparent; border:none; border-radius:12px; padding:16px; }
   .proj-subpanel[hidden]{ display:none !important; }
   .proj-ov-grid{ display:grid; grid-template-columns: 360px 1fr; gap:14px; align-items:start; }
   @media (max-width: 980px){ .proj-ov-grid{ grid-template-columns:1fr; } }
-  .proj-radar{ border:1px solid #232a3a; border-radius:12px; padding:10px; background:rgba(255,255,255,0.01); min-height:320px; height:360px; max-height:360px; overflow:hidden; }
+  .proj-radar{ border:none; border-radius:12px; padding:10px; background:transparent; min-height:320px; height:360px; max-height:360px; overflow:hidden; }
   @media (max-width: 980px){ .proj-radar{ height:340px; max-height:340px; } }
   #projTeamRadar{ width:100% !important; height:100% !important; display:block; }
-  .kpi-card{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:12px 12px; text-align:center; }
+  .kpi-card{ background:rgba(0,0,0,.12); border:none; border-radius:12px; padding:12px 12px; text-align:center; }
   .kpi-title{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
   .kpi-value{ margin-top:6px; font-size:18px; font-weight:850; color:var(--text); font-variant-numeric: tabular-nums; }
   .kpi-list{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-  .proj-table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:12px; }
+  .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
   .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
   .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
   .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
@@ -111,7 +111,7 @@
   .proj-table th.name{ text-align:left; }
 
   .edge-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
-  .edge-card{ background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:14px; }
+  .edge-card{ background:transparent; border:none; border-radius:12px; padding:14px; }
   .edge-controls{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
   .edge-control{ display:flex; align-items:center; gap:8px; }
   .edge-control label{ font-size:12px; color:var(--text-dim); font-weight:800; letter-spacing:.4px; text-transform:uppercase; }
@@ -149,7 +149,7 @@
     .edge-grid{ grid-template-columns: 1fr; }
   }
 
-  .table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:12px; }
+  .table-wrap{ overflow:auto; border:none; border-radius:12px; }
   .metrics-table{ width:100%; border-collapse:collapse; font-size:14px; }
   .metrics-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
   .metrics-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; }
@@ -170,7 +170,7 @@
   .cc-help{ color:var(--text-dim); font-size:13px; margin-bottom:12px; }
   .table-metric-picker{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; }
   @media (max-width: 980px){ .table-metric-picker{ grid-template-columns:1fr; } }
-  .table-metric-group{ border:1px solid #232a3a; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
+  .table-metric-group{ border:none; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
   .table-metric-group .t{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:900; margin-bottom:10px; }
   .table-metrics-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:8px 12px; }
   @media (max-width: 980px){ .table-metrics-grid{ grid-template-columns:1fr; } }
@@ -740,7 +740,7 @@ function restoreTeamsState(){
 
     try{ __restoreChartAxes = (s.charts && typeof s.charts === 'object') ? s.charts : null; }catch(_){/*noop*/}
     try{ __restoreProjSubtab = String(s.projectionsSubtab||'') || null; }catch(_){/*noop*/}
-    try{ __restoreActiveTab = String(s.activeTab||'') || null; }catch(_){/*noop*/}
+    try{ if(!__restoreActiveTab) __restoreActiveTab = String(s.activeTab||'') || null; }catch(_){/*noop*/}
   }catch(_){/*noop*/}
 }
 
@@ -2197,6 +2197,15 @@ async function initTeamsPage(){
     if(tabTable?.classList.contains('active')) loadTablePanel();
   }
 }
+
+// Hash-based tab: override saved state BEFORE boot so initTeamsPage uses it
+(function(){
+  var h = location.hash.replace('#','');
+  if(!h) return;
+  var map = {Card:'card',Charts:'charts',Edge:'edge',Projections:'projections',Table:'table'};
+  var tab = map[h];
+  if(tab) __restoreActiveTab = tab;
+})();
 
 initTeamsPage();
 </script>

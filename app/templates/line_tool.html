@@ -1,0 +1,1403 @@
+{% extends "base.html" %}
+
+{% block extra_filters %}
+<label id="ltSeasonStateWrap">Season State
+  <select id="ltSeasonState">
+    <option value="regular" selected>Regular</option>
+    <option value="playoffs">Playoffs</option>
+    <option value="all">All</option>
+  </select>
+</label>
+<label id="ltStrengthStateWrap">Strength State
+  <select id="ltStrengthState">
+    <option value="5v5" selected>5v5</option>
+    <option value="PP">PP</option>
+    <option value="SH">SH</option>
+    <option value="Other">Other</option>
+    <option value="all">All</option>
+  </select>
+</label>
+<label id="ltRatesWrap">Totals / Rates
+  <select id="ltRates">
+    <option value="Totals" selected>Totals</option>
+    <option value="Per60">Per 60</option>
+    <option value="PerGame">Per Game</option>
+  </select>
+</label>
+<label id="ltXgModelWrap">xG Model
+  <select id="ltXgModel">
+    <option value="xG_S">xG_S (Shots)</option>
+    <option value="xG_F" selected>xG_F (Fenwick)</option>
+    <option value="xG_F2">xG_F2 (Fenwick)</option>
+  </select>
+</label>
+{% endblock %}
+
+{% block content %}
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+<style>
+  .lt-shell{ display:grid; gap:18px; width:100%; min-width:0; }
+
+  /* ── Player Selectors (hockey formation) ── */
+  .lt-formation{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:8px; }
+  .lt-formation-row{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+  .lt-player-slot{ display:flex; flex-direction:column; align-items:center; gap:4px; width:176px; }
+  .lt-player-slot select{ width:100%; font-size:13px; padding:7px 10px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
+  .lt-headshot{ width:72px; height:72px; border-radius:50%; background:#1a2236; border:2px solid #2b3648; object-fit:cover; }
+
+  /* ── KPI Cards ── */
+  .lt-kpis{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:10px 0; }
+  .lt-kpi{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:10px 14px; text-align:center; min-width:80px; }
+  .lt-kpi .kpi-label{ font-size:10px; color:var(--text-dim); font-weight:800; text-transform:uppercase; letter-spacing:.6px; }
+  .lt-kpi .kpi-value{ font-size:20px; font-weight:900; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .lt-kpi .kpi-value.blue{ color:#5b9bd5; }
+  .lt-kpi .kpi-value.red{ color:#e88b8b; }
+
+  /* ── Tabs (same pattern as Teams / Skaters / Goalies) ── */
+  .subtabs{ display:flex; gap:12px; align-items:center; margin-top:18px; flex-wrap:wrap; }
+  .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
+  .subtab-btn.active{ outline:2px solid var(--accent); }
+  .panel{ margin-top:14px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:16px 16px 12px; min-width:0; }
+  .card-panel-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:2px 2px 10px; }
+  .card-panel-meta{ color:rgba(255,255,255,0.95); font-size:18px; font-style:italic; font-weight:800; letter-spacing:.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* ── Heat Map ── */
+  .lt-hm-controls{ display:flex; gap:14px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .lt-hm-controls label{ font-size:12px; color:var(--text-dim); font-weight:700; display:flex; flex-direction:column; gap:4px; }
+  .lt-hm-controls select{ font-size:13px; padding:6px 8px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
+  .lt-heatmap-grid{ display:grid; grid-template-columns:1fr auto 1fr; gap:12px; align-items:start; }
+  .lt-hm-rink{ position:relative; width:100%; aspect-ratio:75/85; border-radius:12px; overflow:hidden; background:transparent; }
+  .lt-hm-rink img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .lt-hm-rink svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .lt-hm-rink svg polygon{ cursor:default; stroke:rgba(0,0,0,0.1); stroke-width:0.3; }
+  .lt-hm-rink svg polygon:hover{ stroke:#fff; stroke-width:0.5; }
+  .lt-zone-label{ font-size:2.2px; fill:rgba(0,0,0,0.7); font-weight:900; text-anchor:middle; dominant-baseline:central; pointer-events:none; }
+  .lt-hm-title{ text-align:center; font-size:13px; font-weight:800; color:var(--text-dim); margin-bottom:6px; letter-spacing:.5px; }
+
+  .lt-hm-kpis{ display:flex; flex-direction:column; gap:10px; min-width:180px; max-width:220px; }
+  .lt-hm-kpi-group{ background:rgba(0,0,0,.12); border-radius:12px; padding:10px 12px; text-align:center; }
+  .lt-hm-kpi-group .grp-title{ font-size:12px; font-weight:800; margin-bottom:6px; }
+  .lt-hm-kpi-group .grp-row{ display:flex; justify-content:center; gap:6px; }
+  .lt-hm-kpi-group .grp-cell{ min-width:50px; }
+  .lt-hm-kpi-group .grp-cell .cl{ font-size:9px; color:var(--text-dim); font-weight:800; text-transform:uppercase; }
+  .lt-hm-kpi-group .grp-cell .cv{ font-size:16px; font-weight:900; font-variant-numeric:tabular-nums; }
+  .lt-hm-kpi-group .grp-cell .cv.pct{ border-radius:6px; padding:2px 6px; }
+  .lt-hm-kpi-group .grp-cell .cv.pct-good{ background:rgba(91,155,213,0.25); color:#5b9bd5; }
+  .lt-hm-kpi-group .grp-cell .cv.pct-bad{ background:rgba(232,139,139,0.25); color:#e88b8b; }
+
+  .lt-empty{ padding:30px; text-align:center; color:var(--text-dim); font-size:14px; }
+
+  /* ── Zone Selection ── */
+  .lt-hm-rink svg polygon.lt-zone-sel{ stroke:#ffd700 !important; stroke-width:0.8 !important; }
+  .lt-hm-rink svg polygon.lt-zone-sel:hover{ stroke:#ffd700 !important; stroke-width:1.0 !important; }
+  .lt-zone-filter-bar{ text-align:center; margin:6px 0 0; }
+  .lt-zone-filter-bar button{ font-size:11px; padding:4px 10px; border-radius:8px; border:1px solid #2a3142; background:transparent; color:var(--text-dim); cursor:pointer; }
+  .lt-zone-filter-bar button:hover{ color:var(--text); border-color:#5b9bd5; }
+
+  /* ── WOWY ── */
+  .lt-wowy-controls{ display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-bottom:14px; }
+  .lt-wowy-controls label{ font-size:12px; color:var(--text-dim); font-weight:700; display:flex; flex-direction:column; gap:4px; }
+  .lt-wowy-controls select{ font-size:13px; padding:6px 8px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
+  .lt-wowy-toggles{ display:flex; gap:4px; }
+  .lt-wowy-toggles .subtab-btn{ font-size:11px; padding:5px 10px; }
+  .lt-wowy-table-wrap{ overflow:auto; max-height:70vh; }
+  .lt-wowy-table{ width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+  .lt-wowy-table th{ background:#000; padding:6px 8px; text-align:center; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; color:var(--text-dim); white-space:nowrap; position:sticky; top:0; z-index:1; }
+  .lt-wowy-table td{ padding:6px 8px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.04); white-space:nowrap; }
+  .lt-wowy-table tr:hover td{ background:rgba(255,255,255,0.03); }
+  .wowy-with{ color:#5b9bd5; font-weight:700; }
+  .wowy-without{ color:#e88b8b; font-weight:400; font-style:italic; }
+  .wowy-player-cell{ text-align:left !important; min-width:90px; }
+  .lt-wowy-table th.sortable{ cursor:pointer; user-select:none; }
+  .lt-wowy-table th.sortable:hover{ color:#fff; }
+  .lt-wowy-table th .sort-arrow{ font-size:9px; margin-left:2px; opacity:0.5; }
+  .lt-wowy-table th.sort-active .sort-arrow{ opacity:1; color:#5b9bd5; }
+  .lt-wowy-export-bar{ display:flex; justify-content:flex-end; margin-bottom:6px; }
+
+  /* ── Lines / Pairs ── */
+  .lt-lines-controls{ display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; }
+  .lt-lines-controls label{ font-size:12px; color:var(--text-dim); font-weight:700; display:flex; flex-direction:column; gap:4px; }
+  .lt-lines-controls input[type=number]{ font-size:13px; padding:6px 8px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
+  .lt-wowy-export-bar button{ font-size:13px; padding:6px 14px; border-radius:8px; border:1px solid #2a3142; background:transparent; color:var(--text-dim); cursor:pointer; }
+  .lt-wowy-export-bar button:hover{ color:var(--text); border-color:#5b9bd5; }
+
+  @media (max-width:900px){
+    .lt-heatmap-grid{ grid-template-columns:1fr; }
+    .lt-hm-kpis{ flex-direction:row; flex-wrap:wrap; justify-content:center; max-width:100%; }
+    .lt-player-slot{ width:140px; }
+  }
+</style>
+
+<section class="lt-shell">
+  <!-- Player Formation Selectors -->
+  <div class="lt-formation">
+    <div class="lt-formation-row">
+      <div class="lt-player-slot">
+        <img id="ltHead0" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+        <select id="ltPlayer0"><option value="">— None —</option></select>
+      </div>
+      <div class="lt-player-slot">
+        <img id="ltHead1" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+        <select id="ltPlayer1"><option value="">— None —</option></select>
+      </div>
+      <div class="lt-player-slot">
+        <img id="ltHead2" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+        <select id="ltPlayer2"><option value="">— None —</option></select>
+      </div>
+    </div>
+    <div class="lt-formation-row">
+      <div class="lt-player-slot">
+        <img id="ltHead3" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+        <select id="ltPlayer3"><option value="">— None —</option></select>
+      </div>
+      <div class="lt-player-slot">
+        <img id="ltHead4" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+        <select id="ltPlayer4"><option value="">— None —</option></select>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div id="ltKpis" class="lt-kpis"></div>
+
+  <!-- Tabs (same pattern as Teams / Skaters / Goalies) -->
+  <div class="subtabs" role="tablist" aria-label="Line Tool tabs">
+    <button id="ltTabHeat" class="subtab-btn active" type="button" role="tab" aria-selected="true">Heat Map</button>
+    <button id="ltTabWowy" class="subtab-btn" type="button" role="tab" aria-selected="false">WOWY</button>
+    <button id="ltTabFwd" class="subtab-btn" type="button" role="tab" aria-selected="false">Forward Lines</button>
+    <button id="ltTabDef" class="subtab-btn" type="button" role="tab" aria-selected="false">Defense Pairs</button>
+  </div>
+
+  <!-- Heat Map Panel -->
+  <div id="ltPanelHeat" class="panel" role="tabpanel">
+    <div class="card-panel-hd">
+      <div id="ltSlicerSummary" class="card-panel-meta"></div>
+    </div>
+    <div class="lt-hm-controls">
+      <label><span>Metric</span><select id="ltHmMetric">
+        <option value="fenwick">Fenwick</option>
+        <option value="shots">Shots</option>
+        <option value="goals">Goals</option>
+        <option value="xg">xG</option>
+      </select></label>
+      <label><span>Comparison</span><select id="ltHmCompare">
+        <option value="value">Value</option>
+        <option value="league">Vs. League</option>
+        <option value="team">Vs. Team</option>
+      </select></label>
+    </div>
+    <div id="ltHeatContent" class="lt-heatmap-grid">
+      <div>
+        <div class="lt-hm-title">Defensive Zone</div>
+        <div class="lt-hm-rink">
+          <img src="/static/hockey-rink-half.png" alt="Rink" style="transform:scaleX(-1);" />
+          <svg id="ltDzSvg" viewBox="-100 -42.5 75 85" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
+      </div>
+      <div id="ltHeatKpis" class="lt-hm-kpis"></div>
+      <div>
+        <div class="lt-hm-title">Offensive Zone</div>
+        <div class="lt-hm-rink">
+          <img src="/static/hockey-rink-half.png" alt="Rink" />
+          <svg id="ltOzSvg" viewBox="25 -42.5 75 85" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
+      </div>
+    </div>
+    <div id="ltHeatEmpty" class="lt-empty">Select at least one player to view the heat map.</div>
+    <div id="ltZoneFilterBar" class="lt-zone-filter-bar" style="display:none;">
+      <button id="ltZoneClear" type="button">✕ Clear zone selection</button>
+    </div>
+  </div>
+
+  <!-- WOWY Panel -->
+  <div id="ltPanelWowy" class="panel" role="tabpanel" style="display:none;">
+    <div class="card-panel-hd">
+      <div id="ltWowySummary" class="card-panel-meta"></div>
+    </div>
+    <div class="lt-wowy-controls">
+      <label><span class="lt-wowy-label-text">Perspective</span><select id="ltWowyPersp"></select></label>
+      <div class="lt-wowy-toggles">
+        <button id="ltWowyWith" class="subtab-btn active" type="button">With</button>
+        <button id="ltWowyWithout" class="subtab-btn" type="button">Without</button>
+      </div>
+      <div class="lt-wowy-toggles">
+        <button id="ltWowyOnIce" class="subtab-btn active" type="button">On-Ice Stats</button>
+        <button id="ltWowyIndiv" class="subtab-btn" type="button">Individual Stats</button>
+      </div>
+    </div>
+    <div id="ltWowyExportBar" class="lt-wowy-export-bar" style="display:none;"></div>
+    <div id="ltWowyTableWrap" class="lt-wowy-table-wrap"></div>
+    <div id="ltWowyEmpty" class="lt-empty">Select at least one player to view WOWY analysis.</div>
+  </div>
+
+  <!-- Forward Lines Panel -->
+  <div id="ltPanelFwd" class="panel" role="tabpanel" style="display:none;">
+    <div class="lt-lines-controls">
+      <label><span>Min TOI (min)</span><input id="ltFwdMinToi" type="number" value="10" min="0" step="1" style="width:70px;"></label>
+      <label><span>Scope</span>
+        <div class="lt-wowy-toggles">
+          <button id="ltFwdScopeTeam" class="subtab-btn active" type="button">Team</button>
+          <button id="ltFwdScopeLeague" class="subtab-btn" type="button">League</button>
+        </div>
+      </label>
+    </div>
+    <div id="ltFwdExportBar" class="lt-wowy-export-bar" style="display:none;"></div>
+    <div id="ltFwdTableWrap" class="lt-wowy-table-wrap"></div>
+    <div id="ltFwdEmpty" class="lt-empty">Loading forward line combinations…</div>
+  </div>
+
+  <!-- Defense Pairs Panel -->
+  <div id="ltPanelDef" class="panel" role="tabpanel" style="display:none;">
+    <div class="lt-lines-controls">
+      <label><span>Min TOI (min)</span><input id="ltDefMinToi" type="number" value="10" min="0" step="1" style="width:70px;"></label>
+      <label><span>Scope</span>
+        <div class="lt-wowy-toggles">
+          <button id="ltDefScopeTeam" class="subtab-btn active" type="button">Team</button>
+          <button id="ltDefScopeLeague" class="subtab-btn" type="button">League</button>
+        </div>
+      </label>
+    </div>
+    <div id="ltDefExportBar" class="lt-wowy-export-bar" style="display:none;"></div>
+    <div id="ltDefTableWrap" class="lt-wowy-table-wrap"></div>
+    <div id="ltDefEmpty" class="lt-empty">Loading defense pair combinations…</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+const DEFAULT_IMG = 'https://assets.nhle.com/mugs/nhl/default-skater.png';
+const teamSelect = document.getElementById('teamSelect');
+const seasonSelect = document.getElementById('seasonSelect');
+const ltSeasonState = document.getElementById('ltSeasonState');
+const ltStrengthState = document.getElementById('ltStrengthState');
+const ltRates = document.getElementById('ltRates');
+const ltXgModel = document.getElementById('ltXgModel');
+const ltKpis = document.getElementById('ltKpis');
+const ltHeatKpis = document.getElementById('ltHeatKpis');
+const ltHeatContent = document.getElementById('ltHeatContent');
+const ltHeatEmpty = document.getElementById('ltHeatEmpty');
+const ltOzSvg = document.getElementById('ltOzSvg');
+const ltDzSvg = document.getElementById('ltDzSvg');
+const ltHmMetric = document.getElementById('ltHmMetric');
+const ltHmCompare = document.getElementById('ltHmCompare');
+const ltTabHeat = document.getElementById('ltTabHeat');
+const ltTabWowy = document.getElementById('ltTabWowy');
+const ltPanelHeat = document.getElementById('ltPanelHeat');
+const ltPanelWowy = document.getElementById('ltPanelWowy');
+const ltSlicerSummary = document.getElementById('ltSlicerSummary');
+const ltWowySummary = document.getElementById('ltWowySummary');
+const ltZoneFilterBar = document.getElementById('ltZoneFilterBar');
+const ltZoneClear = document.getElementById('ltZoneClear');
+const ltWowyPersp = document.getElementById('ltWowyPersp');
+const ltWowyWith = document.getElementById('ltWowyWith');
+const ltWowyWithout = document.getElementById('ltWowyWithout');
+const ltWowyOnIce = document.getElementById('ltWowyOnIce');
+const ltWowyIndiv = document.getElementById('ltWowyIndiv');
+const ltWowyTableWrap = document.getElementById('ltWowyTableWrap');
+const ltWowyEmpty = document.getElementById('ltWowyEmpty');
+const ltTabFwd = document.getElementById('ltTabFwd');
+const ltTabDef = document.getElementById('ltTabDef');
+const ltPanelFwd = document.getElementById('ltPanelFwd');
+const ltPanelDef = document.getElementById('ltPanelDef');
+const ltFwdTableWrap = document.getElementById('ltFwdTableWrap');
+const ltFwdEmpty = document.getElementById('ltFwdEmpty');
+const ltDefTableWrap = document.getElementById('ltDefTableWrap');
+const ltDefEmpty = document.getElementById('ltDefEmpty');
+const ltFwdMinToi = document.getElementById('ltFwdMinToi');
+const ltDefMinToi = document.getElementById('ltDefMinToi');
+const ltWowyExportBar = document.getElementById('ltWowyExportBar');
+const ltFwdExportBar = document.getElementById('ltFwdExportBar');
+const ltDefExportBar = document.getElementById('ltDefExportBar');
+const ltFwdScopeTeam = document.getElementById('ltFwdScopeTeam');
+const ltFwdScopeLeague = document.getElementById('ltFwdScopeLeague');
+const ltDefScopeTeam = document.getElementById('ltDefScopeTeam');
+const ltDefScopeLeague = document.getElementById('ltDefScopeLeague');
+
+const SLOT_IDS = [0,1,2,3,4];
+const playerSelects = SLOT_IDS.map(i => document.getElementById(`ltPlayer${i}`));
+const headshots = SLOT_IDS.map(i => document.getElementById(`ltHead${i}`));
+
+let __players = [];  // {id, name, position}
+let __geoJson = null;
+let __data = null;
+let __reqVer = 0;
+let __selectedZones = new Set();
+let __wowyData = null;
+let __wowyVer = 0;
+let __fetchTimer = null;
+let __wowyFetchTimer = null;
+let __wowySortCol = -1;
+let __wowySortAsc = true;
+let __fwdData = null;
+let __defData = null;
+let __fwdSortCol = -1;
+let __fwdSortAsc = true;
+let __defSortCol = -1;
+let __defSortAsc = true;
+let __fwdScope = 'team';
+let __defScope = 'team';
+const LT_STORAGE_KEY = 'lt_selections';
+
+function debouncedFetch(){
+  clearTimeout(__fetchTimer);
+  __fetchTimer = setTimeout(fetchData, 300);
+}
+function debouncedFetchWowy(){
+  clearTimeout(__wowyFetchTimer);
+  __wowyFetchTimer = setTimeout(fetchWowy, 300);
+}
+
+// ── Tab switching ────────────────────────────────────────────
+const LT_TABS = [
+  {id:'heat', btn: ltTabHeat, panel: ltPanelHeat},
+  {id:'wowy', btn: ltTabWowy, panel: ltPanelWowy},
+  {id:'fwd',  btn: ltTabFwd,  panel: ltPanelFwd},
+  {id:'def',  btn: ltTabDef,  panel: ltPanelDef},
+];
+for(const t of LT_TABS) t.btn?.addEventListener('click', () => setTab(t.id));
+
+function setTab(which){
+  for(const t of LT_TABS){
+    const active = t.id === which;
+    t.btn?.classList.toggle('active', active);
+    t.btn?.setAttribute('aria-selected', active);
+    if(t.panel) t.panel.style.display = active ? '' : 'none';
+  }
+  if(which === 'wowy' && !__wowyData){
+    populateWowyPersp();
+    fetchWowy();
+  }
+  if(which === 'fwd' && !__fwdData) fetchLines('fwd');
+  if(which === 'def' && !__defData) fetchLines('def');
+}
+
+function refreshActiveSupplementalPanel(){
+  const active = LT_TABS.find(t => t.btn?.classList.contains('active'))?.id;
+  if(active === 'wowy'){
+    populateWowyPersp();
+    fetchWowy();
+    return;
+  }
+  if(active === 'fwd'){
+    fetchLines('fwd');
+    return;
+  }
+  if(active === 'def'){
+    fetchLines('def');
+  }
+}
+
+// ── Filter context summary ───────────────────────────────────
+function updateSlicerSummaries(){
+  const season = String(seasonSelect?.value||'').trim();
+  const ss = String(ltSeasonState?.value||'regular');
+  const str = String(ltStrengthState?.value||'5v5');
+  const rates = String(ltRates?.value||'Totals');
+  const xg = String(ltXgModel?.value||'xG_F');
+  const txt = `Season ${season || '—'} · ${ss} · ${str} · ${rates} · ${xg}`;
+  if(ltSlicerSummary) ltSlicerSummary.textContent = txt;
+  if(ltWowySummary) ltWowySummary.textContent = txt;
+}
+
+// ── Player list loading ──────────────────────────────────────
+async function loadPlayers(){
+  const team = String(teamSelect?.value||'').trim().toUpperCase();
+  const season = String(seasonSelect?.value||'').trim();
+  if(!team || !season){ __players = []; populateSelects(); return; }
+  try{
+    const r = await fetch(`/api/line-tool/players?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}`, {cache:'no-store'});
+    const j = await r.json();
+    __players = Array.isArray(j.players) ? j.players : [];
+  }catch(_){ __players = []; }
+  populateSelects();
+}
+
+function populateSelects(){
+  for(const sel of playerSelects){
+    if(!sel) continue;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— None —</option>';
+    for(const p of __players){
+      const opt = document.createElement('option');
+      opt.value = String(p.id);
+      opt.textContent = `${p.name} (${p.position || '?'})`;
+      sel.appendChild(opt);
+    }
+    if(cur) sel.value = cur;
+    if(!sel.value) sel.value = '';
+  }
+  updateHeadshots();
+}
+
+function headshotUrl(pid){
+  if(!pid) return DEFAULT_IMG;
+  const season = String(seasonSelect?.value||'').trim();
+  const team = String(teamSelect?.value||'').trim().toUpperCase();
+  if(!season || !team) return DEFAULT_IMG;
+  return `https://assets.nhle.com/mugs/nhl/${season}/${team}/${pid}.png`;
+}
+
+function updateHeadshots(){
+  for(let i = 0; i < SLOT_IDS.length; i++){
+    const pid = playerSelects[i]?.value || '';
+    const img = headshots[i];
+    if(img){
+      img.src = headshotUrl(pid);
+      img.onerror = function(){ this.src = DEFAULT_IMG; };
+    }
+  }
+}
+
+// ── Load GeoJSON zones ───────────────────────────────────────
+async function loadGeoJson(){
+  try{
+    const r = await fetch('/static/zones.json');
+    __geoJson = await r.json();
+  }catch(_){ __geoJson = null; }
+}
+
+// ── Fetch line tool data ─────────────────────────────────────
+async function fetchData(){
+  const team = String(teamSelect?.value||'').trim().toUpperCase();
+  const season = String(seasonSelect?.value||'').trim();
+  const pids = playerSelects.map(s => s?.value || '').filter(Boolean);
+  if(!team || !season || !pids.length){
+    __data = null;
+    renderKpis();
+    renderHeatMap();
+    return;
+  }
+  // Show loading state
+  if(ltKpis) ltKpis.innerHTML = '<div class="lt-empty">Loading data...</div>';
+  if(ltHeatContent) ltHeatContent.style.display = 'none';
+  if(ltHeatEmpty) ltHeatEmpty.style.display = '';
+  if(ltHeatEmpty) ltHeatEmpty.textContent = 'Loading data...';
+  const ver = ++__reqVer;
+  const ss = String(ltSeasonState?.value||'regular');
+  const str = String(ltStrengthState?.value||'5v5');
+  const xg = String(ltXgModel?.value||'xG_F');
+  const url = `/api/line-tool/data?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&players=${encodeURIComponent(pids.join(','))}&seasonState=${encodeURIComponent(ss)}&strengthState=${encodeURIComponent(str)}&xgModel=${encodeURIComponent(xg)}`;
+  try{
+    const r = await fetch(url, {cache:'no-store'});
+    if(ver !== __reqVer) return;
+    __data = await r.json();
+  }catch(_){
+    if(ver !== __reqVer) return;
+    __data = null;
+  }
+  __selectedZones.clear();
+  if(ltZoneFilterBar) ltZoneFilterBar.style.display = 'none';
+  renderKpis();
+  renderHeatMap();
+}
+
+// ── KPI Cards ────────────────────────────────────────────────
+function renderKpis(){
+  if(!ltKpis) return;
+  const d = getFilteredData();
+  if(!d || !d.gp){
+    ltKpis.innerHTML = '';
+    return;
+  }
+  const rates = String(ltRates?.value||'Totals');
+  const gp = d.gp || 1;
+  const toi60 = Math.max(d.toi || 0, 0.001) / 60;
+
+  function rv(v){
+    if(rates === 'Per60') return (v / toi60).toFixed(2);
+    if(rates === 'PerGame') return (v / gp).toFixed(2);
+    return v;
+  }
+
+  function pctClass(v, threshold, higher){
+    if(higher) return v > threshold ? 'blue' : v < threshold ? 'red' : '';
+    return v < threshold ? 'blue' : v > threshold ? 'red' : '';
+  }
+
+  const cards = [
+    {label:'GP', value:d.gp},
+    {label:'TOI', value:d.toi ? d.toi.toFixed(1) : '0'},
+    {label:'GF', value:rv(d.gf)},
+    {label:'GA', value:rv(d.ga)},
+    {label:'GF%', value:d.gfPct.toFixed(1), cls:pctClass(d.gfPct, 50, true)},
+    {label:'xGF', value:rates==='Totals' ? d.xgf.toFixed(2) : rv(d.xgf)},
+    {label:'xGA', value:rates==='Totals' ? d.xga.toFixed(2) : rv(d.xga)},
+    {label:'xGF%', value:d.xgfPct.toFixed(1), cls:pctClass(d.xgfPct, 50, true)},
+    {label:'PDO', value:d.pdo.toFixed(1), cls:pctClass(d.pdo, 100, true)},
+  ];
+
+  ltKpis.innerHTML = cards.map(c => `
+    <div class="lt-kpi">
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value ${c.cls||''}">${c.value}</div>
+    </div>
+  `).join('');
+}
+
+// ── Heat Map ─────────────────────────────────────────────────
+function heatColor(t){
+  if(t <= 0) return 'rgba(200,210,230,0.10)';
+  // Blue gradient: transparent white → solid blue (#5b9bd5)
+  const r = Math.round(255 - (255-91)*t);
+  const g = Math.round(255 - (255-155)*t);
+  const b = Math.round(255 - (255-213)*t);
+  const a = 0.15 + 0.65 * t;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function heatColorDiverging(ratio){
+  const t = Math.max(0, Math.min(1, ratio));
+  if(t <= 0.5){
+    // Red (#e88b8b) → white
+    const s = t / 0.5;
+    const r = Math.round(232 + (255-232)*s);
+    const g = Math.round(139 + (255-139)*s);
+    const b = Math.round(139 + (255-139)*s);
+    const a = 0.70 - 0.45*s;
+    return `rgba(${r},${g},${b},${a})`;
+  } else {
+    // White → blue (#5b9bd5)
+    const s = (t - 0.5) / 0.5;
+    const r = Math.round(255 - (255-91)*s);
+    const g = Math.round(255 - (255-155)*s);
+    const b = Math.round(255 - (255-213)*s);
+    const a = 0.25 + 0.45*s;
+    return `rgba(${r},${g},${b},${a})`;
+  }
+}
+
+function _zoneMetric(detail, zoneId, metric){
+  const d = detail?.[zoneId];
+  if(!d) return 0;
+  if(metric === 'fenwick') return d.fenwick || 0;
+  if(metric === 'shots')   return d.shots || 0;
+  if(metric === 'goals')   return d.goals || 0;
+  if(metric === 'xg')      return d.xg || 0;
+  return 0;
+}
+
+function renderZoneSvg(svg, features, zoneVals, opts){
+  if(!svg) return;
+  svg.innerHTML = '';
+  const {metric, compare, playerToi, avgVals, avgToi, isDz} = opts || {};
+  const vals = Object.values(zoneVals);
+  const maxVal = Math.max(...vals, 0.001);
+  const CORNER_IDS = new Set(['O01','O02','O03','O04','O10','D01','D02','D03','D04','D10']);
+
+  for(const f of features){
+    const id = f.id || f.properties?.id || '';
+    const coords = f.geometry?.coordinates?.[0];
+    if(!coords) continue;
+    const val = zoneVals[id] || 0;
+    let color;
+    if(compare === 'value' || !compare){
+      color = heatColor(val / maxVal);
+    } else if(CORNER_IDS.has(id)){
+      color = 'rgba(255,255,255,0.08)';
+    } else {
+      const p60 = playerToi > 0 ? val * 60 / playerToi : 0;
+      const av = avgVals?.[id] || 0;
+      const a60 = avgToi > 0 ? av * 60 / avgToi : 0;
+      let ratio = (p60 + a60 > 0) ? p60 / (p60 + a60) : 0.5;
+      // Clamp to [0.2, 0.8] then rescale to [0, 1]
+      ratio = Math.max(0.2, Math.min(0.8, ratio));
+      ratio = (ratio - 0.2) / 0.6;
+      // Defensive zone: flip so blue=good (fewer shots against)
+      if(isDz) ratio = 1 - ratio;
+      color = heatColorDiverging(ratio);
+    }
+    const points = coords.map(([x,y]) => `${x},${-y}`).join(' ');
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', points);
+    poly.setAttribute('fill', color);
+    poly.dataset.zoneId = id;
+    poly.style.cursor = 'pointer';
+    if(__selectedZones.has(id)) poly.classList.add('lt-zone-sel');
+    poly.addEventListener('click', () => toggleZone(id));
+    svg.appendChild(poly);
+
+    // label
+    const xs = coords.map(c => c[0]);
+    const ys = coords.map(c => c[1]);
+    let cx, cy;
+    const isCorner = id.endsWith('04') || id.endsWith('10');
+    if(isCorner){
+      cx = xs.reduce((a,b)=>a+b,0) / xs.length;
+      cy = ys.reduce((a,b)=>a+b,0) / ys.length;
+    } else {
+      cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    }
+    // clamp near edges
+    const xMax = Math.max(...xs); const xMin = Math.min(...xs);
+    const yMax = Math.max(...ys); const yMin = Math.min(...ys);
+    if(Math.abs(xMax) >= 99) cx = xMax > 0 ? Math.min(cx, 92) : Math.max(cx, -92);
+    if(yMin <= -41) cy = Math.max(cy, -38);
+    if(yMax >= 41) cy = Math.min(cy, 38);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', cx);
+    text.setAttribute('y', -cy);
+    text.setAttribute('class', 'lt-zone-label');
+    text.textContent = metric === 'xg' ? (val > 0 ? val.toFixed(1) : '0') : val;
+    svg.appendChild(text);
+  }
+}
+
+function renderHeatMap(){
+  const d = __data;
+  const hasData = d && d.gp > 0;
+  if(ltHeatContent) ltHeatContent.style.display = hasData ? '' : 'none';
+  if(ltHeatEmpty){
+    ltHeatEmpty.style.display = hasData ? 'none' : '';
+    ltHeatEmpty.textContent = 'Select at least one player to view the heat map.';
+  }
+  if(!hasData || !__geoJson) return;
+
+  const metric = ltHmMetric?.value || 'fenwick';
+  const compare = ltHmCompare?.value || 'value';
+  const playerToi = d.toi || 0;
+
+  // Build zone value maps from detail
+  const ozVals = {}, dzVals = {};
+  for(const z of Object.keys(d.ozDetail || {})) ozVals[z] = _zoneMetric(d.ozDetail, z, metric);
+  for(const z of Object.keys(d.dzDetail || {})) dzVals[z] = _zoneMetric(d.dzDetail, z, metric);
+
+  // Average data (for comparison modes)
+  let ozAvg = null, dzAvg = null, avgToi = 0;
+  if(compare === 'team'){
+    ozAvg = {}; dzAvg = {};
+    for(const z of Object.keys(d.teamOzDetail || {})) ozAvg[z] = _zoneMetric(d.teamOzDetail, z, metric);
+    for(const z of Object.keys(d.teamDzDetail || {})) dzAvg[z] = _zoneMetric(d.teamDzDetail, z, metric);
+    avgToi = d.teamToi || 0;
+  } else if(compare === 'league'){
+    ozAvg = {}; dzAvg = {};
+    const ld = d.leagueZoneDetail || {};
+    // League OZ: use league zone counts directly (O-prefix)
+    for(const z of Object.keys(ld)) ozAvg[z] = _zoneMetric(ld, z, metric);
+    // League DZ: mapped from O-prefix (symmetry: league DZ D01 rate = league OZ O01 rate)
+    for(const z of Object.keys(ld)) dzAvg['D' + z.slice(1)] = _zoneMetric(ld, z, metric);
+    avgToi = d.leagueToi || 0;
+  }
+
+  const opts = {metric, compare, playerToi, avgVals: ozAvg, avgToi, isDz: false};
+  const ozFeatures = (__geoJson.features||[]).filter(f => (f.id||'').startsWith('O'));
+  renderZoneSvg(ltOzSvg, ozFeatures, ozVals, opts);
+
+  const dzOpts = {metric, compare, playerToi, avgVals: dzAvg, avgToi, isDz: true};
+  const dzFeatures = (__geoJson.features||[]).filter(f => (f.id||'').startsWith('D'));
+  renderZoneSvg(ltDzSvg, dzFeatures, dzVals, dzOpts);
+
+  // Center KPI panel
+  renderHeatKpis();
+}
+
+function renderHeatKpis(){
+  if(!ltHeatKpis || !__data) return;
+  const d = getFilteredData();
+  const rates = String(ltRates?.value||'Totals');
+  const gp = d.gp || 1;
+  const toi60 = Math.max(d.toi || 0, 0.001) / 60;
+  function rv(v){
+    if(rates === 'Per60') return (v / toi60).toFixed(2);
+    if(rates === 'PerGame') return (v / gp).toFixed(2);
+    return v;
+  }
+
+  function pctCls(v, th){ return v > th ? 'pct pct-good' : v < th ? 'pct pct-bad' : 'pct'; }
+
+  const groups = [
+    {title:'Corsi', items:[
+      {l:'CA', v:rv(d.ca)}, {l:'CF%', v:d.cfPct.toFixed(1), cls:pctCls(d.cfPct,50)}, {l:'CF', v:rv(d.cf)}
+    ]},
+    {title:'Fenwick', items:[
+      {l:'FA', v:rv(d.fa)}, {l:'FF%', v:d.ffPct.toFixed(1), cls:pctCls(d.ffPct,50)}, {l:'FF', v:rv(d.ff)}
+    ]},
+    {title:'Shots', items:[
+      {l:'SA', v:rv(d.sa)}, {l:'SF%', v:d.sfPct.toFixed(1), cls:pctCls(d.sfPct,50)}, {l:'SF', v:rv(d.sf)}
+    ]},
+    {title:'xG', items:[
+      {l:'XGA', v:rates==='Totals' ? d.xga.toFixed(2) : rv(d.xga)}, {l:'XGF%', v:d.xgfPct.toFixed(1), cls:pctCls(d.xgfPct,50)}, {l:'XGF', v:rates==='Totals' ? d.xgf.toFixed(2) : rv(d.xgf)}
+    ]},
+    {title:'Goals', items:[
+      {l:'GA', v:rv(d.ga)}, {l:'GF%', v:d.gfPct.toFixed(1), cls:pctCls(d.gfPct,50)}, {l:'GF', v:rv(d.gf)}
+    ]},
+    {title:'Shooting / Goaltending', items:[
+      {l:'SV%', v:d.svPct.toFixed(1)}, {l:'PDO', v:d.pdo.toFixed(1), cls:pctCls(d.pdo,100)}, {l:'SH%', v:d.shPct.toFixed(1)}
+    ]},
+  ];
+
+  ltHeatKpis.innerHTML = groups.map(g => `
+    <div class="lt-hm-kpi-group">
+      <div class="grp-title">${g.title}</div>
+      <div class="grp-row">
+        ${g.items.map(it => `
+          <div class="grp-cell">
+            <div class="cl">${it.l}</div>
+            <div class="cv ${it.cls||''}">${it.v}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Zone Selection ───────────────────────────────────────────
+function toggleZone(zoneId){
+  const num = zoneId.substring(1);
+  const paired = zoneId.startsWith('O') ? 'D' + num : 'O' + num;
+  if(__selectedZones.has(zoneId)){
+    __selectedZones.delete(zoneId);
+    __selectedZones.delete(paired);
+  } else {
+    __selectedZones.add(zoneId);
+    __selectedZones.add(paired);
+  }
+  updateZoneHighlights();
+  renderKpis();
+  renderHeatKpis();
+}
+
+function updateZoneHighlights(){
+  document.querySelectorAll('#ltOzSvg polygon, #ltDzSvg polygon').forEach(p => {
+    p.classList.toggle('lt-zone-sel', __selectedZones.has(p.dataset.zoneId));
+  });
+  if(ltZoneFilterBar) ltZoneFilterBar.style.display = __selectedZones.size ? '' : 'none';
+}
+
+function clearZoneSelection(){
+  __selectedZones.clear();
+  updateZoneHighlights();
+  renderKpis();
+  renderHeatKpis();
+}
+ltZoneClear?.addEventListener('click', clearZoneSelection);
+
+function getFilteredData(){
+  const d = __data;
+  if(!d || !d.gp) return d;
+  if(!__selectedZones.size) return d;
+  const oz = d.ozDetail || {};
+  const dz = d.dzDetail || {};
+  let cf=0, ff=0, sf=0, gf=0, xgf=0, ca=0, fa=0, sa=0, ga=0, xga=0;
+  for(const z of __selectedZones){
+    const o = oz[z];
+    if(o){ cf += o.count; ff += (o.fenwick||0); sf += o.shots; gf += o.goals; xgf += o.xg; }
+    const dd = dz[z];
+    if(dd){ ca += dd.count; fa += (dd.fenwick||0); sa += dd.shots; ga += dd.goals; xga += dd.xg; }
+  }
+  const cfPct = cf+ca>0 ? 100*cf/(cf+ca) : 0;
+  const ffPct = ff+fa>0 ? 100*ff/(ff+fa) : 0;
+  const sfPct = sf+sa>0 ? 100*sf/(sf+sa) : 0;
+  const gfPct = gf+ga>0 ? 100*gf/(gf+ga) : 0;
+  const xgfPct = xgf+xga>0 ? 100*xgf/(xgf+xga) : 0;
+  const shPct = sf>0 ? 100*gf/sf : 0;
+  const svPct = sa>0 ? 100*(1-ga/sa) : 0;
+  return { ...d, cf, ca, ff, fa, sf, sa, gf, ga, xgf, xga,
+    cfPct, ffPct, sfPct, gfPct, xgfPct, shPct, svPct, pdo:shPct+svPct };
+}
+
+// ── WOWY ─────────────────────────────────────────────────────
+function populateWowyPersp(){
+  if(!ltWowyPersp) return;
+  const old = ltWowyPersp.value;
+  ltWowyPersp.innerHTML = '';
+  const pids = playerSelects.map(s => s?.value||'').filter(Boolean);
+  for(const pid of pids){
+    const p = __players.find(x => String(x.id) === pid);
+    const opt = document.createElement('option');
+    opt.value = pid;
+    opt.textContent = p ? p.name : `#${pid}`;
+    ltWowyPersp.appendChild(opt);
+  }
+  if(old && pids.includes(old)) ltWowyPersp.value = old;
+}
+
+async function fetchWowy(){
+  const team = String(teamSelect?.value||'').trim().toUpperCase();
+  const season = String(seasonSelect?.value||'').trim();
+  const pids = playerSelects.map(s => s?.value||'').filter(Boolean);
+  if(!team || !season || pids.length < 1){
+    __wowyData = null; renderWowy(); return;
+  }
+  if(ltWowyTableWrap) ltWowyTableWrap.innerHTML = '';
+  if(ltWowyEmpty){ ltWowyEmpty.style.display = ''; ltWowyEmpty.textContent = 'Loading WOWY data…'; }
+  const ver = ++__wowyVer;
+  const ss = String(ltSeasonState?.value||'regular');
+  const str = String(ltStrengthState?.value||'5v5');
+  const xg = String(ltXgModel?.value||'xG_F');
+  const url = `/api/line-tool/wowy?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&players=${encodeURIComponent(pids.join(','))}&seasonState=${encodeURIComponent(ss)}&strengthState=${encodeURIComponent(str)}&xgModel=${encodeURIComponent(xg)}`;
+  try{
+    const r = await fetch(url, {cache:'no-store'});
+    if(ver !== __wowyVer) return;
+    __wowyData = await r.json();
+  }catch(_){
+    if(ver !== __wowyVer) return;
+    __wowyData = null;
+  }
+  renderWowy();
+}
+
+function fmtToi(min){
+  const m = Math.floor(min);
+  const s = Math.round((min - m) * 60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function renderWowy(){
+  const w = __wowyData;
+  const hasData = w && w.combos && w.combos.length > 0;
+  if(ltWowyTableWrap) ltWowyTableWrap.innerHTML = '';
+  if(ltWowyExportBar) ltWowyExportBar.style.display = 'none';
+  if(ltWowyEmpty) ltWowyEmpty.style.display = hasData ? 'none' : '';
+  if(!hasData){ if(ltWowyEmpty && !ltWowyEmpty.textContent.includes('Loading')) ltWowyEmpty.textContent = 'Select at least one player to view WOWY analysis.'; return; }
+
+  const players = w.players || [];
+  const perspId = String(ltWowyPersp?.value || '');
+  const pIdx = players.findIndex(p => String(p.id) === perspId);
+  if(pIdx < 0 && players.length){
+    ltWowyPersp.value = String(players[0].id);
+    return renderWowy();
+  }
+  if(pIdx < 0) return;
+
+  const isWithMode = ltWowyWith?.classList.contains('active');
+  const isOnIce = ltWowyOnIce?.classList.contains('active');
+  const perspPlayer = players[pIdx];
+  const otherPlayers = players.filter((_,i) => i !== pIdx);
+
+  // Filter combos
+  const filtered = w.combos.filter(c => c.mask[pIdx] === isWithMode);
+
+  if(!filtered.length){
+    if(ltWowyEmpty){ ltWowyEmpty.style.display = ''; ltWowyEmpty.textContent = 'No matching combinations found.'; }
+    return;
+  }
+
+  // Determine stat columns
+  let statCols;
+  const isGoalie = (perspPlayer.position === 'G');
+  if(isOnIce){
+    statCols = ['TOI','CF','CA','CF%','FF','FA','FF%','SF','SA','SF%','GF','GA','GF%','xGF','xGA','xGF%','Sh%','Sv%','PDO'];
+  } else if(isGoalie){
+    statCols = ['TOI','FA','SA','GA','xGA','GSAx','Sv%','xSv%','dSv%'];
+  } else {
+    statCols = ['TOI','Goals','A1','A2','Points','ixG','GAx','Sh%'];
+  }
+
+  const rates = String(ltRates?.value||'Totals');
+  function pctCls(v, th){ return v > th ? 'wowy-with' : v < th ? 'wowy-without' : ''; }
+
+  // Build row data (array of {cells:[], sortVals:[], playerCells:[]}) for sorting
+  const playerColCount = otherPlayers.length;
+  const allHeaders = [...otherPlayers.map(p => p.name.split(' ').pop()), 'GP', ...statCols];
+
+  function buildRow(combo){
+    const toi60 = Math.max(combo.toi, 0.001) / 60;
+    const gp = combo.gp || 1;
+    function rv(v){
+      if(rates === 'Per60') return (v / toi60).toFixed(2);
+      if(rates === 'PerGame') return (v / gp).toFixed(2);
+      return v;
+    }
+    function rvX(v){
+      if(rates === 'Per60') return (v / toi60).toFixed(2);
+      if(rates === 'PerGame') return (v / gp).toFixed(2);
+      return typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(2) : v;
+    }
+    const playerCells = [];
+    for(let i = 0; i < players.length; i++){
+      if(i === pIdx) continue;
+      const p = players[i];
+      const isOn = combo.mask[i];
+      const lastName = p.name.split(' ').pop();
+      playerCells.push({html:`<td class="wowy-player-cell ${isOn ? 'wowy-with' : 'wowy-without'}">${isOn ? '' : 'w/o '}${lastName}</td>`, csv:isOn ? lastName : `w/o ${lastName}`, sortVal: isOn ? 1 : 0});
+    }
+    const gpCell = {html:`<td>${combo.gp}</td>`, csv:combo.gp, sortVal:combo.gp};
+
+    let statCells = [];
+    if(isOnIce){
+      statCells = [
+        {v:fmtToi(combo.toi), sv:combo.toi},
+        {v:rv(combo.cf), sv:combo.cf}, {v:rv(combo.ca), sv:combo.ca}, {v:combo.cfPct, sv:combo.cfPct, cls:pctCls(combo.cfPct,50)},
+        {v:rv(combo.ff), sv:combo.ff}, {v:rv(combo.fa), sv:combo.fa}, {v:combo.ffPct, sv:combo.ffPct, cls:pctCls(combo.ffPct,50)},
+        {v:rv(combo.sf), sv:combo.sf}, {v:rv(combo.sa), sv:combo.sa}, {v:combo.sfPct, sv:combo.sfPct, cls:pctCls(combo.sfPct,50)},
+        {v:rv(combo.gf), sv:combo.gf}, {v:rv(combo.ga), sv:combo.ga}, {v:combo.gfPct, sv:combo.gfPct, cls:pctCls(combo.gfPct,50)},
+        {v:rvX(combo.xgf), sv:combo.xgf}, {v:rvX(combo.xga), sv:combo.xga}, {v:combo.xgfPct, sv:combo.xgfPct, cls:pctCls(combo.xgfPct,50)},
+        {v:combo.shPct, sv:combo.shPct}, {v:combo.svPct, sv:combo.svPct}, {v:combo.pdo, sv:combo.pdo, cls:pctCls(combo.pdo,100)},
+      ];
+    } else {
+      const iv = combo.individual?.[perspId] || {};
+      if(isGoalie){
+        statCells = [
+          {v:fmtToi(combo.toi), sv:combo.toi}, {v:rv(iv.fa||0), sv:iv.fa||0}, {v:rv(iv.sa||0), sv:iv.sa||0}, {v:rv(iv.ga||0), sv:iv.ga||0},
+          {v:rvX(iv.xga||0), sv:iv.xga||0}, {v:rvX(iv.gsax||0), sv:iv.gsax||0}, {v:iv.svPct||0, sv:iv.svPct||0}, {v:iv.xsvPct||0, sv:iv.xsvPct||0}, {v:iv.dsvPct||0, sv:iv.dsvPct||0},
+        ];
+      } else {
+        statCells = [
+          {v:fmtToi(combo.toi), sv:combo.toi}, {v:rv(iv.goals||0), sv:iv.goals||0}, {v:rv(iv.a1||0), sv:iv.a1||0}, {v:rv(iv.a2||0), sv:iv.a2||0},
+          {v:rv(iv.points||0), sv:iv.points||0}, {v:rvX(iv.ixg||0), sv:iv.ixg||0}, {v:rvX(iv.gax||0), sv:iv.gax||0}, {v:iv.shPct||0, sv:iv.shPct||0},
+        ];
+      }
+    }
+    return {playerCells, gpCell, statCells};
+  }
+
+  const rows = filtered.map(combo => ({combo, ...buildRow(combo)}));
+
+  // Sort rows
+  if(__wowySortCol >= 0 && __wowySortCol < allHeaders.length){
+    const col = __wowySortCol;
+    rows.sort((a,b) => {
+      let va, vb;
+      if(col < playerColCount){
+        va = a.playerCells[col].sortVal; vb = b.playerCells[col].sortVal;
+      } else if(col === playerColCount){
+        va = a.gpCell.sortVal; vb = b.gpCell.sortVal;
+      } else {
+        const si = col - playerColCount - 1;
+        va = a.statCells[si]?.sv ?? 0; vb = b.statCells[si]?.sv ?? 0;
+      }
+      return __wowySortAsc ? (va - vb) : (vb - va);
+    });
+  } else {
+    rows.sort((a,b) => b.combo.toi - a.combo.toi);
+  }
+
+  // Render export bar (above the scrollable table wrap)
+  if(ltWowyExportBar){ ltWowyExportBar.style.display = ''; ltWowyExportBar.innerHTML = '<button id="ltWowyExport" type="button">Export CSV</button>'; }
+
+  // Build header
+  let html = '<table class="lt-wowy-table"><thead><tr>';
+  for(let ci = 0; ci < allHeaders.length; ci++){
+    const isPlayerCol = ci < playerColCount;
+    const isActive = ci === __wowySortCol;
+    const arrow = isActive ? (__wowySortAsc ? '▲' : '▼') : '▲';
+    html += `<th class="${isPlayerCol ? 'wowy-player-cell ' : ''}sortable${isActive ? ' sort-active' : ''}" data-col="${ci}">${allHeaders[ci]}<span class="sort-arrow">${arrow}</span></th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  // Build body
+  for(const row of rows){
+    html += '<tr>';
+    for(const pc of row.playerCells) html += pc.html;
+    html += row.gpCell.html;
+    for(const sc of row.statCells) html += `<td class="${sc.cls||''}">${sc.v}</td>`;
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  if(ltWowyTableWrap) ltWowyTableWrap.innerHTML = html;
+
+  // Attach sort handlers
+  ltWowyTableWrap.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const ci = parseInt(th.dataset.col);
+      if(__wowySortCol === ci){ __wowySortAsc = !__wowySortAsc; }
+      else { __wowySortCol = ci; __wowySortAsc = false; }
+      renderWowy();
+    });
+  });
+
+  // Attach export handler
+  ltWowyExportBar?.querySelector('#ltWowyExport')?.addEventListener('click', () => {
+    const csvRows = [allHeaders.join(',')];
+    for(const row of rows){
+      const vals = [
+        ...row.playerCells.map(pc => `"${pc.csv}"`),
+        row.gpCell.csv,
+        ...row.statCells.map(sc => sc.v),
+      ];
+      csvRows.push(vals.join(','));
+    }
+    const blob = new Blob([csvRows.join('\n')], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'wowy_export.csv'; a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+// WOWY toggle handlers
+ltWowyWith?.addEventListener('click', () => {
+  ltWowyWith?.classList.add('active'); ltWowyWithout?.classList.remove('active');
+  renderWowy();
+});
+ltWowyWithout?.addEventListener('click', () => {
+  ltWowyWithout?.classList.add('active'); ltWowyWith?.classList.remove('active');
+  renderWowy();
+});
+ltWowyOnIce?.addEventListener('click', () => {
+  ltWowyOnIce?.classList.add('active'); ltWowyIndiv?.classList.remove('active');
+  renderWowy();
+});
+ltWowyIndiv?.addEventListener('click', () => {
+  ltWowyIndiv?.classList.add('active'); ltWowyOnIce?.classList.remove('active');
+  renderWowy();
+});
+ltWowyPersp?.addEventListener('change', () => renderWowy());
+
+// ── Forward Lines / Defense Pairs ────────────────────────────
+async function fetchLines(type){
+  const team = String(teamSelect?.value||'').trim().toUpperCase();
+  const season = String(seasonSelect?.value||'').trim();
+  if(!team || !season) return;
+  const wrap = type === 'fwd' ? ltFwdTableWrap : ltDefTableWrap;
+  const empty = type === 'fwd' ? ltFwdEmpty : ltDefEmpty;
+  const exportBar = type === 'fwd' ? ltFwdExportBar : ltDefExportBar;
+  if(wrap) wrap.innerHTML = '';
+  if(exportBar) exportBar.style.display = 'none';
+  const label = type === 'fwd' ? 'forward line' : 'defense pair';
+  if(empty){ empty.style.display = ''; empty.textContent = `Loading ${label} data…`; }
+  const ss = String(ltSeasonState?.value||'regular');
+  const str = String(ltStrengthState?.value||'5v5');
+  const xg = String(ltXgModel?.value||'xG_F');
+  const scope = type === 'fwd' ? __fwdScope : __defScope;
+  const url = `/api/line-tool/lines?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(ss)}&strengthState=${encodeURIComponent(str)}&xgModel=${encodeURIComponent(xg)}&type=${type}&scope=${scope}`;
+  try{
+    const r = await fetch(url, {cache:'no-store'});
+    const data = await r.json();
+    if(type === 'fwd') __fwdData = data; else __defData = data;
+  }catch(_){
+    if(type === 'fwd') __fwdData = null; else __defData = null;
+  }
+  renderLines(type);
+}
+
+function renderLines(type){
+  const data = type === 'fwd' ? __fwdData : __defData;
+  const wrap = type === 'fwd' ? ltFwdTableWrap : ltDefTableWrap;
+  const empty = type === 'fwd' ? ltFwdEmpty : ltDefEmpty;
+  const exportBar = type === 'fwd' ? ltFwdExportBar : ltDefExportBar;
+  const minToiEl = type === 'fwd' ? ltFwdMinToi : ltDefMinToi;
+  const sortColRef = type === 'fwd' ? '__fwdSortCol' : '__defSortCol';
+  const sortAscRef = type === 'fwd' ? '__fwdSortAsc' : '__defSortAsc';
+  let sortCol = type === 'fwd' ? __fwdSortCol : __defSortCol;
+  let sortAsc = type === 'fwd' ? __fwdSortAsc : __defSortAsc;
+  const scope = type === 'fwd' ? __fwdScope : __defScope;
+  const isLeague = scope === 'league';
+
+  if(!data || !data.combos || !data.combos.length){
+    if(wrap) wrap.innerHTML = '';
+    if(exportBar) exportBar.style.display = 'none';
+    if(empty){ empty.style.display = ''; if(!empty.textContent.includes('Loading')) empty.textContent = 'No data available.'; }
+    return;
+  }
+
+  const minToi = parseFloat(minToiEl?.value || '10') || 0;
+  const pMap = data.players || {};
+  const rates = String(ltRates?.value||'Totals');
+  const isFwd = type === 'fwd';
+  const playerColCount = isFwd ? 3 : 2;
+  const statCols = ['TOI','CF','CA','CF%','FF','FA','FF%','SF','SA','SF%','GF','GA','GF%','xGF','xGA','xGF%','Sh%','Sv%','PDO'];
+  const playerHeaders = isFwd ? ['Player 1','Player 2','Player 3'] : ['Player 1','Player 2'];
+  const teamColCount = isLeague ? 1 : 0;
+  const allHeaders = [...playerHeaders, ...(isLeague ? ['Team'] : []), 'GP', ...statCols];
+
+  function pctCls(v, th){ return v > th ? 'wowy-with' : v < th ? 'wowy-without' : ''; }
+
+  function buildRow(combo){
+    const toi60 = Math.max(combo.toi, 0.001) / 60;
+    const gp = combo.gp || 1;
+    function rv(v){
+      if(rates === 'Per60') return (v / toi60).toFixed(2);
+      if(rates === 'PerGame') return (v / gp).toFixed(2);
+      return v;
+    }
+    function rvX(v){
+      if(rates === 'Per60') return (v / toi60).toFixed(2);
+      if(rates === 'PerGame') return (v / gp).toFixed(2);
+      return typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(2) : v;
+    }
+    const playerCells = combo.players.map(pid => {
+      const info = pMap[pid] || {};
+      const fullName = info.name || `#${pid}`;
+      const lastName = fullName.split(' ').pop();
+      return {html:`<td class="wowy-player-cell">${lastName}</td>`, csv:lastName, sortVal:lastName};
+    });
+    const teamCell = isLeague
+      ? {html:`<td>${combo.team||''}</td>`, csv:combo.team||'', sortVal:combo.team||''}
+      : null;
+    const gpCell = {html:`<td>${combo.gp}</td>`, csv:combo.gp, sortVal:combo.gp};
+    const statCells = [
+      {v:fmtToi(combo.toi), sv:combo.toi},
+      {v:rv(combo.cf), sv:combo.cf}, {v:rv(combo.ca), sv:combo.ca}, {v:combo.cfPct, sv:combo.cfPct, cls:pctCls(combo.cfPct,50)},
+      {v:rv(combo.ff), sv:combo.ff}, {v:rv(combo.fa), sv:combo.fa}, {v:combo.ffPct, sv:combo.ffPct, cls:pctCls(combo.ffPct,50)},
+      {v:rv(combo.sf), sv:combo.sf}, {v:rv(combo.sa), sv:combo.sa}, {v:combo.sfPct, sv:combo.sfPct, cls:pctCls(combo.sfPct,50)},
+      {v:rv(combo.gf), sv:combo.gf}, {v:rv(combo.ga), sv:combo.ga}, {v:combo.gfPct, sv:combo.gfPct, cls:pctCls(combo.gfPct,50)},
+      {v:rvX(combo.xgf), sv:combo.xgf}, {v:rvX(combo.xga), sv:combo.xga}, {v:combo.xgfPct, sv:combo.xgfPct, cls:pctCls(combo.xgfPct,50)},
+      {v:combo.shPct, sv:combo.shPct}, {v:combo.svPct, sv:combo.svPct}, {v:combo.pdo, sv:combo.pdo, cls:pctCls(combo.pdo,100)},
+    ];
+    return {playerCells, teamCell, gpCell, statCells, combo};
+  }
+
+  const filtered = data.combos.filter(c => c.toi >= minToi);
+  if(!filtered.length){
+    if(wrap) wrap.innerHTML = '';
+    if(exportBar) exportBar.style.display = 'none';
+    if(empty){ empty.style.display = ''; empty.textContent = 'No combinations meet the minimum TOI.'; }
+    return;
+  }
+  if(empty) empty.style.display = 'none';
+
+  const rows = filtered.map(c => buildRow(c));
+
+  // Sort
+  if(sortCol >= 0 && sortCol < allHeaders.length){
+    rows.sort((a,b) => {
+      let va, vb;
+      if(sortCol < playerColCount){
+        va = a.playerCells[sortCol]?.sortVal ?? ''; vb = b.playerCells[sortCol]?.sortVal ?? '';
+        return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+      } else if(isLeague && sortCol === playerColCount){
+        va = a.teamCell?.sortVal ?? ''; vb = b.teamCell?.sortVal ?? '';
+        return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+      } else if(sortCol === playerColCount + teamColCount){
+        va = a.gpCell.sortVal; vb = b.gpCell.sortVal;
+      } else {
+        const si = sortCol - playerColCount - teamColCount - 1;
+        va = a.statCells[si]?.sv ?? 0; vb = b.statCells[si]?.sv ?? 0;
+      }
+      return sortAsc ? (va - vb) : (vb - va);
+    });
+  } else {
+    rows.sort((a,b) => b.combo.toi - a.combo.toi);
+  }
+
+  // Export bar (above the table)
+  if(exportBar){ exportBar.style.display = ''; exportBar.innerHTML = '<button class="ltLinesExport" type="button">Export CSV</button>'; }
+
+  // Header
+  let html = '<table class="lt-wowy-table"><thead><tr>';
+  for(let ci = 0; ci < allHeaders.length; ci++){
+    const isP = ci < playerColCount;
+    const isActive = ci === sortCol;
+    const arrow = isActive ? (sortAsc ? '▲' : '▼') : '▲';
+    html += `<th class="${isP ? 'wowy-player-cell ' : ''}sortable${isActive ? ' sort-active' : ''}" data-col="${ci}">${allHeaders[ci]}<span class="sort-arrow">${arrow}</span></th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for(const row of rows){
+    html += '<tr>';
+    for(const pc of row.playerCells) html += pc.html;
+    if(row.teamCell) html += row.teamCell.html;
+    html += row.gpCell.html;
+    for(const sc of row.statCells){
+      const cls = sc.cls || '';
+      const display = typeof sc.v === 'number' && !Number.isInteger(sc.v) ? sc.v.toFixed(1) : sc.v;
+      html += `<td class="${cls}">${display}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  if(wrap) wrap.innerHTML = html;
+
+  // Sort handlers
+  wrap?.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const ci = parseInt(th.dataset.col);
+      if(type === 'fwd'){
+        if(ci === __fwdSortCol) __fwdSortAsc = !__fwdSortAsc;
+        else { __fwdSortCol = ci; __fwdSortAsc = false; }
+      } else {
+        if(ci === __defSortCol) __defSortAsc = !__defSortAsc;
+        else { __defSortCol = ci; __defSortAsc = false; }
+      }
+      renderLines(type);
+    });
+  });
+
+  // Export handler
+  exportBar?.querySelector('.ltLinesExport')?.addEventListener('click', () => {
+    const csvRows = [allHeaders.join(',')];
+    for(const row of rows){
+      const cells = [
+        ...row.playerCells.map(c => `"${c.csv}"`),
+        ...(row.teamCell ? [`"${row.teamCell.csv}"`] : []),
+        row.gpCell.csv,
+        ...row.statCells.map(c => c.sv),
+      ];
+      csvRows.push(cells.join(','));
+    }
+    const blob = new Blob([csvRows.join('\n')], {type:'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${type}_lines.csv`;
+    a.click();
+  });
+}
+
+ltFwdMinToi?.addEventListener('input', () => renderLines('fwd'));
+ltDefMinToi?.addEventListener('input', () => renderLines('def'));
+
+// Scope toggle handlers
+ltFwdScopeTeam?.addEventListener('click', () => {
+  if(__fwdScope === 'team') return;
+  __fwdScope = 'team'; __fwdData = null; __fwdSortCol = -1;
+  ltFwdScopeTeam?.classList.add('active'); ltFwdScopeLeague?.classList.remove('active');
+  fetchLines('fwd');
+});
+ltFwdScopeLeague?.addEventListener('click', () => {
+  if(__fwdScope === 'league') return;
+  __fwdScope = 'league'; __fwdData = null; __fwdSortCol = -1;
+  ltFwdScopeLeague?.classList.add('active'); ltFwdScopeTeam?.classList.remove('active');
+  fetchLines('fwd');
+});
+ltDefScopeTeam?.addEventListener('click', () => {
+  if(__defScope === 'team') return;
+  __defScope = 'team'; __defData = null; __defSortCol = -1;
+  ltDefScopeTeam?.classList.add('active'); ltDefScopeLeague?.classList.remove('active');
+  fetchLines('def');
+});
+ltDefScopeLeague?.addEventListener('click', () => {
+  if(__defScope === 'league') return;
+  __defScope = 'league'; __defData = null; __defSortCol = -1;
+  ltDefScopeLeague?.classList.add('active'); ltDefScopeTeam?.classList.remove('active');
+  fetchLines('def');
+});
+
+// ── Event listeners ──────────────────────────────────────────
+for(const sel of playerSelects){
+  sel?.addEventListener('change', () => {
+    updateHeadshots();
+    debouncedFetch();
+    __wowyData = null;
+    __fwdData = null;
+    __defData = null;
+    populateWowyPersp();
+    refreshActiveSupplementalPanel();
+    saveSelections();
+  });
+}
+teamSelect?.addEventListener('change', async () => {
+  await loadPlayers();
+  debouncedFetch();
+  __wowyData = null;
+  __fwdData = null;
+  __defData = null;
+  populateWowyPersp();
+  refreshActiveSupplementalPanel();
+  updateSlicerSummaries();
+  saveSelections();
+});
+seasonSelect?.addEventListener('change', async () => {
+  await loadPlayers();
+  debouncedFetch();
+  __wowyData = null;
+  __fwdData = null;
+  __defData = null;
+  populateWowyPersp();
+  refreshActiveSupplementalPanel();
+  updateSlicerSummaries();
+  saveSelections();
+});
+ltSeasonState?.addEventListener('change', () => {
+  debouncedFetch();
+  __wowyData = null;
+  __fwdData = null;
+  __defData = null;
+  refreshActiveSupplementalPanel();
+  updateSlicerSummaries();
+  saveSelections();
+});
+ltStrengthState?.addEventListener('change', () => {
+  debouncedFetch();
+  __wowyData = null;
+  __fwdData = null;
+  __defData = null;
+  refreshActiveSupplementalPanel();
+  updateSlicerSummaries();
+  saveSelections();
+});
+ltRates?.addEventListener('change', () => { renderKpis(); renderHeatKpis(); renderWowy(); renderLines('fwd'); renderLines('def'); updateSlicerSummaries(); saveSelections(); });
+ltXgModel?.addEventListener('change', () => {
+  debouncedFetch();
+  __wowyData = null;
+  __fwdData = null;
+  __defData = null;
+  refreshActiveSupplementalPanel();
+  updateSlicerSummaries();
+  saveSelections();
+});
+ltHmMetric?.addEventListener('change', () => { renderHeatMap(); saveSelections(); });
+ltHmCompare?.addEventListener('change', () => { renderHeatMap(); saveSelections(); });
+
+// ── Persist / restore selections ─────────────────────────────
+function saveSelections(){
+  try{
+    const state = {
+      team: teamSelect?.value || '',
+      season: seasonSelect?.value || '',
+      players: playerSelects.map(s => s?.value || ''),
+      seasonState: ltSeasonState?.value || 'regular',
+      strengthState: ltStrengthState?.value || '5v5',
+      rates: ltRates?.value || 'Totals',
+      xgModel: ltXgModel?.value || 'xG_F',
+      hmMetric: ltHmMetric?.value || 'fenwick',
+      hmCompare: ltHmCompare?.value || 'value',
+    };
+    localStorage.setItem(LT_STORAGE_KEY, JSON.stringify(state));
+  }catch(_){}
+}
+
+function restoreSelections(){
+  try{
+    const raw = localStorage.getItem(LT_STORAGE_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(_){ return null; }
+}
+
+// ── Boot ─────────────────────────────────────────────────────
+async function boot(){
+  // Wait for base.html to populate team/season selects
+  const t0 = Date.now();
+  while(Date.now() - t0 < 6000){
+    if(teamSelect && teamSelect.options && teamSelect.options.length) break;
+    await new Promise(r => setTimeout(r, 60));
+  }
+  const s0 = Date.now();
+  while(Date.now() - s0 < 8000){
+    const ft = String(seasonSelect?.options?.[0]?.textContent||'').toLowerCase();
+    if(seasonSelect && seasonSelect.options && seasonSelect.options.length && ft !== 'loading...') break;
+    await new Promise(r => setTimeout(r, 80));
+  }
+
+  // Restore saved selections
+  const saved = restoreSelections();
+  if(saved){
+    if(saved.team && teamSelect) teamSelect.value = saved.team;
+    if(saved.season && seasonSelect) seasonSelect.value = saved.season;
+    if(saved.seasonState && ltSeasonState) ltSeasonState.value = saved.seasonState;
+    if(saved.strengthState && ltStrengthState) ltStrengthState.value = saved.strengthState;
+    if(saved.rates && ltRates) ltRates.value = saved.rates;
+    if(saved.xgModel && ltXgModel) ltXgModel.value = saved.xgModel;
+    if(saved.hmMetric && ltHmMetric) ltHmMetric.value = saved.hmMetric;
+    if(saved.hmCompare && ltHmCompare) ltHmCompare.value = saved.hmCompare;
+  }
+
+  await Promise.all([loadPlayers(), loadGeoJson()]);
+
+  // Restore player selections after player list is loaded
+  if(saved && saved.players){
+    for(let i = 0; i < SLOT_IDS.length; i++){
+      const pid = saved.players[i] || '';
+      if(pid && playerSelects[i]) playerSelects[i].value = pid;
+    }
+    updateHeadshots();
+  }
+
+  updateSlicerSummaries();
+
+  // Auto-fetch if players were restored
+  const pids = playerSelects.map(s => s?.value || '').filter(Boolean);
+  if(pids.length){
+    fetchData();
+    populateWowyPersp();
+  }
+}
+boot();
+})();
+</script>
+{% endblock %}

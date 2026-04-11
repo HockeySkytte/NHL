@@ -32,6 +32,14 @@ try:
 except Exception:
     BeautifulSoup = None  # type: ignore
 
+# ── Supabase (primary data source, fallback to CSV / Sheets) ────
+try:
+    from app.supabase_client import get_client as _sb_client
+    _SUPABASE_OK = True
+except Exception:
+    _sb_client = None  # type: ignore
+    _SUPABASE_OK = False
+
 
 main_bp = Blueprint('main', __name__)
 # Update page (no link in app)
@@ -43,49 +51,14 @@ def update_page():
 @main_bp.route('/admin/db-check', methods=['GET'])
 def admin_db_check():
     try:
-        # Lazy import to avoid app start failures if missing
-        try:
-            from sqlalchemy import create_engine, text  # type: ignore
-        except Exception as e:
-            return jsonify({'ok': False, 'error': f'sqlalchemy_import_failed: {e}'}), 500
-        # Allow ?mode=ro to test read-only connection
-        mode = str(request.args.get('mode','rw')).lower().strip()
-        db_url = None
-        if mode == 'ro':
-            db_url = os.getenv('DATABASE_URL_RO') or os.getenv('DB_URL_RO') or os.getenv('DATABASE_URL')
+        if _SUPABASE_OK:
+            sb = _sb_client()
+            # Quick health check: read one row from the teams table
+            result = sb.table("teams").select("team").limit(1).execute()
+            url = os.getenv('SUPABASE_URL', '(not set)')
+            return jsonify({'ok': True, 'backend': 'supabase', 'url': url, 'sample_rows': len(result.data or [])})
         else:
-            db_url = os.getenv('DATABASE_URL_RW') or os.getenv('DB_URL_RW') or os.getenv('DATABASE_URL')
-        if not db_url:
-            user = os.getenv('DB_USER', 'root')
-            pwd = os.getenv('DB_PASSWORD', '')
-            host = os.getenv('DB_HOST', 'localhost')
-            port = os.getenv('DB_PORT', '3306')
-            name = os.getenv('DB_NAME', 'public')
-            db_url = f"mysql+mysqlconnector://{user}:{pwd}@{host}:{port}/{name}"
-        else:
-            # If DATABASE_URL_* uses localhost but a host override is provided, swap it
-            host_override = None
-            if mode == 'ro':
-                host_override = os.getenv('DB_HOST_RO') or os.getenv('DB_HOST')
-            else:
-                host_override = os.getenv('DB_HOST_RW') or os.getenv('DB_HOST')
-            if host_override and '@localhost' in db_url:
-                db_url = db_url.replace('@localhost', f'@{host_override}')
-        # Optional SSL
-        connect_args: Dict[str, Any] = {}
-        if os.getenv('DB_SSL_CA'):
-            connect_args['ssl_ca'] = str(os.getenv('DB_SSL_CA') or '')
-        if os.getenv('DB_SSL_CERT'):
-            connect_args['ssl_cert'] = str(os.getenv('DB_SSL_CERT') or '')
-        if os.getenv('DB_SSL_KEY'):
-            connect_args['ssl_key'] = str(os.getenv('DB_SSL_KEY') or '')
-        if connect_args:
-            eng = create_engine(db_url, connect_args=connect_args)
-        else:
-            eng = create_engine(db_url)
-        with eng.connect() as conn:
-            conn.execute(text('SELECT 1'))
-        return jsonify({'ok': True, 'url': db_url.split('@')[-1] if '@' in db_url else db_url})
+            return jsonify({'ok': False, 'error': 'supabase_not_configured', 'hint': 'Set SUPABASE_URL and SUPABASE_SERVICE_KEY'}), 500
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -338,6 +311,10 @@ _RAPM_SCALE_CACHE: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any], Dict[
 _RAPM_CAREER_CACHE: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any]]] = {}
 _SHIFTS_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 _BOX_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_LT_SHIFTS_CACHE: Dict[str, Tuple[float, list]] = {}   # key: "team|season" → (ts, rows)
+_LT_PBP_CACHE: Dict[str, Tuple[float, list]] = {}      # key: "season|game_ids_hash|xg_col" → (ts, rows)
+_LT_SHIFTS_TTL = 300  # 5-minute TTL for line-tool shifts cache
+_LT_PBP_TTL = 300
 
 # --- Prestart snapshot config/state ---
 _PRESTART_THREAD_STARTED = False
@@ -905,6 +882,911 @@ def goalies_page():
     )
 
 
+@main_bp.route('/line-tool')
+def line_tool_page():
+    """Line Tool page using the current lineup feed."""
+    return render_template(
+        'line_tool.html',
+        teams=TEAM_ROWS,
+        active_tab='Line Tool',
+        show_season_state=False,
+        show_include_historic=False,
+    )
+
+
+@main_bp.route('/api/line-tool/players')
+def api_line_tool_players():
+    """Return all players (skaters + goalies) for a team/season from the players table."""
+    team = str(request.args.get('team', '')).strip().upper()
+    season = str(request.args.get('season', '')).strip()
+    if not team or not season:
+        return jsonify({'players': []})
+
+    rows = _sb_read('players', columns='player_id,player,position',
+                     filters={'season': f'eq.{season}'})
+    if not rows:
+        return jsonify({'players': []})
+
+    # We need to filter by team – the players table doesn't have a team column,
+    # so we use the game_data table to find players who played for this team.
+    gd_rows = _sb_read('game_data', columns='player_id,team',
+                        filters={'season': f'eq.{season}', 'team': f'eq.{team}'})
+    team_pids = set()
+    if gd_rows:
+        team_pids = {int(r['player_id']) for r in gd_rows if r.get('player_id')}
+
+    players_map = {}
+    for r in rows:
+        pid = r.get('player_id')
+        if pid and int(pid) in team_pids and int(pid) not in players_map:
+            players_map[int(pid)] = {
+                'id': int(pid),
+                'name': r.get('player', ''),
+                'position': r.get('position', ''),
+            }
+
+    out = sorted(players_map.values(), key=lambda p: (
+        0 if p['position'] in ('C', 'L', 'R') else 1 if p['position'] == 'D' else 2,
+        p['name']
+    ))
+    j = jsonify({'players': out})
+    j.headers['Cache-Control'] = 'no-store'
+    return j
+
+
+# Game-type codes embedded in NHL game_id: YYYYTTNNNN
+_SS_GAME_TYPES = {'regular': {'02'}, 'playoffs': {'03'}}
+
+def _filter_shifts_season_state(shift_rows, ss):
+    """Filter shift rows by season state using game_id digit 5-6 (02=reg, 03=playoff)."""
+    if not ss or ss == 'all':
+        allowed = {'02', '03'}
+    else:
+        allowed = _SS_GAME_TYPES.get(ss)
+        if not allowed:
+            return shift_rows
+    return [s for s in shift_rows if str(s.get('game_id', ''))[4:6] in allowed]
+
+
+def _get_lt_shifts(team: str, season: str) -> list:
+    """Fetch team+season shifts with caching to avoid redundant pagination."""
+    import time as _time
+    key = f"{team}|{season}"
+    cached = _LT_SHIFTS_CACHE.get(key)
+    if cached:
+        ts, rows = cached
+        if _time.time() - ts < _LT_SHIFTS_TTL:
+            return rows
+    rows = _sb_read('shifts',
+                    columns='shift_index,game_id,player_id,duration,strength_state',
+                    filters={'team': f'eq.{team}', 'season': f'eq.{season}'},
+                    order='shift_index')
+    if rows:
+        _LT_SHIFTS_CACHE[key] = (_time.time(), rows)
+        # Prune old entries (keep max 40 to support league-wide fetches)
+        if len(_LT_SHIFTS_CACHE) > 40:
+            oldest_key = min(_LT_SHIFTS_CACHE, key=lambda k: _LT_SHIFTS_CACHE[k][0])
+            _LT_SHIFTS_CACHE.pop(oldest_key, None)
+    return rows or []
+
+
+def _get_lt_pbp(season: str, game_ids: list, xg_col: str, extra_cols: str = '') -> list:
+    """Fetch PBP corsi events for a set of game IDs with caching."""
+    import time as _time
+    gid_key = hash(tuple(sorted(game_ids)))
+    key = f"{season}|{gid_key}|{xg_col}|{extra_cols}"
+    cached = _LT_PBP_CACHE.get(key)
+    if cached:
+        ts, rows = cached
+        if _time.time() - ts < _LT_PBP_TTL:
+            return rows
+    base_cols = f"game_id,shift_index,event_team,opponent,shot,goal,fenwick,corsi,{xg_col},strength_state,period,season_state"
+    if extra_cols:
+        base_cols += f",{extra_cols}"
+    all_pbp = []
+    BATCH = 20
+    for i in range(0, len(game_ids), BATCH):
+        batch_ids = game_ids[i:i + BATCH]
+        gid_filter = ','.join(str(g) for g in batch_ids)
+        rows = _sb_read('pbp', columns=base_cols, filters={
+            'season': f'eq.{season}',
+            'game_id': f'in.({gid_filter})',
+            'corsi': 'eq.1',
+        })
+        if rows:
+            all_pbp.extend(rows)
+    if all_pbp:
+        _LT_PBP_CACHE[key] = (_time.time(), all_pbp)
+        if len(_LT_PBP_CACHE) > 10:
+            oldest_key = min(_LT_PBP_CACHE, key=lambda k: _LT_PBP_CACHE[k][0])
+            _LT_PBP_CACHE.pop(oldest_key, None)
+    return all_pbp
+
+
+def _compute_line_tool_team_combos(team: str, season: str, ss: str, strength: str,
+                                   xg_col: str, line_type: str,
+                                   pid_info: Dict[str, Dict[str, str]]) -> List[Dict[str, Any]]:
+    if line_type == 'def':
+        target_positions = {'D'}
+        combo_size = 2
+    else:
+        target_positions = {'C', 'L', 'R'}
+        combo_size = 3
+
+    strength_sets = {
+        '5v5': {'5v5'},
+        'PP': {'5v4', '5v3', '4v3'},
+        'SH': {'4v5', '3v5', '3v4'},
+    }
+    all_special = {'5v5', '5v4', '5v3', '4v3', '4v5', '3v5', '3v4'}
+
+    combo_groups: Dict[tuple, Dict[str, Any]] = {}
+    t_rows = _get_lt_shifts(team, season)
+    if not t_rows:
+        return []
+    t_rows = _filter_shifts_season_state(t_rows, ss)
+    if strength and strength.lower() != 'all':
+        if strength in strength_sets:
+            allowed = strength_sets[strength]
+            t_rows = [s for s in t_rows if str(s.get('strength_state', '')) in allowed]
+        elif strength == 'Other':
+            t_rows = [s for s in t_rows if str(s.get('strength_state', '')) not in all_special]
+
+    for s in t_rows:
+        pids_on_ice = str(s.get('player_id', '')).split()
+        line_pids = sorted(
+            pid for pid in pids_on_ice
+            if pid_info.get(pid, {}).get('position', '') in target_positions
+        )
+        if len(line_pids) != combo_size:
+            continue
+        key = (team, tuple(line_pids))
+        grp = combo_groups.get(key)
+        if grp is None:
+            grp = {'duration': 0, 'game_ids': set(), 'shift_keys': set(), 'team': team}
+            combo_groups[key] = grp
+        gid = int(s.get('game_id', 0))
+        si = int(s.get('shift_index', 0))
+        dur = int(s.get('duration', 0) or 0)
+        grp['duration'] += dur
+        grp['game_ids'].add(gid)
+        grp['shift_keys'].add((gid, si))
+
+    if not combo_groups:
+        return []
+
+    combo_onice = {}
+    for key in combo_groups:
+        combo_onice[key] = {'cf': 0, 'ca': 0, 'ff': 0, 'fa': 0,
+                            'sf': 0, 'sa': 0, 'gf': 0, 'ga': 0,
+                            'xgf': 0.0, 'xga': 0.0}
+
+    all_game_ids = set()
+    for grp in combo_groups.values():
+        all_game_ids.update(grp['game_ids'])
+    all_pbp = _get_lt_pbp(season, sorted(all_game_ids), xg_col)
+
+    from collections import defaultdict
+    sk_to_combos = defaultdict(list)
+    for key, grp in combo_groups.items():
+        for sk in grp['shift_keys']:
+            sk_to_combos[sk].append(key)
+
+    for e in all_pbp:
+        if int(e.get('period') or 0) == 5:
+            continue
+        si_raw = e.get('shift_index')
+        if si_raw is None:
+            continue
+        gid = int(e.get('game_id', 0))
+        si = int(si_raw)
+        ckeys = sk_to_combos.get((gid, si))
+        if not ckeys:
+            continue
+        if ss and ss != 'all' and str(e.get('season_state', '')).lower() != ss:
+            continue
+
+        et = str(e.get('event_team', '')).upper()
+        opp = str(e.get('opponent', '')).upper()
+        is_shot = int(e.get('shot') or 0) == 1
+        is_goal = int(e.get('goal') or 0) == 1
+        is_fenwick = int(e.get('fenwick') or 0) == 1
+        xg_val = float(e.get(xg_col) or 0.0)
+
+        for ckey in ckeys:
+            cteam = combo_groups[ckey]['team']
+            oi = combo_onice[ckey]
+            if et == cteam:
+                oi['cf'] += 1
+                if is_fenwick:
+                    oi['ff'] += 1
+                if is_shot:
+                    oi['sf'] += 1
+                if is_goal:
+                    oi['gf'] += 1
+                oi['xgf'] += xg_val
+            elif opp == cteam:
+                oi['ca'] += 1
+                if is_fenwick:
+                    oi['fa'] += 1
+                if is_shot:
+                    oi['sa'] += 1
+                if is_goal:
+                    oi['ga'] += 1
+                oi['xga'] += xg_val
+
+    combos: List[Dict[str, Any]] = []
+    for key, grp in combo_groups.items():
+        toi_min = grp['duration'] / 60.0
+        if toi_min < 0.1:
+            continue
+        team_abbr, pids = key
+        oi = combo_onice[key]
+        cf = oi['cf']; ca = oi['ca']
+        ff = oi['ff']; fa = oi['fa']
+        sf = oi['sf']; sa = oi['sa']
+        gf = oi['gf']; ga = oi['ga']
+        xgf_v = round(oi['xgf'], 2); xga_v = round(oi['xga'], 2)
+        combos.append({
+            'players': list(pids),
+            'team': team_abbr,
+            'gp': len(grp['game_ids']),
+            'toi': round(toi_min, 1),
+            'cf': cf, 'ca': ca, 'cfPct': round(100 * cf / max(cf + ca, 1), 1),
+            'ff': ff, 'fa': fa, 'ffPct': round(100 * ff / max(ff + fa, 1), 1),
+            'sf': sf, 'sa': sa, 'sfPct': round(100 * sf / max(sf + sa, 1), 1),
+            'gf': gf, 'ga': ga, 'gfPct': round(100 * gf / max(gf + ga, 1), 1),
+            'xgf': xgf_v, 'xga': xga_v,
+            'xgfPct': round(100 * xgf_v / max(xgf_v + xga_v, 0.001), 1),
+            'shPct': round(100 * gf / max(sf, 1), 1),
+            'svPct': round(100 * (1 - ga / max(sa, 1)), 1),
+            'pdo': round(100 * gf / max(sf, 1) + 100 * (1 - ga / max(sa, 1)), 1),
+        })
+    return combos
+
+
+@main_bp.route('/api/line-tool/data')
+def api_line_tool_data():
+    """Return line tool data: KPIs + zone heat map data for selected players on-ice together.
+
+    Query params:
+      team – team abbreviation (required)
+      season – e.g. 20242025 (required)
+      players – comma-separated player IDs (1-5 players, required)
+      seasonState – regular (default) / playoffs / all
+      strengthState – 5v5 (default) / PP / SH / Other / all
+      xgModel – xG_F (default) / xG_S / xG_F2
+    """
+    team = str(request.args.get('team', '')).strip().upper()
+    season = str(request.args.get('season', '')).strip()
+    players_raw = str(request.args.get('players', '')).strip()
+    if not team or not season or not players_raw:
+        return jsonify({'error': 'team, season, and players required'}), 400
+
+    try:
+        player_ids = [str(int(x)) for x in players_raw.split(',') if x.strip()]
+    except Exception:
+        return jsonify({'error': 'invalid player IDs'}), 400
+    if not player_ids or len(player_ids) > 5:
+        return jsonify({'error': '1-5 players required'}), 400
+
+    ss = str(request.args.get('seasonState', 'regular')).lower()
+    strength = str(request.args.get('strengthState', '5v5')).strip()
+    xg_model = str(request.args.get('xgModel', 'xG_F')).strip()
+    xg_col_map = {'xG_F': 'xg_f', 'xG_S': 'xg_s', 'xG_F2': 'xg_f2'}
+    xg_col = xg_col_map.get(xg_model, 'xg_f')
+
+    # ── 1. Fetch shifts for the team + season ────────────────
+    shift_rows = _get_lt_shifts(team, season)
+    if not shift_rows:
+        return jsonify(_empty_line_tool_response())
+    shift_rows = _filter_shifts_season_state(shift_rows, ss)
+
+    # ── 2. Find shifts where ALL selected players are on ice ─
+    common_shifts = []
+    for s in shift_rows:
+        pids_on_ice = set(str(s.get('player_id', '')).split())
+        if all(pid in pids_on_ice for pid in player_ids):
+            common_shifts.append(s)
+
+    if not common_shifts:
+        return jsonify(_empty_line_tool_response())
+
+    # ── 3. Apply strength state filter ───────────────────────
+    if strength and strength.lower() != 'all':
+        if strength == '5v5':
+            common_shifts = [s for s in common_shifts if str(s.get('strength_state', '')) == '5v5']
+        elif strength == 'PP':
+            common_shifts = [s for s in common_shifts
+                             if str(s.get('strength_state', '')) in ('5v4', '5v3', '4v3')]
+        elif strength == 'SH':
+            common_shifts = [s for s in common_shifts
+                             if str(s.get('strength_state', '')) in ('4v5', '3v5', '3v4')]
+        elif strength == 'Other':
+            common_shifts = [s for s in common_shifts
+                             if str(s.get('strength_state', '')) not in ('5v5', '5v4', '5v3', '4v3', '4v5', '3v5', '3v4')]
+
+    if not common_shifts:
+        return jsonify(_empty_line_tool_response())
+
+    # ── 4. Compute GP, TOI from shifts ───────────────────────
+    game_ids = set()
+    shift_keys = set()  # (game_id, shift_index)
+    total_duration = 0
+    for s in common_shifts:
+        gid = int(s.get('game_id', 0))
+        si = int(s.get('shift_index', 0))
+        dur = int(s.get('duration', 0) or 0)
+        game_ids.add(gid)
+        shift_keys.add((gid, si))
+        total_duration += dur
+
+    gp = len(game_ids)
+    toi_min = total_duration / 60.0
+
+    # ── 4b. Team-level shift keys + TOI (for Vs. Team / Vs. League) ──
+    # Apply same strength filter to ALL team shifts, limited to same games
+    team_str_shifts = list(shift_rows)
+    if strength and strength.lower() != 'all':
+        if strength == '5v5':
+            team_str_shifts = [s for s in team_str_shifts if str(s.get('strength_state', '')) == '5v5']
+        elif strength == 'PP':
+            team_str_shifts = [s for s in team_str_shifts
+                               if str(s.get('strength_state', '')) in ('5v4', '5v3', '4v3')]
+        elif strength == 'SH':
+            team_str_shifts = [s for s in team_str_shifts
+                               if str(s.get('strength_state', '')) in ('4v5', '3v5', '3v4')]
+        elif strength == 'Other':
+            all_special = {'5v5', '5v4', '5v3', '4v3', '4v5', '3v5', '3v4'}
+            team_str_shifts = [s for s in team_str_shifts
+                               if str(s.get('strength_state', '')) not in all_special]
+    team_shift_keys = set()
+    team_toi_sec = 0
+    for s in team_str_shifts:
+        gid = int(s.get('game_id', 0))
+        if gid not in game_ids:
+            continue  # only games we have PBP for
+        si = int(s.get('shift_index', 0))
+        team_shift_keys.add((gid, si))
+        team_toi_sec += int(s.get('duration', 0) or 0)
+    team_toi_min = team_toi_sec / 60.0
+
+    # ── 5. Fetch PBP for the relevant games ──────────────────
+    game_list = sorted(game_ids)
+    all_pbp = _get_lt_pbp(season, game_list, xg_col, extra_cols='x,y,box_id')
+
+    # ── 6. Filter PBP to matching shift_indexes ──────────────
+    events_for = []   # team shooting (event_team = team)
+    events_against = []  # opponents shooting at team (opponent = team)
+    team_oz_detail = {}   # team-level OZ zone detail (all team shifts)
+    team_dz_detail = {}   # team-level DZ zone detail (all team shifts)
+    league_zone_detail = {}  # both-teams zone detail (league approx)
+    for e in all_pbp:
+        if int(e.get('period') or 0) == 5:
+            continue  # exclude shootout
+        gid = int(e.get('game_id', 0))
+        si_raw = e.get('shift_index')
+        if si_raw is None:
+            continue
+        si = int(si_raw)
+        # Season state filter
+        if ss and ss != 'all':
+            if str(e.get('season_state', '')).lower() != ss:
+                continue
+        et = str(e.get('event_team', '')).upper()
+        opp = str(e.get('opponent', '')).upper()
+        key = (gid, si)
+
+        # Player-level events
+        if key in shift_keys:
+            if et == team:
+                events_for.append(e)
+            elif opp == team:
+                events_against.append(e)
+
+        # Team-level and league-level zone data
+        if key in team_shift_keys:
+            bid = str(e.get('box_id') or '')
+            if bid.startswith('O'):
+                is_fen = int(e.get('fenwick') or 0) == 1
+                is_sh = int(e.get('shot') or 0) == 1
+                is_gl = int(e.get('goal') or 0) == 1
+                xgv = float(e.get(xg_col) or 0.0)
+                # League: all events by O-zone (both teams)
+                ld = league_zone_detail.setdefault(bid, {'count': 0, 'fenwick': 0, 'shots': 0, 'goals': 0, 'xg': 0.0})
+                ld['count'] += 1
+                if is_fen: ld['fenwick'] += 1
+                if is_sh: ld['shots'] += 1
+                if is_gl: ld['goals'] += 1
+                ld['xg'] += xgv
+                # Team offense
+                if et == team:
+                    td = team_oz_detail.setdefault(bid, {'count': 0, 'fenwick': 0, 'shots': 0, 'goals': 0, 'xg': 0.0})
+                    td['count'] += 1
+                    if is_fen: td['fenwick'] += 1
+                    if is_sh: td['shots'] += 1
+                    if is_gl: td['goals'] += 1
+                    td['xg'] += xgv
+                # Team defense (O→D mapping)
+                elif opp == team:
+                    dz_bid = 'D' + bid[1:]
+                    td = team_dz_detail.setdefault(dz_bid, {'count': 0, 'fenwick': 0, 'shots': 0, 'goals': 0, 'xg': 0.0})
+                    td['count'] += 1
+                    if is_fen: td['fenwick'] += 1
+                    if is_sh: td['shots'] += 1
+                    if is_gl: td['goals'] += 1
+                    td['xg'] += xgv
+
+    # ── 7. Compute KPIs ──────────────────────────────────────
+    def _sum_kpis(evts):
+        corsi = 0; fenwick = 0; shots = 0; xg_total = 0.0; goals = 0
+        for ev in evts:
+            corsi += 1
+            if int(ev.get('fenwick') or 0) == 1:
+                fenwick += 1
+            if int(ev.get('shot') or 0) == 1:
+                shots += 1
+            if int(ev.get('goal') or 0) == 1:
+                goals += 1
+            xg_total += float(ev.get(xg_col) or 0.0)
+        return {'corsi': corsi, 'fenwick': fenwick, 'shots': shots, 'xG': round(xg_total, 2), 'goals': goals}
+
+    kpi_for = _sum_kpis(events_for)
+    kpi_against = _sum_kpis(events_against)
+
+    cf = kpi_for['corsi']; ca = kpi_against['corsi']
+    ff = kpi_for['fenwick']; fa = kpi_against['fenwick']
+    sf = kpi_for['shots']; sa = kpi_against['shots']
+    gf = kpi_for['goals']; ga = kpi_against['goals']
+    xgf = kpi_for['xG']; xga = kpi_against['xG']
+
+    cf_pct = round(100 * cf / max(cf + ca, 1), 1)
+    ff_pct = round(100 * ff / max(ff + fa, 1), 1)
+    sf_pct = round(100 * sf / max(sf + sa, 1), 1)
+    gf_pct = round(100 * gf / max(gf + ga, 1), 1)
+    xgf_pct = round(100 * xgf / max(xgf + xga, 0.001), 1)
+    sh_pct = round(100 * gf / max(sf, 1), 1)
+    sv_pct = round(100 * (1 - ga / max(sa, 1)), 1)
+    pdo = round(sh_pct + sv_pct, 1)
+
+    # ── 8. Zone heat map data ────────────────────────────────
+    # Offensive zones: shots FOR (team shooting) – only O-prefixed box_ids
+    oz_counts = {}
+    oz_detail = {}   # per-zone KPI detail for client-side zone filtering
+    for ev in events_for:
+        bid = str(ev.get('box_id') or '')
+        if not bid.startswith('O'):
+            continue
+        oz_counts[bid] = oz_counts.get(bid, 0) + 1
+        d = oz_detail.setdefault(bid, {'count': 0, 'fenwick': 0, 'shots': 0, 'goals': 0, 'xg': 0.0})
+        d['count'] += 1
+        if int(ev.get('fenwick') or 0) == 1:
+            d['fenwick'] += 1
+        if int(ev.get('shot') or 0) == 1:
+            d['shots'] += 1
+        if int(ev.get('goal') or 0) == 1:
+            d['goals'] += 1
+        d['xg'] += float(ev.get(xg_col) or 0.0)
+
+    # Defensive zones: shots AGAINST (opp shooting) – convert O→D
+    dz_counts = {}
+    dz_detail = {}
+    for ev in events_against:
+        bid = str(ev.get('box_id') or '')
+        if not bid.startswith('O'):
+            continue
+        dz_bid = 'D' + bid[1:]   # O01 → D01
+        dz_counts[dz_bid] = dz_counts.get(dz_bid, 0) + 1
+        d = dz_detail.setdefault(dz_bid, {'count': 0, 'fenwick': 0, 'shots': 0, 'goals': 0, 'xg': 0.0})
+        d['count'] += 1
+        if int(ev.get('fenwick') or 0) == 1:
+            d['fenwick'] += 1
+        if int(ev.get('shot') or 0) == 1:
+            d['shots'] += 1
+        if int(ev.get('goal') or 0) == 1:
+            d['goals'] += 1
+        d['xg'] += float(ev.get(xg_col) or 0.0)
+
+    # Round xg values
+    for d in oz_detail.values():
+        d['xg'] = round(d['xg'], 2)
+    for d in dz_detail.values():
+        d['xg'] = round(d['xg'], 2)
+    for d in team_oz_detail.values():
+        d['xg'] = round(d['xg'], 2)
+    for d in team_dz_detail.values():
+        d['xg'] = round(d['xg'], 2)
+    for d in league_zone_detail.values():
+        d['xg'] = round(d['xg'], 2)
+
+    result = {
+        'gp': gp,
+        'toi': round(toi_min, 1),
+        'cf': cf, 'ca': ca, 'cfPct': cf_pct,
+        'ff': ff, 'fa': fa, 'ffPct': ff_pct,
+        'sf': sf, 'sa': sa, 'sfPct': sf_pct,
+        'gf': gf, 'ga': ga, 'gfPct': gf_pct,
+        'xgf': xgf, 'xga': xga, 'xgfPct': xgf_pct,
+        'shPct': sh_pct, 'svPct': sv_pct, 'pdo': pdo,
+        'ozZones': oz_counts,
+        'dzZones': dz_counts,
+        'ozDetail': oz_detail,
+        'dzDetail': dz_detail,
+        'teamToi': round(team_toi_min, 1),
+        'teamOzDetail': team_oz_detail,
+        'teamDzDetail': team_dz_detail,
+        'leagueToi': round(team_toi_min * 2, 1),
+        'leagueZoneDetail': league_zone_detail,
+    }
+    j = jsonify(result)
+    j.headers['Cache-Control'] = 'no-store'
+    return j
+
+
+def _empty_line_tool_response():
+    return {
+        'gp': 0, 'toi': 0,
+        'cf': 0, 'ca': 0, 'cfPct': 0,
+        'ff': 0, 'fa': 0, 'ffPct': 0,
+        'sf': 0, 'sa': 0, 'sfPct': 0,
+        'gf': 0, 'ga': 0, 'gfPct': 0,
+        'xgf': 0, 'xga': 0, 'xgfPct': 0,
+        'shPct': 0, 'svPct': 0, 'pdo': 0,
+        'ozZones': {}, 'dzZones': {},
+        'ozDetail': {}, 'dzDetail': {},
+    }
+
+
+@main_bp.route('/api/line-tool/wowy')
+def api_line_tool_wowy():
+    """Return WOWY (With Or Without You) data for the selected players.
+
+    For each combination of selected players being on/off ice, computes:
+      - On-ice stats (TOI, CF, CA, etc.)
+      - Individual stats per player (goals, assists, ixG, etc.)
+
+    Query params: same as /api/line-tool/data
+    """
+    team = str(request.args.get('team', '')).strip().upper()
+    season = str(request.args.get('season', '')).strip()
+    players_raw = str(request.args.get('players', '')).strip()
+    if not team or not season or not players_raw:
+        return jsonify({'combos': [], 'players': []}), 400
+
+    try:
+        player_ids = [str(int(x)) for x in players_raw.split(',') if x.strip()]
+    except Exception:
+        return jsonify({'combos': [], 'players': []}), 400
+    if not player_ids or len(player_ids) > 5:
+        return jsonify({'combos': [], 'players': []}), 400
+
+    ss = str(request.args.get('seasonState', 'regular')).lower()
+    strength = str(request.args.get('strengthState', '5v5')).strip()
+    xg_model = str(request.args.get('xgModel', 'xG_F')).strip()
+    xg_col_map = {'xG_F': 'xg_f', 'xG_S': 'xg_s', 'xG_F2': 'xg_f2'}
+    xg_col = xg_col_map.get(xg_model, 'xg_f')
+
+    # ── 1. Fetch shifts ──────────────────────────────────────
+    shift_rows = _get_lt_shifts(team, season)
+    if not shift_rows:
+        return jsonify({'combos': [], 'players': []})
+    shift_rows = _filter_shifts_season_state(shift_rows, ss)
+
+    # ── 2. Apply strength state filter ────────────────────────
+    if strength and strength.lower() != 'all':
+        strength_sets = {
+            '5v5': {'5v5'},
+            'PP': {'5v4', '5v3', '4v3'},
+            'SH': {'4v5', '3v5', '3v4'},
+        }
+        if strength in strength_sets:
+            allowed = strength_sets[strength]
+            shift_rows = [s for s in shift_rows if str(s.get('strength_state', '')) in allowed]
+        elif strength == 'Other':
+            all_special = {'5v5', '5v4', '5v3', '4v3', '4v5', '3v5', '3v4'}
+            shift_rows = [s for s in shift_rows if str(s.get('strength_state', '')) not in all_special]
+
+    # ── 3. Group shifts by player mask ────────────────────────
+    # mask = tuple of booleans, one per player_id in player_ids order
+    mask_groups = {}  # mask -> {'duration': int, 'game_ids': set, 'shift_keys': set}
+    for s in shift_rows:
+        pids_on_ice = set(str(s.get('player_id', '')).split())
+        mask = tuple(pid in pids_on_ice for pid in player_ids)
+        # At least one selected player must be on ice OR none (for "without all")
+        grp = mask_groups.get(mask)
+        if grp is None:
+            grp = {'duration': 0, 'game_ids': set(), 'shift_keys': set()}
+            mask_groups[mask] = grp
+        gid = int(s.get('game_id', 0))
+        si = int(s.get('shift_index', 0))
+        dur = int(s.get('duration', 0) or 0)
+        grp['duration'] += dur
+        grp['game_ids'].add(gid)
+        grp['shift_keys'].add((gid, si))
+
+    # ── 4. Fetch PBP for all relevant games ───────────────────
+    all_game_ids = set()
+    for grp in mask_groups.values():
+        all_game_ids.update(grp['game_ids'])
+    game_list = sorted(all_game_ids)
+
+    all_pbp = _get_lt_pbp(season, game_list, xg_col,
+                           extra_cols='player1_id,player2_id,player3_id,goalie_id')
+
+    # Build shift_key → mask lookup
+    sk_to_mask = {}
+    for mask, grp in mask_groups.items():
+        for sk in grp['shift_keys']:
+            sk_to_mask[sk] = mask
+
+    # ── 5. Assign PBP events to masks ─────────────────────────
+    # For each mask, accumulate on-ice stats + individual player events
+    mask_onice = {}   # mask -> {cf, ca, ff, fa, sf, sa, gf, ga, xgf, xga}
+    mask_indiv = {}   # mask -> {player_id -> {goals, a1, a2, shots, ixg, sa, ga, xga}}
+
+    for mask in mask_groups:
+        mask_onice[mask] = {'cf': 0, 'ca': 0, 'ff': 0, 'fa': 0, 'sf': 0, 'sa': 0, 'gf': 0, 'ga': 0, 'xgf': 0.0, 'xga': 0.0}
+        mask_indiv[mask] = {pid: {'goals': 0, 'a1': 0, 'a2': 0, 'shots': 0, 'ixg': 0.0,
+                                   'fa': 0, 'ga': 0, 'sa': 0, 'xga': 0.0}
+                            for pid in player_ids}
+
+    for e in all_pbp:
+        if int(e.get('period') or 0) == 5:
+            continue
+        si_raw = e.get('shift_index')
+        if si_raw is None:
+            continue
+        gid = int(e.get('game_id', 0))
+        si = int(si_raw)
+        mask = sk_to_mask.get((gid, si))
+        if mask is None:
+            continue
+        # Season state filter
+        if ss and ss != 'all':
+            if str(e.get('season_state', '')).lower() != ss:
+                continue
+
+        et = str(e.get('event_team', '')).upper()
+        opp = str(e.get('opponent', '')).upper()
+        is_for = (et == team)
+        is_against = (opp == team)
+        is_shot = int(e.get('shot') or 0) == 1
+        is_goal = int(e.get('goal') or 0) == 1
+        xg_val = float(e.get(xg_col) or 0.0)
+
+        is_fenwick = int(e.get('fenwick') or 0) == 1
+
+        oi = mask_onice[mask]
+        if is_for:
+            oi['cf'] += 1
+            if is_fenwick:
+                oi['ff'] += 1
+            if is_shot:
+                oi['sf'] += 1
+            if is_goal:
+                oi['gf'] += 1
+            oi['xgf'] += xg_val
+        elif is_against:
+            oi['ca'] += 1
+            if is_fenwick:
+                oi['fa'] += 1
+            if is_shot:
+                oi['sa'] += 1
+            if is_goal:
+                oi['ga'] += 1
+            oi['xga'] += xg_val
+
+        # Individual stats
+        p1 = str(e.get('player1_id') or '')
+        p2 = str(e.get('player2_id') or '')
+        p3 = str(e.get('player3_id') or '')
+        gid_goalie = str(e.get('goalie_id') or '')
+
+        for pid in player_ids:
+            iv = mask_indiv[mask][pid]
+            if is_for:
+                if p1 == pid:
+                    if is_shot:
+                        iv['shots'] += 1
+                    iv['ixg'] += xg_val
+                    if is_goal:
+                        iv['goals'] += 1
+                if is_goal and p2 == pid:
+                    iv['a1'] += 1
+                if is_goal and p3 == pid:
+                    iv['a2'] += 1
+            elif is_against:
+                if gid_goalie == pid:
+                    iv['fa'] += 1
+                    iv['sa'] += 1 if is_shot else 0
+                    if is_goal:
+                        iv['ga'] += 1
+                    iv['xga'] += xg_val
+
+    # ── 6. Build response ─────────────────────────────────────
+    combos = []
+    for mask, grp in mask_groups.items():
+        toi_min = grp['duration'] / 60.0
+        if toi_min < 0.1:
+            continue  # skip trivial groups
+        oi = mask_onice[mask]
+        cf = oi['cf']; ca = oi['ca']
+        ff = oi['ff']; fa = oi['fa']
+        sf = oi['sf']; sa = oi['sa']
+        gf = oi['gf']; ga = oi['ga']
+        xgf_v = round(oi['xgf'], 2); xga_v = round(oi['xga'], 2)
+
+        combo = {
+            'mask': list(mask),
+            'gp': len(grp['game_ids']),
+            'toi': round(toi_min, 1),
+            'cf': cf, 'ca': ca, 'cfPct': round(100 * cf / max(cf + ca, 1), 1),
+            'ff': ff, 'fa': fa, 'ffPct': round(100 * ff / max(ff + fa, 1), 1),
+            'sf': sf, 'sa': sa, 'sfPct': round(100 * sf / max(sf + sa, 1), 1),
+            'gf': gf, 'ga': ga, 'gfPct': round(100 * gf / max(gf + ga, 1), 1),
+            'xgf': xgf_v, 'xga': xga_v,
+            'xgfPct': round(100 * xgf_v / max(xgf_v + xga_v, 0.001), 1),
+            'shPct': round(100 * gf / max(sf, 1), 1),
+            'svPct': round(100 * (1 - ga / max(sa, 1)), 1),
+            'pdo': round(100 * gf / max(sf, 1) + 100 * (1 - ga / max(sa, 1)), 1),
+            'individual': {},
+        }
+        for pid in player_ids:
+            iv = mask_indiv[mask][pid]
+            combo['individual'][pid] = {
+                'goals': iv['goals'],
+                'a1': iv['a1'],
+                'a2': iv['a2'],
+                'points': iv['goals'] + iv['a1'] + iv['a2'],
+                'shots': iv['shots'],
+                'ixg': round(iv['ixg'], 2),
+                'gax': round(iv['goals'] - iv['ixg'], 2),
+                'shPct': round(100 * iv['goals'] / max(iv['shots'], 1), 1),
+                'fa': iv['fa'],
+                'ga': iv['ga'],
+                'sa': iv['sa'],
+                'xga': round(iv['xga'], 2),
+                'gsax': round(iv['xga'] - iv['ga'], 2),
+                'svPct': round(100 * (1 - iv['ga'] / max(iv['sa'], 1)), 1) if iv['sa'] > 0 else 0.0,
+                'xsvPct': round(100 * (1 - iv['xga'] / max(iv['sa'], 1)), 1) if iv['sa'] > 0 else 0.0,
+                'dsvPct': round(
+                    (100 * (1 - iv['ga'] / max(iv['sa'], 1))) - (100 * (1 - iv['xga'] / max(iv['sa'], 1))),
+                    1) if iv['sa'] > 0 else 0.0,
+            }
+        combos.append(combo)
+
+    # Sort by TOI descending
+    combos.sort(key=lambda c: c['toi'], reverse=True)
+
+    # Player name map
+    player_rows = _sb_read('players', columns='player_id,player,position',
+                           filters={'season': f'eq.{season}'})
+    pid_info = {}
+    if player_rows:
+        for r in player_rows:
+            pid_info[str(r.get('player_id', ''))] = {
+                'name': r.get('player', ''),
+                'position': r.get('position', ''),
+            }
+
+    player_info = []
+    for pid in player_ids:
+        info = pid_info.get(pid, {})
+        player_info.append({
+            'id': pid,
+            'name': info.get('name', f'#{pid}'),
+            'position': info.get('position', ''),
+        })
+
+    j = jsonify({'combos': combos, 'players': player_info})
+    j.headers['Cache-Control'] = 'no-store'
+    return j
+
+
+@main_bp.route('/api/line-tool/lines')
+def api_line_tool_lines():
+    """Return forward-line and defense-pairing combinations with on-ice stats.
+
+    Query params:
+      team – team abbreviation (required)
+      season – e.g. 20242025 (required)
+      seasonState – regular / playoffs / all
+      strengthState – 5v5 / PP / SH / Other / all
+      xgModel – xG_F / xG_S / xG_F2
+      type – fwd / def
+      scope – team (default) / league
+    """
+    team = str(request.args.get('team', '')).strip().upper()
+    season = str(request.args.get('season', '')).strip()
+    if not team or not season:
+        return jsonify({'combos': [], 'players': {}}), 400
+
+    ss = str(request.args.get('seasonState', 'regular')).lower()
+    strength = str(request.args.get('strengthState', '5v5')).strip()
+    xg_model = str(request.args.get('xgModel', 'xG_F')).strip()
+    xg_col_map = {'xG_F': 'xg_f', 'xG_S': 'xg_s', 'xG_F2': 'xg_f2'}
+    xg_col = xg_col_map.get(xg_model, 'xg_f')
+    line_type = str(request.args.get('type', 'fwd')).strip().lower()
+    scope = str(request.args.get('scope', 'team')).strip().lower()
+
+    player_rows = _sb_read('players', columns='player_id,player,position',
+                           filters={'season': f'eq.{season}'})
+    pid_info = {}
+    if player_rows:
+        for r in player_rows:
+            pid_info[str(r.get('player_id', ''))] = {
+                'name': r.get('player', ''),
+                'position': r.get('position', ''),
+            }
+
+    if scope == 'league':
+        tbl = 'forward_lines' if line_type == 'fwd' else 'defense_pairings'
+        xg_f_col = {'xg_f': 'xgf', 'xg_s': 'xgf_s', 'xg_f2': 'xgf_f2'}.get(xg_col, 'xgf')
+        xg_a_col = {'xg_f': 'xga', 'xg_s': 'xga_s', 'xg_f2': 'xga_f2'}.get(xg_col, 'xga')
+        stage_map = {'regular': '2', 'playoffs': '3'}
+        db_filters: Dict[str, str] = {'season': f'eq.{season}'}
+        if ss in stage_map:
+            db_filters['season_stage'] = f'eq.{stage_map[ss]}'
+        rows = _sb_read(tbl, filters=db_filters)
+
+        combos = []
+        players_out = {}
+        team_live_combos = _compute_line_tool_team_combos(team, season, ss, strength, xg_col, line_type, pid_info)
+        live_keys = {(c['team'], tuple(c['players'])) for c in team_live_combos}
+
+        for r in (rows or []):
+            toi = float(r.get('toi') or 0)
+            if toi < 0.1:
+                continue
+            pids = str(r.get('player_ids', '')).split()
+            combo_key = (str(r.get('team', '')), tuple(pids))
+            if combo_key in live_keys:
+                continue
+            cf = int(r.get('cf') or 0); ca = int(r.get('ca') or 0)
+            ff = int(r.get('ff') or 0); fa = int(r.get('fa') or 0)
+            sf = int(r.get('sf') or 0); sa = int(r.get('sa') or 0)
+            gf = int(r.get('gf') or 0); ga = int(r.get('ga') or 0)
+            xgf_v = round(float(r.get(xg_f_col) or 0), 2)
+            xga_v = round(float(r.get(xg_a_col) or 0), 2)
+            combos.append({
+                'players': pids,
+                'team': str(r.get('team', '')),
+                'gp': int(r.get('gp') or 0),
+                'toi': round(toi, 1),
+                'cf': cf, 'ca': ca, 'cfPct': round(100 * cf / max(cf + ca, 1), 1),
+                'ff': ff, 'fa': fa, 'ffPct': round(100 * ff / max(ff + fa, 1), 1),
+                'sf': sf, 'sa': sa, 'sfPct': round(100 * sf / max(sf + sa, 1), 1),
+                'gf': gf, 'ga': ga, 'gfPct': round(100 * gf / max(gf + ga, 1), 1),
+                'xgf': xgf_v, 'xga': xga_v,
+                'xgfPct': round(100 * xgf_v / max(xgf_v + xga_v, 0.001), 1),
+                'shPct': round(100 * gf / max(sf, 1), 1),
+                'svPct': round(100 * (1 - ga / max(sa, 1)), 1),
+                'pdo': round(100 * gf / max(sf, 1) + 100 * (1 - ga / max(sa, 1)), 1),
+            })
+
+        combos.extend(team_live_combos)
+        for combo in combos:
+            for pid in combo['players']:
+                if pid not in players_out:
+                    info = pid_info.get(pid, {})
+                    players_out[pid] = {
+                        'name': info.get('name', f'#{pid}'),
+                        'position': info.get('position', ''),
+                    }
+        combos.sort(key=lambda c: c['toi'], reverse=True)
+        j = jsonify({'combos': combos, 'players': players_out})
+        j.headers['Cache-Control'] = 'no-store'
+        return j
+
+    combos = _compute_line_tool_team_combos(team, season, ss, strength, xg_col, line_type, pid_info)
+    if not combos:
+        return jsonify({'combos': [], 'players': pid_info})
+
+    j = jsonify({'combos': combos, 'players': pid_info})
+    j.headers['Cache-Control'] = 'no-store'
+    return j
+
+
 @main_bp.route('/teams')
 def teams_page():
     """Teams page (team card + team table/charts)."""
@@ -924,8 +1806,6 @@ def odds_page(game_id: int):
     return render_template('odds.html', teams=TEAM_ROWS, game_id=game_id, active_tab='Game Projections', show_season_state=False)
 
 
-_SHEET_ROWS_CACHE: Dict[Tuple[str, str], Tuple[float, List[Dict[str, Any]]]] = {}
-
 # Projections enrichment cache: {playerId -> {name, team, pos}}
 _ALL_ROSTERS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, str]]]] = None
 
@@ -933,76 +1813,12 @@ _ALL_ROSTERS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, str]]]] = None
 _SKATER_BIOS_CACHE: Dict[int, Tuple[float, Dict[int, Dict[str, str]]]] = {}
 
 
-def _load_sheet_rows_cached(sheet_id: str, worksheet: str, ttl_env: str = 'SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl: int = 30) -> List[Dict[str, Any]]:
-    """Fetch worksheet rows via Google Sheets API with a short in-memory TTL cache."""
-    global _SHEET_ROWS_CACHE
-    try:
-        ttl_s = max(1, int(os.getenv(ttl_env, str(default_ttl)) or str(default_ttl)))
-    except Exception:
-        ttl_s = default_ttl
-    try:
-        max_items = max(1, int(os.getenv('SHEET_ROWS_CACHE_MAX_ITEMS', '12') or '12'))
-    except Exception:
-        max_items = 12
-    now = time.time()
-    key = (sheet_id or '', worksheet or '')
-    _cache_prune_ttl_and_size(_SHEET_ROWS_CACHE, ttl_s=ttl_s, max_items=max_items)
-    cached = _SHEET_ROWS_CACHE.get(key)
-    if cached and (now - cached[0]) < ttl_s:
-        return cached[1]
-
-    try:
-        import gspread  # type: ignore
-        from google.oauth2.service_account import Credentials  # type: ignore
-    except Exception:
-        _cache_set_multi_bounded(_SHEET_ROWS_CACHE, key, [], ttl_s=ttl_s, max_items=max_items)
-        return []
-
-    info = _load_google_service_account_info_from_env()
-    scopes = [
-        'https://www.googleapis.com/auth/spreadsheets.readonly',
-        'https://www.googleapis.com/auth/drive.readonly',
-    ]
-    creds = Credentials.from_service_account_info(info, scopes=scopes)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(sheet_id)
-    ws = sh.worksheet(worksheet)
-    # Avoid gspread numericisation so we can safely parse locale-specific numbers
-    # (e.g., decimal commas in Win_Prop).
-    try:
-        rows = ws.get_all_records(numericise_ignore=['all']) or []
-    except Exception:
-        rows = ws.get_all_records() or []
-    _cache_set_multi_bounded(_SHEET_ROWS_CACHE, key, rows, ttl_s=ttl_s, max_items=max_items)
-    return rows
-
-
-def _seasonstats_sheet_id() -> str:
-    """Primary Google Sheets document id.
-
-    Convention: we default to PROJECTIONS_SHEET_ID so a single Render env var can power
-    projections + seasonstats + teams seasonstats (different worksheets in the same doc).
-    """
-    return (os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('SEASONSTATS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-
-
 @main_bp.route('/api/odds/history/<int:game_id>')
 def api_odds_history(game_id: int):
     """Return ML history time series for both teams for a given game id.
 
-    Data source: Google Sheets worksheet (default Sheet1) with columns like:
-      Timestamp, gameId, Team (abbrev), ML
+    Data source: Supabase odds_history table (primary), Google Sheets worksheet (fallback).
     """
-    sheet_id = (os.getenv('STARTED_OVERRIDES_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
-    worksheet = (os.getenv('STARTED_OVERRIDES_WORKSHEET') or 'Sheet1').strip()
-    if not sheet_id:
-        j = jsonify({'error': 'missing_sheet_id', 'hint': 'Set PROJECTIONS_SHEET_ID (or STARTED_OVERRIDES_SHEET_ID)'})
-        try:
-            j.headers['Cache-Control'] = 'no-store'
-        except Exception:
-            pass
-        return j, 500
-
     # Team colors from Teams.csv
     color_by_team: Dict[str, str] = {}
     try:
@@ -1014,150 +1830,45 @@ def api_odds_history(game_id: int):
     except Exception:
         color_by_team = {}
 
-    try:
-        rows = _load_sheet_rows_cached(sheet_id, worksheet)
-    except Exception as e:
-        msg = str(e or '')
-        code = 'odds_history_load_failed'
-        if 'Missing Google credentials' in msg:
-            code = 'missing_google_credentials'
-        elif 'Invalid GOOGLE_SERVICE_ACCOUNT' in msg or 'Invalid Google service account JSON' in msg:
-            code = 'invalid_google_credentials'
-        elif 'SpreadsheetNotFound' in msg:
-            code = 'sheet_not_found_or_no_access'
-        elif 'WorksheetNotFound' in msg:
-            code = 'worksheet_not_found'
-        j = jsonify({'error': code, 'hint': 'Check GOOGLE_SERVICE_ACCOUNT_JSON_* and sheet sharing', 'sheet_id': sheet_id, 'worksheet': worksheet})
+    # Try Supabase first
+    sb_rows = _sb_read("odds_history", filters={"game_id": f"eq.{int(game_id)}"})
+    if sb_rows is not None and len(sb_rows) > 0:
+        series: Dict[str, Dict[str, float]] = {}
+        order: Dict[str, List[str]] = {}
+        for r in sb_rows:
+            ts_s = str(r.get('timestamp') or '').strip()
+            if not ts_s:
+                continue
+            team_s = str(r.get('team') or '').strip().upper()
+            if not team_s:
+                continue
+            ml = r.get('ml')
+            if ml is None:
+                continue
+            try:
+                ml = float(ml)
+            except Exception:
+                continue
+            series.setdefault(team_s, {})[ts_s] = ml
+            order.setdefault(team_s, []).append(ts_s)
+        teams_out: List[Dict[str, Any]] = []
+        for team_s, ts_map in series.items():
+            uniq_ts = list(dict.fromkeys(order.get(team_s, [])))
+            try:
+                uniq_ts.sort()
+            except Exception:
+                pass
+            points = [{'t': ts, 'ml': ts_map[ts], 'winProp': None} for ts in uniq_ts if ts in ts_map]
+            teams_out.append({'abbrev': team_s, 'color': color_by_team.get(team_s) or None, 'points': points})
+        j = jsonify({'gameId': int(game_id), 'teams': teams_out})
         try:
             j.headers['Cache-Control'] = 'no-store'
         except Exception:
             pass
-        return j, 500
+        return j
 
-    def norm_row(r: Dict[str, Any]) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        for k, v in (r or {}).items():
-            try:
-                kk = str(k).strip().lower()
-            except Exception:
-                continue
-            out[kk] = v
-        return out
-
-    def pick(rn: Dict[str, Any], keys: List[str]) -> Any:
-        for k in keys:
-            if k in rn:
-                return rn.get(k)
-        return None
-
-    def parse_int(v: Any) -> Optional[int]:
-        if v is None:
-            return None
-        try:
-            s = str(v).strip()
-            if not s:
-                return None
-            return int(s)
-        except Exception:
-            return None
-
-    def parse_float(v: Any) -> Optional[float]:
-        if v is None:
-            return None
-        try:
-            s = str(v).strip()
-            if not s:
-                return None
-            # Sheets often contain percent strings like "52.4%".
-            s = s.replace('%', '').strip()
-            # Handle decimal comma locales: "52,3" => 52.3
-            if ',' in s and '.' not in s:
-                s = s.replace(',', '.')
-            else:
-                s = s.replace(',', '')
-            return float(s)
-        except Exception:
-            return None
-
-    want_debug = str(request.args.get('debug', '')).strip() in ('1', 'true', 'yes', 'y')
-
-    series: Dict[str, Dict[str, float]] = {}  # team -> {timestamp -> ml}
-    win_series: Dict[str, Dict[str, float]] = {}  # team -> {timestamp -> winProb (0..1)}
-    order: Dict[str, List[str]] = {}          # team -> ordered timestamps (for stable ordering)
-
-    debug_sample_raw: Optional[Dict[str, Any]] = None
-    debug_sample_norm: Optional[Dict[str, Any]] = None
-    for r in rows:
-        rn = norm_row(r)
-        # Compact key map to handle header variations like "Win Prop" vs "Win_Prop".
-        try:
-            import re as _re
-            rn_compact = {_re.sub(r'[^a-z0-9]+', '', str(k)): v for k, v in rn.items()}
-        except Exception:
-            rn_compact = {}
-        gid = parse_int(pick(rn, ['gameid', 'game_id', 'gamepk', 'game', 'id']))
-        if gid != int(game_id):
-            continue
-        ts = pick(rn, ['timestamp', 'time', 'datetime'])
-        ts_s = (str(ts).strip() if ts is not None else '')
-        if not ts_s:
-            continue
-        team = pick(rn, ['team (abbrev)', 'team', 'abbrev', 'team_abbrev'])
-        team_s = (str(team).strip().upper() if team is not None else '')
-        if not team_s:
-            continue
-
-        if want_debug and debug_sample_raw is None:
-            try:
-                debug_sample_raw = dict(r)
-                debug_sample_norm = dict(rn)
-            except Exception:
-                debug_sample_raw = None
-                debug_sample_norm = None
-        ml = parse_float(pick(rn, ['ml', 'moneyline', 'odds', 'line']))
-        if ml is None:
-            continue
-        series.setdefault(team_s, {})[ts_s] = ml
-        # Optional Win_Prop from sheet. Normalize to 0..1 (accept 0..1 or 0..100).
-        wp_raw = pick(rn, ['win_prop', 'win prop', 'winprop', 'win probability', 'win_prob', 'winprobability'])
-        if wp_raw is None:
-            wp_raw = rn_compact.get('winprop')
-        wp = parse_float(wp_raw)
-        if wp is not None:
-            try:
-                if wp > 1.5:
-                    wp = wp / 100.0
-                if 0.0 <= wp <= 1.0:
-                    win_series.setdefault(team_s, {})[ts_s] = wp
-            except Exception:
-                pass
-        order.setdefault(team_s, []).append(ts_s)
-
-    teams_out: List[Dict[str, Any]] = []
-    for team_s, ts_map in series.items():
-        # Keep stable order but sort timestamps lexically (ISO timestamps sort correctly).
-        uniq_ts = list(dict.fromkeys(order.get(team_s, [])))
-        try:
-            uniq_ts.sort()
-        except Exception:
-            pass
-        wp_map = win_series.get(team_s) or {}
-        points = [{'t': ts, 'ml': ts_map[ts], 'winProp': wp_map.get(ts)} for ts in uniq_ts if ts in ts_map]
-        teams_out.append({
-            'abbrev': team_s,
-            'color': color_by_team.get(team_s) or None,
-            'points': points,
-        })
-
-    payload: Dict[str, Any] = {'gameId': int(game_id), 'teams': teams_out}
-    if want_debug:
-        payload['debug'] = {
-            'sample_row_keys': sorted(list((debug_sample_raw or {}).keys())),
-            'sample_row': debug_sample_raw,
-            'sample_row_norm_keys': sorted(list((debug_sample_norm or {}).keys())),
-            'sample_row_norm': debug_sample_norm,
-        }
-    j = jsonify(payload)
+    # No odds data available for this game.
+    j = jsonify({'gameId': int(game_id), 'teams': []})
     try:
         j.headers['Cache-Control'] = 'no-store'
     except Exception:
@@ -1169,15 +1880,14 @@ def api_odds_history(game_id: int):
 def api_lineups_all():
     """Return lineup data used by the projections lineup selector.
 
-    Source is Google Sheets (see _load_lineups_all()).
+    Source is Supabase (preferred) or Google Sheets fallback.
     """
-    # If sheet id is not configured, fail loudly so the browser/dev logs show a clear signal.
+    # If neither Supabase nor sheet id is configured, fail loudly.
     sheet_id = (os.getenv('LINEUPS_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
-    worksheet = (os.getenv('LINEUPS_WORKSHEET') or 'Sheets2').strip()
-    if not sheet_id:
+    if not _SUPABASE_OK and not sheet_id:
         j = jsonify({
             'error': 'missing_sheet_id',
-            'hint': 'Set LINEUPS_SHEET_ID or PROJECTIONS_SHEET_ID',
+            'hint': 'Set LINEUPS_SHEET_ID or PROJECTIONS_SHEET_ID (or configure Supabase)',
         })
         try:
             j.headers['Cache-Control'] = 'no-store'
@@ -1224,63 +1934,18 @@ def api_lineups_all():
 
 @main_bp.route('/api/player-projections/sheets')
 def api_player_projections_sheets():
-    """Fetch player projections from Google Sheets (Sheets3).
+    """Fetch player projections from Supabase (falls back to CSV).
     Returns: { playerId: { PlayerID, Position, Age, Rookie, EVO, EVD, PP, SH, GSAx, ... }, ... }
     """
-    sheet_id = (os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-    worksheet = (os.getenv('PROJECTIONS_WORKSHEET') or 'Sheets3').strip()
-    if not sheet_id:
-        return jsonify({'error': 'missing_sheet_id', 'hint': 'Set PROJECTIONS_SHEET_ID env var'}), 500
-    
+    data = _load_player_projections_from_sheets()
+    # Convert int keys to str for JSON
+    out = {str(k): v for k, v in data.items()}
+    j = jsonify(out)
     try:
-        import gspread  # type: ignore
-        from google.oauth2.service_account import Credentials  # type: ignore
+        j.headers['Cache-Control'] = 'no-store'
     except Exception:
-        return jsonify({'error': 'gspread_unavailable', 'hint': 'Install gspread and google-auth'}), 500
-    
-    try:
-        info = _load_google_service_account_info_from_env()
-        scopes = [
-            'https://www.googleapis.com/auth/spreadsheets.readonly',
-            'https://www.googleapis.com/auth/drive.readonly',
-        ]
-        creds = Credentials.from_service_account_info(info, scopes=scopes)
-        gc = gspread.authorize(creds)
-        sh = gc.open_by_key(sheet_id)
-        ws = sh.worksheet(worksheet)
-        # Use numericise_ignore to preserve comma decimal separators (like RAPM does)
-        try:
-            rows = ws.get_all_records(numericise_ignore=['all']) or []
-        except Exception:
-            rows = ws.get_all_records() or []
-        
-        # Build map keyed by PlayerID
-        # Values are kept as strings with comma decimal separators for proper parsing
-        out = {}
-        for r in rows:
-            try:
-                pid_raw = r.get('PlayerID') or r.get('playerId') or r.get('player_id')
-                if pid_raw is None:
-                    continue
-                pid = _safe_int(pid_raw)
-                if not pid or pid <= 0:
-                    # tolerate cases like '8479979.0' or '8 479 979'
-                    pid = _safe_int(str(pid_raw).replace(' ', '').replace('\u00a0', '').strip())
-                if not pid or pid <= 0:
-                    continue
-                # Return raw row - frontend will parse with _parse_locale_float equivalent
-                out[pid] = r
-            except Exception:
-                continue
-        
-        j = jsonify(out)
-        try:
-            j.headers['Cache-Control'] = 'no-store'
-        except Exception:
-            pass
-        return j
-    except Exception as e:
-        return jsonify({'error': 'fetch_failed', 'hint': str(e)}), 500
+        pass
+    return j
 
 
 @main_bp.route('/api/projections/games')
@@ -2014,27 +2679,10 @@ def api_rapm_player(player_id: int):
         season_int = None
 
     rows: List[Dict[str, Any]]
-    source = 'static'
-    if season_int == 20252026:
-        sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-        worksheet = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
-        if not sheet_id:
-            # Strictly requested to use Sheets4 for 20252026; return a helpful error.
-            return jsonify({
-                'error': 'missing_sheet_id',
-                'hint': 'Set RAPM_SHEET_ID (or PROJECTIONS_SHEET_ID) and share the sheet with the service account',
-                'worksheet': worksheet,
-            }), 500
-        try:
-            rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='RAPM_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-            source = 'sheets'
-        except Exception:
-            # Fall back to local static CSV if Sheets read fails.
-            rows = _load_rapm_static_csv()
-            source = 'static'
-    else:
-        # Static CSVs can be large across seasons; stream+cache only this player's rows.
-        rows = _load_rapm_player_rows_static(pid, season_int)
+    source = 'supabase'
+    # Supabase-backed loaders handle all seasons.
+    # Falls back to CSV internally if Supabase is unavailable.
+    rows = _load_rapm_player_rows_static(pid, season_int)
     out: List[Dict[str, Any]] = []
     for r in rows:
         try:
@@ -2103,7 +2751,7 @@ def api_rapm_player(player_id: int):
 
 @main_bp.route('/api/context/player/<int:player_id>')
 def api_context_player(player_id: int):
-    """Return context rows from app/static/rapm/context.csv (or Sheets5 for 20252026) for a player.
+    """Return context rows from Supabase / app/static/rapm/context.csv for a player.
 
     Optional query params:
       season=20252026
@@ -2118,25 +2766,9 @@ def api_context_player(player_id: int):
         season_int = None
 
     rows: List[Dict[str, Any]]
-    source = 'static'
-    if season_int == 20252026:
-        sheet_id = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-        worksheet = (os.getenv('CONTEXT_WORKSHEET') or 'Sheets5').strip()
-        if not sheet_id:
-            return jsonify({
-                'error': 'missing_sheet_id',
-                'hint': 'Set RAPM_SHEET_ID (or PROJECTIONS_SHEET_ID) and share the sheet with the service account',
-                'worksheet': worksheet,
-            }), 500
-        try:
-            rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='CONTEXT_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-            source = 'sheets'
-        except Exception:
-            rows = _load_context_static_csv()
-            source = 'static'
-    else:
-        # Static CSVs can be large across seasons; stream+cache only this player's rows.
-        rows = _load_context_player_rows_static(pid, season_int)
+    source = 'supabase'
+    # Supabase-backed loaders handle all seasons.
+    rows = _load_context_player_rows_static(pid, season_int)
 
     out: List[Dict[str, Any]] = []
     for r in rows:
@@ -2233,61 +2865,12 @@ def api_skaters_card():
     if metric_ids_raw:
         metric_ids = [s.strip() for s in metric_ids_raw.split(',') if s and s.strip()]
 
-    # SeasonStats source:
-    # - season scope:
-    #   - 20252026: Sheets6 (primary)
-    #   - other seasons: app/static/nhl_seasonstats.csv
-    # - career scope:
-    #   - all seasons: app/static/nhl_seasonstats.csv, with 20252026 replaced by Sheets6 when available
-    rows_iter: Iterable[Dict[str, Any]]
-    source = 'none'
-    sheet_id = _seasonstats_sheet_id()
-    worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
-
-    sheet_rows: Optional[List[Dict[str, Any]]] = None
-    sheet_ok = False
-    if sheet_id:
-        try:
-            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-            sheet_ok = True
-        except Exception:
-            sheet_rows = None
-            sheet_ok = False
-
-    if scope == 'career':
-        # Stream static seasons, optionally replacing 20252026 with Sheets6.
-        if sheet_ok and sheet_rows is not None:
-            source = 'static+sheets'
-
-            def _it() -> Iterator[Dict[str, Any]]:
-                yield from _iter_seasonstats_static_rows(skip_season=20252026)
-                for rr in sheet_rows or []:
-                    if isinstance(rr, dict):
-                        yield rr
-
-            rows_iter = _it()
-        else:
-            source = 'static'
-            rows_iter = _iter_seasonstats_static_rows()
-    else:
-        # Season scope: prefer Sheets6 only for 20252026; otherwise stream just the requested season.
-        if season_int == 20252026 and sheet_ok and sheet_rows is not None:
-            source = 'sheets'
-            rows_iter = sheet_rows
-        else:
-            source = 'static'
-            rows_iter = _iter_seasonstats_static_rows(season=season_int)
-
     # Aggregate by player under the requested filters (cached).
     agg, pos_group_by_pid = _build_seasonstats_agg(
         scope=scope,
         season_int=season_int,
         season_state=season_state,
         strength_state=strength_state,
-        sheet_id=sheet_id,
-        worksheet=worksheet,
-        sheet_ok=sheet_ok,
-        sheet_rows=sheet_rows,
     )
 
     # Apply minimum requirements (affects both the returned player and percentile pools).
@@ -2413,19 +2996,7 @@ def api_skaters_card():
     needs_ctx = any((mid in {'Context|QoT', 'Context|QoC', 'Context|ZS'}) for mid in metric_ids)
 
     if needs_rapm:
-        rapm_rows: List[Dict[str, Any]] = []
-        if season_int == 20252026:
-            sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-            worksheet = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
-            if sheet_id:
-                try:
-                    rapm_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='RAPM_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-                except Exception:
-                    rapm_rows = _load_rapm_static_csv()
-            else:
-                rapm_rows = _load_rapm_static_csv()
-        else:
-            rapm_rows = _load_rapm_player_rows_static(int(pid), season_int)
+        rapm_rows = _load_rapm_player_rows_static(int(pid), season_int)
 
         # Filter to the requested player/season and pick the requested strength+rates.
         candidates: List[Dict[str, Any]] = []
@@ -2455,19 +3026,7 @@ def api_skaters_card():
             rapm_row = candidates[0]
 
     if needs_ctx:
-        ctx_rows: List[Dict[str, Any]] = []
-        if season_int == 20252026:
-            sheet_id = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-            worksheet = (os.getenv('CONTEXT_WORKSHEET') or 'Sheets5').strip()
-            if sheet_id:
-                try:
-                    ctx_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='CONTEXT_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-                except Exception:
-                    ctx_rows = _load_context_static_csv()
-            else:
-                ctx_rows = _load_context_static_csv()
-        else:
-            ctx_rows = _load_context_player_rows_static(int(pid), season_int)
+        ctx_rows = _load_context_player_rows_static(int(pid), season_int)
 
         candidates2: List[Dict[str, Any]] = []
         for r in ctx_rows:
@@ -2868,7 +3427,7 @@ def api_skaters_card():
             mine = {mid: _compute_metric(mid, empty_v, int(pid)) for mid in metric_ids}
             derived[int(pid)] = mine
         else:
-            return jsonify({'error': 'not_found', 'playerId': int(pid), 'source': source}), 404
+            return jsonify({'error': 'not_found', 'playerId': int(pid), 'source': 'supabase'}), 404
 
     out_metrics: Dict[str, Any] = {}
     my_group = pos_group_by_pid.get(int(pid)) or 'F'
@@ -2905,7 +3464,7 @@ def api_skaters_card():
         'rates': rates,
         'minGP': int(min_gp),
         'minTOI': float(min_toi),
-        'source': source,
+        'source': 'supabase',
         'seasonStatsMissing': bool(seasonstats_missing),
         'labels': {
             'Attempts': label_attempts,
@@ -2988,27 +3547,11 @@ def api_goalies_card():
         defs0 = _load_card_metrics_defs('goalies')
         metric_ids = [str(m.get('id')) for m in (defs0.get('metrics') or []) if isinstance(m, dict) and m.get('id')]
 
-    sheet_id = _seasonstats_sheet_id()
-    worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
-    sheet_rows: Optional[List[Dict[str, Any]]] = None
-    sheet_ok = False
-    if sheet_id:
-        try:
-            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-            sheet_ok = True
-        except Exception:
-            sheet_rows = None
-            sheet_ok = False
-
     agg, _pos_group_by_pid = _build_goalies_seasonstats_agg(
         scope=scope,
         season_int=season_int,
         season_state=season_state,
         strength_state=strength_state,
-        sheet_id=sheet_id,
-        worksheet=worksheet,
-        sheet_ok=sheet_ok,
-        sheet_rows=sheet_rows,
     )
 
     if min_gp > 0 or min_toi > 0:
@@ -3457,9 +4000,7 @@ def _team_id_by_abbrev() -> Dict[str, int]:
 def _build_team_base_stats(*, scope: str, season_int: int, season_state: str, strength_state: str = '5v5', debug_meta: Optional[Dict[str, Any]] = None) -> Dict[str, Dict[str, Any]]:
     """Return per-team base totals keyed by team abbrev.
 
-        For scope='season', prefers our derived team SeasonStats:
-            - seasons != 20252026: app/static/nhl_seasonstats_teams.csv
-            - season 20252026: Google Sheets worksheet (default Sheets7)
+        For scope='season', prefers our derived team SeasonStats from Supabase / CSV.
 
         For scope='total', falls back to NHL stats REST aggregates.
     """
@@ -3486,73 +4027,21 @@ def _build_team_base_stats(*, scope: str, season_int: int, season_state: str, st
         except Exception:
             return 0.0
 
-    # Season scope: prefer derived team SeasonStats (static CSV + optional Sheets7 for 20252026).
-    # If derived SeasonStats aren't available (e.g., Sheets7 not readable on Render and no static CSV for that season),
-    # we fall back to NHL stats REST season aggregates below.
+    # Season scope: prefer derived team SeasonStats from Supabase (all seasons).
+    # Falls back to CSV if Supabase is unavailable.
     if scope_norm == 'season':
-        # Prefer explicit TeamSeasonStats sheet id, else default to the primary sheet doc id.
-        # This lets Render rely on PROJECTIONS_SHEET_ID alone (same doc, different worksheets).
-        sheet_id = (os.getenv('TEAMSEASONSTATS_SHEET_ID') or _seasonstats_sheet_id()).strip()
-        worksheet = (os.getenv('TEAMSEASONSTATS_WORKSHEET') or 'Sheets7').strip()
-
         if isinstance(debug_meta, dict):
             debug_meta.update({
                 'scope': scope_norm,
                 'season': int(season_int or 0),
                 'seasonState': ss_norm,
                 'strengthState': st_norm,
-                'teamSeasonStatsSheetId': sheet_id,
-                'teamSeasonStatsWorksheet': worksheet,
             })
 
-        sheet_rows: Optional[List[Dict[str, Any]]] = None
-        sheet_ok = False
-        sheet_err: Optional[Exception] = None
-        if sheet_id:
-            try:
-                sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='TEAMSEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-                sheet_ok = True
-            except Exception as e:
-                sheet_rows = None
-                sheet_ok = False
-                sheet_err = e
-        else:
-            sheet_err = None
-
-        if isinstance(debug_meta, dict):
-            debug_meta['teamSeasonStatsSheetAttempted'] = bool(sheet_id)
-            debug_meta['teamSeasonStatsSheetOk'] = bool(sheet_ok)
-            debug_meta['teamSeasonStatsSheetRowsCount'] = int(len(sheet_rows or []))
-
         rows_iter: Iterable[Dict[str, Any]]
-        if int(season_int or 0) == 20252026 and sheet_ok and sheet_rows is not None:
-            rows_iter = sheet_rows
-            if isinstance(debug_meta, dict):
-                debug_meta['teamSeasonStatsSource'] = 'sheets'
-        else:
-            rows_iter = _iter_teamseasonstats_static_rows(season=int(season_int))
-            if isinstance(debug_meta, dict):
-                debug_meta['teamSeasonStatsSource'] = 'static_csv'
-
-        # If Sheets7 was supposed to be used but isn't readable, capture a reason for debugging.
-        if isinstance(debug_meta, dict) and int(season_int or 0) == 20252026:
-            if not sheet_id:
-                debug_meta['teamSeasonStatsSheetErrorCode'] = 'missing_sheet_id'
-            elif not sheet_ok:
-                code = 'sheet_load_failed'
-                msg = str(sheet_err or '')
-                if 'Missing Google credentials' in msg:
-                    code = 'missing_google_credentials'
-                elif 'Invalid GOOGLE_SERVICE_ACCOUNT' in msg or 'Invalid Google service account JSON' in msg:
-                    code = 'invalid_google_credentials'
-                elif 'SpreadsheetNotFound' in msg:
-                    code = 'sheet_not_found_or_no_access'
-                elif 'WorksheetNotFound' in msg:
-                    code = 'worksheet_not_found'
-                debug_meta['teamSeasonStatsSheetErrorCode'] = code
-                msg2 = str(sheet_err or '')
-                if msg2:
-                    debug_meta['teamSeasonStatsSheetError'] = msg2[:400]
+        rows_iter = _iter_teamseasonstats_static_rows(season=int(season_int))
+        if isinstance(debug_meta, dict):
+            debug_meta['teamSeasonStatsSource'] = 'supabase'
 
         def _ss_row(v: Any) -> str:
             raw = str(v or '').strip().lower()
@@ -4599,25 +5088,9 @@ def api_goalies_series():
     if xg_model not in {'xG_S', 'xG_F', 'xG_F2'}:
         xg_model = 'xG_F'
 
-    sheet_id = _seasonstats_sheet_id()
-    worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
-    sheet_rows: Optional[List[Dict[str, Any]]] = None
-    sheet_ok = False
-    if sheet_id:
-        try:
-            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-            sheet_ok = True
-        except Exception:
-            sheet_rows = None
-            sheet_ok = False
-
     by_pid_season, league_sa_ga = _build_goalies_career_season_matrix(
         season_state=season_state,
         strength_state=strength_state,
-        sheet_id=sheet_id,
-        worksheet=worksheet,
-        sheet_ok=sheet_ok,
-        sheet_rows=sheet_rows,
     )
 
     seasons = by_pid_season.get(int(pid)) or {}
@@ -4903,29 +5376,12 @@ def api_skaters_table():
             except Exception:
                 continue
 
-    # SeasonStats source selection (same as Card).
-    sheet_id = _seasonstats_sheet_id()
-    worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
-    sheet_rows: Optional[List[Dict[str, Any]]] = None
-    sheet_ok = False
-    if sheet_id:
-        try:
-            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-            sheet_ok = True
-        except Exception:
-            sheet_rows = None
-            sheet_ok = False
-
     # Aggregate by player under the requested filters (cached).
     agg, _pos_group_by_pid = _build_seasonstats_agg(
         scope=scope,
         season_int=season_int,
         season_state=season_state,
         strength_state=strength_state,
-        sheet_id=sheet_id,
-        worksheet=worksheet,
-        sheet_ok=sheet_ok,
-        sheet_rows=sheet_rows,
     )
 
     # Apply min requirements.
@@ -4964,20 +5420,7 @@ def api_skaters_table():
 
     rapm_by_pid: Dict[int, List[Dict[str, Any]]] = {}
     if needs_rapm:
-        rapm_rows: List[Dict[str, Any]] = []
-        if season_int == 20252026:
-            rapm_sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-            rapm_ws = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
-            if rapm_sheet_id:
-                try:
-                    rapm_rows = _load_sheet_rows_cached(rapm_sheet_id, rapm_ws, ttl_env='RAPM_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-                except Exception:
-                    rapm_rows = _load_rapm_static_csv()
-            else:
-                rapm_rows = _load_rapm_static_csv()
-        else:
-            # Load whole CSV (TTL cached), then filter by season.
-            rapm_rows = _load_rapm_static_csv()
+        rapm_rows = _load_rapm_static_csv()
 
         for r in rapm_rows:
             try:
@@ -4998,19 +5441,7 @@ def api_skaters_table():
 
     ctx_by_pid: Dict[int, List[Dict[str, Any]]] = {}
     if needs_ctx:
-        ctx_rows: List[Dict[str, Any]] = []
-        if season_int == 20252026:
-            ctx_sheet_id = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-            ctx_ws = (os.getenv('CONTEXT_WORKSHEET') or 'Sheets5').strip()
-            if ctx_sheet_id:
-                try:
-                    ctx_rows = _load_sheet_rows_cached(ctx_sheet_id, ctx_ws, ttl_env='CONTEXT_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-                except Exception:
-                    ctx_rows = _load_context_static_csv()
-            else:
-                ctx_rows = _load_context_static_csv()
-        else:
-            ctx_rows = _load_context_static_csv()
+        ctx_rows = _load_context_static_csv()
 
         for r in ctx_rows:
             try:
@@ -5444,27 +5875,11 @@ def api_goalies_table():
         defs0 = _load_card_metrics_defs('goalies')
         metric_ids = [str(m.get('id')) for m in (defs0.get('metrics') or []) if isinstance(m, dict) and m.get('id')]
 
-    sheet_id = _seasonstats_sheet_id()
-    worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
-    sheet_rows: Optional[List[Dict[str, Any]]] = None
-    sheet_ok = False
-    if sheet_id:
-        try:
-            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-            sheet_ok = True
-        except Exception:
-            sheet_rows = None
-            sheet_ok = False
-
     agg, _pos_group_by_pid = _build_goalies_seasonstats_agg(
         scope=scope,
         season_int=season_int,
         season_state=season_state,
         strength_state=strength_state,
-        sheet_id=sheet_id,
-        worksheet=worksheet,
-        sheet_ok=sheet_ok,
-        sheet_rows=sheet_rows,
     )
 
     if min_gp > 0 or min_toi > 0:
@@ -5831,27 +6246,11 @@ def api_skaters_scatter():
     if str(x_metric_id).startswith('Edge|') or str(y_metric_id).startswith('Edge|'):
         return jsonify({'error': 'edge_not_supported'}), 400
 
-    sheet_id = _seasonstats_sheet_id()
-    worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
-    sheet_rows: Optional[List[Dict[str, Any]]] = None
-    sheet_ok = False
-    if sheet_id:
-        try:
-            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-            sheet_ok = True
-        except Exception:
-            sheet_rows = None
-            sheet_ok = False
-
     agg, _pos_group_by_pid = _build_seasonstats_agg(
         scope=scope,
         season_int=season_int,
         season_state=season_state,
         strength_state=strength_state,
-        sheet_id=sheet_id,
-        worksheet=worksheet,
-        sheet_ok=sheet_ok,
-        sheet_rows=sheet_rows,
     )
 
     # Apply minimum requirements.
@@ -5928,19 +6327,7 @@ def api_skaters_scatter():
     needs_ctx = (x_metric_id in {'Context|QoT', 'Context|QoC', 'Context|ZS'}) or (y_metric_id in {'Context|QoT', 'Context|QoC', 'Context|ZS'})
 
     if needs_rapm:
-        rapm_rows: List[Dict[str, Any]] = []
-        if season_int == 20252026:
-            rid = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-            rws = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
-            if rid:
-                try:
-                    rapm_rows = _load_sheet_rows_cached(rid, rws, ttl_env='RAPM_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60) or []
-                except Exception:
-                    rapm_rows = _load_rapm_static_csv() or []
-            else:
-                rapm_rows = _load_rapm_static_csv() or []
-        else:
-            rapm_rows = _load_rapm_static_csv() or []
+        rapm_rows = _load_rapm_static_csv() or []
 
         for r in rapm_rows:
             try:
@@ -5959,19 +6346,7 @@ def api_skaters_scatter():
                 continue
 
     if needs_ctx:
-        ctx_rows: List[Dict[str, Any]] = []
-        if season_int == 20252026:
-            cid = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-            cws = (os.getenv('CONTEXT_WORKSHEET') or 'Sheets5').strip()
-            if cid:
-                try:
-                    ctx_rows = _load_sheet_rows_cached(cid, cws, ttl_env='CONTEXT_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60) or []
-                except Exception:
-                    ctx_rows = _load_context_static_csv() or []
-            else:
-                ctx_rows = _load_context_static_csv() or []
-        else:
-            ctx_rows = _load_context_static_csv() or []
+        ctx_rows = _load_context_static_csv() or []
 
         for r in ctx_rows:
             try:
@@ -6290,27 +6665,11 @@ def api_goalies_scatter():
     if not x_metric_id or not y_metric_id:
         return jsonify({'error': 'missing_metric', 'hint': 'Provide xMetricId and yMetricId'}), 400
 
-    sheet_id = _seasonstats_sheet_id()
-    worksheet = (os.getenv('SEASONSTATS_WORKSHEET') or 'Sheets6').strip()
-    sheet_rows: Optional[List[Dict[str, Any]]] = None
-    sheet_ok = False
-    if sheet_id:
-        try:
-            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='SEASONSTATS_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-            sheet_ok = True
-        except Exception:
-            sheet_rows = None
-            sheet_ok = False
-
     agg, _pos_group_by_pid = _build_goalies_seasonstats_agg(
         scope=scope,
         season_int=season_int,
         season_state=season_state,
         strength_state=strength_state,
-        sheet_id=sheet_id,
-        worksheet=worksheet,
-        sheet_ok=sheet_ok,
-        sheet_rows=sheet_rows,
     )
 
     if min_gp > 0 or min_toi > 0:
@@ -6637,43 +6996,11 @@ def api_rapm_scale():
     MIN_PP = 40.0
     MIN_SH = 40.0
 
-    # Load rows (Sheets4 for 20252026; else static)
-    rows: List[Dict[str, Any]] = []
-    source = 'static'
-    if season_int == 20252026:
-        sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
-        worksheet = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
-        if sheet_id:
-            try:
-                rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='RAPM_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-                source = 'sheets'
-            except Exception:
-                rows = _load_rapm_static_csv()
-                source = 'static'
-        else:
-            rows = _load_rapm_static_csv()
-            source = 'static'
-    else:
-        rows = _load_rapm_static_csv()
+    # Load rows (Supabase → CSV)
+    rows = _load_rapm_static_csv()
 
-    # Load context minutes (Sheets5 for 20252026; else static context.csv)
-    ctx_rows: List[Dict[str, Any]] = []
-    ctx_source = 'static'
-    if season_int == 20252026:
-        sheet_id = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-        worksheet = (os.getenv('CONTEXT_WORKSHEET') or 'Sheets5').strip()
-        if sheet_id:
-            try:
-                ctx_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='CONTEXT_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60)
-                ctx_source = 'sheets'
-            except Exception:
-                ctx_rows = _load_context_static_csv()
-                ctx_source = 'static'
-        else:
-            ctx_rows = _load_context_static_csv()
-            ctx_source = 'static'
-    else:
-        ctx_rows = _load_context_static_csv()
+    # Load context minutes (Supabase → CSV)
+    ctx_rows = _load_context_static_csv()
 
     minutes_by_pid_strength: Dict[Tuple[int, str], float] = {}
     for r in ctx_rows:
@@ -6799,8 +7126,8 @@ def api_rapm_scale():
         'season': season_int,
         'rates': _rt(rates),
         'metric': metric,
-        'source': source,
-        'contextSource': ctx_source,
+        'source': 'supabase',
+        'contextSource': 'supabase',
         'thresholds': {'fivev5': MIN_5V5, 'pp': MIN_PP, 'sh': MIN_SH},
         'fivev5': _minmax(five_vals),
         'pp': _minmax(pp_vals),
@@ -7027,28 +7354,11 @@ def api_rapm_career():
         league = None
 
     if league is None:
-        # Load RAPM rows: static + (optional) replace 20252026 with Sheets4.
+        # Load RAPM rows from Supabase-backed static loader.
         rapm_rows = _load_rapm_static_csv() or []
-        try:
-            sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-            worksheet = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
-            if sheet_id:
-                sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='RAPM_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60) or []
-                # Keep only rows that are NOT 20252026 from static (any format), then append sheets.
-                rapm_rows = [r for r in rapm_rows if _season_int(r.get('Season')) != 20252026] + sheet_rows
-        except Exception:
-            pass
 
-        # Load context rows: static + (optional) replace 20252026 with Sheets5.
+        # Load context rows from Supabase-backed static loader.
         ctx_rows = _load_context_static_csv() or []
-        try:
-            sheet_id = (os.getenv('CONTEXT_SHEET_ID') or os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or os.getenv('GOOGLE_SHEETS_ID') or '').strip()
-            worksheet = (os.getenv('CONTEXT_WORKSHEET') or 'Sheets5').strip()
-            if sheet_id:
-                sheet_ctx = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='CONTEXT_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60) or []
-                ctx_rows = [r for r in ctx_rows if _season_int(r.get('Season')) != 20252026] + sheet_ctx
-        except Exception:
-            pass
 
         minutes_by_season_pid_strength: Dict[Tuple[int, int, str], float] = {}
         for r in ctx_rows:
@@ -7247,17 +7557,8 @@ def api_rapm_career():
         except Exception:
             pass
 
-    # Pull this player's per-season series from RAPM rows
-    # For correctness and simplicity, re-read relevant player rows from sources.
+    # Pull this player's per-season series from RAPM rows.
     rapm_rows = _load_rapm_static_csv() or []
-    try:
-        sheet_id = (os.getenv('RAPM_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
-        worksheet = (os.getenv('RAPM_WORKSHEET') or 'Sheets4').strip()
-        if sheet_id:
-            sheet_rows = _load_sheet_rows_cached(sheet_id, worksheet, ttl_env='RAPM_SHEET_ROWS_CACHE_TTL_SECONDS', default_ttl=60) or []
-            rapm_rows = [r for r in rapm_rows if _season_int(r.get('Season')) != 20252026] + sheet_rows
-    except Exception:
-        pass
 
     cols = league.get('cols') or {}
     dist = league.get('dist') or {}
@@ -7490,55 +7791,73 @@ def api_rapm_career():
 
 @main_bp.route('/api/seasons/<team_code>')
 def api_seasons(team_code: str):
-    """Return seasons for a given team using NHL club-stats-season endpoint.
+    """Return seasons for a given team using stored team season stats first.
     Shape: [{ "season": 20242025, "gameTypes": ["2", "3"] }, ...]
     """
     team = (team_code or '').upper().strip()
     if not team:
         return jsonify([])
-    def _strip_parentheticals(s: Optional[str]) -> str:
-        if not s:
-            return ''
-        try:
-            return re.sub(r"\s*\([^)]*\)", '', s).strip()
-        except Exception:
-            return s or ''
 
+    def _season_state_to_game_type(v: Any) -> Optional[str]:
+        raw = str(v or '').strip().lower()
+        if raw in {'2', 'reg', 'regular', 'regularseason', 'regular_season'}:
+            return '2'
+        if raw in {'3', 'po', 'playoffs', 'playoff'}:
+            return '3'
+        return None
+
+    try:
+        season_map: Dict[int, set] = {}
+        for row in _iter_teamseasonstats_static_rows():
+            row_team = str(row.get('Team') or row.get('team') or '').strip().upper()
+            if row_team != team:
+                continue
+            season_i = _safe_int(row.get('Season') if 'Season' in row else row.get('season'))
+            if not season_i:
+                continue
+            game_type = _season_state_to_game_type(row.get('SeasonState') if 'SeasonState' in row else row.get('season_state'))
+            if not game_type:
+                continue
+            season_map.setdefault(int(season_i), set()).add(game_type)
+    except Exception:
+        pass
+
+    # Always supplement with NHL API to discover seasons not yet in our data.
     url = f'https://api-web.nhle.com/v1/club-stats-season/{team}'
     try:
         r = requests.get(url, timeout=20)
-        if r.status_code != 200:
-            return jsonify([])
-        data = r.json()
-        out = []
-        if isinstance(data, list):
-            for it in data:
-                if not isinstance(it, dict):
-                    continue
-                season_val = it.get('season')
-                gtypes = it.get('gameTypes')
-                try:
-                    season_int = int(season_val) if season_val is not None else None
-                except Exception:
-                    season_int = None
-                if season_int is None or not isinstance(gtypes, list):
-                    continue
-                # Normalize gameTypes to strings for UI compatibility
-                gts = [str(gt) for gt in gtypes if gt is not None]
-                out.append({ 'season': season_int, 'gameTypes': gts })
-        # Sort descending by season
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list):
+                for it in data:
+                    if not isinstance(it, dict):
+                        continue
+                    season_val = it.get('season')
+                    gtypes = it.get('gameTypes')
+                    try:
+                        s_int = int(season_val) if season_val is not None else None
+                    except Exception:
+                        s_int = None
+                    if s_int is None or not isinstance(gtypes, list):
+                        continue
+                    gts = {str(gt) for gt in gtypes if gt is not None}
+                    if s_int not in season_map:
+                        season_map[s_int] = gts
+                    else:
+                        season_map[s_int] |= gts
+    except Exception:
+        pass
+
+    if season_map:
+        out = [
+            {'season': season_i, 'gameTypes': sorted(list(game_types))}
+            for season_i, game_types in season_map.items()
+        ]
         out.sort(key=lambda x: x['season'], reverse=True)
         return jsonify(out)
-    except Exception:
-        return jsonify([])
 
-    def _strip_parentheticals(s: Optional[str]) -> str:
-        if not s:
-            return ''
-        try:
-            return re.sub(r"\s*\([^)]*\)", '', s).strip()
-        except Exception:
-            return s
+    return jsonify([])
+
 
 @main_bp.route('/api/standings/<int:season>')
 def api_standings(season: int):
@@ -7945,8 +8264,164 @@ def api_team_logo_svg(team_abbrev: str):
         return ('', 404)
 
 
+# ── Supabase read helpers & column maps ──────────────────────────
+
+def _sb_read(table: str, *, columns: str = "*",
+             filters: Optional[Dict[str, str]] = None,
+             col_map: Optional[Dict[str, str]] = None,
+             order: Optional[str] = None,
+             limit: int = 0) -> Optional[List[Dict[str, Any]]]:
+    """Read rows from Supabase REST API.  Returns *None* on any failure
+    so callers can fall back to CSV / Sheets transparently."""
+    if not _SUPABASE_OK:
+        return None
+    try:
+        sb = _sb_client()
+        PAGE = 1000
+        all_rows: List[Dict[str, Any]] = []
+        offset = 0
+        while True:
+            q = sb.table(table).select(columns).range(offset, offset + PAGE - 1)
+            if order:
+                q = q.order(order)
+            if filters:
+                for col, expr in filters.items():
+                    op, val = expr.split(".", 1)
+                    if op == 'in':
+                        val_list = [v.strip() for v in val.strip('()').split(',') if v.strip()]
+                        q = q.in_(col, val_list)
+                    else:
+                        q = getattr(q, op)(col, val)
+            batch = q.execute().data
+            all_rows.extend(batch)
+            if len(batch) < PAGE or (limit and len(all_rows) >= limit):
+                break
+            offset += PAGE
+        if limit:
+            all_rows = all_rows[:limit]
+        if col_map:
+            all_rows = [{col_map.get(k, k): v for k, v in r.items()} for r in all_rows]
+        return all_rows
+    except Exception:
+        return None
+
+
+_PLAYER_NAMES_CACHE: Dict[int, Tuple[float, Dict[int, str]]] = {}  # season -> (ts, {player_id: name})
+
+def _load_player_names_db(season: int) -> Dict[int, str]:
+    """Load player_id->name map from the players table for the given season."""
+    now = time.time()
+    cached = _PLAYER_NAMES_CACHE.get(season)
+    if cached and (now - cached[0]) < 21600:
+        return cached[1]
+    rows = _sb_read('players', columns='player_id,player',
+                     filters={'season': f'eq.{season}'})
+    out: Dict[int, str] = {}
+    if rows:
+        for r in rows:
+            pid = _safe_int(r.get('player_id'))
+            name = str(r.get('player') or '').strip()
+            if pid and name:
+                out[pid] = name
+    _PLAYER_NAMES_CACHE[season] = (now, out)
+    return out
+
+
+# Reverse column maps: Supabase snake_case → original CSV/Sheets column names
+_COL_MAP_TEAMS = {
+    "team": "Team", "team_id": "TeamID", "name": "Name",
+    "logo": "Logo", "color": "Color", "active": "Active",
+}
+_COL_MAP_LAST_DATES = {"season": "Season", "last_date": "Last_Date"}
+_COL_MAP_BOX_IDS = {
+    "x": "x", "y": "y", "box_id": "BoxID",
+    "box_id_rev": "BoxID_rev", "box_size": "Boxsize",
+}
+_COL_MAP_SEASON_STATS = {
+    "season": "Season", "season_state": "SeasonState",
+    "strength_state": "StrengthState", "player_id": "PlayerID",
+    "position": "Position", "gp": "GP", "plus_minus": "plusMinus",
+    "blocked_shots": "blockedShots", "toi": "TOI",
+    "i_goals": "iGoals", "assists1": "Assists1", "assists2": "Assists2",
+    "i_corsi": "iCorsi", "i_fenwick": "iFenwick", "i_shots": "iShots",
+    "ixg_f": "ixG_F", "ixg_s": "ixG_S", "ixg_f2": "ixG_F2",
+    "pim_taken": "PIM_taken", "pim_drawn": "PIM_drawn",
+    "hits": "Hits", "takeaways": "Takeaways", "giveaways": "Giveaways",
+    "so_goal": "SO_Goal", "so_attempt": "SO_Attempt",
+    "ca": "CA", "cf": "CF", "fa": "FA", "ff": "FF",
+    "sa": "SA", "sf": "SF", "ga": "GA", "gf": "GF",
+    "xga_f": "xGA_F", "xgf_f": "xGF_F", "xga_s": "xGA_S", "xgf_s": "xGF_S",
+    "xga_f2": "xGA_F2", "xgf_f2": "xGF_F2",
+    "pim_for": "PIM_for", "pim_against": "PIM_against",
+}
+_COL_MAP_SEASON_STATS_TEAMS = {
+    "season": "Season", "season_state": "SeasonState",
+    "strength_state": "StrengthState", "team": "Team",
+    "gp": "GP", "toi": "TOI",
+    "cf": "CF", "ca": "CA", "ff": "FF", "fa": "FA",
+    "sf": "SF", "sa": "SA", "gf": "GF", "ga": "GA",
+    "xgf_f": "xGF_F", "xga_f": "xGA_F", "xgf_s": "xGF_S", "xga_s": "xGA_S",
+    "xgf_f2": "xGF_F2", "xga_f2": "xGA_F2",
+    "pim_for": "PIM_for", "pim_against": "PIM_against",
+}
+_COL_MAP_PLAYER_PROJECTIONS = {
+    "player_id": "PlayerID", "position": "Position", "game_no": "Game_No",
+    "age": "Age", "rookie": "Rookie", "evo": "EVO", "evd": "EVD",
+    "pp": "PP", "sh": "SH", "gsax": "GSAx",
+}
+_COL_MAP_RAPM_CORE = {
+    "player_id": "PlayerID", "season": "Season",
+    "strength_state": "StrengthState", "rates_totals": "Rates_Totals",
+    "cf": "CF", "ca": "CA", "gf": "GF", "ga": "GA",
+    "xgf": "xGF", "xga": "xGA",
+    "pen_taken": "PEN_taken", "pen_drawn": "PEN_drawn",
+    "c_plusminus": "C_plusminus", "g_plusminus": "G_plusminus",
+    "xg_plusminus": "xG_plusminus", "pen_plusminus": "PEN_plusminus",
+    "alpha_cf": "Alpha_CF", "alpha_gf": "Alpha_GF",
+    "alpha_xgf": "Alpha_xGF", "alpha_pen": "Alpha_PEN",
+}
+_COL_MAP_RAPM_CONTEXT = {
+    "player_id": "PlayerID", "season": "Season",
+    "strength_state": "StrengthState", "minutes": "Minutes",
+    "qot_blend_xg67_g33": "QoT_blend_xG67_G33",
+    "qoc_blend_xg67_g33": "QoC_blend_xG67_G33",
+    "zs_difficulty": "ZS_Difficulty",
+}
+
+
+def _sb_read_rapm(*, filters: Optional[Dict[str, str]] = None) -> Optional[List[Dict[str, Any]]]:
+    """Read RAPM rows from Supabase, unpacking JSONB columns (stddev/zscore/pp_sh)
+    back to flat dicts with original column names."""
+    raw = _sb_read("rapm", filters=filters)
+    if raw is None:
+        return None
+    out: List[Dict[str, Any]] = []
+    for row in raw:
+        r: Dict[str, Any] = {}
+        for k, v in row.items():
+            if k in ('stddev', 'zscore', 'pp_sh'):
+                if isinstance(v, dict):
+                    r.update(v)  # keys are already original names from seed
+            else:
+                r[_COL_MAP_RAPM_CORE.get(k, k)] = v
+        out.append(r)
+    return out
+
+
 # Load Teams.csv (used for theming and lookups in templates)
 def _load_teams_csv() -> List[Dict[str, str]]:
+    # Try Supabase first
+    rows = _sb_read("teams", col_map=_COL_MAP_TEAMS)
+    if rows is not None:
+        # Supabase returns Active as boolean; normalise to '0'/'1' strings
+        for r in rows:
+            v = r.get('Active')
+            if isinstance(v, bool):
+                r['Active'] = '1' if v else '0'
+            elif v is not None:
+                r['Active'] = str(v)
+        return rows
+    # Fallback to CSV
     paths = [
         os.path.join(os.path.dirname(__file__), '..', 'Teams.csv'),
         os.path.join(os.getcwd(), 'Teams.csv'),
@@ -7966,11 +8441,25 @@ TEAM_ROWS: List[Dict[str, str]] = _load_teams_csv()
 
 # Load Last_date.csv mapping Season -> Last_Date (YYYY-MM-DD)
 def _load_last_dates() -> Dict[int, str]:
+    # Try Supabase first
+    sb_rows = _sb_read("last_dates", col_map=_COL_MAP_LAST_DATES)
+    if sb_rows is not None:
+        out: Dict[int, str] = {}
+        for r in sb_rows:
+            try:
+                s = r.get('Season')
+                d = r.get('Last_Date')
+                if s and d:
+                    out[int(str(s).strip())] = str(d).strip()
+            except Exception:
+                continue
+        return out
+    # Fallback to CSV
     paths = [
         os.path.join(os.getcwd(), 'Last_date.csv'),
         os.path.join(os.path.dirname(__file__), '..', 'Last_date.csv'),
     ]
-    out: Dict[int, str] = {}
+    out2: Dict[int, str] = {}
     for p in paths:
         try:
             if os.path.exists(p):
@@ -7981,13 +8470,13 @@ def _load_last_dates() -> Dict[int, str]:
                             s = row.get('Season')
                             d = row.get('Last_Date')
                             if s and d:
-                                out[int(str(s).strip())] = str(d).strip()
+                                out2[int(str(s).strip())] = str(d).strip()
                         except Exception:
                             continue
                 break
         except Exception:
             continue
-    return out
+    return out2
 
 LAST_DATES: Dict[int, str] = _load_last_dates()
 
@@ -8005,12 +8494,30 @@ def _get_boxid_map() -> Dict[Tuple[int, int], Tuple[str, str, int]]:
             if _BOXID_MAP:
                 return _BOXID_MAP
         _BOXID_MAP = None
-    # Try locating BoxID.csv next to Teams.csv or in CWD
+    # Try Supabase first
+    sb_rows = _sb_read("box_ids", col_map=_COL_MAP_BOX_IDS)
+    if sb_rows is not None:
+        mapping: Dict[Tuple[int, int], Tuple[str, str, int]] = {}
+        for r in sb_rows:
+            try:
+                xi = int(float(r.get('x') or 0))
+                yi = int(float(r.get('y') or 0))
+                bid = str(r.get('BoxID') or '').strip() or None
+                bre = str(r.get('BoxID_rev') or '').strip() or None
+                bsi_raw = r.get('Boxsize')
+                bsi = int(bsi_raw) if bsi_raw is not None else None
+                if bid and bre and bsi is not None:
+                    mapping[(xi, yi)] = (bid, bre, bsi)
+            except Exception:
+                continue
+        _BOXID_MAP = mapping
+        return mapping
+    # Fallback to CSV
     candidate_paths = [
         os.path.join(os.path.dirname(__file__), '..', 'BoxID.csv'),
         os.path.join(os.getcwd(), 'BoxID.csv'),
     ]
-    mapping: Dict[Tuple[int, int], Tuple[str, str, int]] = {}
+    mapping2: Dict[Tuple[int, int], Tuple[str, str, int]] = {}
     for p in candidate_paths:
         try:
             if os.path.exists(p):
@@ -8042,14 +8549,14 @@ def _get_boxid_map() -> Dict[Tuple[int, int], Tuple[str, str, int]]:
                             bre = str(bre_raw or '').strip() or None
                             bsi = int(str(bsz_raw).strip()) if (bsz_raw is not None and str(bsz_raw).strip().lstrip('-').isdigit()) else None
                             if bid and bre and bsi is not None:
-                                mapping[(xi, yi)] = (bid, bre, bsi)
+                                mapping2[(xi, yi)] = (bid, bre, bsi)
                         except Exception:
                             continue
                 break
         except Exception:
             continue
-    _BOXID_MAP = mapping
-    return mapping
+    _BOXID_MAP = mapping2
+    return mapping2
 
 
 # --- Projections helpers ---
@@ -8076,7 +8583,7 @@ def _iter_csv_dict_rows(path: str, *, delimiter: str = ',', encoding: str = 'utf
 
 
 def _load_rapm_player_rows_static(player_id: int, season: Optional[int]) -> List[Dict[str, Any]]:
-    """Load RAPM rows for a single player from app/static/rapm/rapm.csv (TTL cached)."""
+    """Load RAPM rows for a single player (TTL cached). Tries Supabase, falls back to CSV."""
     global _RAPM_PLAYER_STATIC_CACHE
     try:
         ttl_s = max(30, int(os.getenv('RAPM_PLAYER_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
@@ -8093,6 +8600,16 @@ def _load_rapm_player_rows_static(player_id: int, season: Optional[int]) -> List
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
 
+    # Try Supabase first
+    sb_filters: Dict[str, str] = {"player_id": f"eq.{int(player_id)}"}
+    if season is not None:
+        sb_filters["season"] = f"eq.{int(season)}"
+    sb_rows = _sb_read_rapm(filters=sb_filters)
+    if sb_rows is not None:
+        _cache_set_multi_bounded(_RAPM_PLAYER_STATIC_CACHE, key, sb_rows, ttl_s=ttl_s, max_items=max_items)
+        return sb_rows
+
+    # Fallback to CSV
     path = _static_path('rapm', 'rapm.csv')
     out: List[Dict[str, Any]] = []
     pid_s = str(int(player_id))
@@ -8115,7 +8632,7 @@ def _load_rapm_player_rows_static(player_id: int, season: Optional[int]) -> List
 
 
 def _load_context_player_rows_static(player_id: int, season: Optional[int]) -> List[Dict[str, Any]]:
-    """Load Context rows for a single player from app/static/rapm/context.csv (TTL cached)."""
+    """Load Context rows for a single player (TTL cached). Tries Supabase, falls back to CSV."""
     global _CONTEXT_PLAYER_STATIC_CACHE
     try:
         ttl_s = max(30, int(os.getenv('CONTEXT_PLAYER_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
@@ -8132,6 +8649,16 @@ def _load_context_player_rows_static(player_id: int, season: Optional[int]) -> L
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
 
+    # Try Supabase first
+    sb_filters: Dict[str, str] = {"player_id": f"eq.{int(player_id)}"}
+    if season is not None:
+        sb_filters["season"] = f"eq.{int(season)}"
+    sb_rows = _sb_read("rapm_context", filters=sb_filters, col_map=_COL_MAP_RAPM_CONTEXT)
+    if sb_rows is not None:
+        _cache_set_multi_bounded(_CONTEXT_PLAYER_STATIC_CACHE, key, sb_rows, ttl_s=ttl_s, max_items=max_items)
+        return sb_rows
+
+    # Fallback to CSV
     path = _static_path('rapm', 'context.csv')
     out: List[Dict[str, Any]] = []
     pid_s = str(int(player_id))
@@ -8154,7 +8681,14 @@ def _load_context_player_rows_static(player_id: int, season: Optional[int]) -> L
 
 
 def _iter_seasonstats_static_rows(*, season: Optional[int] = None, skip_season: Optional[int] = None) -> Iterator[Dict[str, Any]]:
-    """Yield SeasonStats rows from app/static/nhl_seasonstats.csv, optionally filtered by season."""
+    """Yield SeasonStats rows. Tries Supabase for filtered queries; CSV for full scans."""
+    # For filtered queries (small result sets), try Supabase first
+    if season is not None:
+        sb_rows = _sb_read("season_stats", filters={"season": f"eq.{int(season)}"}, col_map=_COL_MAP_SEASON_STATS)
+        if sb_rows is not None:
+            yield from sb_rows
+            return
+    # Full scan or Supabase unavailable: use CSV
     path = _static_path('nhl_seasonstats.csv')
     season_i = int(season) if season is not None else None
     skip_i = int(skip_season) if skip_season is not None else None
@@ -8174,7 +8708,18 @@ def _iter_seasonstats_static_rows(*, season: Optional[int] = None, skip_season: 
 
 
 def _iter_teamseasonstats_static_rows(*, season: Optional[int] = None, skip_season: Optional[int] = None) -> Iterator[Dict[str, Any]]:
-    """Yield Team SeasonStats rows from app/static/nhl_seasonstats_teams.csv, optionally filtered by season."""
+    """Yield Team SeasonStats rows. Supabase for all queries (small table ~5K rows), CSV fallback."""
+    # Team stats table is small enough for Supabase REST
+    sb_filters: Optional[Dict[str, str]] = None
+    if season is not None:
+        sb_filters = {"season": f"eq.{int(season)}"}
+    elif skip_season is not None:
+        sb_filters = {"season": f"neq.{int(skip_season)}"}
+    sb_rows = _sb_read("season_stats_teams", filters=sb_filters, col_map=_COL_MAP_SEASON_STATS_TEAMS)
+    if sb_rows is not None:
+        yield from sb_rows
+        return
+    # Fallback to CSV
     path = _static_path('nhl_seasonstats_teams.csv')
     season_i = int(season) if season is not None else None
     skip_i = int(skip_season) if skip_season is not None else None
@@ -8199,10 +8744,6 @@ def _build_seasonstats_agg(
     season_int: int,
     season_state: str,
     strength_state: str,
-    sheet_id: str,
-    worksheet: str,
-    sheet_ok: bool,
-    sheet_rows: Optional[List[Dict[str, Any]]],
 ) -> Tuple[Dict[int, Dict[str, Any]], Dict[int, str]]:
     """Build (and cache) per-player aggregates for SeasonStats under the requested filters.
 
@@ -8229,25 +8770,11 @@ def _build_seasonstats_agg(
     if st_norm not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
         st_norm = '5v5'
 
-    # When sourcing SeasonStats from Google Sheets (Sheets6), the sheet is overwritten on updates.
-    # We stamp a TimestampUTC column in the sheet; include it in the cache key to avoid serving stale
-    # aggregates from the in-memory/on-disk cache after a sheet refresh.
-    sheet_rev = ''
-    try:
-        if sheet_ok and sheet_rows:
-            sheet_rev = str((sheet_rows[0] or {}).get('TimestampUTC') or '').strip()
-    except Exception:
-        sheet_rev = ''
-
-    # Cache key includes sheet identity because career scope can splice in Sheets6.
     key = (
         scope_norm,
         int(season_int or 0),
         ss_norm,
         st_norm,
-        (sheet_id or '')[:80],
-        (worksheet or '')[:80],
-        sheet_rev[:40],
     )
     now = time.time()
     _cache_prune_ttl_and_size(_SEASONSTATS_AGG_CACHE, ttl_s=ttl_s, max_items=max_items)
@@ -8280,18 +8807,9 @@ def _build_seasonstats_agg(
 
     def _iter_rows() -> Iterable[Dict[str, Any]]:
         if scope_norm == 'career':
-            if sheet_ok and sheet_rows is not None:
-                def _it() -> Iterator[Dict[str, Any]]:
-                    yield from _iter_seasonstats_static_rows(skip_season=20252026)
-                    for rr in sheet_rows or []:
-                        if isinstance(rr, dict):
-                            yield rr
-                return _it()
             return _iter_seasonstats_static_rows()
 
         # scope == season
-        if int(season_int) == 20252026 and sheet_ok and sheet_rows is not None:
-            return sheet_rows
         return _iter_seasonstats_static_rows(season=int(season_int))
 
     def _flt(v: Any) -> float:
@@ -8444,10 +8962,6 @@ def _build_goalies_career_season_matrix(
     *,
     season_state: str,
     strength_state: str,
-    sheet_id: str,
-    worksheet: str,
-    sheet_ok: bool,
-    sheet_rows: Optional[List[Dict[str, Any]]],
 ) -> Tuple[Dict[int, Dict[int, Dict[str, float]]], Dict[int, Tuple[float, float]]]:
     """Build per-goalie per-season aggregates for career calculations.
 
@@ -8468,20 +8982,10 @@ def _build_goalies_career_season_matrix(
     if st_norm not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
         st_norm = '5v5'
 
-    sheet_rev = ''
-    try:
-        if sheet_ok and sheet_rows:
-            sheet_rev = str((sheet_rows[0] or {}).get('TimestampUTC') or '').strip()
-    except Exception:
-        sheet_rev = ''
-
     key = (
         'goalies_career_matrix',
         ss_norm,
         st_norm,
-        (sheet_id or '')[:80],
-        (worksheet or '')[:80],
-        sheet_rev[:40],
     )
     now = time.time()
     cached = _GOALIES_CAREER_MATRIX_CACHE.get(key)
@@ -8494,7 +8998,7 @@ def _build_goalies_career_season_matrix(
         if not base:
             base = _disk_cache_base()
         os.makedirs(base, exist_ok=True)
-        key_bytes = ('|'.join(map(str, key)) + '|v1').encode('utf-8', errors='ignore')
+        key_bytes = ('|'.join(map(str, key)) + '|v2').encode('utf-8', errors='ignore')
         h = hashlib.sha1(key_bytes).hexdigest()  # nosec - non-crypto use (filename)
         cache_path = os.path.join(base, f'goalies_career_matrix_{h}.pkl.gz')
         if os.path.exists(cache_path):
@@ -8511,13 +9015,6 @@ def _build_goalies_career_season_matrix(
         cache_path = None
 
     def _iter_rows() -> Iterable[Dict[str, Any]]:
-        if sheet_ok and sheet_rows is not None:
-            def _it() -> Iterator[Dict[str, Any]]:
-                yield from _iter_seasonstats_static_rows(skip_season=20252026)
-                for rr in sheet_rows or []:
-                    if isinstance(rr, dict):
-                        yield rr
-            return _it()
         return _iter_seasonstats_static_rows()
 
     def _flt(v: Any) -> float:
@@ -8607,7 +9104,7 @@ def _build_goalies_career_season_matrix(
 
 
 def _load_rapm_static_csv() -> List[Dict[str, Any]]:
-    """Load app/static/rapm/rapm.csv into memory (TTL cached)."""
+    """Load RAPM data (TTL cached). Prefers CSV for full load (faster); Supabase as fallback."""
     global _RAPM_STATIC_CACHE
     try:
         ttl_s = max(30, int(os.getenv('RAPM_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
@@ -8617,26 +9114,33 @@ def _load_rapm_static_csv() -> List[Dict[str, Any]]:
     if _RAPM_STATIC_CACHE and (now - _RAPM_STATIC_CACHE[0]) < ttl_s:
         return _RAPM_STATIC_CACHE[1]
 
+    # Prefer CSV for full load (20K+ rows is too slow over REST pagination)
     path = _static_path('rapm', 'rapm.csv')
     rows: List[Dict[str, Any]] = []
     try:
-        if not os.path.exists(path):
-            _RAPM_STATIC_CACHE = (now, [])
-            return []
-        with open(path, 'r', encoding='utf-8', newline='') as f:
-            rdr = csv.DictReader(f)
-            for row in rdr:
-                if isinstance(row, dict):
-                    rows.append(row)
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8', newline='') as f:
+                rdr = csv.DictReader(f)
+                for row in rdr:
+                    if isinstance(row, dict):
+                        rows.append(row)
+            _RAPM_STATIC_CACHE = (now, rows)
+            return rows
     except Exception:
-        rows = []
+        pass
 
-    _RAPM_STATIC_CACHE = (now, rows)
-    return rows
+    # Fallback to Supabase if CSV not available
+    sb_rows = _sb_read_rapm()
+    if sb_rows is not None:
+        _RAPM_STATIC_CACHE = (now, sb_rows)
+        return sb_rows
+
+    _RAPM_STATIC_CACHE = (now, [])
+    return []
 
 
 def _load_context_static_csv() -> List[Dict[str, Any]]:
-    """Load app/static/rapm/context.csv into memory (TTL cached)."""
+    """Load context data (TTL cached). Prefers CSV for full load; Supabase as fallback."""
     global _CONTEXT_STATIC_CACHE
     try:
         ttl_s = max(30, int(os.getenv('CONTEXT_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
@@ -8646,26 +9150,33 @@ def _load_context_static_csv() -> List[Dict[str, Any]]:
     if _CONTEXT_STATIC_CACHE and (now - _CONTEXT_STATIC_CACHE[0]) < ttl_s:
         return _CONTEXT_STATIC_CACHE[1]
 
+    # Prefer CSV for full load (38K+ rows is too slow over REST pagination)
     path = _static_path('rapm', 'context.csv')
     rows: List[Dict[str, Any]] = []
     try:
-        if not os.path.exists(path):
-            _CONTEXT_STATIC_CACHE = (now, [])
-            return []
-        with open(path, 'r', encoding='utf-8', newline='') as f:
-            rdr = csv.DictReader(f)
-            for row in rdr:
-                if isinstance(row, dict):
-                    rows.append(row)
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8', newline='') as f:
+                rdr = csv.DictReader(f)
+                for row in rdr:
+                    if isinstance(row, dict):
+                        rows.append(row)
+            _CONTEXT_STATIC_CACHE = (now, rows)
+            return rows
     except Exception:
-        rows = []
+        pass
 
-    _CONTEXT_STATIC_CACHE = (now, rows)
-    return rows
+    # Fallback to Supabase if CSV not available
+    sb_rows = _sb_read("rapm_context", col_map=_COL_MAP_RAPM_CONTEXT)
+    if sb_rows is not None:
+        _CONTEXT_STATIC_CACHE = (now, sb_rows)
+        return sb_rows
+
+    _CONTEXT_STATIC_CACHE = (now, [])
+    return []
 
 
 def _load_seasonstats_static_csv() -> List[Dict[str, Any]]:
-    """Load app/static/nhl_seasonstats.csv into memory (TTL cached)."""
+    """Load season stats (TTL cached). Prefers CSV for full load; Supabase as fallback."""
     global _SEASONSTATS_STATIC_CACHE
     try:
         ttl_s = max(30, int(os.getenv('SEASONSTATS_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
@@ -8675,22 +9186,29 @@ def _load_seasonstats_static_csv() -> List[Dict[str, Any]]:
     if _SEASONSTATS_STATIC_CACHE and (now - _SEASONSTATS_STATIC_CACHE[0]) < ttl_s:
         return _SEASONSTATS_STATIC_CACHE[1]
 
+    # Prefer CSV for full load (136K+ rows is too slow over REST pagination)
     path = _static_path('nhl_seasonstats.csv')
     rows: List[Dict[str, Any]] = []
     try:
-        if not os.path.exists(path):
-            _SEASONSTATS_STATIC_CACHE = (now, [])
-            return []
-        with open(path, 'r', encoding='utf-8', newline='') as f:
-            rdr = csv.DictReader(f)
-            for row in rdr:
-                if isinstance(row, dict):
-                    rows.append(row)
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8', newline='') as f:
+                rdr = csv.DictReader(f)
+                for row in rdr:
+                    if isinstance(row, dict):
+                        rows.append(row)
+            _SEASONSTATS_STATIC_CACHE = (now, rows)
+            return rows
     except Exception:
-        rows = []
+        pass
 
-    _SEASONSTATS_STATIC_CACHE = (now, rows)
-    return rows
+    # Fallback to Supabase if CSV not available
+    sb_rows = _sb_read("season_stats", col_map=_COL_MAP_SEASON_STATS)
+    if sb_rows is not None:
+        _SEASONSTATS_STATIC_CACHE = (now, sb_rows)
+        return sb_rows
+
+    _SEASONSTATS_STATIC_CACHE = (now, [])
+    return []
 
 
 def _load_card_metrics_defs(card: str = 'skaters') -> Dict[str, Any]:
@@ -8792,10 +9310,6 @@ def _build_goalies_seasonstats_agg(
     season_int: int,
     season_state: str,
     strength_state: str,
-    sheet_id: str,
-    worksheet: str,
-    sheet_ok: bool,
-    sheet_rows: Optional[List[Dict[str, Any]]],
 ) -> Tuple[Dict[int, Dict[str, Any]], Dict[int, str]]:
     """Build (and cache) per-goalie aggregates for SeasonStats under the requested filters."""
     global _SEASONSTATS_AGG_CACHE
@@ -8814,22 +9328,12 @@ def _build_goalies_seasonstats_agg(
     if st_norm not in {'5v5', 'PP', 'SH', 'Other', 'all'}:
         st_norm = '5v5'
 
-    sheet_rev = ''
-    try:
-        if sheet_ok and sheet_rows:
-            sheet_rev = str((sheet_rows[0] or {}).get('TimestampUTC') or '').strip()
-    except Exception:
-        sheet_rev = ''
-
     key = (
         'goalies',
         scope_norm,
         int(season_int or 0),
         ss_norm,
         st_norm,
-        (sheet_id or '')[:80],
-        (worksheet or '')[:80],
-        sheet_rev[:40],
     )
     now = time.time()
     cached = _SEASONSTATS_AGG_CACHE.get(key)
@@ -8842,7 +9346,7 @@ def _build_goalies_seasonstats_agg(
         if not base:
             base = _disk_cache_base()
         os.makedirs(base, exist_ok=True)
-        key_bytes = ('|'.join(map(str, key)) + '|v1').encode('utf-8', errors='ignore')
+        key_bytes = ('|'.join(map(str, key)) + '|v2').encode('utf-8', errors='ignore')
         h = hashlib.sha1(key_bytes).hexdigest()  # nosec - non-crypto use (filename)
         cache_path = os.path.join(base, f'goalies_seasonstats_agg_{h}.pkl.gz')
         if os.path.exists(cache_path):
@@ -8860,17 +9364,8 @@ def _build_goalies_seasonstats_agg(
 
     def _iter_rows() -> Iterable[Dict[str, Any]]:
         if scope_norm == 'career':
-            if sheet_ok and sheet_rows is not None:
-                def _it() -> Iterator[Dict[str, Any]]:
-                    yield from _iter_seasonstats_static_rows(skip_season=20252026)
-                    for rr in sheet_rows or []:
-                        if isinstance(rr, dict):
-                            yield rr
-                return _it()
             return _iter_seasonstats_static_rows()
 
-        if int(season_int) == 20252026 and sheet_ok and sheet_rows is not None:
-            return sheet_rows
         return _iter_seasonstats_static_rows(season=int(season_int))
 
     def _flt(v: Any) -> float:
@@ -9737,7 +10232,7 @@ def _load_player_projections_cached() -> Dict[int, Dict[str, Any]]:
 _PLAYER_PROJECTIONS_SHEETS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
 
 def _load_player_projections_from_sheets() -> Dict[int, Dict[str, Any]]:
-    """Load player projections from Google Sheets (Sheets3) into memory."""
+    """Load player projections. Tries Supabase, falls back to CSV."""
     global _PLAYER_PROJECTIONS_SHEETS_CACHE
     try:
         ttl_s = max(30, int(os.getenv('PLAYER_PROJECTIONS_CACHE_TTL_SECONDS', '300') or '300'))
@@ -9746,126 +10241,37 @@ def _load_player_projections_from_sheets() -> Dict[int, Dict[str, Any]]:
     now = time.time()
     if _PLAYER_PROJECTIONS_SHEETS_CACHE and (now - _PLAYER_PROJECTIONS_SHEETS_CACHE[0]) < ttl_s:
         return _PLAYER_PROJECTIONS_SHEETS_CACHE[1]
-    
-    sheet_id = (os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
-    worksheet = (os.getenv('PROJECTIONS_WORKSHEET') or 'Sheets3').strip()
-    if not sheet_id:
-        # Fallback to CSV if no sheet configured
-        data = _load_player_projections_csv()
-        _PLAYER_PROJECTIONS_SHEETS_CACHE = (now, data)
-        return data
-    
-    try:
-        import gspread  # type: ignore
-        from google.oauth2.service_account import Credentials  # type: ignore
-    except Exception:
-        # Fallback to CSV if gspread not available
-        data = _load_player_projections_csv()
-        _PLAYER_PROJECTIONS_SHEETS_CACHE = (now, data)
-        return data
-    
-    try:
-        info = _load_google_service_account_info_from_env()
-        scopes = [
-            'https://www.googleapis.com/auth/spreadsheets.readonly',
-            'https://www.googleapis.com/auth/drive.readonly',
-        ]
-        creds = Credentials.from_service_account_info(info, scopes=scopes)
-        gc = gspread.authorize(creds)
-        sh = gc.open_by_key(sheet_id)
-        ws = sh.worksheet(worksheet)
-        # Use numericise_ignore to preserve comma decimal separators (like RAPM does)
-        try:
-            rows = ws.get_all_records(numericise_ignore=['all']) or []
-        except Exception:
-            rows = ws.get_all_records() or []
-        
-        # Build map keyed by PlayerID
-        # Keep values as strings so _parse_locale_float can handle comma decimal separators
+
+    # Try Supabase first
+    sb_rows = _sb_read("player_projections", col_map=_COL_MAP_PLAYER_PROJECTIONS)
+    if sb_rows is not None:
         out: Dict[int, Dict[str, Any]] = {}
-        for r in rows:
+        for r in sb_rows:
             try:
                 pid_raw = r.get('PlayerID') or r.get('playerId') or r.get('player_id')
                 if pid_raw is None:
                     continue
                 pid = _safe_int(pid_raw)
                 if not pid or pid <= 0:
-                    pid = _safe_int(str(pid_raw).replace(' ', '').replace('\u00a0', '').strip())
-                if not pid or pid <= 0:
                     continue
-                # Store raw row with string values preserved
                 out[pid] = r
             except Exception:
                 continue
-        
         _PLAYER_PROJECTIONS_SHEETS_CACHE = (now, out)
         return out
-    except Exception:
-        # Fallback to CSV on error
-        data = _load_player_projections_csv()
-        _PLAYER_PROJECTIONS_SHEETS_CACHE = (now, data)
-        return data
+
+    # Fallback to CSV
+    data = _load_player_projections_csv()
+    _PLAYER_PROJECTIONS_SHEETS_CACHE = (now, data)
+    return data
 
 _LINEUPS_ALL_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
 
-def _load_google_service_account_info_from_env() -> Dict[str, Any]:
-    """Load Google service account JSON.
-
-    Supports (in priority order):
-      - GOOGLE_SERVICE_ACCOUNT_JSON_PATH: path to a JSON key file
-      - GOOGLE_SERVICE_ACCOUNT_JSON_B64: base64-encoded JSON string
-      - GOOGLE_SERVICE_ACCOUNT_JSON: raw JSON string
-    """
-    raw: Optional[str] = None
-    path = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')
-    if path:
-        try:
-            p = str(path).strip()
-            if (p.startswith('"') and p.endswith('"')) or (p.startswith("'") and p.endswith("'")):
-                p = p[1:-1]
-            p = os.path.expandvars(os.path.expanduser(p))
-            with open(p, 'r', encoding='utf-8') as f:
-                raw = f.read()
-        except Exception as e:
-            raise RuntimeError(f"Invalid GOOGLE_SERVICE_ACCOUNT_JSON_PATH: {e}")
-    raw_b64 = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_B64')
-    if raw is None and raw_b64:
-        try:
-            import base64
-            s = str(raw_b64).strip()
-            if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
-                s = s[1:-1]
-            s = ''.join(s.split())
-            pad = (-len(s)) % 4
-            if pad:
-                s = s + ('=' * pad)
-            try:
-                raw = base64.b64decode(s.encode('utf-8'), validate=False).decode('utf-8')
-            except Exception:
-                raw = base64.urlsafe_b64decode(s.encode('utf-8')).decode('utf-8')
-        except Exception as e:
-            raise RuntimeError(f"Invalid GOOGLE_SERVICE_ACCOUNT_JSON_B64: {e}")
-    if raw is None:
-        raw = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
-    if not raw:
-        raise RuntimeError(
-            'Missing Google credentials. Set GOOGLE_SERVICE_ACCOUNT_JSON_PATH, GOOGLE_SERVICE_ACCOUNT_JSON_B64, or GOOGLE_SERVICE_ACCOUNT_JSON.'
-        )
-    try:
-        return json.loads(raw)
-    except Exception as e:
-        raise RuntimeError(f"Invalid Google service account JSON: {e}")
-
 def _load_lineups_all() -> Dict[str, Any]:
-    """Load lineups from Google Sheets.
+    """Load lineups from Supabase, falling back to static JSON.
 
-    Expected columns in the worksheet:
+    Expected columns:
       Timestamp, Team, Unit, Pos, PlayerName, playerId
-
-    Config:
-      - LINEUPS_SHEET_ID (defaults to PROJECTIONS_SHEET_ID)
-      - LINEUPS_WORKSHEET (default 'Sheets2')
-      - LINEUPS_SHEET_CACHE_TTL_SECONDS (default 300)
     """
     global _LINEUPS_ALL_CACHE
     ttl_s = int(os.getenv('LINEUPS_SHEET_CACHE_TTL_SECONDS', '300') or '300')
@@ -9873,30 +10279,32 @@ def _load_lineups_all() -> Dict[str, Any]:
     if _LINEUPS_ALL_CACHE and (now - _LINEUPS_ALL_CACHE[0]) < max(1, ttl_s):
         return _LINEUPS_ALL_CACHE[1]
 
-    sheet_id = (os.getenv('LINEUPS_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
-    worksheet = (os.getenv('LINEUPS_WORKSHEET') or 'Sheets2').strip()
-    if not sheet_id:
-        # No sheet configured; return empty rather than reading from local JSON.
-        _LINEUPS_ALL_CACHE = (now, {})
-        return {}
-
-    try:
-        import gspread  # type: ignore
-        from google.oauth2.service_account import Credentials  # type: ignore
-    except Exception:
-        _LINEUPS_ALL_CACHE = (now, {})
-        return {}
-
-    info = _load_google_service_account_info_from_env()
-    scopes = [
-        'https://www.googleapis.com/auth/spreadsheets.readonly',
-        'https://www.googleapis.com/auth/drive.readonly',
-    ]
-    creds = Credentials.from_service_account_info(info, scopes=scopes)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(sheet_id)
-    ws = sh.worksheet(worksheet)
-    rows = ws.get_all_records() or []
+    # Try Supabase first (skip if table is empty)
+    sb_raw = _sb_read("lineups")
+    if sb_raw:
+        # Map Supabase snake_case → original column names used below
+        rows = []
+        for r in sb_raw:
+            rows.append({
+                'Team': r.get('team', ''),
+                'Unit': r.get('unit', ''),
+                'Pos': r.get('pos', ''),
+                'PlayerName': r.get('player_name', ''),
+                'playerId': r.get('player_id', ''),
+                'Timestamp': str(r.get('timestamp') or ''),
+            })
+    else:
+        # Try static JSON file (written by scripts/lineups.py)
+        json_path = _static_path('lineups_all.json')
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as _f:
+                    out = json.load(_f)
+                _LINEUPS_ALL_CACHE = (now, out)
+                return out
+            except Exception:
+                pass
+        rows = []
 
     out: Dict[str, Any] = {}
     latest_ts_by_team: Dict[str, str] = {}
@@ -10022,20 +10430,7 @@ def _load_prestart_snapshots_map() -> Dict[int, Dict[str, Any]]:
 _STARTED_GAME_SHEET_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
 
 def _load_started_game_overrides_from_sheet(sheet_id: str, worksheet: str) -> Dict[int, Dict[str, Any]]:
-    """Load latest ML (moneyline) and Win_Prop overrides for started games from Google Sheets.
-
-    This is used only for games already started. If Win_Prop is empty, the client should
-    fall back to the calculated probability.
-
-    Expected (best-effort) columns in worksheet (supports multiple naming styles):
-      - GameID / gameId / id
-      - ML_Away / ML_Home (or OddsAway/OddsHome)
-      - Win_Prop_Away / Win_Prop_Home (or WinAway/WinHome)
-      - OR rows per team with: GameID + Team + ML + Win_Prop
-
-    Config:
-      - STARTED_OVERRIDES_SHEET_CACHE_TTL_SECONDS (default 30)
-    """
+    """Load latest ML overrides for started games from Supabase."""
     global _STARTED_GAME_SHEET_CACHE
     try:
         ttl_s = max(1, int(os.getenv('STARTED_OVERRIDES_SHEET_CACHE_TTL_SECONDS', '30') or '30'))
@@ -10045,167 +10440,31 @@ def _load_started_game_overrides_from_sheet(sheet_id: str, worksheet: str) -> Di
     if _STARTED_GAME_SHEET_CACHE and (now - _STARTED_GAME_SHEET_CACHE[0]) < ttl_s:
         return _STARTED_GAME_SHEET_CACHE[1]
 
-    if not sheet_id or not worksheet:
-        _STARTED_GAME_SHEET_CACHE = (now, {})
-        return {}
-
-    try:
-        import gspread  # type: ignore
-        from google.oauth2.service_account import Credentials  # type: ignore
-    except Exception:
-        _STARTED_GAME_SHEET_CACHE = (now, {})
-        return {}
-
-    info = _load_google_service_account_info_from_env()
-    scopes = [
-        'https://www.googleapis.com/auth/spreadsheets.readonly',
-        'https://www.googleapis.com/auth/drive.readonly',
-    ]
-    creds = Credentials.from_service_account_info(info, scopes=scopes)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(sheet_id)
-    ws = sh.worksheet(worksheet)
-    rows = ws.get_all_records() or []
-
-    def norm_row(r: Dict[str, Any]) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        for k, v in (r or {}).items():
+    # Supabase
+    sb_rows = _sb_read("started_overrides")
+    if sb_rows is not None and len(sb_rows) > 0:
+        by_game_team: Dict[int, Dict[str, Dict[str, Any]]] = {}
+        for r in sb_rows:
             try:
-                kk = str(k).strip().lower()
+                gid = int(r.get('game_id') or 0)
+                if gid <= 0:
+                    continue
+                team_ab = str(r.get('team') or '').strip().upper()
+                ml = r.get('ml')
+                if not team_ab and ml is None:
+                    continue
+                team_map = by_game_team.setdefault(gid, {})
+                team_map[team_ab] = {'ml': ml, 'winPct': None}
             except Exception:
                 continue
-            out[kk] = v
+        out: Dict[int, Dict[str, Any]] = {}
+        for gid, team_map in by_game_team.items():
+            out[gid] = {'_by_team': team_map}
+        _STARTED_GAME_SHEET_CACHE = (now, out)
         return out
 
-    def first_val(rn: Dict[str, Any], keys: List[str]) -> Any:
-        for k in keys:
-            if k in rn:
-                v = rn.get(k)
-                if v is None:
-                    continue
-                s = str(v).strip()
-                if s == '':
-                    continue
-                return v
-        return None
-
-    def parse_game_id(rn: Dict[str, Any]) -> Optional[int]:
-        v = first_val(rn, ['gameid', 'game_id', 'gamepk', 'game', 'gameid#', 'id', 'gameid '])
-        if v is None:
-            return None
-        try:
-            return int(str(v).strip())
-        except Exception:
-            return None
-
-    def parse_prob_pct(v: Any) -> Optional[float]:
-        if v is None:
-            return None
-        try:
-            s = str(v).strip()
-            if s == '':
-                return None
-            x = float(s)
-            if not math.isfinite(x):
-                return None
-            # If it's 0..1, treat as probability; if 1..100 treat as percent.
-            if 0.0 <= x <= 1.0:
-                return x * 100.0
-            if 1.0 < x <= 100.0:
-                return x
-            return None
-        except Exception:
-            return None
-
-    def parse_ts(rn: Dict[str, Any]) -> str:
-        # Use a timestamp-ish field if present; else empty string (row order will win).
-        v = first_val(rn, ['timestamputc', 'timestamp', 'updated', 'updatedutc', 'lastupdated', 'time'])
-        return str(v).strip() if v is not None else ''
-
-    def prefer_newer(prev: Optional[Dict[str, Any]], ts: str, row_idx: int) -> bool:
-        """Return True if (ts,row_idx) should replace prev based on recency."""
-        if prev is None:
-            return True
-        prev_ts = str(prev.get('_ts') or '')
-        prev_row = int(prev.get('_row', -1) or -1)
-        # Prefer lexicographically-later timestamp (ISO-8601 sorts correctly)
-        if ts and ts > prev_ts:
-            return True
-        if ts and ts == prev_ts and row_idx >= prev_row:
-            return True
-        # If no timestamps, prefer later row
-        if not ts and not prev_ts and row_idx >= prev_row:
-            return True
-        return False
-
-    # Two supported shapes:
-    #  1) One row per game with Away/Home ML and Win_Prop
-    #  2) One row per team with Team + ML + Win_Prop (we later map to away/home)
-    by_game: Dict[int, Dict[str, Any]] = {}
-    by_game_team: Dict[int, Dict[str, Dict[str, Any]]] = {}
-
-    for idx, r in enumerate(rows):
-        rn = norm_row(r)
-        gid = parse_game_id(rn)
-        if gid is None:
-            continue
-        ts = parse_ts(rn)
-        # Shape 1
-        away_ml = first_val(rn, ['ml_away', 'away_ml', 'oddsaway', 'odds_away', 'moneyline_away', 'awaymoneyline'])
-        home_ml = first_val(rn, ['ml_home', 'home_ml', 'oddshome', 'odds_home', 'moneyline_home', 'homemoneyline'])
-        win_away = first_val(rn, ['win_prop_away', 'away_win_prop', 'winaway', 'win_away', 'winprobaway', 'win_prob_away'])
-        win_home = first_val(rn, ['win_prop_home', 'home_win_prop', 'winhome', 'win_home', 'winprobhome', 'win_prob_home'])
-        if away_ml is not None or home_ml is not None or win_away is not None or win_home is not None:
-            prev = by_game.get(gid)
-            prev_ts = str(prev.get('_ts') or '') if prev else ''
-            # prefer lexicographically-later timestamp; if none, prefer later row
-            choose = (ts and ts >= prev_ts) or (not prev_ts and not ts and prev is not None and idx >= int(prev.get('_row', -1)))
-            if prev is None or choose:
-                by_game[gid] = {
-                    '_ts': ts,
-                    '_row': idx,
-                    'oddsAway': away_ml,
-                    'oddsHome': home_ml,
-                    'winAwayPct': parse_prob_pct(win_away),
-                    'winHomePct': parse_prob_pct(win_home),
-                }
-            continue
-
-        # Shape 2 (team row)
-        team = first_val(rn, ['team (abbrev)', 'team_abbrev', 'teamabbrev', 'team', 'abbrev', 'club', 'clubabbrev'])
-        if team is None:
-            continue
-        team_ab = str(team).strip().upper()
-        ml = first_val(rn, ['ml', 'moneyline', 'odds', 'price'])
-        wp = first_val(rn, ['win_prop', 'winprop', 'win%', 'winpct', 'winprob', 'win_probability'])
-        if ml is None and wp is None:
-            continue
-        team_map = by_game_team.setdefault(gid, {})
-        prev_team = team_map.get(team_ab)
-        next_team = {
-            '_ts': ts,
-            '_row': idx,
-            'ml': ml,
-            'winPct': parse_prob_pct(wp),
-        }
-        if prefer_newer(prev_team, ts, idx):
-            team_map[team_ab] = next_team
-
-    # Build final map (prefer shape 1 when present)
-    out: Dict[int, Dict[str, Any]] = {}
-    for gid, rec in by_game.items():
-        out[gid] = {k: v for k, v in rec.items() if not str(k).startswith('_')}
-
-    # Keep team-row data for any games not covered by shape 1
-    for gid, team_map in by_game_team.items():
-        if gid in out:
-            continue
-        out[gid] = {
-            '_by_team': team_map,
-        }
-
-    _STARTED_GAME_SHEET_CACHE = (now, out)
-    return out
+    _STARTED_GAME_SHEET_CACHE = (now, {})
+    return {}
 
 def _safe_float(v: Any) -> Optional[float]:
     try:
@@ -10670,6 +10929,22 @@ def api_game_pbp(game_id: int):
     except Exception:
         shoots_map = {}
 
+    # Fetch landing endpoint for goal highlight video URLs
+    goal_highlights: Dict[int, str] = {}
+    try:
+        landing_url = f'https://api-web.nhle.com/v1/gamecenter/{game_id}/landing'
+        r_land = requests.get(landing_url, timeout=15)
+        if r_land.status_code == 200:
+            land_data = r_land.json()
+            for per in (land_data.get('summary', {}).get('scoring') or []):
+                for gl in (per.get('goals') or []):
+                    eid = gl.get('eventId')
+                    clip = gl.get('highlightClipSharingUrl')
+                    if eid is not None and clip:
+                        goal_highlights[int(eid)] = clip
+    except Exception:
+        goal_highlights = {}
+
     plays_raw = data.get('plays', []) if isinstance(data, dict) else []
     away_team = (data.get('awayTeam') or {})
     home_team = (data.get('homeTeam') or {})
@@ -11068,8 +11343,10 @@ def api_game_pbp(game_id: int):
                 pass
 
         # SeasonState: map gameType to 'regular' or 'playoffs'
+        # gameType: 1=preseason, 2=regular, 3=playoffs, 4=allstar
         gt = data.get('gameType')
-        season_state = 'playoffs' if str(gt) == '3' else 'regular'
+        _GT_MAP = {'2': 'regular', '3': 'playoffs'}
+        season_state = _GT_MAP.get(str(gt), 'other')
 
         # EventIndex: GameID*10000 + Index (1-based index in plays list)
         try:
@@ -11184,6 +11461,7 @@ def api_game_pbp(game_id: int):
             'Position': position,
             'Shoots': shoots,
             'RinkVenue': rink_venue_value,
+            'HighlightUrl': goal_highlights.get(pl.get('eventId')) if is_goal else None,
             'LastEvent': None,  # to be computed post-pass
             'xG_F': None,
             'xG_S': None,
@@ -11320,11 +11598,17 @@ def api_game_pbp(game_id: int):
                     f"{model_prefix}_{s_prev}_{s_next}.pkl",    # window 2: s-1..s+1
                     f"{model_prefix}_{s_cur}_{s_next2}.pkl",    # window 3: s..s+2
                 ]
-                # Choose middle window first as most centered
+                # Choose middle window first as most centered; try all, use first N that load
                 order = [1, 0, 2]
-                names = [all_names[i] for i in order[:num_windows]]
-            models = [load_model_file(n) for n in names]
-            models = [m for m in models if m is not None]
+                names = [all_names[i] for i in order]
+            # Try all candidates, keep the first num_windows that actually load
+            models = []
+            for n in names:
+                m = load_model_file(n)
+                if m is not None:
+                    models.append(m)
+                    if len(models) >= num_windows:
+                        break
             if not models:
                 return None
             preds = []
@@ -11400,8 +11684,9 @@ def api_game_pbp(game_id: int):
                 f"{prefix}_{s_prev}_{s_next}.pkl",
                 f"{prefix}_{s_cur}_{s_next2}.pkl",
             ]
+            # Return all candidates in preferred order; caller loads first N that exist
             order = [1, 0, 2]
-            return [all_names[i] for i in order[:num_windows]]
+            return [all_names[i] for i in order]
 
         for family, idxs in families.items():
             if not idxs:
@@ -11418,8 +11703,19 @@ def api_game_pbp(game_id: int):
                     names = [f"{family}_20222023_20242025.pkl"]
                 else:
                     names = window_filenames_for_season(s_cur, family)
-                models = [load_model_file(n) for n in names]
-                models = [m for m in models if m is not None]
+                # Try all candidates, keep first num_windows that actually load
+                num_windows_batch = 1
+                try:
+                    num_windows_batch = max(1, min(3, int(os.getenv('XG_WINDOWS', '1'))))
+                except Exception:
+                    num_windows_batch = 1
+                models = []
+                for n in names:
+                    m = load_model_file(n)
+                    if m is not None:
+                        models.append(m)
+                        if len(models) >= num_windows_batch:
+                            break
                 if not models:
                     continue
                 # Precompute required columns per model
@@ -12432,5 +12728,357 @@ def api_game_shifts(game_id: int):
         except Exception:
             pass
     return resp
+
+
+# ── Shooting / Goaltending aggregate API ────────────────────────
+
+@main_bp.route('/api/skaters/shooting')
+def api_skaters_shooting():
+    """Aggregate shot events for a team+season from the pbp table.
+
+    Query params:
+      team   – 3-letter team code (required)
+      season – e.g. 20252026 (required)
+      seasonState – regular (default) / playoffs / all
+      strengthState – 5v5 (default) / PP / SH / all
+      xgModel – xG_F (default) / xG_S / xG_F2
+
+    Returns:
+      kpis: {shots, xG, goals, gax, shPct, xShPct, dShPct}
+      goalies: [{goalieId, name, shots, xG, goals, gax}, ...]
+      events: [{x, y, boxId, goal, xG, goalieId, shotType}, ...]
+      zones: {boxId: {shots, xG, goals}, ...}
+    """
+    team = str(request.args.get('team', '')).strip().upper()
+    season = str(request.args.get('season', '')).strip()
+    if not team or not season:
+        return jsonify({'error': 'team and season required'}), 400
+
+    ss = str(request.args.get('seasonState', 'regular')).lower()
+    strength = str(request.args.get('strengthState', '5v5')).strip()
+    xg_model = str(request.args.get('xgModel', 'xG_F')).strip()
+
+    xg_col_map = {'xG_F': 'xg_f', 'xG_S': 'xg_s', 'xG_F2': 'xg_f2'}
+    xg_col = xg_col_map.get(xg_model, 'xg_f')
+
+    player_id = str(request.args.get('player', '')).strip()
+
+    # Optional roster filter: comma-separated player IDs to restrict events
+    # to the current roster (so KPIs match Table View totals).
+    roster_ids_raw = str(request.args.get('roster', '')).strip()
+    roster_ids: Optional[set] = None
+    if roster_ids_raw and not player_id:
+        try:
+            roster_ids = {int(x) for x in roster_ids_raw.split(',') if x.strip()}
+        except Exception:
+            roster_ids = None
+
+    filters_base: Dict[str, str] = {
+        'event_team': f'eq.{team}',
+        'season': f'eq.{season}',
+    }
+    if player_id:
+        filters_base['player1_id'] = f'eq.{player_id}'
+    if ss and ss != 'all':
+        filters_base['season_state'] = f'eq.{ss}'
+
+    all_events = []
+    try:
+        cols = f"event_index,x,y,box_id,shot,goal,fenwick,{xg_col},goalie_id,shot_type,player1_id,strength_state,event,highlight_url,period"
+        rows = _sb_read('pbp', columns=cols, order='event_index', filters={
+            **filters_base,
+            'fenwick': 'eq.1',
+        })
+        if rows:
+            # Exclude shootout attempts (period = 5)
+            all_events = [e for e in rows if int(e.get('period') or 0) != 5]
+    except Exception:
+        pass
+
+    # Restrict to current roster players when roster filter is provided
+    if roster_ids:
+        all_events = [e for e in all_events if _safe_int(e.get('player1_id')) in roster_ids]
+
+    # Apply strength state filter
+    if strength and strength.lower() != 'all':
+        strength_map = {'5v5': '5v5', 'PP': '5v4', 'SH': '4v5'}
+        target = strength_map.get(strength, strength)
+        if strength == '5v5':
+            all_events = [e for e in all_events if str(e.get('strength_state', '')) == '5v5']
+        elif strength == 'PP':
+            all_events = [e for e in all_events if str(e.get('strength_state', '')) in ('5v4', '5v3', '4v3')]
+        elif strength == 'SH':
+            all_events = [e for e in all_events if str(e.get('strength_state', '')) in ('4v5', '3v5', '3v4')]
+        else:
+            all_events = [e for e in all_events if str(e.get('strength_state', '')) == target]
+
+    # Build response
+    goalie_agg: Dict[int, Dict[str, Any]] = {}
+    zone_agg: Dict[str, Dict[str, float]] = {}
+    events_out = []
+    total_shots = 0
+    total_xg = 0.0
+    total_goals = 0
+
+    for e in all_events:
+        xg_val = float(e.get(xg_col) or 0.0)
+        is_goal = int(e.get('goal') or 0) == 1
+        is_shot = int(e.get('shot') or 0) == 1 or is_goal
+        gid = e.get('goalie_id')
+        box = str(e.get('box_id') or '')
+
+        total_shots += 1
+        total_xg += xg_val
+        if is_goal:
+            total_goals += 1
+
+        # Goalie aggregation
+        if gid:
+            gid = int(gid)
+            if gid not in goalie_agg:
+                goalie_agg[gid] = {'goalieId': gid, 'shots': 0, 'xG': 0.0, 'goals': 0}
+            goalie_agg[gid]['shots'] += 1
+            goalie_agg[gid]['xG'] += xg_val
+            if is_goal:
+                goalie_agg[gid]['goals'] += 1
+
+        # Zone aggregation
+        if box:
+            if box not in zone_agg:
+                zone_agg[box] = {'shots': 0, 'xG': 0.0, 'goals': 0}
+            zone_agg[box]['shots'] += 1
+            zone_agg[box]['xG'] += xg_val
+            if is_goal:
+                zone_agg[box]['goals'] += 1
+
+        events_out.append({
+            'x': float(e.get('x') or 0),
+            'y': float(e.get('y') or 0),
+            'boxId': box,
+            'goal': 1 if is_goal else 0,
+            'shot': 1 if is_shot else 0,
+            'xG': round(xg_val, 4),
+            'goalieId': int(gid) if gid else None,
+            'shotType': str(e.get('shot_type') or ''),
+            'playerId': int(e.get('player1_id')) if e.get('player1_id') else None,
+            'highlightUrl': e.get('highlight_url') if is_goal else None,
+        })
+
+    # Compute KPIs
+    sh_pct = (total_goals / total_shots * 100) if total_shots else 0.0
+    x_sh_pct = (total_xg / total_shots * 100) if total_shots else 0.0
+    d_sh_pct = sh_pct - x_sh_pct
+    gax = total_goals - total_xg
+
+    # Compute GAx for each goalie
+    goalies_list = sorted(goalie_agg.values(), key=lambda g: g['goals'] - g['xG'], reverse=True)
+    # Resolve goalie names from players table (DB), fall back to roster API
+    player_names = _load_player_names_db(int(season))
+    if not player_names:
+        try:
+            roster = _load_all_rosters_for_season_cached(int(season))
+        except Exception:
+            roster = {}
+        player_names = {pid: info.get('name', '') for pid, info in roster.items() if info.get('name')}
+    for g in goalies_list:
+        g['gax'] = round(g['goals'] - g['xG'], 2)
+        g['xG'] = round(g['xG'], 2)
+        g['name'] = player_names.get(g['goalieId'], str(g['goalieId']))
+
+    # Round zone aggregates
+    for z in zone_agg.values():
+        z['xG'] = round(z['xG'], 2)
+
+    return jsonify({
+        'kpis': {
+            'shots': total_shots,
+            'xG': round(total_xg, 2),
+            'goals': total_goals,
+            'gax': round(gax, 2),
+            'shPct': round(sh_pct, 1),
+            'xShPct': round(x_sh_pct, 1),
+            'dShPct': round(d_sh_pct, 1),
+        },
+        'goalies': goalies_list,
+        'events': events_out,
+        'zones': zone_agg,
+    })
+
+
+@main_bp.route('/api/goalies/goaltending')
+def api_goalies_goaltending():
+    """Aggregate shots-against for a team+season from the goalie perspective.
+
+    Query params:
+      team   – 3-letter team code (required)
+      season – e.g. 20252026 (required)
+      seasonState – regular (default) / playoffs / all
+      strengthState – 5v5 (default) / PP / SH / all
+      xgModel – xG_F (default) / xG_S / xG_F2
+
+    Returns:
+      kpis: {sa, xGA, ga, gsax, svPct, xSvPct, dSvPct}
+      shooters: [{playerId, name, sa, xGA, ga, gsax}, ...]
+      events: [{x, y, boxId, goal, xG, playerId, shotType}, ...]
+      zones: {boxId: {sa, xGA, ga}, ...}
+    """
+    team = str(request.args.get('team', '')).strip().upper()
+    season = str(request.args.get('season', '')).strip()
+    if not team or not season:
+        return jsonify({'error': 'team and season required'}), 400
+
+    ss = str(request.args.get('seasonState', 'regular')).lower()
+    strength = str(request.args.get('strengthState', '5v5')).strip()
+    xg_model = str(request.args.get('xgModel', 'xG_F')).strip()
+
+    xg_col_map = {'xG_F': 'xg_f', 'xG_S': 'xg_s', 'xG_F2': 'xg_f2'}
+    xg_col = xg_col_map.get(xg_model, 'xg_f')
+
+    goalie_id = str(request.args.get('player', '')).strip()
+
+    # Optional roster filter: comma-separated goalie IDs to restrict events
+    # to the current roster (so KPIs match Table View totals).
+    roster_ids_raw = str(request.args.get('roster', '')).strip()
+    roster_ids: Optional[set] = None
+    if roster_ids_raw and not goalie_id:
+        try:
+            roster_ids = {int(x) for x in roster_ids_raw.split(',') if x.strip()}
+        except Exception:
+            roster_ids = None
+
+    filters_base: Dict[str, str] = {
+        'season': f'eq.{season}',
+    }
+    if goalie_id:
+        filters_base['goalie_id'] = f'eq.{goalie_id}'
+    if ss and ss != 'all':
+        filters_base['season_state'] = f'eq.{ss}'
+
+    all_events = []
+    try:
+        cols = f"event_index,x,y,box_id,shot,goal,fenwick,{xg_col},goalie_id,shot_type,player1_id,strength_state,event,event_team,opponent,highlight_url,period"
+        rows = _sb_read('pbp', columns=cols, order='event_index', filters={
+            **filters_base,
+            'opponent': f'eq.{team}',
+            'fenwick': 'eq.1',
+        })
+        if rows:
+            # Exclude shootout attempts (period = 5)
+            all_events = [e for e in rows if int(e.get('period') or 0) != 5]
+    except Exception:
+        pass
+
+    # Restrict to current roster goalies when roster filter is provided
+    if roster_ids:
+        all_events = [e for e in all_events if _safe_int(e.get('goalie_id')) in roster_ids]
+
+    # Apply strength state filter
+    # NOTE: strength_state is from the SHOOTER's (event_team) perspective.
+    # For goaltending, PP means the goalie's team has more skaters,
+    # so the shooter is shorthanded → filter for 4v5/3v5/3v4.
+    # SH means the goalie's team is shorthanded,
+    # so the shooter has a power play → filter for 5v4/5v3/4v3.
+    if strength and strength.lower() != 'all':
+        if strength == '5v5':
+            all_events = [e for e in all_events if str(e.get('strength_state', '')) == '5v5']
+        elif strength == 'PP':
+            # Goalie's team on PP → shooter is shorthanded
+            all_events = [e for e in all_events if str(e.get('strength_state', '')) in ('4v5', '3v5', '3v4')]
+        elif strength == 'SH':
+            # Goalie's team on PK → shooter has power play
+            all_events = [e for e in all_events if str(e.get('strength_state', '')) in ('5v4', '5v3', '4v3')]
+        else:
+            all_events = [e for e in all_events if str(e.get('strength_state', '')) == strength]
+
+    # Build response
+    shooter_agg: Dict[int, Dict[str, Any]] = {}
+    zone_agg: Dict[str, Dict[str, float]] = {}
+    events_out = []
+    total_sa = 0
+    total_xga = 0.0
+    total_ga = 0
+
+    for e in all_events:
+        xg_val = float(e.get(xg_col) or 0.0)
+        is_goal = int(e.get('goal') or 0) == 1
+        pid = e.get('player1_id')
+        box = str(e.get('box_id') or '')
+
+        total_sa += 1
+        total_xga += xg_val
+        if is_goal:
+            total_ga += 1
+
+        # Shooter aggregation
+        if pid:
+            pid = int(pid)
+            if pid not in shooter_agg:
+                shooter_agg[pid] = {'playerId': pid, 'sa': 0, 'xGA': 0.0, 'ga': 0}
+            shooter_agg[pid]['sa'] += 1
+            shooter_agg[pid]['xGA'] += xg_val
+            if is_goal:
+                shooter_agg[pid]['ga'] += 1
+
+        # Zone aggregation
+        if box:
+            if box not in zone_agg:
+                zone_agg[box] = {'sa': 0, 'xGA': 0.0, 'ga': 0}
+            zone_agg[box]['sa'] += 1
+            zone_agg[box]['xGA'] += xg_val
+            if is_goal:
+                zone_agg[box]['ga'] += 1
+
+        events_out.append({
+            'x': float(e.get('x') or 0),
+            'y': float(e.get('y') or 0),
+            'boxId': box,
+            'goal': 1 if is_goal else 0,
+            'shot': 1 if (int(e.get('shot') or 0) == 1 or is_goal) else 0,
+            'xG': round(xg_val, 4),
+            'playerId': int(pid) if pid else None,
+            'goalieId': int(e.get('goalie_id')) if e.get('goalie_id') else None,
+            'shotType': str(e.get('shot_type') or ''),
+            'highlightUrl': e.get('highlight_url') if is_goal else None,
+        })
+
+    # Compute KPIs
+    sv_pct = ((total_sa - total_ga) / total_sa * 100) if total_sa else 0.0
+    x_sv_pct = ((total_sa - total_xga) / total_sa * 100) if total_sa else 0.0
+    d_sv_pct = sv_pct - x_sv_pct
+    gsax = total_xga - total_ga  # positive = saved more than expected
+
+    # Compute GSAx for each shooter
+    shooters_list = sorted(shooter_agg.values(), key=lambda s: s['xGA'] - s['ga'], reverse=True)
+    # Resolve shooter names from players table (DB), fall back to roster API
+    player_names = _load_player_names_db(int(season))
+    if not player_names:
+        try:
+            roster = _load_all_rosters_for_season_cached(int(season))
+        except Exception:
+            roster = {}
+        player_names = {pid: info.get('name', '') for pid, info in roster.items() if info.get('name')}
+    for s in shooters_list:
+        s['gsax'] = round(s['xGA'] - s['ga'], 2)
+        s['xGA'] = round(s['xGA'], 2)
+        s['name'] = player_names.get(s['playerId'], str(s['playerId']))
+
+    # Round zone aggregates
+    for z in zone_agg.values():
+        z['xGA'] = round(z['xGA'], 2)
+
+    return jsonify({
+        'kpis': {
+            'sa': total_sa,
+            'xGA': round(total_xga, 2),
+            'ga': total_ga,
+            'gsax': round(gsax, 2),
+            'svPct': round(sv_pct, 1),
+            'xSvPct': round(x_sv_pct, 1),
+            'dSvPct': round(d_sv_pct, 1),
+        },
+        'shooters': shooters_list,
+        'events': events_out,
+        'zones': zone_agg,
+    })
 
 

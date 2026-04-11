@@ -4,7 +4,7 @@ $season = '20252026';
 $teamWorksheet = 'Sheets7';
 $python = 'C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe';
 
-$dates = @('2026-01-23','2026-01-24','2026-01-25');
+$dates = @('2026-01-26');
 foreach($d in $dates){
 	Write-Host "\n=== Running update_data.py for $d (xG ON) ===";
 	# Also exports player bios to MySQL table nhl_players_20252026
@@ -25,7 +25,7 @@ $contextWorksheet = 'Sheets5';
 $teamWorksheet = 'Sheets7';
 $python = 'C:\Users\larss\Apps\NHL\.venv\Scripts\python.exe';
 
-$dates = @('2026-01-26');
+$dates = @('2026-01-27');
 foreach($d in $dates){
 	Write-Host "\n=== Running update_data.py for $d (xG ON + RAPM/Context) ===";
 	# Also exports player bios to MySQL table nhl_players_20252026

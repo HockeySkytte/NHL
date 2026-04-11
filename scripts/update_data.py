@@ -19,7 +19,7 @@ import os
 import sys
 import argparse
 import subprocess
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Tuple, Optional, Dict, Any, cast
 import json
 import re
@@ -59,6 +59,57 @@ def _validate_date(d: str) -> str:
         return dt.strftime('%Y-%m-%d')
     except Exception:
         raise argparse.ArgumentTypeError('Date must be in YYYY-MM-DD format')
+
+
+def _season_date_bounds(season: str) -> Tuple[date, date]:
+    """Return a conservative inclusive date window for an NHL season code.
+
+    Example: 20242025 -> 2024-09-01 through 2025-07-01.
+    This comfortably covers preseason through the Stanley Cup Final.
+    """
+    s = str(season).strip()
+    if len(s) != 8 or not s.isdigit():
+        raise ValueError(f'Invalid season code: {season!r}')
+    start_year = int(s[:4])
+    end_year = int(s[4:])
+    return date(start_year, 9, 1), date(end_year, 7, 1)
+
+
+def iter_date_strings(start_date: str, end_date: str) -> List[str]:
+    """Return inclusive YYYY-MM-DD date strings between two endpoints."""
+    start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+    end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+    if end_dt < start_dt:
+        raise ValueError('end_date must be >= start_date')
+    out: List[str] = []
+    cur = start_dt
+    while cur <= end_dt:
+        out.append(cur.strftime('%Y-%m-%d'))
+        cur += timedelta(days=1)
+    return out
+
+
+def get_season_game_dates(
+    season: str,
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> List[Tuple[str, List[int]]]:
+    """Return [(date_str, game_ids)] for each date in the season window with games."""
+    default_start, default_end = _season_date_bounds(season)
+    start_str = start_date or default_start.strftime('%Y-%m-%d')
+    end_str = end_date or default_end.strftime('%Y-%m-%d')
+
+    out: List[Tuple[str, List[int]]] = []
+    for day in iter_date_strings(start_str, end_str):
+        try:
+            game_ids = get_game_ids_for_date(day)
+        except Exception as e:
+            print(f'[warn] schedule lookup failed for {day}: {e}', file=sys.stderr)
+            continue
+        if game_ids:
+            out.append((day, game_ids))
+    return out
 
 
 def get_game_ids_for_date(date_str: str) -> List[int]:
@@ -109,7 +160,12 @@ def get_game_ids_for_date(date_str: str) -> List[int]:
                     ids.append(int(gid))
                 except Exception:
                     continue
-    return sorted(list({i for i in ids if i}))
+    # Only keep regular season (02) and playoff (03) games.
+    # Game ID format: YYYYTTNNNN where TT encodes game type.
+    def _is_regular_or_playoff(gid: int) -> bool:
+        gt = (gid // 10000) % 100
+        return gt in (2, 3)
+    return sorted(list({i for i in ids if i and _is_regular_or_playoff(i)}))
 
 
 def _fetch_birthdays_for_game(game_id: int) -> Dict[int, Optional[str]]:
@@ -277,11 +333,16 @@ def export_players_to_mysql(season: str = '20252026') -> None:
     print(f"[mysql] wrote {len(df)} player bios rows -> {tbl}")
 
 
-def fetch_day(date_str: str, with_xg: bool = True) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def fetch_day(
+    date_str: str,
+    with_xg: bool = True,
+    *,
+    game_ids: Optional[List[int]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Return (df_pbp, df_shifts) for all games played on date_str (YYYY-MM-DD).
     Reuses internal Flask routes via a test client; does not require the dev server to run.
     """
-    game_ids = get_game_ids_for_date(date_str)
+    game_ids = game_ids if game_ids is not None else get_game_ids_for_date(date_str)
     if not game_ids:
         # No games on this date
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -720,6 +781,67 @@ def _load_teams_csv_local() -> List[Dict[str, str]]:
             continue
     return []
 
+
+def _load_seasonstats_teams_local() -> pd.DataFrame:
+    paths = [
+        os.path.join(REPO_ROOT, 'app', 'static', 'nhl_seasonstats_teams.csv'),
+        os.path.join(os.path.dirname(__file__), '..', 'app', 'static', 'nhl_seasonstats_teams.csv'),
+        os.path.join(os.getcwd(), 'app', 'static', 'nhl_seasonstats_teams.csv'),
+    ]
+    for p in paths:
+        try:
+            if os.path.exists(p):
+                return pd.read_csv(p, dtype=str).fillna('')
+        except Exception:
+            continue
+    return pd.DataFrame()
+
+
+SEASON_TEAMS_LOCAL = _load_seasonstats_teams_local()
+
+
+def _season_team_codes(season: str | int) -> List[str]:
+    season_str = str(season).strip()
+
+    if not SEASON_TEAMS_LOCAL.empty and {'Season', 'Team'}.issubset(SEASON_TEAMS_LOCAL.columns):
+        season_rows = SEASON_TEAMS_LOCAL[SEASON_TEAMS_LOCAL['Season'].astype(str) == season_str]
+        teams = sorted({str(t).strip().upper() for t in season_rows['Team'].tolist() if str(t).strip()})
+        if teams:
+            return teams
+
+    teams = {
+        str(r.get('Team', '')).strip().upper()
+        for r in TEAMS_ROWS_LOCAL
+        if str(r.get('Active', '')).strip() == '1'
+    }
+    if not teams:
+        return []
+
+    season_start = int(season_str[:4]) if len(season_str) >= 4 and season_str[:4].isdigit() else 0
+
+    if season_start < 2024:
+        teams.discard('UTA')
+        teams.add('ARI')
+    if season_start < 2021:
+        teams.discard('SEA')
+    if season_start < 2017:
+        teams.discard('VGK')
+    if season_start < 2014:
+        teams.discard('ARI')
+        teams.discard('UTA')
+        teams.add('PHX')
+    if season_start < 2011:
+        teams.discard('WPG')
+        teams.add('ATL')
+    if season_start < 2000:
+        teams.discard('CBJ')
+        teams.discard('MIN')
+    if season_start < 1998:
+        teams.discard('NSH')
+
+    return sorted(teams)
+
+
 TEAMS_ROWS_LOCAL = _load_teams_csv_local()
 
 
@@ -1134,6 +1256,316 @@ def export_to_mysql(
             print("[mysql] df_gamedata empty; nothing to write")
     except SQLAlchemyError as e:
         print(f"[error] writing {tbl_gd}: {e}", file=sys.stderr)
+
+
+# ── Supabase export ─────────────────────────────────────────────
+
+def _season_int(s: str) -> int:
+    """Convert season string like '20252026' to int."""
+    return int(str(s).strip())
+
+
+# Column mapping: DataFrame CamelCase → Supabase snake_case
+# Event types to keep in the PBP table (everything else is dropped)
+_PBP_KEEP_EVENTS = {'shot-on-goal', 'missed-shot', 'blocked-shot', 'faceoff', 'penalty', 'goal'}
+
+_PBP_COL_MAP: Dict[str, str] = {
+    'EventIndex': 'event_index',
+    'GameID': 'game_id',
+    'Season': 'season',
+    'SeasonState': 'season_state',
+    'Date': 'date',
+    'Venue': 'venue',
+    'Period': 'period',
+    'gameTime': 'game_time',
+    'StrengthState': 'strength_state',
+    'Event': 'event',
+    'X': 'x',
+    'Y': 'y',
+    'Zone': 'zone',
+    'reason': 'reason',
+    'shotType': 'shot_type',
+    'PEN_duration': 'pen_duration',
+    'EventTeam': 'event_team',
+    'Opponent': 'opponent',
+    'Goalie_ID': 'goalie_id',
+    'Player1_ID': 'player1_id',
+    'Player2_ID': 'player2_id',
+    'Player3_ID': 'player3_id',
+    'Corsi': 'corsi',
+    'Fenwick': 'fenwick',
+    'Shot': 'shot',
+    'Goal': 'goal',
+    'ShiftIndex': 'shift_index',
+    'ScoreState': 'score_state',
+    'Home_Forwards_ID': 'home_forwards_id',
+    'Home_Defenders_ID': 'home_defenders_id',
+    'Home_Goalie_ID': 'home_goalie_id',
+    'Away_Forwards_ID': 'away_forwards_id',
+    'Away_Defenders_ID': 'away_defenders_id',
+    'Away_Goalie_ID': 'away_goalie_id',
+    'BoxID': 'box_id',
+    'BoxSize': 'box_size',
+    'ShotDistance': 'shot_distance',
+    'ShotAngle': 'shot_angle',
+    'Position': 'position',
+    'Shoots': 'shoots',
+    'xG_F': 'xg_f',
+    'xG_S': 'xg_s',
+    'xG_F2': 'xg_f2',
+    'HighlightUrl': 'highlight_url',
+}
+
+_SHIFTS_COL_MAP: Dict[str, str] = {
+    'ShiftIndex': 'shift_index',
+    'GameID': 'game_id',
+    'PlayerID': 'player_id',
+    'Team': 'team',
+    'Duration': 'duration',
+    'StrengthState': 'strength_state',
+}
+
+_GAMEDATA_COL_MAP: Dict[str, str] = {
+    'GameID': 'game_id',
+    'Date': 'date',
+    'PlayerID': 'player_id',
+    'Player': 'player',
+    'Position': 'position',
+    'Team': 'team',
+    'Birthday': 'birthday',
+    'TOI_All': 'toi_all', 'TOI_EV': 'toi_ev', 'TOI_PP': 'toi_pp', 'TOI_SH': 'toi_sh',
+    'CF_All': 'cf_all', 'CF_EV': 'cf_ev', 'CF_PP': 'cf_pp', 'CF_SH': 'cf_sh',
+    'CA_All': 'ca_all', 'CA_EV': 'ca_ev', 'CA_PP': 'ca_pp', 'CA_SH': 'ca_sh',
+    'FF_All': 'ff_all', 'FF_EV': 'ff_ev', 'FF_PP': 'ff_pp', 'FF_SH': 'ff_sh',
+    'FA_All': 'fa_all', 'FA_EV': 'fa_ev', 'FA_PP': 'fa_pp', 'FA_SH': 'fa_sh',
+    'SF_All': 'sf_all', 'SF_EV': 'sf_ev', 'SF_PP': 'sf_pp', 'SF_SH': 'sf_sh',
+    'SA_All': 'sa_all', 'SA_EV': 'sa_ev', 'SA_PP': 'sa_pp', 'SA_SH': 'sa_sh',
+    'GF_All': 'gf_all', 'GF_EV': 'gf_ev', 'GF_PP': 'gf_pp', 'GF_SH': 'gf_sh',
+    'GA_All': 'ga_all', 'GA_EV': 'ga_ev', 'GA_PP': 'ga_pp', 'GA_SH': 'ga_sh',
+    'xGF_F_All': 'xgf_f_all', 'xGF_F_EV': 'xgf_f_ev', 'xGF_F_PP': 'xgf_f_pp', 'xGF_F_SH': 'xgf_f_sh',
+    'xGA_F_All': 'xga_f_all', 'xGA_F_EV': 'xga_f_ev', 'xGA_F_PP': 'xga_f_pp', 'xGA_F_SH': 'xga_f_sh',
+    'xGF_F2_All': 'xgf_f2_all', 'xGF_F2_EV': 'xgf_f2_ev', 'xGF_F2_PP': 'xgf_f2_pp', 'xGF_F2_SH': 'xgf_f2_sh',
+    'xGA_F2_All': 'xga_f2_all', 'xGA_F2_EV': 'xga_f2_ev', 'xGA_F2_PP': 'xga_f2_pp', 'xGA_F2_SH': 'xga_f2_sh',
+    'xGF_S_All': 'xgf_s_all', 'xGF_S_EV': 'xgf_s_ev', 'xGF_S_PP': 'xgf_s_pp', 'xGF_S_SH': 'xgf_s_sh',
+    'xGA_S_All': 'xga_s_all', 'xGA_S_EV': 'xga_s_ev', 'xGA_S_PP': 'xga_s_pp', 'xGA_S_SH': 'xga_s_sh',
+    'iG_All': 'ig_all', 'iG_EV': 'ig_ev', 'iG_PP': 'ig_pp', 'iG_SH': 'ig_sh',
+    'A1_All': 'a1_all', 'A1_EV': 'a1_ev', 'A1_PP': 'a1_pp', 'A1_SH': 'a1_sh',
+    'A2_All': 'a2_all', 'A2_EV': 'a2_ev', 'A2_PP': 'a2_pp', 'A2_SH': 'a2_sh',
+    'PEN_taken': 'pen_taken',
+    'PEN_drawn': 'pen_drawn',
+}
+
+_PLAYERS_COL_MAP: Dict[str, str] = {
+    'playerId': 'player_id',
+    'Player': 'player',
+    'Position': 'position',
+    'shootsCatches': 'shoots_catches',
+    'Birthday': 'birthday',
+    'Nationality': 'nationality',
+    'height': 'height',
+    'weight': 'weight',
+    'DraftPosition': 'draft_position',
+    'draftYear': 'draft_year',
+}
+
+
+def _rename_df_cols(df: pd.DataFrame, col_map: Dict[str, str]) -> pd.DataFrame:
+    """Rename DataFrame columns using a mapping, keeping only mapped columns that exist."""
+    present = {src: dst for src, dst in col_map.items() if src in df.columns}
+    return df.rename(columns=present)[[v for v in present.values()]]
+
+
+def _json_serialise_list_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert list-typed columns to JSON strings for Supabase TEXT columns."""
+    for col in df.columns:
+        if df[col].apply(type).eq(list).any():
+            df[col] = df[col].apply(lambda v: json.dumps(v) if isinstance(v, list) else v)
+    return df
+
+
+def _coerce_bigint_cols(df: pd.DataFrame, cols: list) -> pd.DataFrame:
+    """Coerce columns to nullable Int64 so JSON sees ints, not '123.0'."""
+    for c in cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors='coerce').astype('Int64')
+    return df
+
+
+def _apply_xg_nulling_rule_sb(df: pd.DataFrame) -> pd.DataFrame:
+    """Null out xG columns when reason indicates invalid/short xG (Supabase version)."""
+    if df is None or df.empty:
+        return df
+    reason_col = None
+    for c in df.columns:
+        if str(c).lower() == 'reason':
+            reason_col = c
+            break
+    if not reason_col:
+        return df
+    reasons = df[reason_col].astype(str).str.strip().str.lower()
+    bad = reasons.isin({'short', 'failed-bank-attempt'})
+    if not bad.any():
+        return df
+    for key in ('xg_f', 'xg_f2', 'xg_s'):
+        if key in df.columns:
+            df.loc[bad, key] = None
+    return df
+
+
+def export_to_supabase(
+    df_pbp: pd.DataFrame,
+    df_shifts: pd.DataFrame,
+    df_gamedata: Optional[pd.DataFrame] = None,
+    season: str = "20252026",
+    *,
+    date_str: Optional[str] = None,
+    replace_date: bool = False,
+) -> None:
+    """Export the dataframes into Supabase tables (pbp, shifts, game_data)."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    from app.supabase_client import get_client, upsert_df, delete_rows
+
+    season_i = _season_int(season)
+
+    # Pre-delete by date if requested (idempotent loads)
+    if replace_date and date_str is not None:
+        for tbl in ('pbp', 'game_data'):
+            try:
+                delete_rows(tbl, {"date": f"eq.{date_str}", "season": f"eq.{season_i}"})
+                print(f"[supabase] pre-deleted {date_str} rows from {tbl}")
+            except Exception as e:
+                print(f"[supabase] pre-delete {tbl} skipped: {e}")
+
+    # PBP
+    if not df_pbp.empty:
+        dfp = df_pbp.copy()
+        # Drop lowercase x/y that collide with uppercase X/Y
+        dfp = dfp.drop(columns=['x', 'y', 'box_id', 'box_rev', 'box_size'], errors='ignore')
+        # Ensure Season column
+        if 'Season' not in dfp.columns:
+            dfp['Season'] = season_i
+
+        # --- Filter: only keep relevant event types ---
+        if 'Event' in dfp.columns:
+            before = len(dfp)
+            dfp = dfp[dfp['Event'].isin(_PBP_KEEP_EVENTS)]
+            print(f"[supabase] pbp filtered {before} → {len(dfp)} rows (kept {_PBP_KEEP_EVENTS})")
+
+        dfp = _rename_df_cols(dfp, _PBP_COL_MAP)
+        dfp['season'] = season_i
+        # Coerce BIGINT columns so they don't serialize as "123.0"
+        _coerce_bigint_cols(dfp, [
+            'event_index', 'game_id', 'shift_index',
+            'goalie_id', 'player1_id', 'player2_id', 'player3_id',
+        ])
+        _apply_xg_nulling_rule_sb(dfp)
+        _json_serialise_list_cols(dfp)
+        # Delete existing rows for these game_ids to be idempotent
+        # (prevents orphaned events when a game is reprocessed with different play count)
+        game_ids = dfp['game_id'].dropna().unique().tolist()
+        for gid in game_ids:
+            try:
+                delete_rows("pbp", {"game_id": f"eq.{int(gid)}", "season": f"eq.{season_i}"})
+            except Exception:
+                pass
+        try:
+            upsert_df("pbp", dfp, on_conflict="event_index,season")
+            print(f"[supabase] wrote {len(dfp)} rows to pbp")
+        except Exception as e:
+            print(f"[error] writing pbp: {e}", file=sys.stderr)
+    else:
+        print("[supabase] df_pbp empty; nothing to write")
+
+    # Shifts – aggregate to one row per team+shift_index
+    if not df_shifts.empty:
+        dfs = df_shifts.copy()
+        dfs = _rename_df_cols(dfs, _SHIFTS_COL_MAP)
+        dfs['season'] = season_i
+        # Coerce BIGINT columns
+        _coerce_bigint_cols(dfs, ['shift_index', 'game_id', 'player_id'])
+
+        # Aggregate: one row per (shift_index, game_id, team, season)
+        # player_id becomes space-separated string of all player IDs
+        group_cols = ['shift_index', 'game_id', 'team', 'season']
+        dfs['player_id'] = dfs['player_id'].astype(str)
+        agg = (
+            dfs.groupby(group_cols, dropna=False)
+            .agg(
+                player_id=('player_id', lambda ids: ' '.join(ids)),
+                duration=('duration', 'first'),
+                strength_state=('strength_state', 'first'),
+            )
+            .reset_index()
+        )
+        before_shifts = len(dfs)
+        dfs = agg
+        print(f"[supabase] shifts aggregated {before_shifts} → {len(dfs)} rows (by team+shift_index)")
+
+        # First delete existing rows for these game_ids to be idempotent
+        game_ids = dfs['game_id'].dropna().unique().tolist()
+        for gid in game_ids:
+            try:
+                delete_rows("shifts", {"game_id": f"eq.{gid}", "season": f"eq.{season_i}"})
+            except Exception:
+                pass
+        try:
+            upsert_df("shifts", dfs)  # plain insert (no on_conflict)
+            print(f"[supabase] wrote {len(dfs)} rows to shifts")
+        except Exception as e:
+            print(f"[error] writing shifts: {e}", file=sys.stderr)
+    else:
+        print("[supabase] df_shifts empty; nothing to write")
+
+    # GameData
+    if df_gamedata is not None and not df_gamedata.empty:
+        dfg = df_gamedata.copy()
+        dfg = _rename_df_cols(dfg, _GAMEDATA_COL_MAP)
+        dfg['season'] = season_i
+        # Coerce BIGINT columns
+        _coerce_bigint_cols(dfg, ['game_id', 'player_id'])
+        _apply_xg_nulling_rule_sb(dfg)
+        # Convert birthday dates to string for JSON
+        if 'birthday' in dfg.columns:
+            dfg['birthday'] = dfg['birthday'].apply(
+                lambda v: str(v) if v is not None and not (isinstance(v, float) and pd.isna(v)) else None
+            )
+        try:
+            upsert_df("game_data", dfg, on_conflict="game_id,player_id,season")
+            print(f"[supabase] wrote {len(dfg)} rows to game_data")
+        except Exception as e:
+            print(f"[error] writing game_data: {e}", file=sys.stderr)
+    else:
+        print("[supabase] df_gamedata empty; nothing to write")
+
+
+def export_players_to_supabase(season: str = '20252026') -> None:
+    """Export player bios into Supabase players table."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    from app.supabase_client import get_client, upsert_df, delete_rows
+
+    season_id = str(season).strip()
+    season_i = _season_int(season_id)
+    df = fetch_player_bios_for_season(season_id)
+    if df.empty:
+        raise RuntimeError(f"No player bios returned for season {season_id}")
+
+    dfp = _rename_df_cols(df, _PLAYERS_COL_MAP)
+    dfp['season'] = season_i
+    # Convert birthday dates to string for JSON
+    if 'birthday' in dfp.columns:
+        dfp['birthday'] = dfp['birthday'].apply(
+            lambda v: str(v) if v is not None and not (isinstance(v, float) and pd.isna(v)) else None
+        )
+
+    # Replace all bios for the season
+    try:
+        delete_rows("players", {"season": f"eq.{season_i}"})
+    except Exception:
+        pass
+    upsert_df("players", dfp, on_conflict="player_id,season")
+    print(f"[supabase] wrote {len(dfp)} player bios -> players (season={season_id})")
 
 
 def run_player_projections_and_write_csv(csv_path: Optional[str] = None) -> str:
@@ -1856,6 +2288,488 @@ def run_player_projections_and_write_google_sheet(
     print(f"[sheets] wrote projections to sheetId={sheet_id} worksheet={worksheet}")
 
 
+# ---------------------------------------------------------------------------
+# Forward-lines & defense-pairings rebuild (pre-computed 5v5 regular-season)
+# ---------------------------------------------------------------------------
+
+def rebuild_line_combos(season: str = '20242025') -> None:
+    """Rebuild the ``forward_lines`` and ``defense_pairings`` Supabase tables.
+
+    Reads shifts + PBP from Supabase for every team active in that season, computes all
+    forward-line (3F) and defense-pair (2D) combinations at 5v5 for both
+    regular season (season_stage=2) and playoffs (season_stage=3), and
+    upserts the results.
+    """
+    from collections import defaultdict
+    from dotenv import load_dotenv
+    load_dotenv()
+    from app.supabase_client import read_table, upsert_df, delete_rows
+
+    season_int = int(season)
+    print(f'[lines] rebuilding forward_lines / defense_pairings for season {season} …')
+
+    # ── 1. Teams for this season ────────────────────────────────
+    teams = _season_team_codes(season_int)
+    if not teams:
+        print(f'[lines] no teams found for season {season} – aborting'); return
+
+    # ── 2. Player positions ─────────────────────────────────────
+    players_df = read_table('players', columns='player_id,player,position',
+                            filters={'season': f'eq.{season_int}'})
+    pid_info: Dict[str, Dict[str, str]] = {}
+    if not players_df.empty:
+        for _, r in players_df.iterrows():
+            pid_info[str(r['player_id'])] = {'name': str(r.get('player', '')),
+                                              'position': str(r.get('position', ''))}
+    print(f'[lines] loaded {len(pid_info)} players')
+
+    FWD_POS = {'C', 'L', 'R'}
+    DEF_POS = {'D'}
+    ALLOWED_5V5 = {'5v5'}
+    STAGE_MAP = {'02': 2, '03': 3}   # regular-season / playoffs
+
+    # accumulators: (table_name, combo_size, target_positions)
+    tables_cfg = [
+        ('forward_lines', 3, FWD_POS),
+        ('defense_pairings', 2, DEF_POS),
+    ]
+
+    # combo_groups[table][(team, stage, player_ids_tuple)] = {duration, game_ids, shift_keys, team, stage}
+    combo_groups: Dict[str, Dict[tuple, dict]] = {t: {} for t, _, _ in tables_cfg}
+
+    # ── 3. Read shifts per team and group by combo ──────────────
+    all_game_ids: set = set()
+    for idx, team in enumerate(teams, 1):
+        print(f'[lines] ({idx}/{len(teams)}) reading shifts for {team} …', end=' ')
+        df = read_table('shifts',
+                        columns='shift_index,game_id,player_id,duration,strength_state',
+                        filters={'team': f'eq.{team}', 'season': f'eq.{season_int}'})
+        if df.empty:
+            print('0 rows'); continue
+        # Filter regular season + playoffs (game_id digits [4:6] in {02,03}) and 5v5
+        df['_gt'] = df['game_id'].astype(str).str[4:6]
+        df = df[df['_gt'].isin(STAGE_MAP.keys())]
+        df = df[df['strength_state'].astype(str).isin(ALLOWED_5V5)]
+        print(f'{len(df)} rows (5v5)')
+
+        for _, s in df.iterrows():
+            pids_on_ice = str(s['player_id']).split()
+            gid = int(s['game_id'])
+            gt = str(s['_gt'])
+            stage = STAGE_MAP.get(gt)
+            if not stage:
+                continue
+            si = int(s['shift_index'])
+            dur = int(s.get('duration') or 0)
+            all_game_ids.add(gid)
+
+            for tbl_name, combo_size, target_pos in tables_cfg:
+                line_pids = sorted(p for p in pids_on_ice
+                                   if pid_info.get(p, {}).get('position', '') in target_pos)
+                if len(line_pids) != combo_size:
+                    continue
+                key = (team, stage, tuple(line_pids))
+                grp = combo_groups[tbl_name].get(key)
+                if grp is None:
+                    grp = {'duration': 0, 'game_ids': set(), 'shift_keys': set(),
+                           'team': team, 'stage': stage}
+                    combo_groups[tbl_name][key] = grp
+                grp['duration'] += dur
+                grp['game_ids'].add(gid)
+                grp['shift_keys'].add((gid, si))
+
+    print(f'[lines] fwd combos={len(combo_groups["forward_lines"])}, '
+          f'def combos={len(combo_groups["defense_pairings"])}, '
+          f'game_ids={len(all_game_ids)}')
+
+    # ── 4. Fetch PBP (corsi events) for all game IDs ───────────
+    game_list = sorted(all_game_ids)
+    BATCH = 20
+    all_pbp: list = []
+    for i in range(0, len(game_list), BATCH):
+        batch_ids = game_list[i:i + BATCH]
+        gid_filter = ','.join(str(g) for g in batch_ids)
+        df_pbp = read_table(
+            'pbp',
+            columns='game_id,shift_index,event_team,opponent,shot,goal,fenwick,corsi,'
+                    'xg_f,xg_s,xg_f2,strength_state,period',
+            filters={
+                'season': f'eq.{season_int}',
+                'game_id': f'in.({gid_filter})',
+                'corsi': 'eq.1',
+            },
+        )
+        if not df_pbp.empty:
+            all_pbp.extend(df_pbp.to_dict(orient='records'))
+        if (i // BATCH + 1) % 20 == 0:
+            print(f'[lines]   PBP batch {i // BATCH + 1}/{(len(game_list) + BATCH - 1) // BATCH} …')
+    print(f'[lines] loaded {len(all_pbp)} PBP events')
+
+    # ── 5. Build shift_key → combo keys mapping ────────────────
+    for tbl_name, _, _ in tables_cfg:
+        sk_to_combos: Dict[tuple, list] = defaultdict(list)
+        combos = combo_groups[tbl_name]
+
+        for key, grp in combos.items():
+            for sk in grp['shift_keys']:
+                sk_to_combos[sk].append(key)
+
+        # Initialise on-ice accumulators
+        onice: Dict[tuple, dict] = {}
+        for key in combos:
+            onice[key] = {'cf': 0, 'ca': 0, 'ff': 0, 'fa': 0,
+                          'sf': 0, 'sa': 0, 'gf': 0, 'ga': 0,
+                          'xgf': 0.0, 'xga': 0.0,
+                          'xgf_s': 0.0, 'xga_s': 0.0,
+                          'xgf_f2': 0.0, 'xga_f2': 0.0}
+
+        # ── 6. Assign PBP events to combos ──────────────────────
+        import math as _math
+        def _safe_int(v, default=0):
+            if v is None:
+                return None if default is None else default
+            try:
+                f = float(v)
+                if _math.isnan(f):
+                    return None if default is None else default
+                return int(f)
+            except (ValueError, TypeError):
+                return None if default is None else default
+
+        def _safe_float(v, default=0.0):
+            if v is None:
+                return default
+            try:
+                f = float(v)
+                return default if _math.isnan(f) else f
+            except (ValueError, TypeError):
+                return default
+
+        for e in all_pbp:
+            period = _safe_int(e.get('period'), 0)
+            if period == 5:
+                continue
+            si_raw = _safe_int(e.get('shift_index'), None)
+            if si_raw is None:
+                continue
+            gid = _safe_int(e.get('game_id'), 0)
+            si = si_raw
+            ckeys = sk_to_combos.get((gid, si))
+            if not ckeys:
+                continue
+
+            et = str(e.get('event_team', '')).upper()
+            is_shot = _safe_int(e.get('shot'), 0) == 1
+            is_goal = _safe_int(e.get('goal'), 0) == 1
+            is_fenwick = _safe_int(e.get('fenwick'), 0) == 1
+            xg_f_val = _safe_float(e.get('xg_f'))
+            xg_s_val = _safe_float(e.get('xg_s'))
+            xg_f2_val = _safe_float(e.get('xg_f2'))
+
+            for ckey in ckeys:
+                cteam = combos[ckey]['team']
+                oi = onice[ckey]
+                if et == cteam:
+                    oi['cf'] += 1
+                    if is_fenwick: oi['ff'] += 1
+                    if is_shot: oi['sf'] += 1
+                    if is_goal: oi['gf'] += 1
+                    oi['xgf'] += xg_f_val
+                    oi['xgf_s'] += xg_s_val
+                    oi['xgf_f2'] += xg_f2_val
+                else:
+                    oi['ca'] += 1
+                    if is_fenwick: oi['fa'] += 1
+                    if is_shot: oi['sa'] += 1
+                    if is_goal: oi['ga'] += 1
+                    oi['xga'] += xg_f_val
+                    oi['xga_s'] += xg_s_val
+                    oi['xga_f2'] += xg_f2_val
+
+        # ── 7. Build rows and write to Supabase ────────────────
+        rows = []
+        for key, grp in combos.items():
+            toi_min = grp['duration'] / 60.0
+            if toi_min < 0.1:
+                continue
+            team_abbr, stage, pids = key
+            oi = onice[key]
+            rows.append({
+                'season': season_int,
+                'season_stage': stage,
+                'team': team_abbr,
+                'player_ids': ' '.join(pids),
+                'gp': len(grp['game_ids']),
+                'toi': round(toi_min, 1),
+                'cf': oi['cf'], 'ca': oi['ca'],
+                'ff': oi['ff'], 'fa': oi['fa'],
+                'sf': oi['sf'], 'sa': oi['sa'],
+                'gf': oi['gf'], 'ga': oi['ga'],
+                'xgf': round(oi['xgf'], 2), 'xga': round(oi['xga'], 2),
+                'xgf_s': round(oi['xgf_s'], 2), 'xga_s': round(oi['xga_s'], 2),
+                'xgf_f2': round(oi['xgf_f2'], 2), 'xga_f2': round(oi['xga_f2'], 2),
+            })
+
+        if rows:
+            df_out = pd.DataFrame(rows)
+            # Delete existing rows for this season
+            try:
+                delete_rows(tbl_name, {'season': f'eq.{season_int}'})
+            except Exception:
+                pass
+            upsert_df(tbl_name, df_out, on_conflict='season,season_stage,team,player_ids')
+            print(f'[lines] wrote {len(df_out)} rows to {tbl_name}')
+        else:
+            print(f'[lines] no rows to write for {tbl_name}')
+
+    print('[lines] rebuild complete')
+
+
+def rebuild_line_combos_date(season: str, game_ids: List[int]) -> None:
+    """Incremental update of ``forward_lines`` / ``defense_pairings`` for specific games.
+
+    Reads shifts + PBP from Supabase for only the supplied *game_ids*,
+    computes line-combo stats, and merges them with existing rows in the
+    pre-computed tables (adding TOI, GP, and all counting stats).
+    """
+    if not game_ids:
+        print('[lines-date] no game IDs provided – skipping')
+        return
+    from collections import defaultdict
+    from dotenv import load_dotenv
+    load_dotenv()
+    from app.supabase_client import read_table, upsert_df
+
+    season_int = int(season)
+    print(f'[lines-date] updating line combos for {len(game_ids)} games …')
+
+    # ── Player positions ────────────────────────────────────────
+    players_df = read_table('players', columns='player_id,player,position',
+                            filters={'season': f'eq.{season_int}'})
+    pid_info: Dict[str, Dict[str, str]] = {}
+    if not players_df.empty:
+        for _, r in players_df.iterrows():
+            pid_info[str(r['player_id'])] = {
+                'name': str(r.get('player', '')),
+                'position': str(r.get('position', '')),
+            }
+
+    FWD_POS = {'C', 'L', 'R'}
+    DEF_POS = {'D'}
+    ALLOWED_5V5 = {'5v5'}
+    STAGE_MAP = {'02': 2, '03': 3}
+
+    tables_cfg = [
+        ('forward_lines', 3, FWD_POS),
+        ('defense_pairings', 2, DEF_POS),
+    ]
+
+    # combo key = (team, stage, tuple(pids))
+    combo_groups: Dict[str, Dict[tuple, dict]] = {t: {} for t, _, _ in tables_cfg}
+
+    # ── Read shifts for the given game IDs ──────────────────────
+    BATCH = 20
+    for i in range(0, len(game_ids), BATCH):
+        batch_ids = game_ids[i:i + BATCH]
+        gid_filter = ','.join(str(g) for g in batch_ids)
+        df = read_table('shifts',
+                        columns='shift_index,game_id,player_id,duration,strength_state,team',
+                        filters={'season': f'eq.{season_int}',
+                                 'game_id': f'in.({gid_filter})'})
+        if df.empty:
+            continue
+        df['_gt'] = df['game_id'].astype(str).str[4:6]
+        df = df[df['_gt'].isin(STAGE_MAP.keys())]
+        df = df[df['strength_state'].astype(str).isin(ALLOWED_5V5)]
+
+        for _, s in df.iterrows():
+            pids_on_ice = str(s['player_id']).split()
+            gid = int(s['game_id'])
+            gt = str(s['_gt'])
+            stage = STAGE_MAP.get(gt)
+            if not stage:
+                continue
+            si = int(s['shift_index'])
+            dur = int(s.get('duration') or 0)
+            team = str(s.get('team', '')).upper()
+
+            for tbl_name, combo_size, target_pos in tables_cfg:
+                line_pids = sorted(p for p in pids_on_ice
+                                   if pid_info.get(p, {}).get('position', '') in target_pos)
+                if len(line_pids) != combo_size:
+                    continue
+                key = (team, stage, tuple(line_pids))
+                grp = combo_groups[tbl_name].get(key)
+                if grp is None:
+                    grp = {'duration': 0, 'game_ids': set(), 'shift_keys': set(),
+                           'team': team, 'stage': stage}
+                    combo_groups[tbl_name][key] = grp
+                grp['duration'] += dur
+                grp['game_ids'].add(gid)
+                grp['shift_keys'].add((gid, si))
+
+    # ── Read PBP for the given game IDs ─────────────────────────
+    all_pbp: list = []
+    for i in range(0, len(game_ids), BATCH):
+        batch_ids = game_ids[i:i + BATCH]
+        gid_filter = ','.join(str(g) for g in batch_ids)
+        df_pbp = read_table(
+            'pbp',
+            columns='game_id,shift_index,event_team,opponent,shot,goal,fenwick,corsi,'
+                    'xg_f,xg_s,xg_f2,strength_state,period',
+            filters={
+                'season': f'eq.{season_int}',
+                'game_id': f'in.({gid_filter})',
+                'corsi': 'eq.1',
+            },
+        )
+        if not df_pbp.empty:
+            all_pbp.extend(df_pbp.to_dict(orient='records'))
+
+    total_shifts = sum(len(g['shift_keys']) for t in combo_groups.values() for g in t.values())
+    print(f'[lines-date] shifts={total_shifts} PBP={len(all_pbp)}')
+
+    import math as _math
+
+    def _safe_int(v, default=0):
+        if v is None:
+            return None if default is None else default
+        try:
+            f = float(v)
+            if _math.isnan(f):
+                return None if default is None else default
+            return int(f)
+        except (ValueError, TypeError):
+            return None if default is None else default
+
+    def _safe_float(v, default=0.0):
+        if v is None:
+            return default
+        try:
+            f = float(v)
+            return default if _math.isnan(f) else f
+        except (ValueError, TypeError):
+            return default
+
+    STAT_KEYS = ['cf', 'ca', 'ff', 'fa', 'sf', 'sa', 'gf', 'ga',
+                 'xgf', 'xga', 'xgf_s', 'xga_s', 'xgf_f2', 'xga_f2']
+
+    for tbl_name, _, _ in tables_cfg:
+        sk_to_combos: Dict[tuple, list] = defaultdict(list)
+        combos = combo_groups[tbl_name]
+        if not combos:
+            continue
+
+        for key, grp in combos.items():
+            for sk in grp['shift_keys']:
+                sk_to_combos[sk].append(key)
+
+        onice: Dict[tuple, dict] = {}
+        for key in combos:
+            onice[key] = {k: (0.0 if 'xg' in k else 0) for k in STAT_KEYS}
+
+        for e in all_pbp:
+            period = _safe_int(e.get('period'), 0)
+            if period == 5:
+                continue
+            si_raw = _safe_int(e.get('shift_index'), None)
+            if si_raw is None:
+                continue
+            gid = _safe_int(e.get('game_id'), 0)
+            ckeys = sk_to_combos.get((gid, si_raw))
+            if not ckeys:
+                continue
+
+            et = str(e.get('event_team', '')).upper()
+            is_shot = _safe_int(e.get('shot'), 0) == 1
+            is_goal = _safe_int(e.get('goal'), 0) == 1
+            is_fenwick = _safe_int(e.get('fenwick'), 0) == 1
+            xg_f_val = _safe_float(e.get('xg_f'))
+            xg_s_val = _safe_float(e.get('xg_s'))
+            xg_f2_val = _safe_float(e.get('xg_f2'))
+
+            for ckey in ckeys:
+                cteam = combos[ckey]['team']
+                oi = onice[ckey]
+                if et == cteam:
+                    oi['cf'] += 1
+                    if is_fenwick: oi['ff'] += 1
+                    if is_shot:    oi['sf'] += 1
+                    if is_goal:    oi['gf'] += 1
+                    oi['xgf']    += xg_f_val
+                    oi['xgf_s']  += xg_s_val
+                    oi['xgf_f2'] += xg_f2_val
+                else:
+                    oi['ca'] += 1
+                    if is_fenwick: oi['fa'] += 1
+                    if is_shot:    oi['sa'] += 1
+                    if is_goal:    oi['ga'] += 1
+                    oi['xga']    += xg_f_val
+                    oi['xga_s']  += xg_s_val
+                    oi['xga_f2'] += xg_f2_val
+
+        # ── Compute day-delta rows ──────────────────────────────
+        day_data: Dict[tuple, dict] = {}   # (stage, team, player_ids_str) → stats
+        for key, grp in combos.items():
+            team_abbr, stage, pids = key
+            toi_min = grp['duration'] / 60.0
+            pids_str = ' '.join(pids)
+            oi = onice[key]
+            day_data[(stage, team_abbr, pids_str)] = {
+                'gp': len(grp['game_ids']),
+                'toi': round(toi_min, 1),
+                **{k: (round(oi[k], 2) if 'xg' in k else oi[k]) for k in STAT_KEYS},
+            }
+
+        if not day_data:
+            print(f'[lines-date] no combos for {tbl_name}')
+            continue
+
+        # ── Read existing rows for affected teams ───────────────
+        affected_teams = sorted(set(k[1] for k in day_data))
+        existing: Dict[tuple, dict] = {}  # (stage, team, player_ids) → row
+        for team in affected_teams:
+            ex_df = read_table(tbl_name, filters={
+                'season': f'eq.{season_int}', 'team': f'eq.{team}',
+            })
+            if not ex_df.empty:
+                for _, r in ex_df.iterrows():
+                    ekey = (int(r.get('season_stage', 2)), str(r['team']),
+                            str(r['player_ids']))
+                    existing[ekey] = dict(r)
+
+        # ── Merge day-delta with existing ───────────────────────
+        merged_rows: list = []
+        for (stage, team_abbr, pids_str), new in day_data.items():
+            ekey = (stage, team_abbr, pids_str)
+            old = existing.get(ekey)
+            if old:
+                row = {
+                    'season': season_int, 'season_stage': stage,
+                    'team': team_abbr, 'player_ids': pids_str,
+                    'gp': int(old.get('gp', 0)) + new['gp'],
+                    'toi': round(float(old.get('toi', 0)) + new['toi'], 1),
+                }
+                for k in STAT_KEYS:
+                    old_v = float(old.get(k, 0) or 0)
+                    new_v = new[k]
+                    row[k] = round(old_v + new_v, 2) if 'xg' in k else int(old_v) + new_v
+            else:
+                row = {
+                    'season': season_int, 'season_stage': stage,
+                    'team': team_abbr, 'player_ids': pids_str,
+                    'gp': new['gp'], 'toi': new['toi'],
+                    **{k: new[k] for k in STAT_KEYS},
+                }
+            merged_rows.append(row)
+
+        df_out = pd.DataFrame(merged_rows)
+        upsert_df(tbl_name, df_out, on_conflict='season,season_stage,team,player_ids')
+        print(f'[lines-date] upserted {len(df_out)} rows to {tbl_name}')
+
+    print('[lines-date] done')
+
+
 def _resolve_default_sheets_id(*candidates: Optional[str]) -> str:
     for c in candidates:
         if c and str(c).strip():
@@ -1866,7 +2780,10 @@ def _resolve_default_sheets_id(*candidates: Optional[str]) -> str:
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Fetch PBP and Shifts dataframes for a date')
     parser.add_argument('--date', type=_validate_date, help='Date in YYYY-MM-DD')
-    parser.add_argument('--export', action='store_true', help='Export to MySQL after fetching')
+    parser.add_argument('--all-dates', action='store_true', help='Run all game dates in the season window')
+    parser.add_argument('--start-date', type=_validate_date, help='Optional lower bound for --all-dates (YYYY-MM-DD)')
+    parser.add_argument('--end-date', type=_validate_date, help='Optional upper bound for --all-dates (YYYY-MM-DD)')
+    parser.add_argument('--export', action='store_true', help='Export to Supabase after fetching')
     parser.add_argument('--season', default='20252026', help='Season code for table names, e.g., 20252026')
     parser.add_argument('--replace-date', action='store_true', help='Pre-delete rows for this date before insert (idempotent loads)')
     parser.add_argument(
@@ -1891,6 +2808,7 @@ def main(argv: List[str] | None = None) -> int:
     # Lineup scraping options
     parser.add_argument('--lineup-url', help='DailyFaceoff line combinations URL for a team (e.g., https://www.dailyfaceoff.com/teams/anaheim-ducks/line-combinations)')
     parser.add_argument('--lineup-save', action='store_true', help='When using --lineup-url, save mapped lineup JSON to app/static/lineup_<TEAM>.json')
+    parser.add_argument('--rebuild-lines', action='store_true', help='Rebuild forward_lines and defense_pairings tables in Supabase (5v5 regular season)')
     args = parser.parse_args(argv)
 
     # Standalone seasonstats mode (no fetch_day required)
@@ -1916,8 +2834,95 @@ def main(argv: List[str] | None = None) -> int:
             print(f"[error] seasonstats-only failed: {e}", file=sys.stderr)
             return 9
 
+    # Standalone rebuild of forward_lines / defense_pairings tables
+    if bool(args.rebuild_lines) and not args.date and not args.all_dates:
+        try:
+            rebuild_line_combos(season=str(args.season).strip())
+            return 0
+        except Exception as e:
+            print(f"[error] rebuild-lines failed: {e}", file=sys.stderr)
+            return 11
+
+    if bool(args.all_dates):
+        if args.date:
+            print('[error] use either --date or --all-dates, not both', file=sys.stderr)
+            return 2
+
+        try:
+            scheduled_days = get_season_game_dates(
+                str(args.season).strip(),
+                start_date=args.start_date,
+                end_date=args.end_date,
+            )
+        except Exception as e:
+            print(f'[error] failed to build season date list: {e}', file=sys.stderr)
+            return 2
+
+        if not scheduled_days:
+            print('[error] no game dates found in the requested season window', file=sys.stderr)
+            return 2
+
+        print(f'[season] found {len(scheduled_days)} game dates to process')
+
+        total_pbp = 0
+        total_shifts = 0
+        total_gamedata = 0
+        failures: List[str] = []
+
+        for idx, (date_str, game_ids) in enumerate(scheduled_days, start=1):
+            print(f'[season] {idx}/{len(scheduled_days)} {date_str} ({len(game_ids)} games)')
+            try:
+                df_pbp, df_shifts, df_gamedata = fetch_day(date_str, with_xg=True, game_ids=game_ids)
+            except Exception as e:
+                failures.append(f'{date_str}: fetch failed: {e}')
+                print(f'[warn] fetch failed for {date_str}: {e}', file=sys.stderr)
+                continue
+
+            total_pbp += len(df_pbp)
+            total_shifts += len(df_shifts)
+            total_gamedata += len(df_gamedata)
+            print(f'[season] rows: PBP={len(df_pbp)} Shifts={len(df_shifts)} GameData={len(df_gamedata)}')
+
+            if args.export:
+                try:
+                    export_to_supabase(
+                        df_pbp,
+                        df_shifts,
+                        df_gamedata,
+                        season=str(args.season),
+                        date_str=date_str,
+                        replace_date=bool(args.replace_date),
+                    )
+                except Exception as e:
+                    failures.append(f'{date_str}: export failed: {e}')
+                    print(f'[warn] export failed for {date_str}: {e}', file=sys.stderr)
+
+        if args.export:
+            try:
+                export_players_to_supabase(season=str(args.season).strip())
+            except Exception as e:
+                failures.append(f'players export failed: {e}')
+                print(f'[warn] players export failed: {e}', file=sys.stderr)
+
+        if args.rebuild_lines or args.export:
+            try:
+                rebuild_line_combos(season=str(args.season).strip())
+            except Exception as e:
+                failures.append(f'line combos rebuild failed: {e}')
+                print(f'[warn] line combos rebuild failed: {e}', file=sys.stderr)
+
+        print(
+            f'[season] complete: PBP={total_pbp} Shifts={total_shifts} '
+            f'GameData={total_gamedata} FailedSteps={len(failures)}'
+        )
+        if failures:
+            for msg in failures[:20]:
+                print(f'[season][failure] {msg}', file=sys.stderr)
+            return 10
+        return 0
+
     if not args.date:
-        print('[error] --date is required unless --seasonstats-only is used', file=sys.stderr)
+        print('[error] --date is required unless --seasonstats-only or --all-dates is used', file=sys.stderr)
         return 2
 
     date_str = args.date
@@ -1929,10 +2934,10 @@ def main(argv: List[str] | None = None) -> int:
         return 2
 
     print(f'Games: PBP rows={len(df_pbp)} | Shifts rows={len(df_shifts)} | GameData rows={len(df_gamedata)}')
-    
+
     if args.export:
         try:
-            export_to_mysql(
+            export_to_supabase(
                 df_pbp,
                 df_shifts,
                 df_gamedata,
@@ -1941,83 +2946,23 @@ def main(argv: List[str] | None = None) -> int:
                 replace_date=bool(args.replace_date)
             )
         except Exception as e:
-            print(f"[error] export failed: {e}", file=sys.stderr)
+            print(f"[error] supabase export failed: {e}", file=sys.stderr)
             return 3
 
-        # Post-step: export player bios (skaters + goalies) for the active season.
-        # This is lightweight and ensures nhl_players_<season> stays current.
-        if str(args.season).strip() == '20252026':
-            try:
-                export_players_to_mysql(season=str(args.season).strip())
-            except Exception as e:
-                print(f"[warn] players export failed: {e}", file=sys.stderr)
-
-        # Post-step: rebuild seasonstats from MySQL and write to Google Sheets (Sheets6)
-        if str(args.season).strip() == '20252026':
-            # Prefer one shared doc id (GOOGLE_SHEETS_ID), then explicit seasonstats id, then other step ids.
-            ss_id = _resolve_default_sheets_id(
-                os.getenv('GOOGLE_SHEETS_ID'),
-                args.seasonstats_sheets_id,
-                args.rapm_sheets_id,
-                args.projections_sheets_id,
-            )
-            if ss_id:
-                try:
-                    update_seasonstats_google_sheet(
-                        season=str(args.season).strip(),
-                        sheet_id=ss_id,
-                        worksheet=str(args.seasonstats_worksheet or 'Sheets6').strip(),
-                    )
-                except Exception as e:
-                    print(f"[warn] seasonstats sheets step failed: {e}", file=sys.stderr)
-            else:
-                print('[seasonstats] skipped (no Sheets doc id; set GOOGLE_SHEETS_ID)', file=sys.stderr)
-        # After exporting, run projections and write to Google Sheets (Sheets3)
         try:
-            proj_id = _resolve_default_sheets_id(
-                args.projections_sheets_id,
-                os.getenv('GOOGLE_SHEETS_ID'),
-                os.getenv('PROJECTIONS_SHEET_ID'),
-            )
-            if not proj_id:
-                raise RuntimeError('projections requires a Sheets doc id via --projections-sheets-id or GOOGLE_SHEETS_ID')
-            run_player_projections_and_write_google_sheet(
-                sheet_id=str(proj_id).strip(),
-                worksheet=str(args.projections_worksheet or 'Sheets3').strip(),
-            )
+            export_players_to_supabase(season=str(args.season).strip())
         except Exception as e:
-            print(f"[error] projections post-step failed: {e}", file=sys.stderr)
-            return 4
+            print(f"[warn] players export failed: {e}", file=sys.stderr)
 
-        # Optional: run RAPM + context refresh as a post-step.
-        if bool(args.run_rapm):
-            if not args.rapm_sheets_id:
-                print('[error] --run-rapm requires --rapm-sheets-id', file=sys.stderr)
-                return 6
+        if args.rebuild_lines:
+            date_game_ids = (
+                sorted(set(int(g) for g in df_shifts['GameID'].dropna().unique()))
+                if not df_shifts.empty else []
+            )
             try:
-                rapm_script = os.path.join(REPO_ROOT, 'scripts', 'rapm.py')
-                rapm_cmd = [
-                    sys.executable,
-                    rapm_script,
-                    '--season',
-                    str(args.season).strip(),
-                    '--sheets-id',
-                    str(args.rapm_sheets_id).strip(),
-                    '--worksheet',
-                    str(args.rapm_worksheet or 'Sheets4').strip(),
-                    '--context-worksheet',
-                    str(args.context_worksheet or 'Sheets5').strip(),
-                ]
-                print('[rapm] starting RAPM + context refresh...')
-                res = subprocess.run(rapm_cmd, cwd=REPO_ROOT, capture_output=True, text=True)
-                out = (res.stdout or '') + ("\n" + res.stderr if res.stderr else '')
-                print(out)
-                if res.returncode != 0:
-                    print(f'[error] rapm post-step failed with code {res.returncode}', file=sys.stderr)
-                    return 7
+                rebuild_line_combos_date(season=str(args.season).strip(), game_ids=date_game_ids)
             except Exception as e:
-                print(f'[error] rapm post-step failed: {e}', file=sys.stderr)
-                return 7
+                print(f"[warn] line combos update failed: {e}", file=sys.stderr)
 
     # Optional: scrape DailyFaceoff lineup and map to PlayerIDs
     if args.lineup_url:

@@ -52,7 +52,7 @@
 {% block head %}
 <style>
   .skater-wrap{ width:100%; margin-left:-10px; min-width:0; overflow-x:hidden; }
-  .skater-card{ width:100%; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:24px 26px 18px; min-width:0; overflow-x:hidden; }
+  .skater-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:24px 26px 18px; min-width:0; overflow-x:hidden; }
   .skater-top{ display:flex; gap:22px; align-items:center; }
   .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
   .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
@@ -72,7 +72,7 @@
   .subtabs{ display:flex; gap:12px; align-items:center; margin-top:18px; }
   .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .subtab-btn.active{ outline:2px solid var(--accent); }
-  .panel{ margin-top:14px; box-sizing:border-box; background:rgba(255,255,255,0.02); border:1px solid #232a3a; border-radius:14px; padding:16px 16px 12px; min-width:0; }
+  .panel{ margin-top:14px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:16px 16px 12px; min-width:0; }
   .mini-table{ width:100%; border-collapse:collapse; font-size:14px; }
   .mini-table th{ text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; }
   .mini-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; }
@@ -95,7 +95,7 @@
   .card-slot{ margin-bottom:14px; }
   .card-slot:last-child{ margin-bottom:0; }
 
-  .goalie-trend{ margin-top:18px; border-top:1px solid #232a3a; padding-top:14px; }
+  .goalie-trend{ margin-top:18px; border-top:none; padding-top:14px; }
   .goalie-trend-hd{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
   .goalie-trend-hd h3{ margin:0; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .goalie-trend-controls{ display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
@@ -114,7 +114,7 @@
   .modal-bd{ padding:14px 16px; }
   .cc-grid{ display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
   @media (max-width: 980px){ .cc-grid{ grid-template-columns:1fr; } }
-  .cc-slot{ border:1px solid #232a3a; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
+  .cc-slot{ border:none; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
   .cc-slot .s{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
   .cc-slot .n{ margin-top:6px; font-weight:850; }
   .cc-help{ color:var(--text-dim); font-size:13px; margin-bottom:12px; }
@@ -137,13 +137,13 @@
   .rapm-controls select{ color:var(--value-text, var(--text)); }
 
   .rapm-split{ display:grid; grid-template-columns: 1.4fr 0.8fr 0.8fr; gap:14px; max-width:1150px; margin:0 auto; }
-  .rapm-sect{ --rapmBarH: 340px; border:1px solid #232a3a; border-radius:12px; padding:12px 12px 10px; background:rgba(255,255,255,0.01); }
+  .rapm-sect{ --rapmBarH: 340px; border:none; border-radius:12px; padding:12px 12px 10px; background:transparent; }
   .rapm-sect h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .toi{ margin-top:8px; font-size:12px; color:rgba(255,255,255,0.90); text-align:center; font-weight:750; }
 
   .charts-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
   @media (max-width: 1100px){ .charts-grid{ grid-template-columns:1fr; } }
-  .chart-block{ border:1px solid #232a3a; border-radius:12px; padding:12px 12px 10px; background:rgba(255,255,255,0.01); display:flex; flex-direction:column; min-width:0; }
+  .chart-block{ border:none; border-radius:12px; padding:12px 12px 10px; background:transparent; display:flex; flex-direction:column; min-width:0; }
   .chart-hd{ display:flex; flex-direction:column; align-items:stretch; gap:10px; margin-bottom:10px; }
   .chart-hd h3{ margin:0; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .chart-controls{ width:100%; display:grid; grid-template-columns: 1fr 1fr; gap:12px; align-items:flex-end; }
@@ -167,7 +167,7 @@
   .bar-col{ width:112px; }
   .bar-label{ text-align:center; font-size:12px; color:var(--text-dim); margin-top:8px; }
   .bar-value{ text-align:center; font-size:12px; font-weight:750; margin-top:6px; }
-  .bar-area{ position:relative; height:var(--rapmBarH); border-radius:10px; background:rgba(255,255,255,0.02); border:1px solid #1f2734; overflow:hidden; }
+  .bar-area{ position:relative; height:var(--rapmBarH); border-radius:10px; background:rgba(255,255,255,0.02); border:none; overflow:hidden; }
   .bar-line{ position:absolute; left:0; right:0; height:1px; background:#273246; }
   .bar{ position:absolute; left:14%; width:72%; border-radius:8px; background:var(--accent); opacity:1; }
   .bar.neg{ background:#ff6a6a; opacity:1; }
@@ -187,17 +187,17 @@
   .proj-subtabs{ display:flex; gap:12px; align-items:center; margin-top:6px; }
   .proj-subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .proj-subtab-btn.active{ outline:2px solid var(--accent); }
-  .proj-subpanel{ margin-top:14px; background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:16px; }
+  .proj-subpanel{ margin-top:14px; background:transparent; border:none; border-radius:12px; padding:16px; }
   .proj-subpanel[hidden]{ display:none !important; }
   .proj-grid{ display:grid; grid-template-columns: 320px 1fr; gap:16px; align-items:start; }
-  .kpi-card{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:12px 12px; text-align:center; }
+  .kpi-card{ background:rgba(0,0,0,.12); border:none; border-radius:12px; padding:12px 12px; text-align:center; }
   .kpi-title{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
   .kpi-value{ margin-top:6px; font-size:18px; font-weight:850; color:var(--text); font-variant-numeric: tabular-nums; }
   .kpi-list{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
   .proj-canvas{ width:100%; height:360px; }
   #projPlayerRadar{ height:500px; }
   #projTeamStack{ height:600px; }
-  .proj-table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:12px; }
+  .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
   .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
   .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
   .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
@@ -211,7 +211,7 @@
   .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
 
   .edge-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
-  .edge-card{ background:rgba(0,0,0,.18); border:1px solid #232a3a; border-radius:12px; padding:14px; }
+  .edge-card{ background:transparent; border:none; border-radius:12px; padding:14px; }
   .edge-title{ font-size:12px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; margin:0 0 10px 0; }
   .edge-controls{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
   .edge-control{ display:flex; align-items:center; gap:8px; }
@@ -237,7 +237,7 @@
     .edge-grid{ grid-template-columns: 1fr; }
   }
 
-  .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:1px solid #232a3a; border-radius:12px; }
+  .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:none; border-radius:12px; }
   #tabPanelTable{ min-width:0; }
   #tablePanelInner{ min-width:0; }
   .metrics-table{ width:max-content; min-width:100%; border-collapse:separate; border-spacing:0; font-size:14px; table-layout:auto; }
@@ -259,12 +259,73 @@
 
   .table-metric-picker{ display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
   @media (max-width: 980px){ .table-metric-picker{ grid-template-columns:1fr; } }
-  .table-metric-group{ border:1px solid #232a3a; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
+  .table-metric-group{ border:none; border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); }
   .table-metric-group .t{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:900; margin-bottom:10px; }
   .table-metrics-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:8px 12px; }
   .table-metric{ display:flex; flex-direction:row; gap:8px; align-items:center; font-size:13px; color:rgba(255,255,255,0.92); padding:0; }
   .table-metric input{ margin:0; flex:0 0 auto; cursor:pointer; }
   .table-metric span{ cursor:pointer; flex:1 1 auto; }
+
+  /* ── Goaltending tab ── */
+  .gtend-kpis{ display:grid; grid-template-columns: repeat(8, 1fr); gap:10px; margin-bottom:14px; }
+  @media (max-width:980px){ .gtend-kpis{ grid-template-columns: repeat(4, 1fr); } }
+  .gtend-kpi{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:10px 8px; text-align:center; }
+  .gtend-kpi .lbl{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
+  .gtend-kpi .val{ margin-top:4px; font-size:22px; font-weight:950; color:var(--text); font-variant-numeric:tabular-nums; }
+  .gtend-kpi .val.pos{ color:#4da3ff; }
+  .gtend-kpi .val.neg{ color:#ff6a6a; }
+  .gtend-tbl .val.pos{ color:#4da3ff; }
+  .gtend-tbl .val.neg{ color:#ff6a6a; }
+  .gtend-body{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
+  @media (max-width:980px){ .gtend-body{ grid-template-columns: 1fr; } }
+  .gtend-left{ position:relative; min-height:0; }
+  .gtend-left-inner{ position:absolute; inset:0; display:flex; flex-direction:column; gap:10px; overflow:hidden; }
+  .gtend-tbl-wrap{ flex:1; min-height:0; overflow:auto; border-radius:10px; border:1px solid #232a3a; }
+  .gtend-tbl{ width:100%; border-collapse:collapse; font-size:13px; }
+  .gtend-tbl th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.8px; padding:8px 8px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
+  .gtend-tbl td{ padding:7px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .gtend-tbl th.num, .gtend-tbl td.num{ text-align:right; }
+  .gtend-tbl tbody tr{ cursor:pointer; }
+  .gtend-tbl tbody tr:hover{ background:rgba(255,255,255,0.04); }
+  .gtend-tbl tbody tr.active{ background:rgba(77,163,255,0.12); }
+  .gtend-video-btn{ display:inline-flex; align-items:center; gap:6px; background:#e53935; color:#fff; border:none; border-radius:8px; padding:9px 18px; font-size:13px; font-weight:800; cursor:pointer; letter-spacing:.3px; }
+  .gtend-video-btn:hover{ background:#c62828; }
+  .gtend-video-btn:disabled{ opacity:0.35; cursor:default; }
+  .gtend-video-list{ display:none; margin-top:6px; max-height:180px; overflow:auto; background:rgba(15,21,34,0.97); border:1px solid #2a3142; border-radius:10px; }
+  .gtend-video-list.open{ display:block; }
+  .gtend-video-list a{ display:block; padding:7px 12px; color:#4da3ff; font-size:12px; font-weight:700; text-decoration:none; border-bottom:1px solid #1a2230; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gtend-video-list a:hover{ background:rgba(77,163,255,0.10); }
+  .gtend-map-toggle{ display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid #2a3142; width:fit-content; margin:0 auto 8px; }
+  .gtend-type-toggle{ display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid #2a3142; width:fit-content; margin:8px auto 0; }
+  .gtend-type-btn{ background:transparent; color:var(--text-dim); border:none; padding:8px 16px; font-size:12px; font-weight:750; cursor:pointer; letter-spacing:.3px; }
+  .gtend-type-btn.active{ background:var(--accent); color:#0b0f16; }
+  .gtend-map-btn{ background:transparent; color:var(--text-dim); border:none; padding:8px 16px; font-size:12px; font-weight:750; cursor:pointer; letter-spacing:.3px; }
+  .gtend-map-btn.active{ background:var(--accent); color:#0b0f16; }
+  .gtend-rink-wrap{ position:relative; width:100%; aspect-ratio:75/85; border-radius:12px; overflow:hidden; }
+  .gtend-rink-wrap img{ position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none; }
+  .gtend-rink-canvas{ position:absolute; inset:0; width:100%; height:100%; }
+  .gtend-heat-svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .gtend-heat-svg polygon, .gtend-heat-svg path{ cursor:pointer; stroke:rgba(0,0,0,0.1); stroke-width:0.3; }
+  .gtend-heat-svg polygon:hover, .gtend-heat-svg path:hover{ stroke:#fff; stroke-width:0.6; }
+  .gtend-zone-label{ font-size:2.2px; fill:rgba(0,0,0,0.7); font-weight:900; text-anchor:middle; dominant-baseline:central; pointer-events:none; }
+  .gtend-heat-svg polygon.zone-selected, .gtend-heat-svg path.zone-selected{ stroke:#fff; stroke-width:0.8; }
+
+  /* Video player dialog */
+  .video-overlay{ display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.75); align-items:center; justify-content:center; }
+  .video-overlay.open{ display:flex; }
+  .video-dialog{ background:#0f1522; border-radius:14px; width:96vw; max-width:1080px; overflow:hidden; box-shadow:0 8px 40px rgba(0,0,0,0.6); position:relative; }
+  .video-header{ display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #232a3a; }
+  .video-header .video-title{ font-size:13px; font-weight:800; color:var(--text); }
+  .video-header .video-close{ background:none; border:none; color:var(--text-dim); font-size:22px; cursor:pointer; padding:0 4px; line-height:1; }
+  .video-header .video-close:hover{ color:#fff; }
+  .video-frame-wrap{ position:relative; width:100%; padding-top:56.25%; background:#000; }
+  .video-frame-wrap iframe, .video-frame-wrap video-js, .video-frame-wrap .video-js{ position:absolute; inset:0; width:100%; height:100%; border:none; }
+  .video-controls{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid #232a3a; }
+  .video-controls button{ background:rgba(255,255,255,0.08); color:#fff; border:1px solid #2a3142; border-radius:8px; padding:7px 16px; font-size:12px; font-weight:800; cursor:pointer; }
+  .video-controls button:hover{ background:rgba(255,255,255,0.14); }
+  .video-controls button:disabled{ opacity:0.3; cursor:default; }
+  .video-controls .video-counter{ margin-left:auto; font-size:12px; color:var(--text-dim); font-weight:700; font-variant-numeric:tabular-nums; }
+  .video-controls .video-desc{ font-size:11px; color:var(--text-dim); flex:1; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   @media (max-width: 980px){
     .skater-wrap{ margin-left:0; }
@@ -312,6 +373,7 @@
     <div class="subtabs" role="tablist" aria-label="Goalie tabs">
       <button id="tabCard" class="subtab-btn active" type="button" role="tab" aria-selected="true">Card</button>
       <button id="tabCharts" class="subtab-btn" type="button" role="tab" aria-selected="false">Charts</button>
+      <button id="tabGoaltending" class="subtab-btn" type="button" role="tab" aria-selected="false">Goaltending</button>
       <button id="tabTable" class="subtab-btn" type="button" role="tab" aria-selected="false">Table View</button>
     </div>
 
@@ -353,7 +415,7 @@
       <div id="chartsEmpty" class="skater-empty" hidden>Select a season to view Charts.</div>
 
       <div id="chartsGrid" class="charts-grid">
-        <section class="chart-block" aria-label="Workload chart">
+        <section id="chartBlockWorkload" class="chart-block" aria-label="Workload chart">
           <div class="chart-hd">
             <h3>Workload</h3>
             <div class="chart-controls">
@@ -370,7 +432,7 @@
           </div>
         </section>
 
-        <section class="chart-block" aria-label="Performance chart">
+        <section id="chartBlockGoaltending" class="chart-block" aria-label="Performance chart">
           <div class="chart-hd">
             <h3>Performance</h3>
             <div class="chart-controls">
@@ -389,16 +451,96 @@
       </div>
     </div>
 
+    <div id="tabPanelGoaltending" class="panel" role="tabpanel" style="display:none;">
+      <div id="gtendSlicerSummary" class="card-panel-meta" style="margin-bottom:10px;"></div>
+      <div id="gtendEmpty" class="skater-empty">Select a team and season to view goaltending data.</div>
+      <div id="gtendContent" style="display:none;">
+        <div class="gtend-kpis">
+          <div class="gtend-kpi"><div class="lbl">SA</div><div id="gtendKpiSa" class="val">0</div></div>
+          <div class="gtend-kpi"><div class="lbl">xGA</div><div id="gtendKpiXga" class="val">0</div></div>
+          <div class="gtend-kpi"><div class="lbl">GA</div><div id="gtendKpiGa" class="val">0</div></div>
+          <div class="gtend-kpi"><div class="lbl">GSAx</div><div id="gtendKpiGsax" class="val">0</div></div>
+          <div class="gtend-kpi"><div class="lbl">Sv%</div><div id="gtendKpiSvPct" class="val">0</div></div>
+          <div class="gtend-kpi"><div class="lbl">xSv%</div><div id="gtendKpiXSvPct" class="val">0</div></div>
+          <div class="gtend-kpi"><div class="lbl">dSv%</div><div id="gtendKpiDSvPct" class="val">0</div></div>
+        </div>
+        <div class="gtend-body">
+          <div class="gtend-left">
+            <div class="gtend-left-inner">
+            <div class="gtend-tbl-wrap">
+              <table class="gtend-tbl" id="gtendShooterTable">
+                <thead>
+                  <tr>
+                    <th>Shooter</th>
+                    <th class="num">SA</th>
+                    <th class="num">xGA</th>
+                    <th class="num">GA</th>
+                    <th class="num">GSAx &#x25BC;</th>
+                  </tr>
+                </thead>
+                <tbody id="gtendShooterTbody"></tbody>
+              </table>
+            </div>
+            <div>
+              <button class="gtend-video-btn" id="gtendVideoBtn" type="button" disabled>&#9654; Video</button>
+              <div class="gtend-video-list" id="gtendVideoList"></div>
+            </div>
+            </div>
+          </div>
+          <div class="gtend-right">
+            <div class="gtend-map-toggle">
+              <button class="gtend-map-btn active" data-map="shot" type="button">Shot Map</button>
+              <button class="gtend-map-btn" data-map="heat" type="button">Heat Map</button>
+            </div>
+            <div class="gtend-rink-wrap" id="gtendRinkWrap">
+              <img id="gtendRinkImg" src="/static/hockey-rink-half.png" alt="Rink" />
+              <canvas id="gtendShotCanvas" class="gtend-rink-canvas"></canvas>
+              <svg id="gtendHeatSvg" class="gtend-heat-svg" viewBox="25 -42.5 75 85" preserveAspectRatio="xMidYMid meet" style="display:none;"></svg>
+            </div>
+            <div class="gtend-type-toggle">
+              <button class="gtend-type-btn active" data-stype="all" type="button">All</button>
+              <button class="gtend-type-btn" data-stype="miss" type="button">Missed</button>
+              <button class="gtend-type-btn" data-stype="shot" type="button">On Net</button>
+              <button class="gtend-type-btn" data-stype="goal" type="button">Goals</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="skaterMsg" class="skater-empty" style="margin-top:10px;">Choose Team, Season, and Player.</div>
   </div>
 </div>
 
 
 <script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+
+<!-- Video player dialog -->
+<div class="video-overlay" id="videoOverlay">
+  <div class="video-dialog">
+    <div class="video-header">
+      <span class="video-title" id="videoTitle">Goal Highlights</span>
+      <button class="video-close" id="videoClose" type="button">&times;</button>
+    </div>
+    <div class="video-frame-wrap">
+      <iframe id="videoPlayer" allow="autoplay; encrypted-media" allowfullscreen
+        style="position:absolute; inset:0; width:100%; height:100%; border:none; background:#000;"></iframe>
+    </div>
+    <div class="video-controls">
+      <button id="videoPrev" type="button">&#9664; Prev</button>
+      <button id="videoPlay" type="button">&#9654; Play</button>
+      <button id="videoNext" type="button">Next &#9654;</button>
+      <span class="video-counter" id="videoCounter"></span>
+      <span class="video-desc" id="videoDesc"></span>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
 <script>
 const DEFAULT_SKATER_IMG = 'https://assets.nhle.com/mugs/nhl/default-skater.png';
 
@@ -414,15 +556,19 @@ const skaterMsg = document.getElementById('skaterMsg');
 const tabCard = document.getElementById('tabCard');
 const tabTable = document.getElementById('tabTable');
 const tabCharts = document.getElementById('tabCharts');
+const tabGoaltending = document.getElementById('tabGoaltending');
 const tabEdge = document.getElementById('tabEdge');
 const tabRAPM = document.getElementById('tabRAPM');
 const tabProjections = document.getElementById('tabProjections');
 const tabPanelCard = document.getElementById('tabPanelCard');
 const tabPanelTable = document.getElementById('tabPanelTable');
 const tabPanelCharts = document.getElementById('tabPanelCharts');
+const tabPanelGoaltending = document.getElementById('tabPanelGoaltending');
 const tabPanelEdge = document.getElementById('tabPanelEdge');
 const tabPanelRAPM = document.getElementById('tabPanelRAPM');
 const tabPanelProjections = document.getElementById('tabPanelProjections');
+const chartBlockWorkload = document.getElementById('chartBlockWorkload');
+const chartBlockGoaltending = document.getElementById('chartBlockGoaltending');
 const cardPanelInner = document.getElementById('cardPanelInner');
 const chartsEmpty = document.getElementById('chartsEmpty');
 const chartsGrid = document.getElementById('chartsGrid');
@@ -833,10 +979,15 @@ function refreshChartMetricLabels(){
 function getActiveTabKey(){
   if(tabTable?.classList.contains('active')) return 'table';
   if(tabCharts?.classList.contains('active')) return 'charts';
+  if(tabGoaltending?.classList.contains('active')) return 'goaltending';
   if(tabEdge?.classList.contains('active')) return 'edge';
   if(tabRAPM?.classList.contains('active')) return 'rapm';
   if(tabProjections?.classList.contains('active')) return 'projections';
   return 'card';
+}
+
+function chartsViewActive(){
+  return !!(tabCharts?.classList.contains('active'));
 }
 
 function getActiveProjSubtabKey(){
@@ -911,7 +1062,7 @@ function restoreSkatersState(){
       }
 
       __restorePlayerId = String(state.playerId||'') || null;
-      __restoreActiveTab = String(state.activeTab||'') || null;
+      if(!__restoreActiveTab) __restoreActiveTab = String(state.activeTab||'') || null;
       __restoreProjSubtab = String(state.projectionsSubtab||'') || null;
     }
   }catch(_){/*noop*/}
@@ -1339,7 +1490,7 @@ try{
       loadCardPanel();
       try{
         __chartsLastKey='';
-        if(tabCharts?.classList.contains('active')) renderCharts();
+        if(chartsViewActive()) renderCharts();
       }catch(_){/*noop*/}
     });
   });
@@ -1437,13 +1588,15 @@ function setActiveTab(which){
   const isC = (w === 'card');
   const isT = (w === 'table');
   const isH = (w === 'charts');
+  const isG = (w === 'goaltending');
   const isE = (w === 'edge');
   const isR = (w === 'rapm');
   const isP = (w === 'projections');
   // default
-  const finalC = (isC || (!isT && !isH && !isE && !isR && !isP));
+  const finalC = (isC || (!isT && !isH && !isG && !isE && !isR && !isP));
   const finalT = isT;
   const finalH = isH;
+  const finalG = isG;
   const finalE = isE;
   const finalR = isR;
   const finalP = isP;
@@ -1451,24 +1604,27 @@ function setActiveTab(which){
   tabCard?.classList.toggle('active', finalC);
   tabTable?.classList.toggle('active', finalT);
   tabCharts?.classList.toggle('active', finalH);
+  tabGoaltending?.classList.toggle('active', finalG);
   tabEdge?.classList.toggle('active', finalE);
   tabRAPM?.classList.toggle('active', finalR);
   tabProjections?.classList.toggle('active', finalP);
   if(tabCard) tabCard.setAttribute('aria-selected', finalC ? 'true' : 'false');
   if(tabTable) tabTable.setAttribute('aria-selected', finalT ? 'true' : 'false');
   if(tabCharts) tabCharts.setAttribute('aria-selected', finalH ? 'true' : 'false');
+  if(tabGoaltending) tabGoaltending.setAttribute('aria-selected', finalG ? 'true' : 'false');
   if(tabEdge) tabEdge.setAttribute('aria-selected', finalE ? 'true' : 'false');
   if(tabRAPM) tabRAPM.setAttribute('aria-selected', finalR ? 'true' : 'false');
   if(tabProjections) tabProjections.setAttribute('aria-selected', finalP ? 'true' : 'false');
   if(tabPanelCard) tabPanelCard.style.display = finalC ? '' : 'none';
   if(tabPanelTable) tabPanelTable.style.display = finalT ? '' : 'none';
   if(tabPanelCharts) tabPanelCharts.style.display = finalH ? '' : 'none';
+  if(tabPanelGoaltending) tabPanelGoaltending.style.display = finalG ? '' : 'none';
   if(tabPanelEdge) tabPanelEdge.style.display = finalE ? '' : 'none';
   if(tabPanelRAPM) tabPanelRAPM.style.display = finalR ? '' : 'none';
   if(tabPanelProjections) tabPanelProjections.style.display = finalP ? '' : 'none';
 
-  // Card slicers are shared by Card + Table + Charts.
-  setCardSlicersVisible(finalC || finalT || finalH, { showConfig: finalC });
+  // Card slicers are shared by Card + Table + Charts + Goaltending.
+  setCardSlicersVisible(finalC || finalT || finalH || finalG, { showConfig: finalC });
   setEdgeSlicersVisible(finalE);
 
   // Keep Edge season state in sync with Card selection when possible.
@@ -1484,6 +1640,7 @@ function setActiveTab(which){
     // Render charts when the tab becomes active.
     try{ __chartsLastKey=''; renderCharts(); }catch(_){ /* noop */ }
   }
+  if(finalG) loadGoaltendingPanel();
   if(finalE) loadEdgePanel();
   if(finalR) loadRAPMPanel();
   if(finalP && projectionsEnabled()) loadProjectionsPanel();
@@ -1790,6 +1947,7 @@ function updateTabsVisibility(){
   if(tabProjections) tabProjections.style.display = enabled ? '' : 'none';
   const projActive = tabProjections?.classList.contains('active');
   if(!enabled && projActive) setActiveTab('card');
+  if(typeof syncDropdownVisibility === 'function') syncDropdownVisibility();
 }
 
 // base.html populates seasonSelect asynchronously and sets seasonSelect.value
@@ -4362,24 +4520,428 @@ async function loadPlayerCard(){
   }
 }
 
+// ── Goaltending tab state + DOM refs ──
+let __gtendData = null;
+let __gtendLastKey = '';
+let __gtendReqVer = 0;        // request version counter (race-condition guard)
+let __gtendGeoJson = null;
+let __gtendActiveShooter = null;
+let __gtendActiveZone = null;
+let __gtendMapMode = 'shot';
+let __gtendShotType = 'all';     // 'all' | 'miss' | 'shot' | 'goal'
+
+const gtendContent = document.getElementById('gtendContent');
+const gtendEmpty = document.getElementById('gtendEmpty');
+const gtendShooterTbody = document.getElementById('gtendShooterTbody');
+const gtendShotCanvas = document.getElementById('gtendShotCanvas');
+const gtendHeatSvg = document.getElementById('gtendHeatSvg');
+const gtendRinkWrap = document.getElementById('gtendRinkWrap');
+const gtendSlicerSummary = document.getElementById('gtendSlicerSummary');
+const gtendVideoBtn = document.getElementById('gtendVideoBtn');
+const gtendVideoList = document.getElementById('gtendVideoList');
+
+// ── Shared Video Player (iframe-based Brightcove) ───────────
+const _vOverlay = document.getElementById('videoOverlay');
+const _vFrame   = document.getElementById('videoPlayer');
+const _vPrev    = document.getElementById('videoPrev');
+const _vPlay    = document.getElementById('videoPlay');
+const _vNext    = document.getElementById('videoNext');
+const _vCounter = document.getElementById('videoCounter');
+const _vDesc    = document.getElementById('videoDesc');
+const _vClose   = document.getElementById('videoClose');
+const _vTitle   = document.getElementById('videoTitle');
+let _vEvents = [];
+let _vIdx = 0;
+
+function _vHasVideo(nhlUrl){ return !!(nhlUrl && (nhlUrl).match(/(\d{8,})$/)); }
+
+function _vBrightcoveUrl(nhlUrl){
+  const m = (nhlUrl || '').match(/(\d{8,})$/);
+  if(!m) return '';
+  return `https://players.brightcove.net/6415718365001/EBZkr1uCil_default/index.html?videoId=${m[1]}&autoplay=true&muted=false`;
+}
+
+function _vLabel(nhlUrl){
+  const slug = (nhlUrl || '').split('/').pop() || '';
+  return slug.replace(/-?\d{8,}$/, '').replace(/-/g, ' ').trim() || 'Goal highlight';
+}
+
+function _vShow(events, title){
+  _vEvents = events;
+  _vIdx = 0;
+  _vTitle.textContent = title || 'Goal Highlights';
+  _vOverlay.classList.add('open');
+  _vRender();
+  document.addEventListener('keydown', _vKey);
+}
+
+function _vHide(){
+  _vOverlay.classList.remove('open');
+  if(_vFrame) _vFrame.src = '';
+  _vEvents = [];
+  document.removeEventListener('keydown', _vKey);
+}
+
+function _vRender(){
+  if(!_vEvents.length){ _vHide(); return; }
+  const e = _vEvents[_vIdx];
+  const src = _vBrightcoveUrl(e.highlightUrl);
+  _vCounter.textContent = `Event ${_vIdx+1} / ${_vEvents.length}`;
+  _vDesc.textContent = _vLabel(e.highlightUrl);
+  _vPrev.disabled = _vIdx <= 0;
+  _vNext.disabled = _vIdx >= _vEvents.length - 1;
+  if(_vFrame && src) _vFrame.src = src;
+}
+
+function _vKey(ev){
+  if(ev.key === 'Escape') _vHide();
+  else if(ev.key === 'ArrowLeft' && _vIdx > 0){ _vIdx--; _vRender(); }
+  else if(ev.key === 'ArrowRight' && _vIdx < _vEvents.length-1){ _vIdx++; _vRender(); }
+}
+
+_vClose.addEventListener('click', _vHide);
+_vOverlay.addEventListener('click', ev => { if(ev.target === _vOverlay) _vHide(); });
+_vPrev.addEventListener('click', () => { if(_vIdx > 0){ _vIdx--; _vRender(); } });
+_vNext.addEventListener('click', () => { if(_vIdx < _vEvents.length-1){ _vIdx++; _vRender(); } });
+_vPlay.addEventListener('click', () => { _vRender(); });
+// ── End Video Player ────────────────────────────────────────
+
+// Video button → open dialog
+gtendVideoBtn.addEventListener('click', () => {
+  const evts = getFilteredGtendEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+  if(evts.length) _vShow(evts, 'Goal Highlights');
+});
+
+// Map toggle
+document.querySelectorAll('.gtend-map-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.gtend-map-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    __gtendMapMode = btn.dataset.map;
+    if(gtendShotCanvas) gtendShotCanvas.style.display = __gtendMapMode === 'shot' ? '' : 'none';
+    if(gtendHeatSvg) gtendHeatSvg.style.display = __gtendMapMode === 'heat' ? '' : 'none';
+    renderGtendVisuals();
+  });
+});
+
+// Shot type filter toggle
+document.querySelectorAll('.gtend-type-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.gtend-type-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    __gtendShotType = btn.dataset.stype;
+    renderGtendVisuals();
+    updateGtendVideoBtn();
+  });
+});
+
+async function loadGtendGeoJson(){
+  if(__gtendGeoJson) return __gtendGeoJson;
+  try{
+    const r = await fetch('/static/zones.json');
+    if(!r.ok) throw new Error('zones.json fetch failed');
+    __gtendGeoJson = await r.json();
+  }catch(_){
+    __gtendGeoJson = {type:'FeatureCollection', features:[]};
+  }
+  return __gtendGeoJson;
+}
+
+async function loadGoaltendingPanel(){
+  const team = teamSelect?.value;
+  const season = seasonSelect?.value;
+  const ss = cardSeasonState?.value || 'regular';
+  const str = cardStrengthState?.value || '5v5';
+  const xm = cardXgModel?.value || 'xG_F';
+  const pid = playerSelect?.value || '';
+  const key = `${team}|${season}|${ss}|${str}|${xm}|${pid}`;
+
+  if(gtendSlicerSummary){
+    const sn = season ? (season.slice(0,4)+'/'+season.slice(4)) : '';
+    gtendSlicerSummary.textContent = `${sn} – ${ss==='playoffs'?'Playoffs':ss==='all'?'All':'Regular'} – ${str} – ${xm.replace('_',' ')}`;
+    gtendSlicerSummary.style.fontStyle = 'italic';
+  }
+
+  if(!team || !season){
+    if(gtendEmpty) gtendEmpty.style.display = '';
+    if(gtendContent) gtendContent.style.display = 'none';
+    return;
+  }
+
+  if(key === __gtendLastKey && __gtendData){
+    renderGtendFull();
+    return;
+  }
+
+  if(gtendEmpty){ gtendEmpty.textContent = 'Loading shot data\u2026'; gtendEmpty.style.display = ''; }
+  if(gtendContent) gtendContent.style.display = 'none';
+
+  try{
+    const ver = ++__gtendReqVer;
+    // When no specific goalie is selected, send the full roster so KPIs
+    // only count events for current roster goalies (matches Table View).
+    let rosterParam = '';
+    if(!pid && playerSelect){
+      const ids = Array.from(playerSelect.options).map(o => o.value).filter(v => v);
+      if(ids.length) rosterParam = `&roster=${ids.join(',')}`;
+    }
+    const url = `/api/goalies/goaltending?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${ss}&strengthState=${str}&xgModel=${xm}&player=${encodeURIComponent(pid)}${rosterParam}`;
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('API error');
+    if(ver !== __gtendReqVer) return;   // stale response — discard
+    __gtendData = await r.json();
+    __gtendLastKey = key;
+    __gtendActiveShooter = null;
+    __gtendActiveZone = null;
+    __gtendShotType = 'all';
+    document.querySelectorAll('.gtend-type-btn').forEach(b => b.classList.toggle('active', b.dataset.stype==='all'));
+    await loadGtendGeoJson();
+    renderGtendFull();
+  }catch(e){
+    if(gtendEmpty){ gtendEmpty.textContent = 'Error loading goaltending data.'; gtendEmpty.style.display = ''; }
+    if(gtendContent) gtendContent.style.display = 'none';
+  }
+}
+
+function renderGtendFull(){
+  if(!__gtendData) return;
+  if(gtendEmpty) gtendEmpty.style.display = 'none';
+  if(gtendContent) gtendContent.style.display = '';
+  renderGtendKpis();
+  renderGtendTable();
+  renderGtendVisuals();
+  updateGtendVideoBtn();
+}
+
+function getFilteredGtendEvents(){
+  if(!__gtendData) return [];
+  let evts = __gtendData.events || [];
+  if(__gtendActiveShooter) evts = evts.filter(e => e.playerId === __gtendActiveShooter);
+  if(__gtendActiveZone) evts = evts.filter(e => e.boxId === __gtendActiveZone);
+  if(__gtendShotType === 'goal') evts = evts.filter(e => e.goal === 1);
+  else if(__gtendShotType === 'shot') evts = evts.filter(e => e.shot === 1 && e.goal !== 1);
+  else if(__gtendShotType === 'miss') evts = evts.filter(e => e.shot !== 1 && e.goal !== 1);
+  return evts;
+}
+
+function computeGtendKpis(evts){
+  let sa=0, xga=0, ga=0;
+  for(const e of evts){ sa++; xga += e.xG||0; if(e.goal) ga++; }
+  const svPct = sa? ((sa-ga)/sa*100):0;
+  const xSvPct = sa? ((sa-xga)/sa*100):0;
+  return {sa, xGA:xga, ga, gsax:xga-ga, svPct, xSvPct, dSvPct:svPct-xSvPct};
+}
+
+function renderGtendKpis(){
+  const evts = getFilteredGtendEvents();
+  const k = computeGtendKpis(evts);
+  const set = (id, v, cls) => {
+    const el = document.getElementById(id);
+    if(el){ el.textContent = v; el.className = 'val' + (cls?' '+cls:''); }
+  };
+  set('gtendKpiSa', k.sa);
+  set('gtendKpiXga', k.xGA.toFixed(2));
+  set('gtendKpiGa', k.ga);
+  const gsaxStr = (k.gsax>=0?'+':'')+k.gsax.toFixed(2);
+  set('gtendKpiGsax', gsaxStr, k.gsax>=0?'pos':'neg');
+  set('gtendKpiSvPct', k.svPct.toFixed(1)+'%');
+  set('gtendKpiXSvPct', k.xSvPct.toFixed(1)+'%');
+  const dStr = (k.dSvPct>=0?'+':'')+k.dSvPct.toFixed(1)+'%';
+  set('gtendKpiDSvPct', dStr, k.dSvPct>=0?'pos':'neg');
+}
+
+function renderGtendTable(){
+  if(!gtendShooterTbody || !__gtendData) return;
+  let shooters = __gtendData.shooters || [];
+  if(__gtendActiveZone){
+    const evts = __gtendData.events.filter(e => e.boxId === __gtendActiveZone);
+    const nameMap = {};
+    for(const os of (__gtendData.shooters||[])) nameMap[os.playerId] = os.name || String(os.playerId);
+    const agg = {};
+    for(const e of evts){
+      const pid = e.playerId; if(!pid) continue;
+      if(!agg[pid]) agg[pid] = {playerId:pid, name:nameMap[pid]||String(pid), sa:0, xGA:0, ga:0};
+      agg[pid].sa++; agg[pid].xGA += e.xG||0; if(e.goal) agg[pid].ga++;
+    }
+    shooters = Object.values(agg).map(s => ({...s, gsax:+(s.xGA-s.ga).toFixed(2), xGA:+s.xGA.toFixed(2)}));
+    shooters.sort((a,b) => b.gsax - a.gsax);
+  }
+  gtendShooterTbody.innerHTML = '';
+  for(const s of shooters){
+    const tr = document.createElement('tr');
+    tr.dataset.playerId = s.playerId;
+    if(__gtendActiveShooter === s.playerId) tr.classList.add('active');
+    const gsaxCls = s.gsax >= 0 ? 'pos' : 'neg';
+    tr.innerHTML = `<td>${s.name||s.playerId}</td><td class="num">${s.sa}</td><td class="num">${s.xGA.toFixed(2)}</td><td class="num">${s.ga}</td><td class="num"><span class="val ${gsaxCls}" style="font-size:13px;">${s.gsax>=0?'+':''}${s.gsax.toFixed(2)}</span></td>`;
+    tr.addEventListener('click', () => {
+      __gtendActiveShooter = (__gtendActiveShooter === s.playerId) ? null : s.playerId;
+      renderGtendKpis();
+      renderGtendTable();
+      renderGtendVisuals();
+      updateGtendVideoBtn();
+    });
+    gtendShooterTbody.appendChild(tr);
+  }
+}
+
+function renderGtendVisuals(){
+  if(__gtendMapMode === 'shot') renderGtendShotMap();
+  else renderGtendHeatMap();
+}
+
+function renderGtendShotMap(){
+  if(!gtendShotCanvas || !__gtendData) return;
+  const wrap = gtendRinkWrap;
+  const canvas = gtendShotCanvas;
+  const rect = wrap.getBoundingClientRect();
+  const W = rect.width || 600;
+  const H = rect.height || 550;
+  canvas.width = W * (window.devicePixelRatio || 1);
+  canvas.height = H * (window.devicePixelRatio || 1);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  ctx.clearRect(0, 0, W, H);
+
+  const evts = getFilteredGtendEvents();
+  const xMin=25, xMax=100, yMin=-42.5, yMax=42.5;
+  const pad = 10;
+  const scaleX = (W - 2*pad) / (xMax - xMin);
+  const scaleY = (H - 2*pad) / (yMax - yMin);
+  const scale = Math.min(scaleX, scaleY);
+  const offX = (W - (xMax-xMin)*scale) / 2;
+  const offY = (H - (yMax-yMin)*scale) / 2;
+
+  function toCanvas(x, y){
+    return [ offX + (x - xMin) * scale, offY + (yMax - y) * scale ];
+  }
+
+  for(const e of evts){
+    const [cx, cy] = toCanvas(e.x, e.y);
+    const isGoal = e.goal === 1;
+    ctx.beginPath();
+    if(isGoal){
+      const s = 6;
+      ctx.moveTo(cx, cy - s);
+      ctx.lineTo(cx - s, cy + s*0.7);
+      ctx.lineTo(cx + s, cy + s*0.7);
+      ctx.closePath();
+      ctx.fillStyle = '#ff6a6a';
+      ctx.fill();
+    } else {
+      ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.8)';
+      ctx.fill();
+    }
+  }
+}
+
+function renderGtendHeatMap(){
+  if(!gtendHeatSvg || !__gtendData || !__gtendGeoJson) return;
+  gtendHeatSvg.innerHTML = '';
+
+  // Heat map always shows ALL events (filtered by shooter + shot type, but NOT by zone)
+  let heatEvts = __gtendData.events || [];
+  if(__gtendActiveShooter) heatEvts = heatEvts.filter(e => e.playerId === __gtendActiveShooter);
+  if(__gtendShotType === 'goal') heatEvts = heatEvts.filter(e => e.goal === 1);
+  else if(__gtendShotType === 'shot') heatEvts = heatEvts.filter(e => e.shot === 1 && e.goal !== 1);
+  else if(__gtendShotType === 'miss') heatEvts = heatEvts.filter(e => e.shot !== 1 && e.goal !== 1);
+
+  const zoneCounts = {};
+  for(const e of heatEvts){
+    if(!e.boxId) continue;
+    if(!zoneCounts[e.boxId]) zoneCounts[e.boxId] = 0;
+    zoneCounts[e.boxId]++;
+  }
+
+  const vals = Object.values(zoneCounts);
+  const maxVal = Math.max(...vals, 1);
+
+  const features = (__gtendGeoJson.features || []).filter(f => {
+    const id = f.id || (f.properties && f.properties.id) || '';
+    return id.startsWith('O');
+  });
+
+  for(const f of features){
+    const id = f.id || f.properties?.id || '';
+    const coords = f.geometry?.coordinates?.[0];
+    if(!coords) continue;
+    const count = zoneCounts[id] || 0;
+    const intensity = count / maxVal;
+    const color = gtendHeatColor(intensity);
+
+    const points = coords.map(([x,y]) => `${x},${-y}`).join(' ');
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', points);
+    poly.setAttribute('fill', color);
+    poly.dataset.zoneId = id;
+    if(__gtendActiveZone === id) poly.classList.add('zone-selected');
+    poly.addEventListener('click', () => {
+      __gtendActiveZone = (__gtendActiveZone === id) ? null : id;
+      renderGtendKpis();
+      renderGtendTable();
+      renderGtendHeatMap();
+      updateGtendVideoBtn();
+    });
+    gtendHeatSvg.appendChild(poly);
+
+    // Zone label — use polygon centroid for corner zones, bbox center otherwise
+    const xs = coords.map(c => c[0]);
+    const ys = coords.map(c => c[1]);
+    let cx, cy;
+    if(id === 'O04' || id === 'O10'){
+      cx = xs.reduce((a,b)=>a+b,0) / xs.length;
+      cy = ys.reduce((a,b)=>a+b,0) / ys.length;
+    } else {
+      cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    }
+    if(Math.max(...xs) >= 99) cx = Math.min(cx, 92);
+    if(Math.min(...ys) <= -41) cy = Math.max(cy, -38);
+    if(Math.max(...ys) >= 41) cy = Math.min(cy, 38);
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', cx);
+    text.setAttribute('y', -cy);
+    text.setAttribute('class', 'gtend-zone-label');
+    text.textContent = count;
+    gtendHeatSvg.appendChild(text);
+  }
+}
+
+function gtendHeatColor(t){
+  if(t <= 0) return 'rgba(200,210,230,0.15)';
+  const r = Math.round(230 - 140*t);
+  const g = Math.round(200 - 140*t);
+  const b = Math.round(200 - 20*t);
+  const a = 0.2 + 0.6 * t;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function updateGtendVideoBtn(){
+  const evts = getFilteredGtendEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+  gtendVideoBtn.disabled = evts.length === 0;
+}
+
 tabCard?.addEventListener('click', ()=> setActiveTab('card'));
 tabTable?.addEventListener('click', ()=> setActiveTab('table'));
 tabCharts?.addEventListener('click', ()=> setActiveTab('charts'));
+tabGoaltending?.addEventListener('click', ()=> setActiveTab('goaltending'));
   // Charts interactions
   try{ pdX?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
   try{ pdY?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
   try{ scX?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
   try{ scY?.addEventListener('change', ()=> { renderCharts(); saveSkatersState(); }); }catch(_){/*noop*/}
   // Re-render charts when shared slicers change.
-  try{ seasonSelect?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
-  try{ teamSelect?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ seasonSelect?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ teamSelect?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
   try{ playerSelect?.addEventListener('change', ()=> { try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/} try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/} }); }catch(_){/*noop*/}
-  try{ cardSeasonState?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardStrengthState?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardRates?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardXgModel?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardMinGp?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
-  try{ cardMinToi?.addEventListener('change', ()=> { if(!tabCharts?.classList.contains('active')) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardSeasonState?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardStrengthState?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardRates?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardXgModel?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; refreshChartMetricLabels(); renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardMinGp?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
+  try{ cardMinToi?.addEventListener('change', ()=> { if(!chartsViewActive()) return; __chartsLastKey=''; renderCharts(); }); }catch(_){/*noop*/}
   // Scope segmented buttons already call loadCardPanel(); extend to re-render charts too.
   // (Keep behavior localized: just trigger charts refresh after scope changes.)
   // NOTE: setCardScope() itself doesn't call renderCharts.
@@ -4420,6 +4982,19 @@ cardRates?.addEventListener('change', __maybeReloadTable);
 cardXgModel?.addEventListener('change', __maybeReloadTable);
 seasonSelect?.addEventListener('change', __maybeReloadTable);
 
+// Auto-update goaltending panel when slicers change
+function __maybeReloadGoaltending(){
+  if(tabGoaltending?.classList.contains('active')){
+    __gtendLastKey = '';
+    loadGoaltendingPanel();
+  }
+}
+cardSeasonState?.addEventListener('change', __maybeReloadGoaltending);
+cardStrengthState?.addEventListener('change', __maybeReloadGoaltending);
+cardXgModel?.addEventListener('change', __maybeReloadGoaltending);
+playerSelect?.addEventListener('change', __maybeReloadGoaltending);
+seasonSelect?.addEventListener('change', __maybeReloadGoaltending);
+
 btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
 btnConfigureTable?.addEventListener('click', async ()=>{ await showTableConfig(); });
 btnExportTableCsv?.addEventListener('click', async ()=>{ await exportTableCsv(); });
@@ -4441,7 +5016,7 @@ function __scheduleMinFilterSave(){
   __minFilterSaveTimer = setTimeout(()=>{
     updateCardSlicerSummary();
     saveSkatersState();
-    if(tabCharts?.classList.contains('active')){
+    if(chartsViewActive()){
       __chartsLastKey='';
       renderCharts();
     }
@@ -4545,6 +5120,15 @@ seasonSelect?.addEventListener('change', async ()=>{
   saveSkatersState();
 });
 playerSelect?.addEventListener('change', ()=> { loadPlayerCard(); saveSkatersState(); });
+
+// Hash-based tab: override saved state BEFORE boot so initSkatersPage uses it
+(function(){
+  var h = location.hash.replace('#','');
+  if(!h) return;
+  var map = {Card:'card',Charts:'charts',Goaltending:'goaltending',Table:'table'};
+  var tab = map[h];
+  if(tab) __restoreActiveTab = tab;
+})();
 
 // Boot sequence: restore persisted state and load once base.html filters are ready.
 initSkatersPage();
