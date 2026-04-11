@@ -1,0 +1,73 @@
+name: Daily NHL data update + rebuild lines
+
+on:
+  schedule:
+    # Every day at 11:00 AM UTC
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Override date (YYYY-MM-DD). Leave blank for yesterday."
+        required: false
+      season:
+        description: "Season code (e.g. 20252026)"
+        required: false
+        default: "20252026"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # Supabase (read + write)
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # Disable model preload — scripts don't need it
+      XG_PRELOAD: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compute date and season
+        id: params
+        run: |
+          # Use input date if provided, otherwise yesterday UTC
+          if [ -n "${{ inputs.date }}" ]; then
+            DATE="${{ inputs.date }}"
+          else
+            DATE=$(python -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d'))")
+          fi
+          SEASON="${{ inputs.season || '20252026' }}"
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+          echo "season=$SEASON" >> "$GITHUB_OUTPUT"
+          echo "Processing date=$DATE  season=$SEASON"
+
+      - name: Fetch & export data for date
+        run: |
+          python -u scripts/update_data.py \
+            --date "${{ steps.params.outputs.date }}" \
+            --season "${{ steps.params.outputs.season }}" \
+            --export \
+            --replace-date \
+            --rebuild-lines
