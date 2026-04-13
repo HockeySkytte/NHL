@@ -442,6 +442,12 @@ def fetch_day(
                         'iG_All','iG_EV','iG_PP','iG_SH',
                         'A1_All','A1_EV','A1_PP','A1_SH',
                         'A2_All','A2_EV','A2_PP','A2_SH',
+                        'iCF_All','iCF_EV','iCF_PP','iCF_SH',
+                        'iFF_All','iFF_EV','iFF_PP','iFF_SH',
+                        'iSF_All','iSF_EV','iSF_PP','iSF_SH',
+                        'ixG_F_All','ixG_F_EV','ixG_F_PP','ixG_F_SH',
+                        'ixG_S_All','ixG_S_EV','ixG_S_PP','ixG_S_SH',
+                        'ixG_F2_All','ixG_F2_EV','ixG_F2_PP','ixG_F2_SH',
                         'PEN_taken','PEN_drawn'
                     ]
                     indiv = pd.DataFrame(columns=['GameID','PlayerID'] + indiv_cols)
@@ -464,6 +470,56 @@ def fetch_day(
                                 }
                             ).reset_index()
                             indiv = gsum if indiv.empty else indiv.merge(gsum, on=['GameID','PlayerID'], how='outer')
+                        # Individual shooting stats (credited to shooter = Player1_ID)
+                        corsi_rows = p[p['Corsi'] == 1].copy() if 'Corsi' in p.columns else pd.DataFrame()
+                        for label, filter_df in [
+                            ('iCF', corsi_rows),
+                            ('iFF', p[p['Fenwick'] == 1].copy() if 'Fenwick' in p.columns else pd.DataFrame()),
+                            ('iSF', p[p['Shot'] == 1].copy() if 'Shot' in p.columns else pd.DataFrame()),
+                        ]:
+                            if filter_df.empty:
+                                continue
+                            tmp = filter_df[['Player1_ID', 'GameID', 'StrengthState']].rename(columns={'Player1_ID': 'PlayerID'})
+                            tmp = tmp.dropna(subset=['PlayerID'])
+                            tmp['is_ev'] = tmp['StrengthState'].isin(ev_set)
+                            tmp['is_pp'] = tmp['StrengthState'].isin(pp_set)
+                            tmp['is_sh'] = tmp['StrengthState'].isin(sh_set)
+                            gsum = tmp.groupby(['GameID','PlayerID']).agg(
+                                **{
+                                    f'{label}_All': ('GameID','count'),
+                                    f'{label}_EV': ('is_ev','sum'),
+                                    f'{label}_PP': ('is_pp','sum'),
+                                    f'{label}_SH': ('is_sh','sum'),
+                                }
+                            ).reset_index()
+                            indiv = gsum if indiv.empty else indiv.merge(gsum, on=['GameID','PlayerID'], how='outer')
+
+                        # Individual xG (sum per shooter per strength state)
+                        for xg_col, xg_label in [('xG_F', 'ixG_F'), ('xG_S', 'ixG_S'), ('xG_F2', 'ixG_F2')]:
+                            if xg_col not in p.columns:
+                                continue
+                            xg_rows = p[pd.to_numeric(p[xg_col], errors='coerce').fillna(0) > 0].copy()
+                            if xg_rows.empty:
+                                continue
+                            xg_rows[xg_col] = pd.to_numeric(xg_rows[xg_col], errors='coerce').fillna(0.0)
+                            xg_rows = xg_rows[['Player1_ID', 'GameID', 'StrengthState', xg_col]].rename(columns={'Player1_ID': 'PlayerID'})
+                            xg_rows = xg_rows.dropna(subset=['PlayerID'])
+                            xg_rows['is_ev'] = xg_rows['StrengthState'].isin(ev_set)
+                            xg_rows['is_pp'] = xg_rows['StrengthState'].isin(pp_set)
+                            xg_rows['is_sh'] = xg_rows['StrengthState'].isin(sh_set)
+                            xg_rows[f'{xg_label}_ev_val'] = xg_rows[xg_col].where(xg_rows['is_ev'], 0.0)
+                            xg_rows[f'{xg_label}_pp_val'] = xg_rows[xg_col].where(xg_rows['is_pp'], 0.0)
+                            xg_rows[f'{xg_label}_sh_val'] = xg_rows[xg_col].where(xg_rows['is_sh'], 0.0)
+                            gsum = xg_rows.groupby(['GameID','PlayerID']).agg(
+                                **{
+                                    f'{xg_label}_All': (xg_col, 'sum'),
+                                    f'{xg_label}_EV': (f'{xg_label}_ev_val', 'sum'),
+                                    f'{xg_label}_PP': (f'{xg_label}_pp_val', 'sum'),
+                                    f'{xg_label}_SH': (f'{xg_label}_sh_val', 'sum'),
+                                }
+                            ).reset_index()
+                            indiv = gsum if indiv.empty else indiv.merge(gsum, on=['GameID','PlayerID'], how='outer')
+
                         # Penalties
                         pens = p[p['PEN_duration'].notna()].copy()
                         # PEN_taken: sum of penalty minutes assessed to penalized player (Player1_ID)
@@ -650,7 +706,13 @@ def fetch_day(
                         'GF_All','GF_EV','GF_PP','GF_SH', 'GA_All','GA_EV','GA_PP','GA_SH',
                         'xGF_F_All','xGF_F_EV','xGF_F_PP','xGF_F_SH', 'xGA_F_All','xGA_F_EV','xGA_F_PP','xGA_F_SH',
                         'xGF_F2_All','xGF_F2_EV','xGF_F2_PP','xGF_F2_SH', 'xGA_F2_All','xGA_F2_EV','xGA_F2_PP','xGA_F2_SH',
-                        'xGF_S_All','xGF_S_EV','xGF_S_PP','xGF_S_SH', 'xGA_S_All','xGA_S_EV','xGA_S_PP','xGA_S_SH'
+                        'xGF_S_All','xGF_S_EV','xGF_S_PP','xGF_S_SH', 'xGA_S_All','xGA_S_EV','xGA_S_PP','xGA_S_SH',
+                        'iCF_All','iCF_EV','iCF_PP','iCF_SH',
+                        'iFF_All','iFF_EV','iFF_PP','iFF_SH',
+                        'iSF_All','iSF_EV','iSF_PP','iSF_SH',
+                        'ixG_F_All','ixG_F_EV','ixG_F_PP','ixG_F_SH',
+                        'ixG_S_All','ixG_S_EV','ixG_S_PP','ixG_S_SH',
+                        'ixG_F2_All','ixG_F2_EV','ixG_F2_PP','ixG_F2_SH',
                     ]:
                         if c not in agg.columns:
                             agg[c] = 0.0
@@ -668,12 +730,18 @@ def fetch_day(
                         'iG_All','iG_EV','iG_PP','iG_SH',
                         'A1_All','A1_EV','A1_PP','A1_SH',
                         'A2_All','A2_EV','A2_PP','A2_SH',
+                        'iCF_All','iCF_EV','iCF_PP','iCF_SH',
+                        'iFF_All','iFF_EV','iFF_PP','iFF_SH',
+                        'iSF_All','iSF_EV','iSF_PP','iSF_SH',
+                        'ixG_F_All','ixG_F_EV','ixG_F_PP','ixG_F_SH',
+                        'ixG_S_All','ixG_S_EV','ixG_S_PP','ixG_S_SH',
+                        'ixG_F2_All','ixG_F2_EV','ixG_F2_PP','ixG_F2_SH',
                         'PEN_taken','PEN_drawn'
                     ]]
                     # Fill NaNs in numeric columns with zeros
                     num_cols = [
                         c for c in agg.columns
-                        if c.startswith(('TOI_', 'iG_', 'A1_', 'A2_', 'PEN_', 'CF_', 'CA_', 'FF_', 'FA_', 'SF_', 'SA_', 'GF_', 'GA_', 'xGF_', 'xGA_'))
+                        if c.startswith(('TOI_', 'iG_', 'A1_', 'A2_', 'PEN_', 'CF_', 'CA_', 'FF_', 'FA_', 'SF_', 'SA_', 'GF_', 'GA_', 'xGF_', 'xGA_', 'iCF_', 'iFF_', 'iSF_', 'ixG_'))
                     ]
                     agg[num_cols] = agg[num_cols].fillna(0)
                     df_gamedata_list.append(agg)
@@ -1351,6 +1419,12 @@ _GAMEDATA_COL_MAP: Dict[str, str] = {
     'iG_All': 'ig_all', 'iG_EV': 'ig_ev', 'iG_PP': 'ig_pp', 'iG_SH': 'ig_sh',
     'A1_All': 'a1_all', 'A1_EV': 'a1_ev', 'A1_PP': 'a1_pp', 'A1_SH': 'a1_sh',
     'A2_All': 'a2_all', 'A2_EV': 'a2_ev', 'A2_PP': 'a2_pp', 'A2_SH': 'a2_sh',
+    'iCF_All': 'icf_all', 'iCF_EV': 'icf_ev', 'iCF_PP': 'icf_pp', 'iCF_SH': 'icf_sh',
+    'iFF_All': 'iff_all', 'iFF_EV': 'iff_ev', 'iFF_PP': 'iff_pp', 'iFF_SH': 'iff_sh',
+    'iSF_All': 'isf_all', 'iSF_EV': 'isf_ev', 'iSF_PP': 'isf_pp', 'iSF_SH': 'isf_sh',
+    'ixG_F_All': 'ixgf_all', 'ixG_F_EV': 'ixgf_ev', 'ixG_F_PP': 'ixgf_pp', 'ixG_F_SH': 'ixgf_sh',
+    'ixG_S_All': 'ixgs_all', 'ixG_S_EV': 'ixgs_ev', 'ixG_S_PP': 'ixgs_pp', 'ixG_S_SH': 'ixgs_sh',
+    'ixG_F2_All': 'ixgf2_all', 'ixG_F2_EV': 'ixgf2_ev', 'ixG_F2_PP': 'ixgf2_pp', 'ixG_F2_SH': 'ixgf2_sh',
     'PEN_taken': 'pen_taken',
     'PEN_drawn': 'pen_drawn',
 }
@@ -1566,6 +1640,350 @@ def export_players_to_supabase(season: str = '20252026') -> None:
         pass
     upsert_df("players", dfp, on_conflict="player_id,season")
     print(f"[supabase] wrote {len(dfp)} player bios -> players (season={season_id})")
+
+
+def rebuild_seasonstats_from_gamedata(season: str = '20252026') -> None:
+    """Rebuild season_stats from game_data in Supabase.
+
+    Reads all game_data rows for the season, pivots strength-state columns
+    into per-strength-state rows, aggregates by player, and upserts to
+    season_stats.  This enables the Card / Table views without requiring
+    MySQL or Google Sheets.
+    """
+    from dotenv import load_dotenv
+    load_dotenv()
+    from app.supabase_client import read_table, upsert_df, delete_rows
+
+    season_id = str(season).strip()
+    season_i = _season_int(season_id)
+
+    print(f"[seasonstats] reading game_data for season {season_i} ...")
+    df = read_table("game_data", filters={"season": f"eq.{season_i}"})
+    if df.empty:
+        print(f"[seasonstats] no game_data rows for season {season_i}; nothing to do")
+        return
+
+    print(f"[seasonstats] loaded {len(df)} game_data rows; aggregating ...")
+
+    # Determine season_state from game_id:
+    # NHL game IDs: YYYYTTGGGG where TT=02 for regular, 03 for playoffs
+    def _season_state(game_id: Any) -> str:
+        try:
+            gid = int(game_id)
+            game_type = (gid // 10000) % 100
+            if game_type == 3:
+                return 'playoffs'
+        except Exception:
+            pass
+        return 'regular'
+
+    df['_season_state'] = df['game_id'].apply(_season_state)
+
+    # Strength-state column mapping:
+    # game_data has _ev/_pp/_sh suffixes → season_stats strength_state rows
+    _STRENGTH_SUFFIXES = {
+        '5v5': '_ev',
+        'PP': '_pp',
+        'SH': '_sh',
+    }
+
+    # Metric mapping: game_data column prefix → season_stats column
+    _FLOAT_METRICS = {
+        'toi': 'toi',
+        'xgf_f': 'xgf_f', 'xga_f': 'xga_f',
+        'xgf_s': 'xgf_s', 'xga_s': 'xga_s',
+        'xgf_f2': 'xgf_f2', 'xga_f2': 'xga_f2',
+        'ixgf': 'ixg_f', 'ixgs': 'ixg_s', 'ixgf2': 'ixg_f2',
+    }
+    _INT_METRICS = {
+        'cf': 'cf', 'ca': 'ca',
+        'ff': 'ff', 'fa': 'fa',
+        'sf': 'sf', 'sa': 'sa',
+        'gf': 'gf', 'ga': 'ga',
+        'icf': 'i_corsi', 'iff': 'i_fenwick', 'isf': 'i_shots',
+    }
+    _INDIVIDUAL = {
+        'ig': 'i_goals',
+        'a1': 'assists1',
+        'a2': 'assists2',
+    }
+
+    out_rows: List[Dict[str, Any]] = []
+
+    for ss_state in df['_season_state'].unique():
+        sub = df[df['_season_state'] == ss_state]
+        for strength_label, suffix in _STRENGTH_SUFFIXES.items():
+            # Group by player_id; sum metrics and count distinct games
+            grouped = sub.groupby('player_id')
+            for pid, grp in grouped:
+                row: Dict[str, Any] = {
+                    'season': season_i,
+                    'season_state': ss_state,
+                    'strength_state': strength_label,
+                    'player_id': int(pid),
+                    'position': str(grp['position'].iloc[0] or '').strip()[:2] or None,
+                    'gp': int(grp['game_id'].nunique()),
+                }
+                # Sum on-ice / individual metrics
+                for gd_prefix, ss_col in _INT_METRICS.items():
+                    col = f'{gd_prefix}{suffix}'
+                    if col in grp.columns:
+                        row[ss_col] = int(grp[col].fillna(0).sum())
+                    else:
+                        row[ss_col] = None
+                for gd_prefix, ss_col in _FLOAT_METRICS.items():
+                    col = f'{gd_prefix}{suffix}'
+                    if col in grp.columns:
+                        row[ss_col] = float(grp[col].fillna(0).sum())
+                    else:
+                        row[ss_col] = None
+                for gd_prefix, ss_col in _INDIVIDUAL.items():
+                    col = f'{gd_prefix}{suffix}'
+                    if col in grp.columns:
+                        row[ss_col] = int(grp[col].fillna(0).sum())
+                    else:
+                        row[ss_col] = None
+                # Penalties: game_data has pen_taken/pen_drawn (not per-strength)
+                # Assign to 5v5 only to avoid double-counting
+                if strength_label == '5v5':
+                    row['pim_taken'] = int(grp['pen_taken'].fillna(0).sum()) if 'pen_taken' in grp.columns else None
+                    row['pim_drawn'] = int(grp['pen_drawn'].fillna(0).sum()) if 'pen_drawn' in grp.columns else None
+                out_rows.append(row)
+
+    if not out_rows:
+        print("[seasonstats] no aggregated rows; nothing to upsert")
+        return
+
+    df_out = pd.DataFrame(out_rows)
+
+    # Delete existing season_stats for this season before upserting
+    try:
+        delete_rows("season_stats", {"season": f"eq.{season_i}"})
+        print(f"[seasonstats] deleted old season_stats rows for season {season_i}")
+    except Exception as e:
+        print(f"[seasonstats] delete old rows warning: {e}")
+
+    upsert_df("season_stats", df_out, on_conflict="season,season_state,strength_state,player_id")
+    print(f"[seasonstats] upserted {len(df_out)} rows to season_stats for season {season_i}")
+
+
+def rebuild_team_seasonstats_from_supabase(season: str = '20252026') -> None:
+    """Rebuild season_stats_teams from Supabase pbp + shifts tables.
+
+    Uses direct Postgres connection (SUPABASE_DB_URL) if available, otherwise
+    falls back to Supabase REST API (slower but works).
+    Upserts results to season_stats_teams in Supabase.
+    """
+    from dotenv import load_dotenv
+    load_dotenv()
+    from app.supabase_client import read_table, upsert_df, delete_rows
+
+    season_i = _season_int(str(season).strip())
+    db_url = os.environ.get('SUPABASE_DB_URL', '')
+
+    # Try direct Postgres path first
+    if db_url:
+        try:
+            _rebuild_team_seasonstats_sql(season_i, db_url)
+            return
+        except Exception as e:
+            print(f"[team-seasonstats] Postgres failed ({e}); falling back to REST API ...")
+
+    # Fallback: aggregate via REST API in Python
+    print(f"[team-seasonstats] reading PBP for season {season_i} via REST API ...")
+    pbp = read_table("pbp", columns="game_id,season_state,strength_state,event_team,opponent,corsi,fenwick,shot,goal,xg_f,xg_s,xg_f2,pen_duration",
+                      filters={"season": f"eq.{season_i}"})
+    if pbp.empty:
+        print(f"[team-seasonstats] no PBP rows for {season_i}")
+        return
+    print(f"[team-seasonstats] loaded {len(pbp)} PBP rows; aggregating ...")
+
+    # Bucket strength states
+    def _sb(v):
+        s = str(v or '').strip()
+        if s in ('5v5','6v5','5v6','6v6','6v4','4v6'): return '5v5'
+        if s in ('5v4','5v3','4v3'): return 'PP'
+        if s in ('4v5','3v5','3v4'): return 'SH'
+        return 'Other'
+
+    pbp['_ss'] = pbp['season_state'].fillna('regular').astype(str).str.strip().replace('', 'regular')
+    pbp['_st'] = pbp['strength_state'].fillna('').apply(_sb)
+    pbp['_team'] = pbp['event_team'].fillna('').astype(str).str.strip().str.upper()
+    pbp['_opp'] = pbp['opponent'].fillna('').astype(str).str.strip().str.upper()
+
+    # Fill numeric columns
+    for c in ['corsi','fenwick','shot','goal','xg_f','xg_s','xg_f2','pen_duration']:
+        pbp[c] = pd.to_numeric(pbp[c], errors='coerce').fillna(0)
+
+    # For stats: aggregate events by team (EventTeam)
+    mask_team = pbp['_team'] != ''
+    ev = pbp[mask_team].groupby(['_ss','_st','_team']).agg(
+        gp=('game_id', 'nunique'),
+        cf=('corsi', 'sum'),
+        ff=('fenwick', 'sum'),
+        sf=('shot', 'sum'),
+        gf=('goal', 'sum'),
+        xgf_f=('xg_f', 'sum'),
+        xgf_s=('xg_s', 'sum'),
+        xgf_f2=('xg_f2', 'sum'),
+        pim_for=('pen_duration', 'sum'),
+    ).reset_index().rename(columns={'_ss': 'season_state', '_st': 'strength_state', '_team': 'team'})
+
+    # Against stats: aggregate by opponent
+    mask_opp = pbp['_opp'] != ''
+    ag = pbp[mask_opp].groupby(['_ss','_st','_opp']).agg(
+        ca=('corsi', 'sum'),
+        fa=('fenwick', 'sum'),
+        sa=('shot', 'sum'),
+        ga=('goal', 'sum'),
+        xga_f=('xg_f', 'sum'),
+        xga_s=('xg_s', 'sum'),
+        xga_f2=('xg_f2', 'sum'),
+        pim_against=('pen_duration', 'sum'),
+    ).reset_index().rename(columns={'_ss': 'season_state', '_st': 'strength_state', '_opp': 'team'})
+
+    # TOI from shifts
+    print(f"[team-seasonstats] reading shifts for TOI ...")
+    shifts = read_table("shifts", columns="game_id,team,duration,strength_state",
+                        filters={"season": f"eq.{season_i}"})
+    if not shifts.empty:
+        shifts['_team'] = shifts['team'].fillna('').astype(str).str.strip().str.upper()
+        shifts['_st'] = shifts['strength_state'].fillna('').apply(_sb)
+        shifts['duration'] = pd.to_numeric(shifts['duration'], errors='coerce').fillna(0)
+        # Need season_state from PBP per game_id
+        game_ss = pbp[['game_id','_ss']].drop_duplicates('game_id')
+        shifts = shifts.merge(game_ss, on='game_id', how='left')
+        shifts['_ss'] = shifts['_ss'].fillna('regular')
+        toi_df = shifts.groupby(['_ss','_st','_team']).agg(
+            toi=('duration', 'sum'),
+        ).reset_index().rename(columns={'_ss': 'season_state', '_st': 'strength_state', '_team': 'team'})
+        toi_df['toi'] = toi_df['toi'] / 60.0
+    else:
+        toi_df = pd.DataFrame(columns=['season_state','strength_state','team','toi'])
+
+    # Merge
+    key_cols = ['season_state', 'strength_state', 'team']
+    df = ev.merge(ag, on=key_cols, how='outer').merge(toi_df, on=key_cols, how='outer')
+    for c in df.columns:
+        if c not in key_cols:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+    df['season'] = season_i
+
+    print(f"[team-seasonstats] built {len(df)} team/state rows")
+
+    try:
+        delete_rows("season_stats_teams", {"season": f"eq.{season_i}"})
+    except Exception as e:
+        print(f"[team-seasonstats] delete warning: {e}")
+
+    upsert_df("season_stats_teams", df, on_conflict="season,season_state,strength_state,team")
+    print(f"[team-seasonstats] upserted {len(df)} rows to season_stats_teams")
+
+
+def _rebuild_team_seasonstats_sql(season_i: int, db_url: str) -> None:
+    """Internal: Rebuild team seasonstats using direct Postgres SQL."""
+    from app.supabase_client import upsert_df, delete_rows
+    from sqlalchemy import create_engine, text as sa_text
+    from sqlalchemy.engine.url import make_url
+
+    parsed = make_url(db_url)
+    eng = create_engine(parsed)
+
+    print(f"[team-seasonstats] aggregating PBP via SQL for season {season_i} ...")
+
+    _sb = """
+        CASE
+            WHEN COALESCE(TRIM(strength_state),'') IN ('5v5','6v5','5v6','6v6','6v4','4v6') THEN '5v5'
+            WHEN COALESCE(TRIM(strength_state),'') IN ('5v4','5v3','4v3') THEN 'PP'
+            WHEN COALESCE(TRIM(strength_state),'') IN ('4v5','3v5','3v4') THEN 'SH'
+            ELSE 'Other'
+        END
+    """.strip()
+
+    sql_events = f"""
+        SELECT
+            COALESCE(NULLIF(TRIM(season_state),''),'regular') AS season_state,
+            {_sb} AS strength_state,
+            UPPER(TRIM(event_team)) AS team,
+            COUNT(DISTINCT game_id) AS gp,
+            SUM(COALESCE(corsi,0))        AS cf,
+            SUM(COALESCE(fenwick,0))       AS ff,
+            SUM(COALESCE(shot,0))          AS sf,
+            SUM(COALESCE(goal,0))          AS gf,
+            SUM(COALESCE(xg_f,0.0))       AS xgf_f,
+            SUM(COALESCE(xg_s,0.0))       AS xgf_s,
+            SUM(COALESCE(xg_f2,0.0))      AS xgf_f2,
+            SUM(COALESCE(pen_duration,0))  AS pim_for
+        FROM pbp
+        WHERE season = :season
+          AND event_team IS NOT NULL AND TRIM(event_team) <> ''
+        GROUP BY 1, 2, 3
+    """
+
+    sql_against = f"""
+        SELECT
+            COALESCE(NULLIF(TRIM(season_state),''),'regular') AS season_state,
+            {_sb} AS strength_state,
+            UPPER(TRIM(opponent)) AS team,
+            SUM(COALESCE(corsi,0))        AS ca,
+            SUM(COALESCE(fenwick,0))       AS fa,
+            SUM(COALESCE(shot,0))          AS sa,
+            SUM(COALESCE(goal,0))          AS ga,
+            SUM(COALESCE(xg_f,0.0))       AS xga_f,
+            SUM(COALESCE(xg_s,0.0))       AS xga_s,
+            SUM(COALESCE(xg_f2,0.0))      AS xga_f2,
+            SUM(COALESCE(pen_duration,0))  AS pim_against
+        FROM pbp
+        WHERE season = :season
+          AND opponent IS NOT NULL AND TRIM(opponent) <> ''
+        GROUP BY 1, 2, 3
+    """
+
+    _sb_shifts = _sb.replace('strength_state', 's.strength_state')
+    sql_toi = f"""
+        SELECT
+            COALESCE(NULLIF(TRIM(p.season_state),''),'regular') AS season_state,
+            {_sb_shifts} AS strength_state,
+            UPPER(TRIM(s.team)) AS team,
+            SUM(COALESCE(s.duration,0)) / 60.0 AS toi
+        FROM shifts s
+        JOIN (
+            SELECT DISTINCT game_id,
+                   COALESCE(NULLIF(TRIM(season_state),''),'regular') AS season_state
+            FROM pbp WHERE season = :season
+        ) p ON p.game_id = s.game_id
+        WHERE s.season = :season
+        GROUP BY 1, 2, 3
+    """
+
+    with eng.connect() as conn:
+        params = {"season": season_i}
+        df_for = pd.read_sql(sa_text(sql_events), conn, params=params)
+        df_ag = pd.read_sql(sa_text(sql_against), conn, params=params)
+        df_toi = pd.read_sql(sa_text(sql_toi), conn, params=params)
+
+    if df_for.empty:
+        raise RuntimeError(f"No PBP data for season {season_i}")
+
+    key_cols = ['season_state', 'strength_state', 'team']
+    df = df_for.merge(df_ag, on=key_cols, how='outer')
+    df = df.merge(df_toi, on=key_cols, how='outer')
+
+    for c in df.columns:
+        if c not in key_cols:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+
+    df['season'] = season_i
+
+    print(f"[team-seasonstats] built {len(df)} team/state rows")
+
+    try:
+        delete_rows("season_stats_teams", {"season": f"eq.{season_i}"})
+    except Exception as e:
+        print(f"[team-seasonstats] delete warning: {e}")
+
+    upsert_df("season_stats_teams", df, on_conflict="season,season_state,strength_state,team")
+    print(f"[team-seasonstats] upserted {len(df)} rows to season_stats_teams")
 
 
 def run_player_projections_and_write_csv(csv_path: Optional[str] = None) -> str:
@@ -2809,10 +3227,30 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument('--lineup-url', help='DailyFaceoff line combinations URL for a team (e.g., https://www.dailyfaceoff.com/teams/anaheim-ducks/line-combinations)')
     parser.add_argument('--lineup-save', action='store_true', help='When using --lineup-url, save mapped lineup JSON to app/static/lineup_<TEAM>.json')
     parser.add_argument('--rebuild-lines', action='store_true', help='Rebuild forward_lines and defense_pairings tables in Supabase (5v5 regular season)')
+    parser.add_argument('--rebuild-seasonstats', action='store_true', help='Rebuild season_stats table from game_data in Supabase after export')
+    parser.add_argument('--rebuild-team-seasonstats', action='store_true', help='Rebuild season_stats_teams from Supabase pbp+shifts')
     args = parser.parse_args(argv)
+
+    # Standalone team seasonstats rebuild
+    if bool(args.rebuild_team_seasonstats) and not args.date and not args.all_dates and not args.seasonstats_only:
+        try:
+            rebuild_team_seasonstats_from_supabase(season=str(args.season).strip())
+            return 0
+        except Exception as e:
+            print(f"[error] rebuild-team-seasonstats failed: {e}", file=sys.stderr)
+            return 9
 
     # Standalone seasonstats mode (no fetch_day required)
     if bool(args.seasonstats_only):
+        # If --rebuild-seasonstats is also set, use the Supabase game_data path
+        if bool(args.rebuild_seasonstats):
+            try:
+                rebuild_seasonstats_from_gamedata(season=str(args.season).strip())
+                return 0
+            except Exception as e:
+                print(f"[error] rebuild-seasonstats failed: {e}", file=sys.stderr)
+                return 9
+
         if str(args.season).strip() != '20252026':
             print('[seasonstats] --seasonstats-only is currently intended for --season 20252026', file=sys.stderr)
         ss_id = _resolve_default_sheets_id(
@@ -2832,6 +3270,15 @@ def main(argv: List[str] | None = None) -> int:
             return 0
         except Exception as e:
             print(f"[error] seasonstats-only failed: {e}", file=sys.stderr)
+            return 9
+
+    # Standalone rebuild-seasonstats (without --seasonstats-only)
+    if bool(args.rebuild_seasonstats) and not args.date and not args.all_dates:
+        try:
+            rebuild_seasonstats_from_gamedata(season=str(args.season).strip())
+            return 0
+        except Exception as e:
+            print(f"[error] rebuild-seasonstats failed: {e}", file=sys.stderr)
             return 9
 
     # Standalone rebuild of forward_lines / defense_pairings tables
@@ -2911,6 +3358,44 @@ def main(argv: List[str] | None = None) -> int:
                 failures.append(f'line combos rebuild failed: {e}')
                 print(f'[warn] line combos rebuild failed: {e}', file=sys.stderr)
 
+        if args.rebuild_seasonstats or args.export:
+            try:
+                rebuild_seasonstats_from_gamedata(season=str(args.season).strip())
+            except Exception as e:
+                failures.append(f'seasonstats rebuild failed: {e}')
+                print(f'[warn] seasonstats rebuild failed: {e}', file=sys.stderr)
+
+        if args.rebuild_team_seasonstats:
+            try:
+                rebuild_team_seasonstats_from_supabase(season=str(args.season).strip())
+            except Exception as e:
+                failures.append(f'team seasonstats rebuild failed: {e}')
+                print(f'[warn] team seasonstats rebuild failed: {e}', file=sys.stderr)
+
+        if args.run_rapm:
+            try:
+                rapm_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rapm.py')
+                rapm_cmd = [
+                    sys.executable, rapm_script,
+                    '--season', str(args.season).strip(),
+                    '--supabase',
+                ]
+                if args.rapm_sheets_id:
+                    rapm_cmd.extend(['--sheets-id', str(args.rapm_sheets_id).strip()])
+                if args.rapm_worksheet:
+                    rapm_cmd.extend(['--worksheet', str(args.rapm_worksheet).strip()])
+                if args.context_worksheet:
+                    rapm_cmd.extend(['--context-worksheet', str(args.context_worksheet).strip()])
+                print(f"[rapm] running: {' '.join(rapm_cmd)}")
+                import subprocess
+                rc = subprocess.call(rapm_cmd)
+                if rc != 0:
+                    failures.append(f'rapm.py exited with code {rc}')
+                    print(f'[warn] rapm.py exited with code {rc}', file=sys.stderr)
+            except Exception as e:
+                failures.append(f'RAPM rebuild failed: {e}')
+                print(f'[warn] RAPM rebuild failed: {e}', file=sys.stderr)
+
         print(
             f'[season] complete: PBP={total_pbp} Shifts={total_shifts} '
             f'GameData={total_gamedata} FailedSteps={len(failures)}'
@@ -2963,6 +3448,40 @@ def main(argv: List[str] | None = None) -> int:
                 rebuild_line_combos_date(season=str(args.season).strip(), game_ids=date_game_ids)
             except Exception as e:
                 print(f"[warn] line combos update failed: {e}", file=sys.stderr)
+
+        if args.rebuild_seasonstats:
+            try:
+                rebuild_seasonstats_from_gamedata(season=str(args.season).strip())
+            except Exception as e:
+                print(f"[warn] seasonstats rebuild failed: {e}", file=sys.stderr)
+
+        if args.rebuild_team_seasonstats:
+            try:
+                rebuild_team_seasonstats_from_supabase(season=str(args.season).strip())
+            except Exception as e:
+                print(f"[warn] team seasonstats rebuild failed: {e}", file=sys.stderr)
+
+        if args.run_rapm:
+            try:
+                rapm_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rapm.py')
+                rapm_cmd = [
+                    sys.executable, rapm_script,
+                    '--season', str(args.season).strip(),
+                    '--supabase',
+                ]
+                if args.rapm_sheets_id:
+                    rapm_cmd.extend(['--sheets-id', str(args.rapm_sheets_id).strip()])
+                if args.rapm_worksheet:
+                    rapm_cmd.extend(['--worksheet', str(args.rapm_worksheet).strip()])
+                if args.context_worksheet:
+                    rapm_cmd.extend(['--context-worksheet', str(args.context_worksheet).strip()])
+                print(f"[rapm] running: {' '.join(rapm_cmd)}")
+                import subprocess
+                rc = subprocess.call(rapm_cmd)
+                if rc != 0:
+                    print(f"[warn] rapm.py exited with code {rc}", file=sys.stderr)
+            except Exception as e:
+                print(f"[warn] RAPM rebuild failed: {e}", file=sys.stderr)
 
     # Optional: scrape DailyFaceoff lineup and map to PlayerIDs
     if args.lineup_url:

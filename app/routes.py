@@ -164,6 +164,7 @@ def run_update_data():
 
         # Optional: also run RAPM + context refresh (MySQL + Google Sheets)
         run_rapm = bool(data.get('run_rapm', False))
+        rebuild_team_seasonstats = bool(data.get('rebuild_team_seasonstats', False))
         rapm_sheet_id = str(
             data.get('rapm_sheet_id')
             or os.getenv('RAPM_SHEET_ID')
@@ -183,9 +184,6 @@ def run_update_data():
 
         if projections_to_sheets and not export_flag:
             return jsonify({'error': 'projections_to_sheets requires export=true'}), 400
-
-        if run_rapm and not export_flag:
-            return jsonify({'error': 'run_rapm requires export=true'}), 400
 
         # If export was requested, fail fast with a clear message when DB isn't reachable.
         if export_flag:
@@ -256,6 +254,9 @@ def run_update_data():
                 cmd.extend(['--rapm-worksheet', rapm_worksheet])
             if context_worksheet:
                 cmd.extend(['--context-worksheet', context_worksheet])
+
+        if rebuild_team_seasonstats:
+            cmd.append('--rebuild-team-seasonstats')
 
         job_id = _start_admin_job(cmd, cwd=project_root)
         return jsonify({'jobId': job_id})
@@ -7078,49 +7079,72 @@ def api_rapm_scale():
     five_off_by_pid: Dict[int, float] = {}
     five_def_by_pid: Dict[int, float] = {}
 
+    # When Rates are requested but data only has Totals, convert Totals → Rates
+    want_rates = _rt(rates) == 'Rates'
+    has_rates_rows = any(
+        _rt(r.get('Rates_Totals') or r.get('Rates/Totals') or r.get('RatesTotals')) == 'Rates'
+        for r in rows
+    )
+    # If we want Rates and no Rates rows exist, use Totals rows with conversion
+    use_totals_as_rates = want_rates and not has_rates_rows
+
     for r in rows:
         try:
             if season_int is not None:
                 if int(str(r.get('Season') or '').strip()) != season_int:
                     continue
-            if _rt(r.get('Rates_Totals') or r.get('Rates/Totals') or r.get('RatesTotals')) != _rt(rates):
-                continue
+            row_rt = _rt(r.get('Rates_Totals') or r.get('Rates/Totals') or r.get('RatesTotals'))
+            if use_totals_as_rates:
+                if row_rt != 'Totals':
+                    continue
+            else:
+                if row_rt != _rt(rates):
+                    continue
             pid = int(str(r.get('PlayerID') or '').strip())
             st = str(r.get('StrengthState') or '').strip()
+
+            # Rate conversion factor: Rates = Totals × (60 / minutes)
+            rate_factor = 1.0
+            if use_totals_as_rates:
+                mins = minutes_by_pid_strength.get((pid, st))
+                if mins and mins > 0:
+                    rate_factor = 60.0 / mins
+                else:
+                    continue  # can't convert without minutes
 
             if st == '5v5':
                 vdiff = _parse_locale_float(r.get(diff_col))
                 if vdiff is not None:
-                    five_by_pid[pid] = float(vdiff)
+                    five_by_pid[pid] = float(vdiff) * rate_factor
 
                 voff = _parse_locale_float(r.get('CF' if metric == 'corsi' else ('xGF' if metric == 'xg' else 'GF')))
                 vdef_raw = _parse_locale_float(r.get('CA' if metric == 'corsi' else ('xGA' if metric == 'xg' else 'GA')))
                 if voff is not None:
-                    five_off_by_pid[pid] = float(voff)
+                    five_off_by_pid[pid] = float(voff) * rate_factor
                 if vdef_raw is not None:
-                    five_def_by_pid[pid] = -float(vdef_raw)
+                    five_def_by_pid[pid] = -float(vdef_raw) * rate_factor
 
                 # Fallback PP/SH columns on 5v5 row, only if not already present.
                 vpp = _parse_locale_float(r.get(pp_col))
                 if vpp is not None and pid not in pp_by_pid:
-                    pp_by_pid[pid] = float(vpp)
+                    pp_by_pid[pid] = float(vpp) * rate_factor
                 vsh = _parse_locale_float(r.get(sh_col))
                 if vsh is not None and pid not in sh_by_pid:
-                    sh_by_pid[pid] = -float(vsh)
+                    sh_by_pid[pid] = -float(vsh) * rate_factor
 
             elif st == 'PP':
                 vpp = _parse_locale_float(r.get(pp_col))
                 if vpp is None:
                     vpp = _parse_locale_float(r.get(pp_base))
                 if vpp is not None:
-                    pp_by_pid[pid] = float(vpp)
+                    pp_by_pid[pid] = float(vpp) * rate_factor
 
             elif st == 'SH':
                 vsh = _parse_locale_float(r.get(sh_col))
                 if vsh is None:
                     vsh = _parse_locale_float(r.get(sh_base))
                 if vsh is not None:
-                    sh_by_pid[pid] = -float(vsh)
+                    sh_by_pid[pid] = -float(vsh) * rate_factor
         except Exception:
             continue
 
@@ -7146,7 +7170,10 @@ def api_rapm_scale():
     def _minmax(vals: List[float]) -> Dict[str, Any]:
         if not vals:
             return {'min': None, 'max': None}
-        return {'min': float(min(vals)), 'max': float(max(vals))}
+        lo, hi = float(min(vals)), float(max(vals))
+        # Make symmetric around zero and pad 10 % so bars don't touch edges
+        ext = max(abs(lo), abs(hi)) * 1.10
+        return {'min': -ext, 'max': ext}
 
     payload = {
         'season': season_int,
@@ -8414,6 +8441,57 @@ _COL_MAP_RAPM_CONTEXT = {
     "zs_difficulty": "ZS_Difficulty",
 }
 
+# Columns that should be divided by (minutes/60) when converting Totals → Rates
+_RAPM_VALUE_COLS = [
+    'CF', 'CA', 'GF', 'GA', 'xGF', 'xGA',
+    'PEN_taken', 'PEN_drawn',
+    'C_plusminus', 'G_plusminus', 'xG_plusminus', 'PEN_plusminus',
+    'PP_CF', 'PP_GF', 'PP_xGF', 'SH_CA', 'SH_GA', 'SH_xGA',
+]
+
+
+def _synthesize_rates_rows(
+    totals_rows: List[Dict[str, Any]],
+    ctx_rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Create Rates rows from Totals rows by dividing value columns by (minutes/60).
+
+    Z-score columns are copied from Totals (approximate).
+    """
+    mins_map: Dict[Tuple[str, str, str], float] = {}
+    for cr in ctx_rows:
+        key = (
+            str(cr.get('PlayerID') or '').strip(),
+            str(cr.get('Season') or '').strip(),
+            str(cr.get('StrengthState') or '').strip(),
+        )
+        m = _parse_locale_float(cr.get('Minutes'))
+        if m is not None and m > 0:
+            mins_map[key] = float(m)
+
+    rates: List[Dict[str, Any]] = []
+    for r in totals_rows:
+        rt = str(r.get('Rates_Totals') or r.get('Rates/Totals') or '').strip().lower()
+        if not rt.startswith('tot'):
+            continue
+        key = (
+            str(r.get('PlayerID') or '').strip(),
+            str(r.get('Season') or '').strip(),
+            str(r.get('StrengthState') or '').strip(),
+        )
+        mins = mins_map.get(key)
+        if not mins or mins <= 0:
+            continue
+        factor = 60.0 / mins
+        rate_row = dict(r)
+        rate_row['Rates_Totals'] = 'Rates'
+        for col in _RAPM_VALUE_COLS:
+            v = _parse_locale_float(rate_row.get(col))
+            if v is not None:
+                rate_row[col] = v * factor
+        rates.append(rate_row)
+    return rates
+
 
 def _sb_read_rapm(*, filters: Optional[Dict[str, str]] = None) -> Optional[List[Dict[str, Any]]]:
     """Read RAPM rows from Supabase, unpacking JSONB columns (stddev/zscore/pp_sh)
@@ -8632,6 +8710,18 @@ def _load_rapm_player_rows_static(player_id: int, season: Optional[int]) -> List
         sb_filters["season"] = f"eq.{int(season)}"
     sb_rows = _sb_read_rapm(filters=sb_filters)
     if sb_rows is not None:
+        # Supabase only stores Totals rows; synthesize Rates from context minutes
+        has_rates = any(
+            str(r.get('Rates_Totals') or '').strip().lower().startswith('rate')
+            for r in sb_rows
+        )
+        if not has_rates and sb_rows:
+            ctx_filters: Dict[str, str] = {"player_id": f"eq.{int(player_id)}"}
+            if season is not None:
+                ctx_filters["season"] = f"eq.{int(season)}"
+            ctx_rows = _sb_read("rapm_context", filters=ctx_filters, col_map=_COL_MAP_RAPM_CONTEXT)
+            if ctx_rows:
+                sb_rows = sb_rows + _synthesize_rates_rows(sb_rows, ctx_rows)
         _cache_set_multi_bounded(_RAPM_PLAYER_STATIC_CACHE, key, sb_rows, ttl_s=ttl_s, max_items=max_items)
         return sb_rows
 
@@ -9130,7 +9220,7 @@ def _build_goalies_career_season_matrix(
 
 
 def _load_rapm_static_csv() -> List[Dict[str, Any]]:
-    """Load RAPM data (TTL cached). Prefers CSV for full load (faster); Supabase as fallback."""
+    """Load RAPM data (TTL cached). Prefers Supabase; CSV as fallback."""
     global _RAPM_STATIC_CACHE
     try:
         ttl_s = max(30, int(os.getenv('RAPM_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
@@ -9140,7 +9230,22 @@ def _load_rapm_static_csv() -> List[Dict[str, Any]]:
     if _RAPM_STATIC_CACHE and (now - _RAPM_STATIC_CACHE[0]) < ttl_s:
         return _RAPM_STATIC_CACHE[1]
 
-    # Prefer CSV for full load (20K+ rows is too slow over REST pagination)
+    # Try Supabase first (current-season Totals only)
+    sb_rows = _sb_read_rapm()
+    if sb_rows is not None:
+        # Supabase stores only Totals; synthesize Rates from context minutes
+        has_rates = any(
+            str(r.get('Rates_Totals') or '').strip().lower().startswith('rate')
+            for r in sb_rows
+        )
+        if not has_rates and sb_rows:
+            ctx_rows = _load_context_static_csv()
+            if ctx_rows:
+                sb_rows = sb_rows + _synthesize_rates_rows(sb_rows, ctx_rows)
+        _RAPM_STATIC_CACHE = (now, sb_rows)
+        return sb_rows
+
+    # Fallback to CSV
     path = _static_path('rapm', 'rapm.csv')
     rows: List[Dict[str, Any]] = []
     try:
@@ -9155,18 +9260,12 @@ def _load_rapm_static_csv() -> List[Dict[str, Any]]:
     except Exception:
         pass
 
-    # Fallback to Supabase if CSV not available
-    sb_rows = _sb_read_rapm()
-    if sb_rows is not None:
-        _RAPM_STATIC_CACHE = (now, sb_rows)
-        return sb_rows
-
     _RAPM_STATIC_CACHE = (now, [])
     return []
 
 
 def _load_context_static_csv() -> List[Dict[str, Any]]:
-    """Load context data (TTL cached). Prefers CSV for full load; Supabase as fallback."""
+    """Load context data (TTL cached). Prefers Supabase; CSV as fallback."""
     global _CONTEXT_STATIC_CACHE
     try:
         ttl_s = max(30, int(os.getenv('CONTEXT_STATIC_CACHE_TTL_SECONDS', '600') or '600'))
@@ -9176,7 +9275,13 @@ def _load_context_static_csv() -> List[Dict[str, Any]]:
     if _CONTEXT_STATIC_CACHE and (now - _CONTEXT_STATIC_CACHE[0]) < ttl_s:
         return _CONTEXT_STATIC_CACHE[1]
 
-    # Prefer CSV for full load (38K+ rows is too slow over REST pagination)
+    # Try Supabase first
+    sb_rows = _sb_read("rapm_context", col_map=_COL_MAP_RAPM_CONTEXT)
+    if sb_rows is not None:
+        _CONTEXT_STATIC_CACHE = (now, sb_rows)
+        return sb_rows
+
+    # Fallback to CSV
     path = _static_path('rapm', 'context.csv')
     rows: List[Dict[str, Any]] = []
     try:
@@ -9190,12 +9295,6 @@ def _load_context_static_csv() -> List[Dict[str, Any]]:
             return rows
     except Exception:
         pass
-
-    # Fallback to Supabase if CSV not available
-    sb_rows = _sb_read("rapm_context", col_map=_COL_MAP_RAPM_CONTEXT)
-    if sb_rows is not None:
-        _CONTEXT_STATIC_CACHE = (now, sb_rows)
-        return sb_rows
 
     _CONTEXT_STATIC_CACHE = (now, [])
     return []

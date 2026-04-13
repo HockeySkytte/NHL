@@ -141,8 +141,16 @@
 
   @media (max-width:900px){
     .lt-heatmap-grid{ grid-template-columns:1fr; }
-    .lt-hm-kpis{ flex-direction:row; flex-wrap:wrap; justify-content:center; max-width:100%; }
+    /* KPIs first, then zones stacked — use grid for reliable multi-column */
+    .lt-hm-kpis{ order:-1; display:grid; grid-template-columns:repeat(2, 1fr); width:100%; max-width:none; min-width:0; gap:8px; flex-direction:unset; flex-wrap:unset; }
+    .lt-hm-kpi-group{ min-width:0; }
     .lt-player-slot{ width:140px; }
+    /* Filter context: allow wrapping */
+    .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+  }
+  @media (max-width:900px) and (orientation:landscape){
+    .lt-heatmap-grid{ grid-template-columns:1fr 1fr; }
+    .lt-hm-kpis{ grid-column:1 / -1; order:-1; grid-template-columns:repeat(3, 1fr); }
   }
 </style>
 

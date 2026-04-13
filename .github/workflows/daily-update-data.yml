@@ -70,4 +70,5 @@ jobs:
             --season "${{ steps.params.outputs.season }}" \
             --export \
             --replace-date \
-            --rebuild-lines
+            --rebuild-lines \
+            --rebuild-seasonstats

@@ -1,22 +1,26 @@
-"""RAPM (Regularized Adjusted Plus-Minus) from MySQL PBP + shifts tables.
+"""RAPM (Regularized Adjusted Plus-Minus) from PBP + shifts tables.
 
 Builds a shift-segment dataset from:
-- nhl_{season}_pbp
-- nhl_{season}_shifts
+- PBP table (MySQL: nhl_{season}_pbp  /  Supabase: pbp)
+- Shifts table (MySQL: nhl_{season}_shifts  /  Supabase: shifts)
 
 Then fits ridge-regression RAPM models (per strength state) similar to the provided reference code.
 
-Outputs:
-- Writes intermediate shift dataset to MySQL table `rapm_data_{season}` (replaced).
-- Writes RAPM results to MySQL table `nhl_{season}_rapm` (replaced).
-- Writes the combined RAPM output (rapm2_all) to a Google Sheets worksheet (default tab: Sheets4).
-- Writes the combined context output (context_all_blend_xG67_G33) to a Google Sheets worksheet (default tab: Sheets5).
+Outputs (configurable):
+- Writes intermediate shift dataset to MySQL table `rapm_data_{season}` (replaced) or keeps in-memory.
+- Writes RAPM results to MySQL table `nhl_{season}_rapm` or Supabase `rapm` table.
+- Writes context results to MySQL table `nhl_{season}_context` or Supabase `context` table.
+- Writes the combined RAPM output to a Google Sheets worksheet (default tab: Sheets4).
+- Writes the combined context output to a Google Sheets worksheet (default tab: Sheets5).
+- Exports static CSVs to `app/static/rapm/` when --export-static is used.
 
 Usage:
-    python .\\scripts\\rapm.py --season 20252026
+    python .\\scripts\\rapm.py --season 20252026                 # MySQL mode
+    python .\\scripts\\rapm.py --season 20252026 --supabase      # Supabase REST mode
 
 Notes:
-- Requires RW DB credentials to write tables.
+- MySQL mode requires RW DB credentials to write tables.
+- Supabase mode uses the REST API (SUPABASE_URL + SUPABASE_SERVICE_KEY).
 - This script treats xG NULLs in PBP (reason short/failed-bank-attempt) as 0 contribution when aggregating.
 """
 
@@ -29,6 +33,11 @@ from importlib import util as _importlib_util
 from pathlib import Path
 import os
 from typing import Any, Iterable, Optional, cast
+
+# Ensure project root is on sys.path so `app.*` imports work
+_PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 import numpy as np
 import pandas as pd
@@ -260,6 +269,214 @@ def build_rapm_data(eng: Engine, cfg: BuildConfig) -> pd.DataFrame:
         "Date",
     ]]
 
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Supabase REST-based build_rapm_data
+# ---------------------------------------------------------------------------
+
+def build_rapm_data_supabase(season: str) -> pd.DataFrame:
+    """Build shift-segment dataset from Supabase PBP + shifts via REST API.
+
+    Produces the same DataFrame schema as build_rapm_data() (MySQL variant)
+    so downstream build_rapm() / compute_context() work unchanged.
+    """
+    from app.supabase_client import read_table
+
+    season_i = int(season)
+    print(f"[rapm-sb] reading PBP for season {season_i} ...")
+    pbp_cols = (
+        "game_id,shift_index,venue,event_team,opponent,corsi,goal,xg_f2,"
+        "pen_duration,event,zone,score_state,home_goalie_id,away_goalie_id,date"
+    )
+    pbp = read_table("pbp", columns=pbp_cols, filters={"season": f"eq.{season_i}"})
+    if pbp.empty:
+        raise RuntimeError(f"No PBP data for season {season_i}")
+    print(f"[rapm-sb] {len(pbp)} PBP rows loaded")
+
+    print(f"[rapm-sb] reading shifts for season {season_i} ...")
+    shifts = read_table(
+        "shifts",
+        columns="shift_index,game_id,player_id,team,duration,strength_state",
+        filters={"season": f"eq.{season_i}"},
+    )
+    if shifts.empty:
+        raise RuntimeError(f"No shifts data for season {season_i}")
+    print(f"[rapm-sb] {len(shifts)} shift rows loaded")
+
+    # ------ 1. Game map: home/away team per game ------
+    home_mask = pbp["venue"].astype(str).str.strip().str.lower() == "home"
+    gm_home = pbp.loc[home_mask, ["game_id", "event_team"]].drop_duplicates("game_id")
+    gm_away = pbp.loc[~home_mask & pbp["event_team"].notna(), ["game_id", "event_team"]].drop_duplicates("game_id")
+    game_map = gm_home.rename(columns={"event_team": "HomeTeam"}).merge(
+        gm_away.rename(columns={"event_team": "AwayTeam"}), on="game_id", how="outer"
+    )
+    for c in ["HomeTeam", "AwayTeam"]:
+        game_map[c] = game_map[c].fillna("").astype(str).str.strip().str.upper()
+
+    # ------ 2. Goalie IDs per game (from PBP) ------
+    goalie_df = pbp[["game_id", "home_goalie_id", "away_goalie_id"]].drop_duplicates()
+    # Collect all unique goalie IDs per game
+    goalie_sets: dict[int, set[str]] = {}
+    home_goalie_map: dict[int, str] = {}
+    away_goalie_map: dict[int, str] = {}
+    for _, r in goalie_df.iterrows():
+        gid = r["game_id"]
+        for col, gmap in [("home_goalie_id", home_goalie_map), ("away_goalie_id", away_goalie_map)]:
+            v = str(r[col] or "").strip()
+            if v and v not in ("", "nan", "None", "0"):
+                if gid not in goalie_sets:
+                    goalie_sets[gid] = set()
+                goalie_sets[gid].add(v.split(".")[0])  # strip .0 from floats
+                gmap.setdefault(gid, v.split(".")[0])
+
+    # ------ 3. Merge shifts with game_map ------
+    shifts["team_upper"] = shifts["team"].fillna("").astype(str).str.strip().str.upper()
+    shifts = shifts.merge(game_map, on="game_id", how="left")
+    shifts["is_home"] = (shifts["team_upper"] == shifts["HomeTeam"]).astype(int)
+
+    # Split player_id string, separate goalies from skaters
+    def _parse_players(row):
+        ids_str = str(row["player_id"] or "").strip()
+        if not ids_str:
+            return "", ""
+        gid = row["game_id"]
+        g_set = goalie_sets.get(gid, set())
+        parts = ids_str.split()
+        skaters = []
+        goalie = ""
+        for p in parts:
+            p_clean = p.strip().split(".")[0]
+            if not p_clean:
+                continue
+            if p_clean in g_set:
+                goalie = p_clean
+            else:
+                skaters.append(p_clean)
+        return " ".join(skaters), goalie
+
+    parsed = shifts.apply(_parse_players, axis=1, result_type="expand")
+    shifts["skaters"] = parsed[0]
+    shifts["goalie"] = parsed[1]
+
+    # ------ 4. Pivot to get Home/Away per shift_index/game_id ------
+    home_sh = shifts[shifts["is_home"] == 1][["shift_index", "game_id", "skaters", "goalie", "strength_state", "duration"]].copy()
+    home_sh = home_sh.rename(columns={"skaters": "Home_Skaters", "goalie": "Home_Goalie",
+                                       "strength_state": "Home_StrengthState_raw", "duration": "Duration"})
+
+    away_sh = shifts[shifts["is_home"] == 0][["shift_index", "game_id", "skaters", "goalie", "strength_state"]].copy()
+    away_sh = away_sh.rename(columns={"skaters": "Away_Skaters", "goalie": "Away_Goalie",
+                                       "strength_state": "Away_StrengthState_raw"})
+
+    seg = home_sh.merge(away_sh, on=["shift_index", "game_id"], how="outer")
+    seg = seg.merge(game_map, on="game_id", how="left")
+
+    # Get date from first PBP row per game
+    game_date = pbp[["game_id", "date"]].drop_duplicates("game_id").rename(columns={"date": "Date"})
+    seg = seg.merge(game_date, on="game_id", how="left")
+
+    seg["Duration"] = pd.to_numeric(seg["Duration"], errors="coerce").fillna(0.0)
+    seg["Home_StrengthState"] = seg["Home_StrengthState_raw"].apply(_map_strength_side)
+    seg["Away_StrengthState"] = seg["Away_StrengthState_raw"].apply(_map_strength_side)
+
+    # Segment StrengthState (same logic as MySQL version)
+    def _segment_strength(row):
+        hs = str(row.get("Home_StrengthState") or "").strip()
+        a = str(row.get("Away_StrengthState") or "").strip()
+        if hs == "5v5" and a == "5v5":
+            return "5v5"
+        return "Mixed"
+
+    seg["StrengthState"] = seg.apply(_segment_strength, axis=1)
+
+    # ------ 5. Aggregate PBP event metrics per shift_index/game_id ------
+    print("[rapm-sb] aggregating PBP metrics per shift ...")
+    pbp = pbp.merge(game_map, on="game_id", how="left")
+    pbp["event_team_upper"] = pbp["event_team"].fillna("").astype(str).str.strip().str.upper()
+    for c in ["corsi", "goal", "xg_f2", "pen_duration"]:
+        pbp[c] = pd.to_numeric(pbp[c], errors="coerce").fillna(0.0)
+
+    pbp["is_event_home"] = (pbp["event_team_upper"] == pbp["HomeTeam"]).astype(int)
+    pbp["is_event_away"] = (pbp["event_team_upper"] == pbp["AwayTeam"]).astype(int)
+
+    # Pre-multiply to avoid slow lambdas in groupby
+    pbp["home_corsi"] = pbp["corsi"] * pbp["is_event_home"]
+    pbp["away_corsi"] = pbp["corsi"] * pbp["is_event_away"]
+    pbp["home_goal"] = pbp["goal"] * pbp["is_event_home"]
+    pbp["away_goal"] = pbp["goal"] * pbp["is_event_away"]
+    pbp["home_xg"] = pbp["xg_f2"] * pbp["is_event_home"]
+    pbp["away_xg"] = pbp["xg_f2"] * pbp["is_event_away"]
+    pbp["home_pen"] = pbp["pen_duration"] * pbp["is_event_home"]
+    pbp["away_pen"] = pbp["pen_duration"] * pbp["is_event_away"]
+
+    met = pbp.groupby(["shift_index", "game_id"]).agg(
+        Home_Corsi=("home_corsi", "sum"),
+        Away_Corsi=("away_corsi", "sum"),
+        Home_Goal=("home_goal", "sum"),
+        Away_Goal=("away_goal", "sum"),
+        Home_xG=("home_xg", "sum"),
+        Away_xG=("away_xg", "sum"),
+        Home_PEN=("home_pen", "sum"),
+        Away_PEN=("away_pen", "sum"),
+    ).reset_index()
+
+    # Zone start: max zone on faceoff events per side per shift
+    faceoffs = pbp[pbp["event"].astype(str).str.strip().str.lower() == "faceoff"].copy()
+    if not faceoffs.empty:
+        fo_home = faceoffs[faceoffs["is_event_home"] == 1].groupby(["shift_index", "game_id"])["zone"].max().reset_index().rename(columns={"zone": "Home_ZoneStart"})
+        fo_away = faceoffs[faceoffs["is_event_away"] == 1].groupby(["shift_index", "game_id"])["zone"].max().reset_index().rename(columns={"zone": "Away_ZoneStart"})
+        met = met.merge(fo_home, on=["shift_index", "game_id"], how="left")
+        met = met.merge(fo_away, on=["shift_index", "game_id"], how="left")
+    if "Home_ZoneStart" not in met.columns:
+        met["Home_ZoneStart"] = "N"
+    if "Away_ZoneStart" not in met.columns:
+        met["Away_ZoneStart"] = "N"
+
+    # Score state: max score_state per side per shift
+    pbp["score_state_n"] = pd.to_numeric(pbp["score_state"], errors="coerce").fillna(0).astype(int)
+    ss_home = pbp[pbp["is_event_home"] == 1].groupby(["shift_index", "game_id"])["score_state_n"].max().reset_index().rename(columns={"score_state_n": "Home_ScoreState"})
+    ss_away = pbp[pbp["is_event_away"] == 1].groupby(["shift_index", "game_id"])["score_state_n"].max().reset_index().rename(columns={"score_state_n": "Away_ScoreState"})
+    met = met.merge(ss_home, on=["shift_index", "game_id"], how="left")
+    met = met.merge(ss_away, on=["shift_index", "game_id"], how="left")
+
+    # ------ 6. Merge segments + metrics ------
+    out = seg.merge(met, left_on=["shift_index", "game_id"], right_on=["shift_index", "game_id"], how="left")
+
+    for c in ["Home_Corsi", "Away_Corsi", "Home_Goal", "Away_Goal",
+              "Home_xG", "Away_xG", "Home_PEN", "Away_PEN"]:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0.0)
+    for c in ["Home_ZoneStart", "Away_ZoneStart"]:
+        if c in out.columns:
+            out[c] = out[c].fillna("N").astype(str)
+    for c in ["Home_ScoreState", "Away_ScoreState"]:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0).astype(int)
+
+    out["Season"] = season_i
+    out["Period"] = 0  # shifts table has no Period column
+
+    # Rename shift_index/game_id to match MySQL schema
+    out = out.rename(columns={"shift_index": "ShiftIndex", "game_id": "GameID"})
+
+    for c in ["HomeTeam", "AwayTeam", "Home_Skaters", "Away_Skaters",
+              "Home_Goalie", "Away_Goalie", "Home_ZoneStart", "Away_ZoneStart",
+              "Home_ScoreState", "Away_ScoreState"]:
+        if c not in out.columns:
+            out[c] = ""
+
+    out = out[[
+        "ShiftIndex", "GameID", "Season", "StrengthState",
+        "Home_StrengthState", "Away_StrengthState", "Period", "Duration",
+        "HomeTeam", "AwayTeam", "Home_Skaters", "Away_Skaters",
+        "Home_Goalie", "Away_Goalie", "Home_ZoneStart", "Away_ZoneStart",
+        "Home_ScoreState", "Away_ScoreState",
+        "Home_Corsi", "Away_Corsi", "Home_Goal", "Away_Goal",
+        "Home_xG", "Away_xG", "Home_PEN", "Away_PEN", "Date",
+    ]]
+
+    print(f"[rapm-sb] built {len(out)} shift segments")
     return out
 
 
@@ -919,9 +1136,180 @@ def _export_static_csvs(
     print(f"[file] wrote {len(df_ctx)} rows -> {ctx_path}")
 
 
+def _export_static_csvs_from_dfs(
+    df_rapm: pd.DataFrame,
+    df_ctx: pd.DataFrame,
+    *,
+    out_dir: Path,
+) -> None:
+    """Export RAPM + context DataFrames directly to CSVs (no DB read)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    df_rapm = _filter_positive_player_ids(df_rapm)
+    df_ctx = _filter_positive_player_ids(df_ctx)
+    rapm_path = out_dir / "rapm.csv"
+    ctx_path = out_dir / "context.csv"
+    df_rapm.to_csv(rapm_path, index=False)
+    df_ctx.to_csv(ctx_path, index=False)
+    print(f"[file] wrote {len(df_rapm)} rows -> {rapm_path}")
+    print(f"[file] wrote {len(df_ctx)} rows -> {ctx_path}")
+
+
+def _rapm_df_to_supabase(df: pd.DataFrame) -> pd.DataFrame:
+    """Transform build_rapm() output into Supabase rapm table format.
+
+    Supabase uses snake_case columns; stddev/zscore/pp_sh are JSONB dicts.
+    """
+    import math
+
+    stddev_cols = [c for c in df.columns if c.endswith("_stddev")]
+    zscore_cols = [c for c in df.columns if c.endswith("_zscore")]
+    ppsh_data_cols = [c for c in df.columns if c.startswith(("PP_", "SH_", "Alpha_PP_", "Alpha_SH_"))]
+
+    def _safe(v):
+        if v is None:
+            return None
+        try:
+            if math.isnan(v) or math.isinf(v):
+                return None
+        except (TypeError, ValueError):
+            pass
+        return v
+
+    rows = []
+    for _, r in df.iterrows():
+        row: dict = {
+            "player_id": int(r["PlayerID"]),
+            "season": int(r["Season"]),
+            "strength_state": str(r["StrengthState"]),
+            "rates_totals": str(r["Rates_Totals"]),
+            "cf": _safe(r.get("CF", 0)),
+            "ca": _safe(r.get("CA", 0)),
+            "gf": _safe(r.get("GF", 0)),
+            "ga": _safe(r.get("GA", 0)),
+            "xgf": _safe(r.get("xGF", 0)),
+            "xga": _safe(r.get("xGA", 0)),
+            "pen_taken": _safe(r.get("PEN_taken", 0)),
+            "pen_drawn": _safe(r.get("PEN_drawn", 0)),
+            "c_plusminus": _safe(r.get("C_plusminus", 0)),
+            "g_plusminus": _safe(r.get("G_plusminus", 0)),
+            "xg_plusminus": _safe(r.get("xG_plusminus", 0)),
+            "pen_plusminus": _safe(r.get("PEN_plusminus", 0)),
+            "alpha_cf": _safe(r.get("Alpha_CF", 0)),
+            "alpha_gf": _safe(r.get("Alpha_GF", 0)),
+            "alpha_xgf": _safe(r.get("Alpha_xGF", 0)),
+            "alpha_pen": _safe(r.get("Alpha_PEN", 0)),
+            "stddev": {c: _safe(r.get(c)) for c in stddev_cols},
+            "zscore": {c: _safe(r.get(c)) for c in zscore_cols},
+            "pp_sh": {c: _safe(r.get(c)) for c in ppsh_data_cols},
+        }
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _context_df_to_supabase(df: pd.DataFrame) -> pd.DataFrame:
+    """Transform compute_context() output into Supabase rapm_context format."""
+    return pd.DataFrame({
+        "player_id": df["PlayerID"].astype(int),
+        "season": df["Season"].astype(int),
+        "strength_state": df["StrengthState"].astype(str),
+        "minutes": df["Minutes"],
+        "qot_blend_xg67_g33": df["QoT_blend_xG67_G33"],
+        "qoc_blend_xg67_g33": df["QoC_blend_xG67_G33"],
+        "zs_difficulty": df["ZS_Difficulty"],
+    })
+
+
+def _main_supabase(args, *, season: str, sheet_id: str, worksheet: str, context_worksheet: str) -> int:
+    """Run RAPM pipeline using Supabase REST API (no MySQL)."""
+    from app.supabase_client import upsert_df, delete_rows
+
+    repo_root = Path(__file__).resolve().parents[1]
+    static_dir = repo_root / "app" / "static" / "rapm"
+
+    df_data: Optional[pd.DataFrame] = None
+
+    if not args.no_build_data:
+        print("[rapm-sb] building rapm_data from Supabase PBP + shifts ...")
+        try:
+            df_data = build_rapm_data_supabase(season)
+        except Exception as e:
+            print(f"[error] build_rapm_data_supabase failed: {e}", file=sys.stderr)
+            return 3
+        print(f"[rapm-sb] {len(df_data)} shift segments built")
+    else:
+        print("[rapm-sb] --no-build-data specified; cannot skip data build in Supabase mode.")
+        return 5
+
+    if args.no_fit:
+        return 0
+
+    assert df_data is not None
+    print("[rapm-sb] fitting RAPM ...")
+    try:
+        df_data = df_data[df_data["Season"] == int(season)].copy()
+        df_res = build_rapm(df_data, strength_filter=(args.strength or None))
+    except Exception as e:
+        print(f"[error] build_rapm failed: {e}", file=sys.stderr)
+        return 6
+
+    if df_res.empty:
+        print("[rapm-sb] no results produced")
+        return 0
+
+    print(f"[rapm-sb] RAPM fit produced {len(df_res)} rows")
+
+    # Write to Supabase rapm table
+    # PK is (player_id, season, strength_state) — store only Totals rows.
+    try:
+        df_totals = df_res[df_res["Rates_Totals"] == "Totals"].copy()
+        df_sb = _rapm_df_to_supabase(df_totals)
+        delete_rows("rapm", {"season": f"eq.{int(season)}"})
+        upsert_df("rapm", df_sb, on_conflict="")
+        print(f"[rapm-sb] inserted {len(df_sb)} rows to Supabase 'rapm' table")
+    except Exception as e:
+        print(f"[warn] Supabase rapm upsert failed ({e}); continuing with CSV export ...")
+
+    # Google Sheets
+    if sheet_id:
+        try:
+            _write_df_to_sheets(df_res, sheet_id=sheet_id, worksheet=worksheet)
+            print(f"[sheets] wrote RAPM output to sheetId={sheet_id} worksheet={worksheet}")
+        except Exception as e:
+            print(f"[warn] sheets write failed: {e}", file=sys.stderr)
+
+    # Context
+    df_ctx = pd.DataFrame()
+    if not args.no_context:
+        try:
+            df_ctx = compute_context(df_data, df_res, season=int(season))
+            if df_ctx.empty:
+                print("[context] no context rows produced")
+            else:
+                print(f"[rapm-sb] context produced {len(df_ctx)} rows")
+                try:
+                    df_ctx_sb = _context_df_to_supabase(df_ctx)
+                    delete_rows("rapm_context", {"season": f"eq.{int(season)}"})
+                    upsert_df("rapm_context", df_ctx_sb, on_conflict="")
+                    print(f"[rapm-sb] inserted {len(df_ctx_sb)} rows to Supabase 'rapm_context' table")
+                except Exception as e:
+                    print(f"[warn] Supabase context upsert failed ({e}); continuing ...")
+                if sheet_id:
+                    try:
+                        _write_df_to_sheets(df_ctx, sheet_id=sheet_id, worksheet=context_worksheet)
+                        print(f"[sheets] wrote context output to sheetId={sheet_id} worksheet={context_worksheet}")
+                    except Exception as e:
+                        print(f"[warn] context sheets write failed: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"[error] context compute failed: {e}", file=sys.stderr)
+            return 9
+
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="Build and fit RAPM from MySQL")
+    p = argparse.ArgumentParser(description="Build and fit RAPM")
     p.add_argument("--season", default="20252026")
+    p.add_argument("--supabase", action="store_true", help="Use Supabase REST API instead of MySQL")
     p.add_argument("--data-table", default=None, help="Intermediate rapm segment table name (default: rapm_data_{season})")
     p.add_argument("--no-build-data", action="store_true", help="Skip building/writing rapm_data")
     p.add_argument("--no-fit", action="store_true", help="Skip fitting RAPM")
@@ -933,7 +1321,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument(
         "--export-static",
         action="store_true",
-        help="Export MySQL tables into app/static/rapm as rapm.csv and context.csv",
+        help="Export results into app/static/rapm as rapm.csv and context.csv",
     )
     p.add_argument(
         "--export-rapm-table",
@@ -955,6 +1343,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     worksheet = (args.worksheet or os.getenv("RAPM_WORKSHEET") or "Sheets4").strip()
     context_worksheet = (args.context_worksheet or os.getenv("CONTEXT_WORKSHEET") or "Sheets5").strip()
 
+    # -------- Supabase mode --------
+    if args.supabase:
+        from dotenv import load_dotenv
+        load_dotenv()
+        return _main_supabase(args, season=season, sheet_id=sheet_id,
+                              worksheet=worksheet, context_worksheet=context_worksheet)
+
+    # -------- MySQL mode (original) --------
     try:
         eng = _create_engine_rw()
     except Exception as e:

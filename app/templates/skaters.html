@@ -58,7 +58,7 @@
 {% block head %}
 <style>
   .skater-wrap{ width:100%; margin-left:-10px; min-width:0; overflow-x:hidden; }
-  .skater-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:24px 26px 18px; min-width:0; overflow-x:hidden; }
+  .skater-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:14px 12px 10px; min-width:0; overflow-x:hidden; }
   .skater-top{ display:flex; gap:22px; align-items:center; }
   .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
   .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
@@ -75,10 +75,10 @@
   .seg-btn{ flex:1; background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 10px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .seg-btn.active{ outline:2px solid var(--accent); background:rgba(255,255,255,0.03); }
 
-  .subtabs{ display:flex; gap:12px; align-items:center; margin-top:18px; }
+  .subtabs{ display:flex; gap:12px; align-items:center; margin-top:10px; }
   .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .subtab-btn.active{ outline:2px solid var(--accent); }
-  .panel{ margin-top:14px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:16px 16px 12px; min-width:0; }
+  .panel{ margin-top:8px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:8px 8px 6px; min-width:0; }
   .mini-table{ width:100%; border-collapse:collapse; font-size:14px; }
   .mini-table th{ text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; }
   .mini-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; }
@@ -86,7 +86,7 @@
   #tabPanelCard.panel{ padding:10px 10px 8px; }
   .card-panel-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:2px 2px 10px; }
   .card-panel-meta{ color:rgba(255,255,255,0.95); font-size:18px; font-style:italic; font-weight:800; letter-spacing:.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .card-grid{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:36px; width:100%; margin:0; }
+  .card-grid{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:20px; width:100%; margin:0; }
   @media (max-width: 980px){ .card-grid{ grid-template-columns: 1fr; } }
   .card-col{ border:none; border-radius:0; padding:0; background:transparent; }
   .card-col h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
@@ -281,7 +281,7 @@
 
   /* ── Shooting tab ── */
   .shoot-kpis{ display:grid; grid-template-columns: repeat(8, 1fr); gap:10px; margin-bottom:14px; }
-  @media (max-width:980px){ .shoot-kpis{ grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width:980px){ .shoot-kpis{ grid-template-columns: repeat(3, 1fr); } }
   .shoot-kpi{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:10px 8px; text-align:center; }
   .shoot-kpi .lbl{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
   .shoot-kpi .val{ margin-top:4px; font-size:22px; font-weight:950; color:var(--text); font-variant-numeric:tabular-nums; }
@@ -342,7 +342,7 @@
 
   @media (max-width: 980px){
     .skater-wrap{ margin-left:0; }
-    .skater-card{ padding:16px 14px 14px; }
+    .skater-card{ padding:10px 8px 8px; }
     .skater-top{ flex-direction:column; align-items:center; text-align:center; gap:12px; }
     .skater-top > div{ display:contents; }
     #skaterName{ order:1; font-size:26px; }
@@ -357,6 +357,17 @@
 
     /* Charts: smaller filter context (match Card) */
     #tabPanelCharts .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+
+    /* Shooting / Edge / RAPM / Projections: allow filter context to wrap */
+    #tabPanelShooting .card-panel-meta,
+    #tabPanelEdge .card-panel-meta,
+    #tabPanelRAPM .card-panel-meta,
+    #tabPanelProjections .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+
+    /* Shooting: un-collapse left column on mobile */
+    .shoot-left{ position:static; }
+    .shoot-left-inner{ position:static; overflow:visible; }
+    .shoot-tbl-wrap{ max-height:40vh; overflow:auto; }
 
     /* Table View: buttons above filter context + smaller context */
     #tabPanelTable .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
@@ -1872,9 +1883,9 @@ function renderEdgeStrengthPanels(){
       renderEdgeMetricBar('Skating Distance Per 60', 'distancePer60', dist?.distancePer60),
     ].join('');
   }
-  if(zoneDef) zoneDef.innerHTML = renderEdgeZoneKpi('defensiveZonePctg', zone?.defensiveZonePctg, 'Defensive Zone');
-  if(zoneNeu) zoneNeu.innerHTML = renderEdgeZoneKpi('neutralZonePctg', zone?.neutralZonePctg, 'Neutral Zone');
-  if(zoneOff) zoneOff.innerHTML = renderEdgeZoneKpi('offensiveZonePctg', zone?.offensiveZonePctg, 'Offensive Zone');
+  if(zoneDef) zoneDef.innerHTML = renderEdgeZoneKpi('defensiveZonePctg', zone?.defensiveZonePctg, 'Defensive<br>Zone');
+  if(zoneNeu) zoneNeu.innerHTML = renderEdgeZoneKpi('neutralZonePctg', zone?.neutralZonePctg, 'Neutral<br>Zone');
+  if(zoneOff) zoneOff.innerHTML = renderEdgeZoneKpi('offensiveZonePctg', zone?.offensiveZonePctg, 'Offensive<br>Zone');
 }
 
 async function loadEdgePanel(){
@@ -3520,7 +3531,7 @@ function renderBarSection(title, bars, scale){
       const min = axis.min;
       const max = axis.max;
       const denom = (max - min) || 1;
-      const y = (val)=> ((max - val) / denom) * 100;
+      const y = (val)=> clamp(((max - val) / denom) * 100, 0, 100);
       const z0 = axis.zeroPct;
       const yv = y(v);
       topPct = Math.min(yv, z0);
@@ -4921,5 +4932,8 @@ playerSelect?.addEventListener('change', ()=> { loadPlayerCard(); saveSkatersSta
 
 // Boot sequence: restore persisted state and load once base.html filters are ready.
 initSkatersPage();
+
+// Re-draw shot map on resize / orientation change so markers fit the new container size
+window.addEventListener('resize', ()=> { if(typeof renderShootingVisuals === 'function') renderShootingVisuals(); });
 </script>
 {% endblock %}
