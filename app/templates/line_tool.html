@@ -62,7 +62,7 @@
   .card-panel-meta{ color:rgba(255,255,255,0.95); font-size:18px; font-style:italic; font-weight:800; letter-spacing:.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   /* ── Heat Map ── */
-  .lt-hm-controls{ display:flex; gap:14px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .lt-hm-controls{ display:flex; gap:14px; align-items:flex-end; margin-bottom:12px; flex-wrap:wrap; }
   .lt-hm-controls label{ font-size:12px; color:var(--text-dim); font-weight:700; display:flex; flex-direction:column; gap:4px; }
   .lt-hm-controls select{ font-size:13px; padding:6px 8px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
   .lt-heatmap-grid{ display:grid; grid-template-columns:1fr auto 1fr; gap:12px; align-items:start; }
@@ -93,6 +93,24 @@
   .lt-zone-filter-bar{ text-align:center; margin:6px 0 0; }
   .lt-zone-filter-bar button{ font-size:11px; padding:4px 10px; border-radius:8px; border:1px solid #2a3142; background:transparent; color:var(--text-dim); cursor:pointer; }
   .lt-zone-filter-bar button:hover{ color:var(--text); border-color:#5b9bd5; }
+
+  /* ── Video Player ── */
+  .lt-video-btn{ background:#b22; color:#fff; border:none; border-radius:8px; padding:6px 14px; font-size:13px; font-weight:700; cursor:pointer; opacity:0.85; }
+  .lt-video-btn:hover{ opacity:1; }
+  .lt-video-btn:disabled{ opacity:0.35; cursor:default; }
+  .lt-video-overlay{ display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.75); align-items:center; justify-content:center; }
+  .lt-video-overlay.open{ display:flex; }
+  .lt-video-dialog{ width:96vw; max-width:1080px; background:#0d1117; border-radius:12px; overflow:hidden; }
+  .lt-video-header{ display:flex; justify-content:space-between; align-items:center; padding:10px 14px; }
+  .lt-video-header .lt-video-title{ font-size:15px; font-weight:800; }
+  .lt-video-header .lt-video-close{ font-size:24px; background:none; border:none; color:#fff; cursor:pointer; }
+  .lt-video-frame-wrap{ position:relative; width:100%; padding-top:56.25%; background:#000; }
+  .lt-video-frame-wrap iframe{ position:absolute; inset:0; width:100%; height:100%; border:none; }
+  .lt-video-controls{ display:flex; align-items:center; gap:10px; padding:10px 14px; flex-wrap:wrap; }
+  .lt-video-controls button{ font-size:13px; padding:5px 12px; border-radius:8px; border:1px solid #2a3142; background:transparent; color:#fff; cursor:pointer; }
+  .lt-video-controls button:disabled{ opacity:0.3; cursor:default; }
+  .lt-video-counter{ font-size:13px; color:var(--text-dim); font-weight:700; }
+  .lt-video-desc{ font-size:12px; color:var(--text-dim); }
 
   /* ── WOWY ── */
   .lt-wowy-controls{ display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-bottom:14px; }
@@ -185,6 +203,7 @@
         <option value="league">Vs. League</option>
         <option value="team">Vs. Team</option>
       </select></label>
+      <button class="lt-video-btn" id="ltVideoBtn" type="button" disabled>&#9654; Video</button>
     </div>
     <div id="ltHeatContent" class="lt-heatmap-grid">
       <div>
@@ -206,6 +225,27 @@
     <div id="ltHeatEmpty" class="lt-empty">Select at least one player to view the heat map.</div>
     <div id="ltZoneFilterBar" class="lt-zone-filter-bar" style="display:none;">
       <button id="ltZoneClear" type="button">✕ Clear zone selection</button>
+    </div>
+  </div>
+
+  <!-- Video overlay -->
+  <div class="lt-video-overlay" id="ltVideoOverlay">
+    <div class="lt-video-dialog">
+      <div class="lt-video-header">
+        <span class="lt-video-title" id="ltVideoTitle">Goal Highlights</span>
+        <button class="lt-video-close" id="ltVideoClose" type="button">&times;</button>
+      </div>
+      <div class="lt-video-frame-wrap">
+        <video id="ltVideoPlayer" controls autoplay
+          style="position:absolute; inset:0; width:100%; height:100%; border:none; background:#000;"></video>
+      </div>
+      <div class="lt-video-controls">
+        <button id="ltVideoPrev" type="button">&#9664; Prev</button>
+        <button id="ltVideoPlay" type="button">&#9654; Play</button>
+        <button id="ltVideoNext" type="button">Next &#9654;</button>
+        <span class="lt-video-counter" id="ltVideoCounter"></span>
+        <span class="lt-video-desc" id="ltVideoDesc"></span>
+      </div>
     </div>
   </div>
 
@@ -692,10 +732,115 @@ function renderHeatMap(){
 
   // Center KPI panel
   renderHeatKpis();
+
+  // Update video button state
+  const ltVideoBtn = document.getElementById('ltVideoBtn');
+  if(ltVideoBtn){
+    let vids = (d.goalHighlights || []).filter(g => _ltVHasVideo(g.highlightUrl));
+    if(__selectedZones && __selectedZones.size > 0){
+      vids = vids.filter(g => g.boxId && __selectedZones.has(String(g.boxId)));
+    }
+    ltVideoBtn.disabled = !vids.length;
+    ltVideoBtn.textContent = vids.length ? `\u25B6 Video (${vids.length})` : '\u25B6 Video';
+  }
 }
 
+// ── Video Player (native <video> + Brightcove Playback API) ──
+const _ltVOverlay = document.getElementById('ltVideoOverlay');
+const _ltVFrame   = document.getElementById('ltVideoPlayer');
+const _ltVPrev    = document.getElementById('ltVideoPrev');
+const _ltVPlay    = document.getElementById('ltVideoPlay');
+const _ltVNext    = document.getElementById('ltVideoNext');
+const _ltVCounter = document.getElementById('ltVideoCounter');
+const _ltVDesc    = document.getElementById('ltVideoDesc');
+const _ltVClose   = document.getElementById('ltVideoClose');
+const _ltVTitle   = document.getElementById('ltVideoTitle');
+let _ltVEvents = [];
+let _ltVIdx = 0;
+const _ltBC_ACCT = '6415718365001';
+const _ltBC_PK   = 'BCpkADawqM3l37Vq8trLJ95vVwxubXYZXYglAopEZXQTHTWX3YdalyF9xmkuknxjBgiMYwt8VZ_OZ1jAjYxz_yzuNh_cjC3uOaMspVTD-hZfNUHtNnBnhVD0Gmsih8TBF8QlQFXiCQM3W_u4ydJ1qK2Rx8ZutCUg3PHb7Q';
+const _ltVMp4Cache = {};
+
+function _ltVHasVideo(url){ return !!(url && url.match(/(\d{8,})$/)); }
+
+async function _ltVGetMp4(url){
+  const m = (url || '').match(/(\d{8,})$/);
+  if(!m) return '';
+  const vid = m[1];
+  if(_ltVMp4Cache[vid]) return _ltVMp4Cache[vid];
+  try{
+    const r = await fetch(`https://edge.api.brightcove.com/playback/v1/accounts/${_ltBC_ACCT}/videos/${vid}`, {
+      headers: {'BCOV-Policy': _ltBC_PK, 'Accept': 'application/json'}
+    });
+    if(!r.ok) return '';
+    const d = await r.json();
+    const srcs = d.sources || [];
+    const mp4 = srcs.find(s => s.src && s.src.startsWith('https') && s.container === 'MP4');
+    const u = mp4 ? mp4.src : '';
+    if(u) _ltVMp4Cache[vid] = u;
+    return u;
+  }catch(_){ return ''; }
+}
+
+function _ltVLabel(url){
+  const slug = (url || '').split('/').pop() || '';
+  return slug.replace(/-?\d{8,}$/, '').replace(/-/g, ' ').trim() || 'Goal highlight';
+}
+
+function _ltVShow(events, title){
+  _ltVEvents = events; _ltVIdx = 0;
+  if(_ltVTitle) _ltVTitle.textContent = title || 'Goal Highlights';
+  if(_ltVOverlay) _ltVOverlay.classList.add('open');
+  _ltVRender();
+  document.addEventListener('keydown', _ltVKey);
+}
+
+function _ltVHide(){
+  if(_ltVOverlay) _ltVOverlay.classList.remove('open');
+  if(_ltVFrame){ _ltVFrame.pause(); _ltVFrame.removeAttribute('src'); _ltVFrame.load(); }
+  _ltVEvents = [];
+  document.removeEventListener('keydown', _ltVKey);
+}
+
+async function _ltVRender(){
+  if(!_ltVEvents.length){ _ltVHide(); return; }
+  const e = _ltVEvents[_ltVIdx];
+  const dirTag = e.direction === 'against' ? ' [GA]' : '';
+  if(_ltVCounter) _ltVCounter.textContent = `Event ${_ltVIdx+1} / ${_ltVEvents.length}`;
+  if(_ltVDesc) _ltVDesc.textContent = _ltVLabel(e.highlightUrl) + dirTag;
+  if(_ltVPrev) _ltVPrev.disabled = _ltVIdx <= 0;
+  if(_ltVNext) _ltVNext.disabled = _ltVIdx >= _ltVEvents.length - 1;
+  if(_ltVFrame){
+    _ltVFrame.pause();
+    const mp4 = await _ltVGetMp4(e.highlightUrl);
+    if(mp4){ _ltVFrame.src = mp4; _ltVFrame.play().catch(()=>{}); }
+  }
+}
+
+function _ltVKey(ev){
+  if(ev.key === 'Escape') _ltVHide();
+  else if(ev.key === 'ArrowLeft' && _ltVIdx > 0){ _ltVIdx--; _ltVRender(); }
+  else if(ev.key === 'ArrowRight' && _ltVIdx < _ltVEvents.length-1){ _ltVIdx++; _ltVRender(); }
+}
+
+if(_ltVClose) _ltVClose.addEventListener('click', _ltVHide);
+if(_ltVOverlay) _ltVOverlay.addEventListener('click', ev => { if(ev.target === _ltVOverlay) _ltVHide(); });
+if(_ltVPrev) _ltVPrev.addEventListener('click', () => { if(_ltVIdx > 0){ _ltVIdx--; _ltVRender(); } });
+if(_ltVNext) _ltVNext.addEventListener('click', () => { if(_ltVIdx < _ltVEvents.length-1){ _ltVIdx++; _ltVRender(); } });
+if(_ltVPlay) _ltVPlay.addEventListener('click', () => { _ltVRender(); });
+
+document.getElementById('ltVideoBtn')?.addEventListener('click', () => {
+  const d = __data;
+  if(!d) return;
+  let evts = (d.goalHighlights || []).filter(g => _ltVHasVideo(g.highlightUrl));
+  /* zone filter: if zones are selected, only show goals in those zones */
+  if(__selectedZones && __selectedZones.size > 0){
+    evts = evts.filter(g => g.boxId && __selectedZones.has(String(g.boxId)));
+  }
+  if(evts.length) _ltVShow(evts, 'Goal Highlights');
+});
+
 function renderHeatKpis(){
-  if(!ltHeatKpis || !__data) return;
   const d = getFilteredData();
   const rates = String(ltRates?.value||'Totals');
   const gp = d.gp || 1;
@@ -1270,7 +1415,20 @@ for(const sel of playerSelects){
     saveSelections();
   });
 }
+
+// Wait for base.html's loadSeasons() to finish populating the season dropdown
+async function _waitForSeasons(ms){
+  const t0 = Date.now();
+  while(Date.now() - t0 < (ms || 6000)){
+    const first = seasonSelect?.options?.[0]?.textContent || '';
+    if(seasonSelect && seasonSelect.options.length && !/loading/i.test(first) && first !== '') return true;
+    await new Promise(r => setTimeout(r, 60));
+  }
+  return false;
+}
+
 teamSelect?.addEventListener('change', async () => {
+  await _waitForSeasons(6000);
   await loadPlayers();
   debouncedFetch();
   __wowyData = null;

@@ -332,7 +332,7 @@
   .video-header .video-close{ background:none; border:none; color:var(--text-dim); font-size:22px; cursor:pointer; padding:0 4px; line-height:1; }
   .video-header .video-close:hover{ color:#fff; }
   .video-frame-wrap{ position:relative; width:100%; padding-top:56.25%; background:#000; }
-  .video-frame-wrap iframe, .video-frame-wrap video-js, .video-frame-wrap .video-js{ position:absolute; inset:0; width:100%; height:100%; border:none; }
+  .video-frame-wrap iframe, .video-frame-wrap video, .video-frame-wrap video-js, .video-frame-wrap .video-js{ position:absolute; inset:0; width:100%; height:100%; border:none; }
   .video-controls{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid #232a3a; }
   .video-controls button{ background:rgba(255,255,255,0.08); color:#fff; border:1px solid #2a3142; border-radius:8px; padding:7px 16px; font-size:12px; font-weight:800; cursor:pointer; }
   .video-controls button:hover{ background:rgba(255,255,255,0.14); }
@@ -637,8 +637,8 @@
       <button class="video-close" id="videoClose" type="button">&times;</button>
     </div>
     <div class="video-frame-wrap">
-      <iframe id="videoPlayer" allow="autoplay; encrypted-media" allowfullscreen
-        style="position:absolute; inset:0; width:100%; height:100%; border:none; background:#000;"></iframe>
+      <video id="videoPlayer" controls autoplay
+        style="position:absolute; inset:0; width:100%; height:100%; border:none; background:#000;"></video>
     </div>
     <div class="video-controls">
       <button id="videoPrev" type="button">&#9664; Prev</button>
@@ -4299,7 +4299,7 @@ const shootSlicerSummary = document.getElementById('shootSlicerSummary');
 const shootVideoBtn = document.getElementById('shootVideoBtn');
 const shootVideoList = document.getElementById('shootVideoList');
 
-// ── Shared Video Player (iframe-based Brightcove) ───────────
+// ── Shared Video Player (native <video> + Brightcove Playback API) ───
 const _vOverlay = document.getElementById('videoOverlay');
 const _vFrame   = document.getElementById('videoPlayer');
 const _vPrev    = document.getElementById('videoPrev');
@@ -4311,13 +4311,29 @@ const _vClose   = document.getElementById('videoClose');
 const _vTitle   = document.getElementById('videoTitle');
 let _vEvents = [];
 let _vIdx = 0;
+const _BC_ACCT = '6415718365001';
+const _BC_PK   = 'BCpkADawqM3l37Vq8trLJ95vVwxubXYZXYglAopEZXQTHTWX3YdalyF9xmkuknxjBgiMYwt8VZ_OZ1jAjYxz_yzuNh_cjC3uOaMspVTD-hZfNUHtNnBnhVD0Gmsih8TBF8QlQFXiCQM3W_u4ydJ1qK2Rx8ZutCUg3PHb7Q';
+const _vMp4Cache = {};
 
 function _vHasVideo(nhlUrl){ return !!(nhlUrl && (nhlUrl).match(/(\d{8,})$/)); }
 
-function _vBrightcoveUrl(nhlUrl){
+async function _vGetMp4(nhlUrl){
   const m = (nhlUrl || '').match(/(\d{8,})$/);
   if(!m) return '';
-  return `https://players.brightcove.net/6415718365001/EBZkr1uCil_default/index.html?videoId=${m[1]}&autoplay=true&muted=false`;
+  const vid = m[1];
+  if(_vMp4Cache[vid]) return _vMp4Cache[vid];
+  try{
+    const r = await fetch(`https://edge.api.brightcove.com/playback/v1/accounts/${_BC_ACCT}/videos/${vid}`, {
+      headers: {'BCOV-Policy': _BC_PK, 'Accept': 'application/json'}
+    });
+    if(!r.ok) return '';
+    const d = await r.json();
+    const srcs = d.sources || [];
+    const mp4 = srcs.find(s => s.src && s.src.startsWith('https') && s.container === 'MP4');
+    const url = mp4 ? mp4.src : '';
+    if(url) _vMp4Cache[vid] = url;
+    return url;
+  }catch(_){ return ''; }
 }
 
 function _vLabel(nhlUrl){
@@ -4336,20 +4352,23 @@ function _vShow(events, title){
 
 function _vHide(){
   _vOverlay.classList.remove('open');
-  if(_vFrame) _vFrame.src = '';
+  if(_vFrame){ _vFrame.pause(); _vFrame.removeAttribute('src'); _vFrame.load(); }
   _vEvents = [];
   document.removeEventListener('keydown', _vKey);
 }
 
-function _vRender(){
+async function _vRender(){
   if(!_vEvents.length){ _vHide(); return; }
   const e = _vEvents[_vIdx];
-  const src = _vBrightcoveUrl(e.highlightUrl);
   _vCounter.textContent = `Event ${_vIdx+1} / ${_vEvents.length}`;
   _vDesc.textContent = _vLabel(e.highlightUrl);
   _vPrev.disabled = _vIdx <= 0;
   _vNext.disabled = _vIdx >= _vEvents.length - 1;
-  if(_vFrame && src) _vFrame.src = src;
+  if(_vFrame){
+    _vFrame.pause();
+    const mp4 = await _vGetMp4(e.highlightUrl);
+    if(mp4){ _vFrame.src = mp4; _vFrame.play().catch(()=>{}); }
+  }
 }
 
 function _vKey(ev){

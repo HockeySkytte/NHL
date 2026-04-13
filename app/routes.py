@@ -1253,7 +1253,7 @@ def api_line_tool_data():
 
     # ── 5. Fetch PBP for the relevant games ──────────────────
     game_list = sorted(game_ids)
-    all_pbp = _get_lt_pbp(season, game_list, xg_col, extra_cols='x,y,box_id')
+    all_pbp = _get_lt_pbp(season, game_list, xg_col, extra_cols='x,y,box_id,highlight_url')
 
     # ── 6. Filter PBP to matching shift_indexes ──────────────
     events_for = []   # team shooting (event_team = team)
@@ -1399,6 +1399,31 @@ def api_line_tool_data():
     for d in league_zone_detail.values():
         d['xg'] = round(d['xg'], 2)
 
+    # ── 9. Collect goal events with highlight URLs ─────────────
+    goal_highlights = []
+    for ev in events_for:
+        if int(ev.get('goal') or 0) == 1:
+            hl = ev.get('highlight_url') or ''
+            goal_highlights.append({
+                'highlightUrl': hl if hl else None,
+                'x': float(ev.get('x') or 0),
+                'y': float(ev.get('y') or 0),
+                'xG': round(float(ev.get(xg_col) or 0), 4),
+                'boxId': str(ev.get('box_id') or ''),
+                'direction': 'for',
+            })
+    for ev in events_against:
+        if int(ev.get('goal') or 0) == 1:
+            hl = ev.get('highlight_url') or ''
+            goal_highlights.append({
+                'highlightUrl': hl if hl else None,
+                'x': float(ev.get('x') or 0),
+                'y': float(ev.get('y') or 0),
+                'xG': round(float(ev.get(xg_col) or 0), 4),
+                'boxId': str(ev.get('box_id') or ''),
+                'direction': 'against',
+            })
+
     result = {
         'gp': gp,
         'toi': round(toi_min, 1),
@@ -1417,6 +1442,7 @@ def api_line_tool_data():
         'teamDzDetail': team_dz_detail,
         'leagueToi': round(team_toi_min * 2, 1),
         'leagueZoneDetail': league_zone_detail,
+        'goalHighlights': goal_highlights,
     }
     j = jsonify(result)
     j.headers['Cache-Control'] = 'no-store'
