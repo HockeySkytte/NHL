@@ -741,16 +741,7 @@ function renderHeatMap(){
   // Center KPI panel
   renderHeatKpis();
 
-  // Update video button state
-  const ltVideoBtn = document.getElementById('ltVideoBtn');
-  if(ltVideoBtn){
-    let vids = (d.goalHighlights || []).filter(g => _ltVHasVideo(g.highlightUrl));
-    if(__selectedZones && __selectedZones.size > 0){
-      vids = vids.filter(g => g.boxId && __selectedZones.has(String(g.boxId)));
-    }
-    ltVideoBtn.disabled = !vids.length;
-    ltVideoBtn.textContent = vids.length ? `\u25B6 Video (${vids.length})` : '\u25B6 Video';
-  }
+  updateLtVideoBtn();
 }
 
 // ── Video Player (native <video> + Brightcove Playback API) ──
@@ -793,6 +784,24 @@ async function _ltVGetMp4(url){
 function _ltVLabel(url){
   const slug = (url || '').split('/').pop() || '';
   return slug.replace(/-?\d{8,}$/, '').replace(/-/g, ' ').trim() || 'Goal highlight';
+}
+
+function getLtVideoEvents(){
+  const d = __data;
+  if(!d) return [];
+  let evts = (d.goalHighlights || []).filter(g => _ltVHasVideo(g.highlightUrl));
+  if(__selectedZones && __selectedZones.size > 0){
+    evts = evts.filter(g => g.boxId && __selectedZones.has(String(g.boxId)));
+  }
+  return evts;
+}
+
+function updateLtVideoBtn(){
+  const ltVideoBtn = document.getElementById('ltVideoBtn');
+  if(!ltVideoBtn) return;
+  const evts = getLtVideoEvents();
+  ltVideoBtn.disabled = evts.length === 0;
+  ltVideoBtn.textContent = evts.length ? `\u25B6 Video (${evts.length})` : '\u25B6 Video';
 }
 
 function _ltVShow(events, title){
@@ -838,13 +847,7 @@ if(_ltVNext) _ltVNext.addEventListener('click', () => { if(_ltVIdx < _ltVEvents.
 if(_ltVPlay) _ltVPlay.addEventListener('click', () => { _ltVRender(); });
 
 document.getElementById('ltVideoBtn')?.addEventListener('click', () => {
-  const d = __data;
-  if(!d) return;
-  let evts = (d.goalHighlights || []).filter(g => _ltVHasVideo(g.highlightUrl));
-  /* zone filter: if zones are selected, only show goals in those zones */
-  if(__selectedZones && __selectedZones.size > 0){
-    evts = evts.filter(g => g.boxId && __selectedZones.has(String(g.boxId)));
-  }
+  const evts = getLtVideoEvents();
   if(evts.length) _ltVShow(evts, 'Goal Highlights');
 });
 

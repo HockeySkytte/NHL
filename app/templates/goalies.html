@@ -4644,7 +4644,7 @@ _vPlay.addEventListener('click', () => { _vRender(); });
 
 // Video button → open dialog
 gtendVideoBtn.addEventListener('click', () => {
-  const evts = getFilteredGtendEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+  const evts = getGtendVideoEvents();
   if(evts.length) _vShow(evts, 'Goal Highlights');
 });
 
@@ -4954,9 +4954,14 @@ function gtendHeatColor(t){
   return `rgba(${r},${g},${b},${a})`;
 }
 
+function getGtendVideoEvents(){
+  return getFilteredGtendEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+}
+
 function updateGtendVideoBtn(){
-  const evts = getFilteredGtendEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+  const evts = getGtendVideoEvents();
   gtendVideoBtn.disabled = evts.length === 0;
+  gtendVideoBtn.textContent = evts.length ? `\u25B6 Video (${evts.length})` : '\u25B6 Video';
 }
 
 tabCard?.addEventListener('click', ()=> setActiveTab('card'));

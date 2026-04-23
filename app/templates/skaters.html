@@ -1060,11 +1060,13 @@ function chartsSetHighlightMode(mode){
   if(chartsHlTeam) chartsHlTeam.setAttribute('aria-pressed', m==='team' ? 'true' : 'false');
   try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/}
   try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/}
-    const active = which === 'league' ? 'league' : 'team';
-    const isT = active === 'team';
+  saveSkatersState();
+}
 
+try{
   chartsHlPlayer?.addEventListener('click', ()=> chartsSetHighlightMode('player'));
   chartsHlTeam?.addEventListener('click', ()=> chartsSetHighlightMode('team'));
+}catch(_){/*noop*/}
 
 async function fetchScatter(xMetricId, yMetricId){
   const season = String(seasonSelect?.value||'').trim();
@@ -1089,9 +1091,111 @@ async function fetchScatter(xMetricId, yMetricId){
   __scatterCache.set(key, data);
   return data;
 }
+
+function makeScatterChart(canvasEl, title){
+  if(!canvasEl || typeof Chart === 'undefined') return null;
+
+  const avgLinesPlugin = {
+    id: 'avgLines',
+    beforeDatasetsDraw(chart){
+      try{
         const ds = chart?.data?.datasets?.[0];
         const pts = Array.isArray(ds?.data) ? ds.data : [];
         let sx = 0, sy = 0, n = 0;
+        for(const p of pts){
+          const x = Number(p?.x);
+          const y = Number(p?.y);
+          if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          sx += x; sy += y; n++;
+        }
+        if(n <= 0) return;
+        const mx = sx / n;
+        const my = sy / n;
+        const xScale = chart.scales?.x;
+        const yScale = chart.scales?.y;
+        if(!xScale || !yScale) return;
+
+        const xPix = xScale.getPixelForValue(mx);
+        const yPix = yScale.getPixelForValue(my);
+        const ca = chart.chartArea;
+        if(!ca) return;
+
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(ca.left, ca.top, ca.right - ca.left, ca.bottom - ca.top);
+        ctx.clip();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 2;
+
+        ctx.beginPath();
+        ctx.moveTo(xPix, ca.top);
+        ctx.lineTo(xPix, ca.bottom);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(ca.left, yPix);
+        ctx.lineTo(ca.right, yPix);
+        ctx.stroke();
+
+        ctx.restore();
+      }catch(_){/*noop*/}
+    }
+  };
+
+  const highlightBadgePlugin = {
+    id: 'highlightBadge',
+    afterDatasetsDraw(chart){
+      try{
+        const ctx = chart.ctx;
+        const meta = chart.getDatasetMeta(0);
+        const mode = __chartsHighlightMode;
+        const wantTeam = String(teamSelect?.value||'').toUpperCase();
+        const wantPid = String(playerSelect?.value||'');
+        const season = String(seasonSelect?.value||'').trim();
+        const selectedTeam = String(teamSelect?.value||'').trim();
+        meta.data.forEach((ptEl, i)=>{
+          const raw = chart.data.datasets[0].data[i];
+          if(!raw) return;
+          const isHit = (mode === 'player')
+            ? (wantPid && String(raw.playerId) === wantPid)
+            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          if(!isHit) return;
+          const p = ptEl.getProps(['x','y'], true);
+
+          const outerR = 14;
+          const innerR = 12.6;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.fillStyle = 'rgba(10,14,22,0.92)';
+          ctx.arc(p.x, p.y, outerR, 0, Math.PI*2);
+          ctx.fill();
+          ctx.lineWidth = 3.5;
+          ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, innerR, 0, Math.PI*2);
+          ctx.clip();
+
+          let img = null;
+          if(mode === 'player'){
+            img = getPlayerMugImage(season, selectedTeam, raw.playerId);
+          }else{
+            img = getTeamLogoImage(raw.team);
+          }
+
+          if(img && img.complete){
+            const d = innerR * 2;
+            const pad = (mode === 'team') ? 0.35 : 0.0;
+            const zoom = (mode === 'player') ? 1.18 : 1.08;
+            const iw = Number(img.naturalWidth || img.width || 0);
+            const ih = Number(img.naturalHeight || img.height || 0);
+            const side = Math.min(iw, ih);
+
+            try{
               if(side > 0 && Number.isFinite(zoom) && zoom > 0){
                 const crop = side / zoom;
                 if(crop > 0){
@@ -1100,47 +1204,51 @@ async function fetchScatter(xMetricId, yMetricId){
                   ctx.drawImage(
                     img,
                     sx, sy, crop, crop,
-      .sort((a,b)=>Number(b.projectedValue||0)-Number(a.projectedValue||0));
-
-    if(projTeamEmpty) projTeamEmpty.hidden = list.length > 0;
-    const teamCanvas = document.getElementById('projTeamStack');
-    if(teamCanvas) teamCanvas.style.display = list.length ? '' : 'none';
-    if(!list.length) return;
+                    p.x - innerR + pad,
                     p.y - innerR + pad,
                     d - 2*pad,
+                    d - 2*pad
                   );
                 }else{
                   ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad);
+                }
+              }else{
+                ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad);
+              }
+            }catch(_){
+              try{ ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad); }catch(__){/*noop*/}
+            }
+          }
+          ctx.restore();
+        });
+      }catch(_){/*noop*/}
+    }
+  };
+
+  const chart = new Chart(canvasEl.getContext('2d'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
         label: title,
         data: [],
         pointBackgroundColor: (ctx)=>{
-      data: {
-        labels,
-        datasets: [{
-          label: 'Projection',
-          data: list.map(p=>Number(p.projectedValue||0)),
-          backgroundColor: list.map(p=>Number(p.projectedValue||0) >= 0 ? mixHex(accent, '#ffffff', 0.24) : 'rgba(255,106,106,0.88)'),
-          borderColor: list.map(p=>Number(p.projectedValue||0) >= 0 ? mixHex(accent, '#ffffff', 0.08) : 'rgba(255,161,161,0.92)'),
-          borderWidth: 1.2,
-          borderRadius: 8,
-        }],
-      },
+          const raw = ctx.raw || {};
           const mode = __chartsHighlightMode;
           const wantTeam = String(teamSelect?.value||'').toUpperCase();
           const wantPid = String(playerSelect?.value||'');
           const isHit = (mode === 'player')
             ? (wantPid && String(raw.playerId) === wantPid)
             : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
-          tooltip: { callbacks: { footer: (items)=>{
+          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.16)';
         },
         pointBorderColor: (ctx)=>{
-            const gp = Number(list[i]?.gp || 0);
-            return Number.isFinite(gp) ? `GP: ${gp}` : '';
+          const raw = ctx.raw || {};
+          const mode = __chartsHighlightMode;
           const wantTeam = String(teamSelect?.value||'').toUpperCase();
           const wantPid = String(playerSelect?.value||'');
           const isHit = (mode === 'player')
-          x: { ticks: { color: tick }, grid: { color: grid }, title:{ display:true, text:'Centered Projection', color:tick, font:{ size:12, weight:'800' } } },
-          y: { ticks: { color: tick, autoSkip: false }, grid: { display:false } },
+            ? (wantPid && String(raw.playerId) === wantPid)
+            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
           return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.10)';
         },
         pointBorderWidth: (ctx)=>{
@@ -1151,21 +1259,26 @@ async function fetchScatter(xMetricId, yMetricId){
           const isHit = (mode === 'player')
             ? (wantPid && String(raw.playerId) === wantPid)
             : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
-      { key:'team', label:'Team', team:true },
+          return isHit ? 0 : 1;
         },
         pointRadius: (ctx)=>{
+          const raw = ctx.raw || {};
+          const mode = __chartsHighlightMode;
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const wantPid = String(playerSelect?.value||'');
+          const isHit = (mode === 'player')
+            ? (wantPid && String(raw.playerId) === wantPid)
             : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
-          // The actual highlight badge is drawn by the plugin.
           return isHit ? 10 : 4;
-      { key:'projection', label:'Projection', num:true },
+        },
         pointHoverRadius: 10,
         pointStyle: 'circle',
       }]
     },
     options: {
       responsive: true,
-      const av = (sortKey === 'QoT' || sortKey === 'QoC' || sortKey === 'ZS') ? a?.contextData?.[sortKey] : a?.[sortKey];
-      const bv = (sortKey === 'QoT' || sortKey === 'QoC' || sortKey === 'ZS') ? b?.contextData?.[sortKey] : b?.[sortKey];
+      maintainAspectRatio: false,
+      plugins: {
         legend: { display:false },
         tooltip: {
           callbacks: {
@@ -4038,7 +4151,7 @@ _vPlay.addEventListener('click', () => { _vRender(); });
 
 // Video button → open dialog
 shootVideoBtn.addEventListener('click', () => {
-  const evts = getFilteredShootEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+  const evts = getShootVideoEvents();
   if(evts.length) _vShow(evts, 'Goal Highlights');
 });
 
@@ -4357,9 +4470,14 @@ function heatColor(t){
   return `rgba(${r},${g},${b},${a})`;
 }
 
+function getShootVideoEvents(){
+  return getFilteredShootEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+}
+
 function updateShootVideoBtn(){
-  const evts = getFilteredShootEvents().filter(e => e.goal === 1 && _vHasVideo(e.highlightUrl));
+  const evts = getShootVideoEvents();
   shootVideoBtn.disabled = evts.length === 0;
+  shootVideoBtn.textContent = evts.length ? `\u25B6 Video (${evts.length})` : '\u25B6 Video';
 }
 
 tabCard?.addEventListener('click', ()=> setActiveTab('card'));

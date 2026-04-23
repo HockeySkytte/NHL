@@ -3,9 +3,15 @@
 <style>
   .about-shell{ max-width:1180px; margin:0 auto; }
   .about-hero{ position:relative; overflow:hidden; padding:28px 28px 24px; border:1px solid rgba(120,145,185,0.18); border-radius:24px; background:radial-gradient(circle at top left, rgba(77,163,255,0.18), transparent 34%), linear-gradient(180deg, rgba(18,25,40,0.96), rgba(10,14,22,0.88)); box-shadow:0 22px 48px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.04); }
+  .about-hero-grid{ display:grid; grid-template-columns:minmax(0, 1.25fr) minmax(280px, .75fr); gap:18px; align-items:end; }
   .about-kicker{ margin:0 0 10px; font-size:12px; font-weight:900; letter-spacing:.18em; text-transform:uppercase; color:#99badf; }
   .about-title{ margin:0; font-size:40px; line-height:1.02; font-weight:900; color:#f4f8ff; max-width:760px; }
   .about-copy{ margin:16px 0 0; max-width:760px; font-size:15px; line-height:1.7; color:rgba(226,233,244,0.9); }
+  .about-hero-note{ padding:18px 18px 16px; border-radius:18px; border:1px solid rgba(159,184,215,0.18); background:rgba(8,12,20,0.48); backdrop-filter:blur(10px); }
+  .about-hero-note h2{ margin:0 0 10px; font-size:12px; font-weight:900; letter-spacing:.16em; text-transform:uppercase; color:#9fb8d7; }
+  .about-hero-note p{ margin:0; font-size:14px; line-height:1.65; color:rgba(224,231,241,0.9); }
+  .about-pill-row{ display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+  .about-pill{ padding:9px 12px; border-radius:999px; border:1px solid rgba(159,184,215,0.18); background:rgba(255,255,255,0.04); font-size:12px; font-weight:800; letter-spacing:.04em; color:#e7effb; }
   .about-tabs{ display:flex; gap:10px; flex-wrap:wrap; margin:22px 0 16px; }
   .about-tabs button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:10px 16px; border-radius:999px; font-size:13px; font-weight:800; letter-spacing:.04em; cursor:pointer; }
   .about-tabs button.active{ background:var(--accent); border-color:var(--accent); color:#091018; }
@@ -17,6 +23,7 @@
   .about-list{ display:grid; gap:12px; margin-top:14px; }
   .about-list-item{ padding:14px 16px; border-radius:16px; background:rgba(255,255,255,0.03); border:1px solid rgba(120,145,185,0.12); }
   .about-list-item strong{ display:block; margin-bottom:6px; font-size:13px; color:#eef4ff; }
+  .about-microcopy{ margin-top:14px; font-size:13px; line-height:1.65; color:rgba(206,217,231,0.88); }
   .glossary-intro{ margin:0 0 16px; color:rgba(224,231,241,0.9); font-size:14px; line-height:1.65; }
   .glossary-section{ margin-top:20px; }
   .glossary-section:first-of-type{ margin-top:0; }
@@ -29,6 +36,7 @@
   .glossary-table td:last-child{ color:rgba(224,231,241,0.9); line-height:1.55; }
 
   @media (max-width: 920px){
+    .about-hero-grid{ grid-template-columns:1fr; }
     .about-grid{ grid-template-columns:1fr; }
     .about-title{ font-size:32px; }
   }
@@ -47,9 +55,23 @@
 {% block content %}
 <div class="about-shell">
   <section class="about-hero">
-    <p class="about-kicker">About The App</p>
-    <h1 class="about-title">One place for live NHL projections, player context, RAPM, and matchup tools.</h1>
-    <p class="about-copy">This app combines NHL schedule data, lineup scraping, static RAPM/context exports, live game models, and player projection tables into one workflow. The glossary tab below collects the short forms used across skaters, goalies, projections, standings, and lineup tools so the metrics are easier to read quickly.</p>
+    <div class="about-hero-grid">
+      <div>
+        <p class="about-kicker">About The App</p>
+        <h1 class="about-title">Built for nights when you want the schedule, the matchup context, and the player detail in the same place.</h1>
+        <p class="about-copy">The app pulls together live NHL schedule data, lineup updates, team context, player cards, RAPM, and game projections without forcing you to hop between separate tools. The goal is simple: get from a slate view to a player decision quickly, with enough context to trust the read.</p>
+        <div class="about-pill-row" aria-label="About highlights">
+          <span class="about-pill">Game projections</span>
+          <span class="about-pill">Player context</span>
+          <span class="about-pill">RAPM and usage</span>
+          <span class="about-pill">Line and team views</span>
+        </div>
+      </div>
+      <aside class="about-hero-note">
+        <h2>How most people use it</h2>
+        <p>Start with the slate or standings, move into skaters or goalies for player-level context, then use the line and team pages to check deployment, matchup environment, and shot quality. The glossary stays here as the quick reference when a page gets dense.</p>
+      </aside>
+    </div>
   </section>
 
   <div class="about-tabs" role="tablist" aria-label="About tabs">
@@ -60,32 +82,34 @@
   <section id="aboutPanelOverview" class="about-panel" role="tabpanel">
     <div class="about-grid">
       <article class="about-card">
-        <h2>What The App Covers</h2>
-        <p>The app brings together game projections, lineup-driven playoff odds, player cards, shooting and Edge views, RAPM, context metrics, and team-level comparisons. Most pages use the same shared team and season state so it is easy to move from a player page into team or game context without resetting the workflow.</p>
+        <h2>What You Can Do Here</h2>
+        <p>Most pages share the same team and season controls, so the workflow stays consistent while you move between schedule, player, and team views. That makes it easier to compare a projection with the underlying player profile instead of treating every page like a separate product.</p>
         <div class="about-list">
           <div class="about-list-item">
-            <strong>Projections</strong>
-            Current game and playoff probabilities, lineup-based team totals, and centered player projection values.
+            <strong>Work the slate</strong>
+            Use projections for win probability, lineup-aware expectations, and the broader game environment before drilling into the player pages.
           </div>
           <div class="about-list-item">
-            <strong>Skaters And Goalies</strong>
-            Player cards, RAPM, context, shooting breakdowns, Edge data, and season tables.
+            <strong>Check the player case</strong>
+            Skaters and goalies combine cards, shooting or goaltending views, RAPM, and context metrics so you can see production, usage, and quality together.
           </div>
           <div class="about-list-item">
-            <strong>Team And Line Tools</strong>
-            Roster context, line combinations, pairings, and usage-driven comparisons.
+            <strong>Validate the environment</strong>
+            Team and line views help confirm how a player is being deployed, who he is running with, and where the chance generation is actually coming from.
           </div>
         </div>
+        <p class="about-microcopy">A lot of the value is in moving between those views quickly. The app is meant to be a working desk, not a single headline number.</p>
       </article>
       <aside class="about-card">
-        <h2>How To Read The Metrics</h2>
-        <p>Most metrics are shown either as raw values, rates, percentiles, or centered projection values. Context metrics such as QoT, QoC, and ZS describe deployment, while RAPM attempts to isolate player impact by adjusting for teammates and opponents. Projection values on the current skater pages are centered, so positive values indicate players projected above baseline and negative values indicate players projected below baseline.</p>
+        <h2>A Few Reading Notes</h2>
+        <p>Raw counts tell you volume. Rates help normalize usage. Context metrics such as QoT, QoC, and ZS describe the deployment behind the results, while RAPM is there to separate player impact from teammate and opponent effects. On the projection side, centered values are relative to baseline: positive means above expectation, negative means below it.</p>
+        <p class="about-microcopy">If a page feels abbreviation-heavy, use the glossary tab as the decoder ring. It collects the terms that repeat across skaters, goalies, projections, exports, and tables.</p>
       </aside>
     </div>
   </section>
 
   <section id="aboutPanelGlossary" class="about-panel" role="tabpanel" hidden>
-    <p class="glossary-intro">These are the abbreviations used across the app’s cards, tables, charts, exports, and projection views.</p>
+    <p class="glossary-intro">These are the short forms used across the cards, charts, exports, and projection views. If a table label feels familiar but not quite obvious, it is probably listed here.</p>
     {% for section in glossary_sections %}
     <section class="glossary-section">
       <h2 class="glossary-title">{{ section['title'] }}</h2>
