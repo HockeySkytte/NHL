@@ -8,14 +8,15 @@ import bisect
 import hashlib
 import pickle
 import gzip
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import threading
 import time
 from typing import Dict, List, Tuple, Optional, Any, Iterable, Iterator
+from urllib.parse import urlsplit
 
 import requests
 import joblib       # to load pickled models
-from flask import Blueprint, jsonify, render_template, request, current_app, make_response
+from flask import Blueprint, jsonify, render_template, request, current_app, make_response, session, redirect, url_for, flash
 import subprocess
 import sys
 import uuid
@@ -32,16 +33,935 @@ try:
 except Exception:
     BeautifulSoup = None  # type: ignore
 
+try:
+    import stripe  # type: ignore
+except Exception:
+    stripe = None  # type: ignore
+
 # ── Supabase (primary data source, fallback to CSV / Sheets) ────
 try:
-    from app.supabase_client import get_client as _sb_client
+    from app.supabase_client import (
+        get_client as _sb_client,
+        auth_is_configured as _sb_auth_is_configured,
+        auth_admin_create_user as _sb_auth_admin_create_user,
+        auth_admin_delete_user as _sb_auth_admin_delete_user,
+        auth_admin_get_user as _sb_auth_admin_get_user,
+        auth_admin_list_users as _sb_auth_admin_list_users,
+        auth_admin_update_user as _sb_auth_admin_update_user,
+        auth_sign_in_with_password as _sb_auth_sign_in_with_password,
+        delete_user_account as _sb_delete_user_account,
+        get_user_account as _sb_get_user_account,
+        list_user_accounts as _sb_list_user_accounts,
+        upsert_user_account as _sb_upsert_user_account,
+    )
     _SUPABASE_OK = True
 except Exception:
     _sb_client = None  # type: ignore
+    _sb_auth_is_configured = None  # type: ignore
+    _sb_auth_admin_create_user = None  # type: ignore
+    _sb_auth_admin_delete_user = None  # type: ignore
+    _sb_auth_admin_get_user = None  # type: ignore
+    _sb_auth_admin_list_users = None  # type: ignore
+    _sb_auth_admin_update_user = None  # type: ignore
+    _sb_auth_sign_in_with_password = None  # type: ignore
+    _sb_delete_user_account = None  # type: ignore
+    _sb_get_user_account = None  # type: ignore
+    _sb_list_user_accounts = None  # type: ignore
+    _sb_upsert_user_account = None  # type: ignore
     _SUPABASE_OK = False
 
 
 main_bp = Blueprint('main', __name__)
+_AUTH_TRIAL_DAYS = 7
+_AUTH_SESSION_KEY = 'auth_user'
+_AUTH_PLAN_OPTIONS = (
+    {
+        'key': 'monthly',
+        'label': 'Pro Monthly',
+        'price_label': '$5/month',
+        'detail': 'Full access to Projections with monthly billing.',
+    },
+    {
+        'key': 'yearly',
+        'label': 'Pro Yearly',
+        'price_label': '$40/year',
+        'detail': 'Same access with the lowest annual price.',
+    },
+)
+_AUTH_PREMIUM_PAGE_PREFIXES = (
+    '/projections',
+)
+_AUTH_PREMIUM_API_PREFIXES = (
+    '/api/projections/',
+)
+
+
+def _auth_enabled() -> bool:
+    try:
+        return bool(_sb_auth_is_configured and _sb_auth_is_configured())
+    except Exception:
+        return False
+
+
+def _auth_is_premium_path(path: str) -> bool:
+    if not path:
+        return False
+    for prefix in _AUTH_PREMIUM_PAGE_PREFIXES + _AUTH_PREMIUM_API_PREFIXES:
+        if path == prefix or path.startswith(prefix):
+            return True
+    return False
+
+
+def _safe_next_url(value: Any) -> Optional[str]:
+    raw = str(value or '').strip()
+    if not raw or not raw.startswith('/') or raw.startswith('//'):
+        return None
+    parsed = urlsplit(raw)
+    if parsed.scheme or parsed.netloc:
+        return None
+    return raw
+
+
+def _auth_redirect_target(default: str = '/projections') -> str:
+    return _safe_next_url(request.values.get('next')) or default
+
+
+def _auth_login_target() -> str:
+    return _safe_next_url((request.full_path or request.path or '').rstrip('?')) or '/projections'
+
+
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except Exception:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _isoformat_utc(value: Optional[datetime]) -> str:
+    if value is None:
+        return ''
+    dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def _merge_auth_user_account(base_record: Dict[str, Any], account_record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not account_record:
+        return dict(base_record)
+    merged = dict(base_record)
+    merged.update({
+        'user_id': str(account_record.get('auth_user_id') or merged.get('user_id') or '').strip(),
+        'email': str(account_record.get('email') or merged.get('email') or '').strip().lower(),
+        'username': str(account_record.get('username') or merged.get('username') or '').strip(),
+        'display_name': str(account_record.get('display_name') or account_record.get('username') or merged.get('display_name') or 'Account').strip(),
+        'trial_started_at': _isoformat_utc(
+            _parse_iso_datetime(account_record.get('trial_started_at'))
+            or _parse_iso_datetime(merged.get('trial_started_at'))
+        ),
+        'trial_expires_at': _isoformat_utc(
+            _parse_iso_datetime(account_record.get('trial_expires_at'))
+            or _parse_iso_datetime(merged.get('trial_expires_at'))
+        ),
+        'subscription_status': str(account_record.get('subscription_status') or merged.get('subscription_status') or '').strip().lower(),
+        'subscription_plan': str(account_record.get('subscription_plan') or merged.get('subscription_plan') or '').strip(),
+        'billing_interval': str(account_record.get('billing_interval') or merged.get('billing_interval') or '').strip().lower(),
+        'is_admin': bool(account_record.get('is_admin') or merged.get('is_admin')),
+        'subscription_source': str(account_record.get('subscription_source') or merged.get('subscription_source') or '').strip(),
+        'stripe_customer_id': str(account_record.get('stripe_customer_id') or merged.get('stripe_customer_id') or '').strip(),
+        'stripe_subscription_id': str(account_record.get('stripe_subscription_id') or merged.get('stripe_subscription_id') or '').strip(),
+        'stripe_price_id': str(account_record.get('stripe_price_id') or merged.get('stripe_price_id') or '').strip(),
+        'stripe_current_period_end': _isoformat_utc(
+            _parse_iso_datetime(account_record.get('stripe_current_period_end'))
+            or _parse_iso_datetime(merged.get('stripe_current_period_end'))
+        ),
+    })
+    return merged
+
+
+def _auth_record_from_supabase_user(user: Dict[str, Any], account_record: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    user_meta = user.get('user_metadata') or {}
+    app_meta = user.get('app_metadata') or {}
+    created_at = _parse_iso_datetime(user.get('created_at')) or datetime.now(timezone.utc)
+    trial_started = _parse_iso_datetime(user_meta.get('trial_started_at')) or created_at
+    trial_expires = _parse_iso_datetime(user_meta.get('trial_expires_at')) or (trial_started + timedelta(days=_AUTH_TRIAL_DAYS))
+    base_record = {
+        'user_id': str(user.get('id') or '').strip(),
+        'email': str(user.get('email') or '').strip(),
+        'username': str(user_meta.get('username') or '').strip(),
+        'display_name': str(user_meta.get('display_name') or user_meta.get('name') or user.get('email') or 'Account').strip(),
+        'created_at': _isoformat_utc(created_at),
+        'trial_started_at': _isoformat_utc(trial_started),
+        'trial_expires_at': _isoformat_utc(trial_expires),
+        'subscription_status': str(app_meta.get('subscription_status') or user_meta.get('subscription_status') or '').strip().lower(),
+        'subscription_plan': str(app_meta.get('subscription_plan') or user_meta.get('subscription_plan') or '').strip(),
+        'billing_interval': str(app_meta.get('billing_interval') or user_meta.get('billing_interval') or '').strip().lower(),
+        'is_admin': bool(app_meta.get('is_admin') or user_meta.get('is_admin') or False),
+    }
+    return _merge_auth_user_account(base_record, account_record)
+
+
+def _auth_username_candidate(record: Dict[str, Any], existing_record: Optional[Dict[str, Any]] = None) -> str:
+    existing_username = str((existing_record or {}).get('username') or '').strip()
+    if existing_username:
+        return existing_username
+    email_local = str(record.get('email') or '').split('@', 1)[0].strip().lower()
+    cleaned_email = re.sub(r'[^a-z0-9._-]+', '', email_local)
+    if cleaned_email:
+        return cleaned_email[:64]
+    cleaned_name = re.sub(r'[^a-z0-9._-]+', '-', str(record.get('display_name') or '').strip().lower()).strip('-')
+    if cleaned_name:
+        return cleaned_name[:64]
+    return ''
+
+
+def _normalize_username(value: Any) -> str:
+    return re.sub(r'[^a-z0-9._-]+', '-', str(value or '').strip().lower()).strip('-')
+
+
+def _valid_username(value: Any) -> bool:
+    username = _normalize_username(value)
+    return bool(re.fullmatch(r'[a-z0-9](?:[a-z0-9._-]{1,30}[a-z0-9])?', username))
+
+
+def _valid_email(value: Any) -> bool:
+    return bool(re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', str(value or '').strip().lower()))
+
+
+def _app_base_url() -> str:
+    raw = str(os.getenv('APP_BASE_URL') or '').strip()
+    if raw:
+        return raw.rstrip('/')
+    try:
+        return str(request.url_root or '').rstrip('/')
+    except Exception:
+        return ''
+
+
+def _absolute_url_for(endpoint: str, **values: Any) -> str:
+    path = url_for(endpoint, **values)
+    base = _app_base_url()
+    return f'{base}{path}' if base else path
+
+
+def _stripe_secret_key() -> str:
+    return str(os.getenv('STRIPE_SECRET_KEY') or '').strip()
+
+
+def _stripe_webhook_secret() -> str:
+    return str(os.getenv('STRIPE_WEBHOOK_SECRET') or '').strip()
+
+
+def _stripe_price_id(plan_key: str) -> str:
+    env_name = {
+        'monthly': 'STRIPE_PRICE_MONTHLY_ID',
+        'yearly': 'STRIPE_PRICE_YEARLY_ID',
+    }.get(str(plan_key or '').strip().lower(), '')
+    return str(os.getenv(env_name) or '').strip() if env_name else ''
+
+
+def _stripe_missing_config(plan_key: Optional[str] = None) -> List[str]:
+    missing: List[str] = []
+    if stripe is None:
+        missing.append('stripe package')
+    if not _stripe_secret_key():
+        missing.append('STRIPE_SECRET_KEY')
+    plans = [plan_key] if plan_key else ['monthly', 'yearly']
+    for key in plans:
+        env_name = {
+            'monthly': 'STRIPE_PRICE_MONTHLY_ID',
+            'yearly': 'STRIPE_PRICE_YEARLY_ID',
+        }.get(str(key or '').strip().lower())
+        if env_name and not str(os.getenv(env_name) or '').strip():
+            missing.append(env_name)
+    seen: set[str] = set()
+    return [item for item in missing if not (item in seen or seen.add(item))]
+
+
+def _stripe_any_configured() -> bool:
+    return any([
+        bool(_stripe_secret_key()),
+        bool(_stripe_webhook_secret()),
+        bool(_stripe_price_id('monthly')),
+        bool(_stripe_price_id('yearly')),
+    ])
+
+
+def _stripe_checkout_enabled() -> bool:
+    return not _stripe_missing_config()
+
+
+def _stripe_portal_enabled() -> bool:
+    return bool(stripe is not None and _stripe_secret_key())
+
+
+def _stripe_client() -> Any:
+    if stripe is None:
+        raise RuntimeError('Stripe SDK is not installed.')
+    secret = _stripe_secret_key()
+    if not secret:
+        raise RuntimeError('STRIPE_SECRET_KEY is not configured.')
+    stripe.api_key = secret
+    return stripe
+
+
+def _stripe_datetime(value: Any) -> Optional[datetime]:
+    try:
+        if value in (None, ''):
+            return None
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+    except Exception:
+        return None
+
+
+def _stripe_status_to_account_status(status: Any) -> str:
+    raw = str(status or '').strip().lower()
+    if raw in {'active', 'trialing', 'past_due', 'canceled'}:
+        return raw
+    if raw == 'unpaid':
+        return 'past_due'
+    if raw == 'incomplete_expired':
+        return 'expired'
+    return 'inactive'
+
+
+def _stripe_price_from_subscription(subscription: Dict[str, Any]) -> Dict[str, Any]:
+    items = (((subscription or {}).get('items') or {}).get('data') or [])
+    if not items:
+        return {}
+    return dict(items[0].get('price') or {})
+
+
+def _stripe_interval_from_subscription(subscription: Dict[str, Any]) -> Optional[str]:
+    recurring = (_stripe_price_from_subscription(subscription).get('recurring') or {})
+    interval = str(recurring.get('interval') or '').strip().lower()
+    if interval == 'month':
+        return 'monthly'
+    if interval == 'year':
+        return 'yearly'
+    return None
+
+
+def _account_record_to_auth_record(account_record: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not account_record:
+        return None
+    created_at = _parse_iso_datetime(account_record.get('created_at')) or datetime.now(timezone.utc)
+    return {
+        'user_id': str(account_record.get('auth_user_id') or '').strip(),
+        'email': str(account_record.get('email') or '').strip().lower(),
+        'username': str(account_record.get('username') or '').strip(),
+        'display_name': str(account_record.get('display_name') or account_record.get('username') or account_record.get('email') or 'Account').strip(),
+        'created_at': _isoformat_utc(created_at),
+        'trial_started_at': str(account_record.get('trial_started_at') or '').strip(),
+        'trial_expires_at': str(account_record.get('trial_expires_at') or '').strip(),
+        'subscription_status': str(account_record.get('subscription_status') or '').strip().lower(),
+        'subscription_plan': str(account_record.get('subscription_plan') or '').strip(),
+        'billing_interval': str(account_record.get('billing_interval') or '').strip().lower(),
+        'is_admin': bool(account_record.get('is_admin')),
+        'subscription_started_at': str(account_record.get('subscription_started_at') or '').strip(),
+        'subscription_ends_at': str(account_record.get('subscription_ends_at') or '').strip(),
+        'subscription_source': str(account_record.get('subscription_source') or '').strip(),
+        'stripe_customer_id': str(account_record.get('stripe_customer_id') or '').strip(),
+        'stripe_subscription_id': str(account_record.get('stripe_subscription_id') or '').strip(),
+        'stripe_price_id': str(account_record.get('stripe_price_id') or '').strip(),
+        'stripe_current_period_end': str(account_record.get('stripe_current_period_end') or '').strip(),
+    }
+
+
+def _auth_user_for_user_id(auth_user_id: str) -> Optional[Dict[str, Any]]:
+    if not auth_user_id:
+        return None
+    account_record = _sb_get_user_account(auth_user_id) if _sb_get_user_account else None
+    if _sb_auth_admin_get_user:
+        try:
+            auth_row = _sb_auth_admin_get_user(auth_user_id)
+        except Exception:
+            auth_row = None
+        if auth_row:
+            return _auth_record_from_supabase_user(auth_row, account_record)
+    return _account_record_to_auth_record(account_record)
+
+
+def _persist_user_account_updates(auth_user_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    auth_user = _auth_user_for_user_id(auth_user_id)
+    if not auth_user:
+        return None
+    payload = _build_account_payload(auth_user, updates)
+    return _sb_upsert_user_account(payload) if _sb_upsert_user_account else payload
+
+
+def _find_user_account_by_stripe_customer_id(customer_id: Any) -> Optional[Dict[str, Any]]:
+    wanted = str(customer_id or '').strip()
+    if not wanted or not _sb_list_user_accounts:
+        return None
+    for row in _sb_list_user_accounts() or []:
+        if str(row.get('stripe_customer_id') or '').strip() == wanted:
+            return row
+    return None
+
+
+def _find_user_account_by_stripe_subscription_id(subscription_id: Any) -> Optional[Dict[str, Any]]:
+    wanted = str(subscription_id or '').strip()
+    if not wanted or not _sb_list_user_accounts:
+        return None
+    for row in _sb_list_user_accounts() or []:
+        if str(row.get('stripe_subscription_id') or '').strip() == wanted:
+            return row
+    return None
+
+
+def _stripe_updates_from_subscription(subscription: Dict[str, Any], *, customer_id: Optional[str] = None) -> Dict[str, Any]:
+    price = _stripe_price_from_subscription(subscription)
+    price_id = str(price.get('id') or '').strip()
+    billing_interval = _stripe_interval_from_subscription(subscription)
+    status = _stripe_status_to_account_status(subscription.get('status'))
+    started_at = _stripe_datetime(subscription.get('start_date'))
+    current_period_end = _stripe_datetime(subscription.get('current_period_end'))
+    ended_at = _stripe_datetime(subscription.get('canceled_at') or subscription.get('ended_at'))
+    subscription_ends = ended_at or (current_period_end if subscription.get('cancel_at_period_end') else None)
+    plan_value = 'pro' if (price_id or billing_interval) else ('canceled' if status in {'canceled', 'expired'} else 'inactive')
+    return {
+        'subscription_status': status,
+        'subscription_plan': plan_value,
+        'billing_interval': billing_interval,
+        'subscription_started_at': _isoformat_utc(started_at),
+        'subscription_ends_at': _isoformat_utc(subscription_ends),
+        'subscription_source': 'stripe',
+        'stripe_customer_id': str(customer_id or subscription.get('customer') or '').strip() or None,
+        'stripe_subscription_id': str(subscription.get('id') or '').strip() or None,
+        'stripe_price_id': price_id or None,
+        'stripe_current_period_end': _isoformat_utc(current_period_end),
+    }
+
+
+def _sync_stripe_subscription(subscription: Dict[str, Any], *, auth_user_id: Optional[str] = None, customer_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    metadata = subscription.get('metadata') or {}
+    resolved_user_id = str(auth_user_id or metadata.get('auth_user_id') or '').strip()
+    if not resolved_user_id:
+        linked = _find_user_account_by_stripe_subscription_id(subscription.get('id')) or _find_user_account_by_stripe_customer_id(customer_id or subscription.get('customer'))
+        resolved_user_id = str((linked or {}).get('auth_user_id') or '').strip()
+    if not resolved_user_id:
+        return None
+    return _persist_user_account_updates(resolved_user_id, _stripe_updates_from_subscription(subscription, customer_id=customer_id))
+
+
+def _sync_stripe_checkout_session(checkout_session: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    metadata = checkout_session.get('metadata') or {}
+    auth_user_id = str(metadata.get('auth_user_id') or checkout_session.get('client_reference_id') or '').strip()
+    customer_id = str(checkout_session.get('customer') or '').strip()
+    subscription_id = str(checkout_session.get('subscription') or '').strip()
+    if subscription_id:
+        try:
+            stripe_client = _stripe_client()
+            subscription = stripe_client.Subscription.retrieve(subscription_id)
+        except Exception:
+            current_app.logger.exception('Stripe checkout sync failed while retrieving subscription.')
+            subscription = None
+        if subscription:
+            return _sync_stripe_subscription(dict(subscription), auth_user_id=auth_user_id, customer_id=customer_id)
+    if auth_user_id:
+        return _persist_user_account_updates(auth_user_id, {
+            'subscription_source': 'stripe',
+            'stripe_customer_id': customer_id or None,
+            'stripe_subscription_id': subscription_id or None,
+        })
+    return None
+
+
+def _stripe_billing_state(auth_user: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    has_customer = bool((auth_user or {}).get('stripe_customer_id'))
+    missing = _stripe_missing_config()
+    checkout_enabled = not missing
+    portal_enabled = bool(_stripe_portal_enabled() and has_customer)
+    return {
+        'checkout_enabled': checkout_enabled,
+        'portal_enabled': portal_enabled,
+        'has_customer': has_customer,
+        'managed_by_stripe': bool((auth_user or {}).get('subscription_source') == 'stripe' or (auth_user or {}).get('stripe_subscription_id')),
+        'partial_config': bool(_stripe_any_configured() and not checkout_enabled),
+        'missing_config': missing,
+    }
+
+
+def _create_stripe_checkout_redirect(auth_user: Dict[str, Any], plan_key: str) -> Any:
+    missing = _stripe_missing_config(plan_key)
+    if missing:
+        flash('Stripe billing is not fully configured yet. Missing: ' + ', '.join(missing) + '.', 'error')
+        return redirect(url_for('main.account_page'))
+    stripe_client = _stripe_client()
+    customer_id = str(auth_user.get('stripe_customer_id') or '').strip() or None
+    session_payload: Dict[str, Any] = {
+        'mode': 'subscription',
+        'line_items': [{'price': _stripe_price_id(plan_key), 'quantity': 1}],
+        'success_url': _absolute_url_for('main.account_page') + '?billing=success',
+        'cancel_url': _absolute_url_for('main.account_page') + '?billing=canceled',
+        'client_reference_id': str(auth_user.get('user_id') or '').strip(),
+        'metadata': {
+            'auth_user_id': str(auth_user.get('user_id') or '').strip(),
+            'plan_key': plan_key,
+        },
+        'subscription_data': {
+            'metadata': {
+                'auth_user_id': str(auth_user.get('user_id') or '').strip(),
+                'plan_key': plan_key,
+            },
+        },
+        'allow_promotion_codes': True,
+    }
+    if customer_id:
+        session_payload['customer'] = customer_id
+    else:
+        session_payload['customer_email'] = str(auth_user.get('email') or '').strip().lower()
+    checkout_session = stripe_client.checkout.Session.create(**session_payload)
+    return redirect(str(checkout_session.url), code=303)
+
+
+def _create_stripe_billing_portal_redirect(auth_user: Dict[str, Any]) -> Any:
+    if not _stripe_portal_enabled():
+        flash('Stripe billing portal is not configured yet.', 'error')
+        return redirect(url_for('main.account_page'))
+    customer_id = str(auth_user.get('stripe_customer_id') or '').strip()
+    if not customer_id:
+        flash('No Stripe billing profile exists yet for this account. Start checkout first.', 'error')
+        return redirect(url_for('main.account_page'))
+    stripe_client = _stripe_client()
+    portal_session = stripe_client.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=_absolute_url_for('main.account_page'),
+    )
+    return redirect(str(portal_session.url), code=303)
+
+
+def _sync_user_account_from_supabase_user(user: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    base_record = _auth_record_from_supabase_user(user)
+    auth_user_id = str(base_record.get('user_id') or '').strip()
+    if not auth_user_id or not _sb_upsert_user_account:
+        return base_record
+
+    existing_record = None
+    if _sb_get_user_account:
+        try:
+            existing_record = _sb_get_user_account(auth_user_id)
+        except Exception:
+            existing_record = None
+
+    now = datetime.now(timezone.utc)
+    override_values = overrides or {}
+    trial_started = (
+        _parse_iso_datetime(override_values.get('trial_started_at'))
+        or _parse_iso_datetime((existing_record or {}).get('trial_started_at'))
+        or _parse_iso_datetime(base_record.get('trial_started_at'))
+        or now
+    )
+    trial_expires = (
+        _parse_iso_datetime(override_values.get('trial_expires_at'))
+        or _parse_iso_datetime((existing_record or {}).get('trial_expires_at'))
+        or _parse_iso_datetime(base_record.get('trial_expires_at'))
+        or (trial_started + timedelta(days=_AUTH_TRIAL_DAYS))
+    )
+    payload = {
+        'auth_user_id': auth_user_id,
+        'email': str(override_values.get('email') or (existing_record or {}).get('email') or base_record.get('email') or '').strip().lower(),
+        'username': str(override_values.get('username') or _auth_username_candidate(base_record, existing_record) or '').strip(),
+        'display_name': str(override_values.get('display_name') or (existing_record or {}).get('display_name') or base_record.get('display_name') or 'Account').strip(),
+        'is_admin': bool(override_values.get('is_admin') if 'is_admin' in override_values else (existing_record or {}).get('is_admin') or False),
+        'subscription_status': str(override_values.get('subscription_status') or (existing_record or {}).get('subscription_status') or 'trialing').strip().lower(),
+        'subscription_plan': str(override_values.get('subscription_plan') or (existing_record or {}).get('subscription_plan') or 'trial').strip(),
+        'billing_interval': str(override_values.get('billing_interval') or (existing_record or {}).get('billing_interval') or '').strip().lower(),
+        'trial_started_at': _isoformat_utc(trial_started),
+        'trial_expires_at': _isoformat_utc(trial_expires),
+        'subscription_started_at': _isoformat_utc(
+            _parse_iso_datetime(override_values.get('subscription_started_at'))
+            or _parse_iso_datetime((existing_record or {}).get('subscription_started_at'))
+        ),
+        'subscription_ends_at': _isoformat_utc(
+            _parse_iso_datetime(override_values.get('subscription_ends_at'))
+            or _parse_iso_datetime((existing_record or {}).get('subscription_ends_at'))
+        ),
+        'updated_at': _isoformat_utc(now),
+    }
+    try:
+        saved_record = _sb_upsert_user_account(payload)
+    except Exception:
+        saved_record = None
+    return _auth_record_from_supabase_user(user, saved_record or payload)
+
+
+def _current_auth_record() -> Optional[Dict[str, Any]]:
+    raw = session.get(_AUTH_SESSION_KEY)
+    if not isinstance(raw, dict) or not raw.get('user_id'):
+        return None
+    return dict(raw)
+
+
+def _refresh_current_auth_user() -> Optional[Dict[str, Any]]:
+    raw = _current_auth_record()
+    if not raw:
+        return None
+    account_record = None
+    if _sb_get_user_account:
+        try:
+            account_record = _sb_get_user_account(str(raw.get('user_id') or ''))
+        except Exception:
+            account_record = None
+    merged = _merge_auth_user_account(raw, account_record)
+    return _set_auth_session(merged)
+
+
+def _build_account_payload(auth_user: Dict[str, Any], updates: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    payload = {
+        'auth_user_id': str(auth_user.get('user_id') or '').strip(),
+        'email': str(auth_user.get('email') or '').strip().lower(),
+        'username': str(auth_user.get('username') or _auth_username_candidate(auth_user) or '').strip(),
+        'display_name': str(auth_user.get('display_name') or auth_user.get('username') or auth_user.get('email') or 'Account').strip(),
+        'is_admin': bool(auth_user.get('is_admin')),
+        'subscription_status': str(auth_user.get('subscription_status') or '').strip().lower() or 'inactive',
+        'subscription_plan': str(auth_user.get('subscription_plan') or '').strip() or 'inactive',
+        'billing_interval': str(auth_user.get('billing_interval') or '').strip().lower() or None,
+        'trial_started_at': auth_user.get('trial_started_at') or None,
+        'trial_expires_at': auth_user.get('trial_expires_at') or None,
+        'subscription_started_at': auth_user.get('subscription_started_at') or None,
+        'subscription_ends_at': auth_user.get('subscription_ends_at') or None,
+        'subscription_source': str(auth_user.get('subscription_source') or '').strip() or None,
+        'stripe_customer_id': str(auth_user.get('stripe_customer_id') or '').strip() or None,
+        'stripe_subscription_id': str(auth_user.get('stripe_subscription_id') or '').strip() or None,
+        'stripe_price_id': str(auth_user.get('stripe_price_id') or '').strip() or None,
+        'stripe_current_period_end': auth_user.get('stripe_current_period_end') or None,
+        'updated_at': _isoformat_utc(datetime.now(timezone.utc)),
+    }
+    if updates:
+        payload.update(updates)
+    return payload
+
+
+def _persist_auth_user_updates(auth_user: Dict[str, Any], updates: Dict[str, Any], *, auth_metadata: Optional[Dict[str, Any]] = None, auth_password: Optional[str] = None) -> Dict[str, Any]:
+    payload = _build_account_payload(auth_user, updates)
+    saved_record = _sb_upsert_user_account(payload) if _sb_upsert_user_account else payload
+    if auth_metadata is not None and _sb_auth_admin_update_user:
+        auth_attrs: Dict[str, Any] = {'user_metadata': auth_metadata}
+        if auth_password:
+            auth_attrs['password'] = auth_password
+        _sb_auth_admin_update_user(str(auth_user.get('user_id') or ''), auth_attrs)
+    elif auth_password and _sb_auth_admin_update_user:
+        _sb_auth_admin_update_user(str(auth_user.get('user_id') or ''), {'password': auth_password})
+    return _set_auth_session(_merge_auth_user_account(_current_auth_record() or auth_user, saved_record or payload))
+
+
+def _subscription_update_for_plan(plan_key: str, *, current_auth_user: Dict[str, Any]) -> Dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    if plan_key == 'monthly':
+        return {
+            'subscription_status': 'active',
+            'subscription_plan': 'pro',
+            'billing_interval': 'monthly',
+            'subscription_started_at': _isoformat_utc(now),
+            'subscription_ends_at': None,
+        }
+    if plan_key == 'yearly':
+        return {
+            'subscription_status': 'active',
+            'subscription_plan': 'pro',
+            'billing_interval': 'yearly',
+            'subscription_started_at': _isoformat_utc(now),
+            'subscription_ends_at': None,
+        }
+    if plan_key == 'free':
+        return {
+            'subscription_status': 'active',
+            'subscription_plan': 'free',
+            'billing_interval': None,
+            'subscription_started_at': _isoformat_utc(now),
+            'subscription_ends_at': None,
+        }
+    return {
+        'subscription_status': 'canceled',
+        'subscription_plan': 'canceled',
+        'billing_interval': None,
+        'subscription_ends_at': _isoformat_utc(now),
+    }
+
+
+def _require_admin_page() -> Optional[Any]:
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    if not auth_user:
+        return redirect(url_for('main.login_page', next=_auth_login_target()))
+    if auth_user.get('is_admin'):
+        return None
+    flash('Admin access required.', 'error')
+    return redirect(url_for('main.account_page'))
+
+
+def _find_user_account_by_username(username: Any, *, exclude_user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    wanted = _normalize_username(username)
+    if not wanted or not _sb_list_user_accounts:
+        return None
+    for row in _sb_list_user_accounts() or []:
+        user_id = str(row.get('auth_user_id') or '').strip()
+        if exclude_user_id and user_id == str(exclude_user_id).strip():
+            continue
+        if _normalize_username(row.get('username')) == wanted:
+            return row
+    return None
+
+
+def _find_user_account_by_email(email: Any, *, exclude_user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    wanted = str(email or '').strip().lower()
+    if not wanted or not _sb_list_user_accounts:
+        return None
+    for row in _sb_list_user_accounts() or []:
+        user_id = str(row.get('auth_user_id') or '').strip()
+        if exclude_user_id and user_id == str(exclude_user_id).strip():
+            continue
+        if str(row.get('email') or '').strip().lower() == wanted:
+            return row
+    return None
+
+
+def _find_auth_user_by_email(email: Any, *, exclude_user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    wanted = str(email or '').strip().lower()
+    if not wanted or not _sb_auth_admin_list_users:
+        return None
+    for auth_user in _sb_auth_admin_list_users() or []:
+        if not isinstance(auth_user, dict):
+            continue
+        user_id = str(auth_user.get('id') or '').strip()
+        if exclude_user_id and user_id == str(exclude_user_id).strip():
+            continue
+        if str(auth_user.get('email') or '').strip().lower() == wanted:
+            return auth_user
+    return None
+
+
+def _user_management_filter_values(source: Optional[Any] = None) -> Dict[str, str]:
+    values = source or request.values
+    q = str(values.get('filter_q') or values.get('q') or '').strip()
+    access = str(values.get('filter_access') or values.get('access') or 'all').strip().lower() or 'all'
+    role = str(values.get('filter_role') or values.get('role') or 'all').strip().lower() or 'all'
+    if access not in {'all', 'trial', 'free', 'pro', 'inactive'}:
+        access = 'all'
+    if role not in {'all', 'admin', 'member'}:
+        role = 'all'
+    return {'q': q, 'access': access, 'role': role}
+
+
+def _user_management_redirect() -> Any:
+    params = _user_management_filter_values()
+    query: Dict[str, str] = {}
+    if params['q']:
+        query['q'] = params['q']
+    if params['access'] != 'all':
+        query['access'] = params['access']
+    if params['role'] != 'all':
+        query['role'] = params['role']
+    return redirect(url_for('main.user_management_page', **query))
+
+
+def _user_management_rows(*, query: str = '', access_filter: str = 'all', role_filter: str = 'all') -> List[Dict[str, Any]]:
+    auth_users = _sb_auth_admin_list_users() if _sb_auth_admin_list_users else []
+    account_by_id = {
+        str(row.get('auth_user_id') or ''): row
+        for row in (_sb_list_user_accounts() if _sb_list_user_accounts else [])
+        if row.get('auth_user_id')
+    }
+    rows: List[Dict[str, Any]] = []
+    query_value = str(query or '').strip().lower()
+    for auth_user in auth_users:
+        if not isinstance(auth_user, dict):
+            continue
+        user_id = str(auth_user.get('id') or '').strip()
+        if not user_id:
+            continue
+        account = account_by_id.get(user_id)
+        state = _auth_state_from_record(_auth_record_from_supabase_user(auth_user, account))
+        state.update({
+            'last_sign_in_at': _isoformat_utc(_parse_iso_datetime(auth_user.get('last_sign_in_at'))),
+            'created_at': _isoformat_utc(_parse_iso_datetime(auth_user.get('created_at'))),
+            'email_confirmed': bool(auth_user.get('email_confirmed_at') or auth_user.get('confirmed_at')),
+        })
+        if role_filter == 'admin' and not state.get('is_admin'):
+            continue
+        if role_filter == 'member' and state.get('is_admin'):
+            continue
+        if access_filter == 'trial' and state.get('subscription_plan') != 'trial':
+            continue
+        if access_filter == 'free' and state.get('subscription_plan') != 'free':
+            continue
+        if access_filter == 'pro' and state.get('billing_interval') not in {'monthly', 'yearly'}:
+            continue
+        if access_filter == 'inactive' and state.get('has_access'):
+            continue
+        if query_value:
+            haystack = ' '.join([
+                str(state.get('email') or ''),
+                str(state.get('username') or ''),
+                str(state.get('display_name') or ''),
+                str(state.get('plan_label') or ''),
+                str(state.get('access_label') or ''),
+            ]).lower()
+            if query_value not in haystack:
+                continue
+        rows.append(state)
+    rows.sort(key=lambda row: (0 if row.get('is_admin') else 1, str(row.get('email') or '').lower()))
+    return rows
+
+
+def _auth_state_from_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    created_at = _parse_iso_datetime(record.get('created_at')) or datetime.now(timezone.utc)
+    trial_started = _parse_iso_datetime(record.get('trial_started_at')) or created_at
+    trial_expires = _parse_iso_datetime(record.get('trial_expires_at')) or (trial_started + timedelta(days=_AUTH_TRIAL_DAYS))
+    subscription_status = str(record.get('subscription_status') or '').strip().lower()
+    now = datetime.now(timezone.utc)
+    trial_active = trial_expires > now
+    has_subscription = subscription_status in {'active', 'paid'}
+    is_admin = bool(record.get('is_admin'))
+    has_access = is_admin or has_subscription or trial_active
+    remaining_seconds = max(0.0, (trial_expires - now).total_seconds())
+    remaining_days = int(math.ceil(remaining_seconds / 86400.0)) if remaining_seconds else 0
+    billing_interval = str(record.get('billing_interval') or '').strip().lower()
+    subscription_plan = str(record.get('subscription_plan') or '').strip()
+    if is_admin:
+        access_label = 'Admin access'
+    elif subscription_plan == 'free' and has_subscription:
+        access_label = 'Free access'
+    elif has_subscription:
+        access_label = 'Subscription active'
+    elif trial_active:
+        access_label = f'{remaining_days} day{"s" if remaining_days != 1 else ""} left in trial'
+    else:
+        access_label = 'Trial ended'
+    if is_admin:
+        plan_label = 'Admin'
+    elif subscription_plan == 'free' and has_subscription:
+        plan_label = 'Free access'
+    elif has_subscription:
+        if billing_interval == 'yearly':
+            plan_label = 'Pro yearly'
+        elif billing_interval == 'monthly':
+            plan_label = 'Pro monthly'
+        else:
+            plan_label = subscription_plan or 'Pro'
+    elif trial_active:
+        plan_label = '7-day free trial'
+    else:
+        plan_label = subscription_plan or 'No active plan'
+    out = dict(record)
+    out.update({
+        'created_at': _isoformat_utc(created_at),
+        'trial_started_at': _isoformat_utc(trial_started),
+        'trial_expires_at': _isoformat_utc(trial_expires),
+        'subscription_status': subscription_status,
+        'subscription_plan': subscription_plan,
+        'billing_interval': billing_interval,
+        'trial_active': trial_active,
+        'has_access': has_access,
+        'has_subscription': has_subscription,
+        'trial_days_remaining': remaining_days,
+        'access_label': access_label,
+        'plan_label': plan_label,
+        'is_authenticated': True,
+        'subscription_source': str(record.get('subscription_source') or '').strip(),
+        'stripe_customer_id': str(record.get('stripe_customer_id') or '').strip(),
+        'stripe_subscription_id': str(record.get('stripe_subscription_id') or '').strip(),
+        'stripe_price_id': str(record.get('stripe_price_id') or '').strip(),
+        'stripe_current_period_end': _isoformat_utc(_parse_iso_datetime(record.get('stripe_current_period_end'))),
+    })
+    return out
+
+
+def _set_auth_session(record: Dict[str, Any]) -> Dict[str, Any]:
+    state = _auth_state_from_record(record)
+    session[_AUTH_SESSION_KEY] = {
+        'user_id': state.get('user_id'),
+        'email': state.get('email'),
+        'username': state.get('username'),
+        'display_name': state.get('display_name'),
+        'created_at': state.get('created_at'),
+        'trial_started_at': state.get('trial_started_at'),
+        'trial_expires_at': state.get('trial_expires_at'),
+        'subscription_status': state.get('subscription_status'),
+        'subscription_plan': state.get('subscription_plan'),
+        'billing_interval': state.get('billing_interval'),
+        'is_admin': state.get('is_admin'),
+        'subscription_source': state.get('subscription_source'),
+        'stripe_customer_id': state.get('stripe_customer_id'),
+        'stripe_subscription_id': state.get('stripe_subscription_id'),
+        'stripe_price_id': state.get('stripe_price_id'),
+        'stripe_current_period_end': state.get('stripe_current_period_end'),
+    }
+    session.permanent = True
+    return state
+
+
+def _clear_auth_session() -> None:
+    session.pop(_AUTH_SESSION_KEY, None)
+
+
+def _current_auth_user() -> Optional[Dict[str, Any]]:
+    raw = session.get(_AUTH_SESSION_KEY)
+    if not isinstance(raw, dict) or not raw.get('user_id'):
+        return None
+    return _auth_state_from_record(raw)
+
+
+def _auth_error_message(exc: Exception, fallback: str) -> str:
+    raw = str(exc or '').strip()
+    if not raw:
+        return fallback
+    lowered = raw.lower()
+    if 'already registered' in lowered:
+        return 'That email is already registered. Try logging in instead.'
+    if 'invalid login credentials' in lowered:
+        return 'Invalid email or password.'
+    if 'password' in lowered and 'weak' in lowered:
+        return 'Choose a stronger password.'
+    return raw
+
+
+def _require_account_page() -> Optional[Any]:
+    auth_user = _current_auth_user()
+    if auth_user:
+        return None
+    return redirect(url_for('main.login_page', next=request.path))
+
+
+def _deny_premium_access(auth_user: Optional[Dict[str, Any]]) -> Any:
+    next_url = _safe_next_url((request.full_path or request.path or '').rstrip('?')) or request.path or '/projections'
+    is_api = (request.path or '').startswith('/api/')
+    if not auth_user:
+        if is_api:
+            return jsonify({'error': 'auth_required', 'loginUrl': url_for('main.login_page', next=next_url)}), 401
+        return redirect(url_for('main.login_page', next=next_url))
+    if is_api:
+        return jsonify({'error': 'trial_expired', 'accountUrl': url_for('main.account_page')}), 403
+    return redirect(url_for('main.account_page'))
+
+
+@main_bp.app_context_processor
+def inject_auth_state() -> Dict[str, Any]:
+    return {
+        'auth_enabled': _auth_enabled(),
+        'auth_user': _current_auth_user(),
+        'auth_plan_options': _AUTH_PLAN_OPTIONS,
+        'auth_login_target': _auth_login_target(),
+    }
+
+
+@main_bp.before_app_request
+def enforce_auth_for_premium_routes():
+    if not _auth_enabled():
+        return None
+    path = request.path or ''
+    if not _auth_is_premium_path(path):
+        return None
+    auth_user = _current_auth_user()
+    if auth_user and auth_user.get('has_access'):
+        return None
+    return _deny_premium_access(auth_user)
+
 # Update page (no link in app)
 @main_bp.route('/admin/update', methods=['GET'])
 def update_page():
@@ -295,6 +1215,7 @@ _GOALIES_TEAM_BY_SEASON_MAP_CACHE: Dict[Tuple[int, str], Tuple[float, Dict[int, 
 # Static CSV caches
 _RAPM_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
+_CURRENT_PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
 _CONTEXT_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _SEASONSTATS_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _TEAMSEASONSTATS_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
@@ -302,6 +1223,7 @@ _CARD_METRICS_DEF_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _RAPM_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
 _CONTEXT_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
 _SEASONSTATS_AGG_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[int, Dict[str, Any]], Dict[int, str]]] = {}
+_PLAYOFF_BRACKET_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 
 # Goalies career aggregation helper cache: {(key...): (timestamp, by_pid_season, league_sa_ga)}
 _GOALIES_CAREER_MATRIX_CACHE: Dict[
@@ -514,9 +1436,9 @@ def _build_games_for_date(date_et) -> List[Dict[str, Any]]:
     except Exception:
         prev_set = set()
 
-    # Load lineups and player projections
+    # Load lineups and current player projections
     lineups_all = _load_lineups_all()
-    proj_map = _load_player_projections_csv()
+    proj_map = _load_current_player_projections_cached()
     SITUATION = {
         'Away-B2B-B2B': -0.126602018,
         'Away-B2B-Rested': -0.400515738,
@@ -851,6 +1773,426 @@ def standings_page():
     # Convert to list of objects for template parity
     season_objs = [{ 'season': s } for s in seasons]
     return render_template('standings.html', teams=TEAM_ROWS, seasons=season_objs, active_tab='Standings', show_season_state=False)
+
+
+@main_bp.route('/login', methods=['GET', 'POST'])
+def login_page():
+    if request.method == 'POST':
+        if not _auth_enabled():
+            flash('Auth is not configured in this environment yet.', 'error')
+            return render_template('login.html', active_tab=None, show_filters=False, next_url=_auth_redirect_target())
+        email = str(request.form.get('email') or '').strip().lower()
+        password = str(request.form.get('password') or '')
+        next_url = _auth_redirect_target()
+        if not email or not password:
+            flash('Enter both email and password.', 'error')
+            return render_template('login.html', active_tab=None, show_filters=False, next_url=next_url)
+        try:
+            response = _sb_auth_sign_in_with_password(email, password)
+            user = (response or {}).get('user') or {}
+            if not isinstance(user, dict) or not user.get('id'):
+                raise ValueError('Invalid email or password.')
+            auth_user = _set_auth_session(_sync_user_account_from_supabase_user(user))
+        except Exception as exc:
+            flash(_auth_error_message(exc, 'Unable to log in right now.'), 'error')
+            return render_template('login.html', active_tab=None, show_filters=False, next_url=next_url)
+        flash('Logged in.', 'success')
+        if not auth_user.get('has_access') and _auth_is_premium_path(next_url):
+            return redirect(url_for('main.account_page'))
+        return redirect(next_url)
+    return render_template('login.html', active_tab=None, show_filters=False, next_url=_auth_redirect_target())
+
+
+@main_bp.route('/signup', methods=['GET', 'POST'])
+def signup_page():
+    if request.method == 'POST':
+        if not _auth_enabled():
+            flash('Auth is not configured in this environment yet.', 'error')
+            return render_template('signup.html', active_tab=None, show_filters=False, next_url=_auth_redirect_target())
+        name = str(request.form.get('name') or '').strip()
+        email = str(request.form.get('email') or '').strip().lower()
+        password = str(request.form.get('password') or '')
+        confirm_password = str(request.form.get('confirm_password') or '')
+        next_url = _auth_redirect_target()
+        if not name:
+            flash('Enter your name.', 'error')
+            return render_template('signup.html', active_tab=None, show_filters=False, next_url=next_url)
+        if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+            flash('Enter a valid email address.', 'error')
+            return render_template('signup.html', active_tab=None, show_filters=False, next_url=next_url)
+        if len(password) < 8:
+            flash('Password must be at least 8 characters.', 'error')
+            return render_template('signup.html', active_tab=None, show_filters=False, next_url=next_url)
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return render_template('signup.html', active_tab=None, show_filters=False, next_url=next_url)
+        now = datetime.now(timezone.utc)
+        trial_expires = now + timedelta(days=_AUTH_TRIAL_DAYS)
+        try:
+            created_response = _sb_auth_admin_create_user(
+                email,
+                password,
+                user_metadata={
+                    'display_name': name,
+                    'trial_started_at': _isoformat_utc(now),
+                    'trial_expires_at': _isoformat_utc(trial_expires),
+                    'trial_days': _AUTH_TRIAL_DAYS,
+                    'subscription_status': 'trialing',
+                    'subscription_plan': 'trial',
+                },
+            )
+            response = _sb_auth_sign_in_with_password(email, password)
+            user = (response or {}).get('user') or {}
+            if not isinstance(user, dict) or not user.get('id'):
+                raise ValueError('Account created, but automatic login failed. Please log in.')
+            created_user = (created_response or {}).get('user') or {}
+            fallback_name = str((created_user or {}).get('email') or email).strip()
+            _set_auth_session(
+                _sync_user_account_from_supabase_user(
+                    user,
+                    overrides={
+                        'display_name': name or fallback_name,
+                        'subscription_status': 'trialing',
+                        'subscription_plan': 'trial',
+                        'trial_started_at': now,
+                        'trial_expires_at': trial_expires,
+                    },
+                )
+            )
+        except Exception as exc:
+            flash(_auth_error_message(exc, 'Unable to create your account right now.'), 'error')
+            return render_template('signup.html', active_tab=None, show_filters=False, next_url=next_url)
+        flash(f'Account created. Your {_AUTH_TRIAL_DAYS}-day trial starts now.', 'success')
+        return redirect(next_url)
+    return render_template('signup.html', active_tab=None, show_filters=False, next_url=_auth_redirect_target())
+
+
+@main_bp.route('/account')
+def account_page():
+    guard = _require_account_page()
+    if guard is not None:
+        return guard
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    billing_status = str(request.args.get('billing') or '').strip().lower()
+    billing_banner = None
+    if billing_status == 'success':
+        billing_banner = {
+            'category': 'success' if auth_user.get('has_subscription') else 'info',
+            'title': 'Stripe checkout complete',
+            'detail': 'Your billing update has been sent to the app. If the plan label has not updated yet, refresh again in a few seconds while the webhook finishes syncing.',
+        }
+    elif billing_status == 'canceled':
+        billing_banner = {
+            'category': 'info',
+            'title': 'Stripe checkout canceled',
+            'detail': 'No billing changes were applied.',
+        }
+    return render_template(
+        'account.html',
+        active_tab=None,
+        show_filters=False,
+        plan_options=_AUTH_PLAN_OPTIONS,
+        auth_user=auth_user,
+        billing=_stripe_billing_state(auth_user),
+        billing_banner=billing_banner,
+    )
+
+
+@main_bp.route('/account/plan', methods=['POST'])
+def account_plan_update_page():
+    guard = _require_account_page()
+    if guard is not None:
+        return guard
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    plan_key = str(request.form.get('plan') or '').strip().lower()
+    if plan_key not in {'monthly', 'yearly'}:
+        flash('Choose a valid plan.', 'error')
+        return redirect(url_for('main.account_page'))
+    if _stripe_any_configured():
+        if auth_user.get('stripe_subscription_id'):
+            return _create_stripe_billing_portal_redirect(auth_user)
+        return _create_stripe_checkout_redirect(auth_user, plan_key)
+    _persist_auth_user_updates(auth_user, _subscription_update_for_plan(plan_key, current_auth_user=auth_user))
+    flash(f"Plan updated to {'Pro Monthly' if plan_key == 'monthly' else 'Pro Yearly'}.", 'success')
+    return redirect(url_for('main.account_page'))
+
+
+@main_bp.route('/account/billing', methods=['POST'])
+def account_billing_portal_page():
+    guard = _require_account_page()
+    if guard is not None:
+        return guard
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    return _create_stripe_billing_portal_redirect(auth_user)
+
+
+@main_bp.route('/account/unsubscribe', methods=['POST'])
+def account_unsubscribe_page():
+    guard = _require_account_page()
+    if guard is not None:
+        return guard
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    if _stripe_any_configured() and auth_user.get('stripe_customer_id'):
+        return _create_stripe_billing_portal_redirect(auth_user)
+    if str(request.form.get('confirm_unsubscribe') or '').strip() != '1':
+        flash('Confirm the unsubscribe action to continue.', 'error')
+        return redirect(url_for('main.account_page'))
+    _persist_auth_user_updates(auth_user, _subscription_update_for_plan('unsubscribe', current_auth_user=auth_user))
+    flash('Subscription canceled. Projections will stay locked until you reactivate a plan.', 'success')
+    return redirect(url_for('main.account_page'))
+
+
+@main_bp.route('/account/profile', methods=['POST'])
+def account_profile_update_page():
+    guard = _require_account_page()
+    if guard is not None:
+        return guard
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    username = _normalize_username(request.form.get('username'))
+    if not _valid_username(username):
+        flash('Username must be 3-32 characters and use letters, numbers, dots, dashes, or underscores.', 'error')
+        return redirect(url_for('main.account_page'))
+    current_record = _sb_get_user_account(str(auth_user.get('user_id') or '')) if _sb_get_user_account else None
+    if current_record and str(current_record.get('username') or '').strip().lower() == username:
+        flash('Username unchanged.', 'info')
+        return redirect(url_for('main.account_page'))
+    existing_username = _find_user_account_by_username(username, exclude_user_id=str(auth_user.get('user_id') or ''))
+    if existing_username:
+        flash('That username is already in use. Choose another one.', 'error')
+        return redirect(url_for('main.account_page'))
+    _persist_auth_user_updates(
+        auth_user,
+        {'username': username},
+        auth_metadata={
+            'display_name': auth_user.get('display_name') or username,
+            'username': username,
+            'is_admin': bool(auth_user.get('is_admin')),
+        },
+    )
+    flash('Username updated.', 'success')
+    return redirect(url_for('main.account_page'))
+
+
+@main_bp.route('/account/password', methods=['POST'])
+def account_password_update_page():
+    guard = _require_account_page()
+    if guard is not None:
+        return guard
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    password = str(request.form.get('password') or '')
+    confirm_password = str(request.form.get('confirm_password') or '')
+    if len(password) < 8:
+        flash('Password must be at least 8 characters.', 'error')
+        return redirect(url_for('main.account_page'))
+    if password != confirm_password:
+        flash('Passwords do not match.', 'error')
+        return redirect(url_for('main.account_page'))
+    _persist_auth_user_updates(auth_user, {}, auth_password=password)
+    flash('Password updated. Use the new password the next time you log in.', 'success')
+    return redirect(url_for('main.account_page'))
+
+
+@main_bp.route('/account/delete', methods=['POST'])
+def account_delete_page():
+    guard = _require_account_page()
+    if guard is not None:
+        return guard
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    confirmation = str(request.form.get('confirmation') or '').strip().upper()
+    if confirmation != 'DELETE':
+        flash('Type DELETE to confirm account deletion.', 'error')
+        return redirect(url_for('main.account_page'))
+    if _sb_auth_admin_delete_user:
+        _sb_auth_admin_delete_user(str(auth_user.get('user_id') or ''))
+    _clear_auth_session()
+    flash('Account deleted and access removed.', 'success')
+    return redirect(url_for('main.login_page'))
+
+
+@main_bp.route('/admin/users')
+def user_management_page():
+    guard = _require_admin_page()
+    if guard is not None:
+        return guard
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    filters = _user_management_filter_values(request.args)
+    users = _user_management_rows(query=filters['q'], access_filter=filters['access'], role_filter=filters['role'])
+    counts = {
+        'total': len(users),
+        'admins': sum(1 for user in users if user.get('is_admin')),
+        'trial': sum(1 for user in users if user.get('subscription_plan') == 'trial'),
+        'free': sum(1 for user in users if user.get('subscription_plan') == 'free'),
+        'pro': sum(1 for user in users if user.get('billing_interval') in {'monthly', 'yearly'}),
+    }
+    return render_template('user_management.html', active_tab=None, show_filters=False, auth_user=auth_user, users=users, plan_options=_AUTH_PLAN_OPTIONS, filters=filters, counts=counts)
+
+
+@main_bp.route('/admin/users/create', methods=['POST'])
+def user_management_create_page():
+    guard = _require_admin_page()
+    if guard is not None:
+        return guard
+    username = _normalize_username(request.form.get('username'))
+    email = str(request.form.get('email') or '').strip().lower()
+    password = str(request.form.get('password') or '')
+    confirm_password = str(request.form.get('confirm_password') or '')
+    access = str(request.form.get('access') or 'trial').strip().lower()
+    is_admin = str(request.form.get('is_admin') or '').lower() in {'1', 'true', 'on', 'yes'}
+    if not _valid_username(username):
+        flash('Username must be 3-32 characters and use letters, numbers, dots, dashes, or underscores.', 'error')
+        return _user_management_redirect()
+    if not _valid_email(email):
+        flash('Enter a valid email address.', 'error')
+        return _user_management_redirect()
+    if _find_user_account_by_username(username) is not None:
+        flash('That username is already in use.', 'error')
+        return _user_management_redirect()
+    if _find_user_account_by_email(email) is not None or _find_auth_user_by_email(email) is not None:
+        flash('That email address already has an account.', 'error')
+        return _user_management_redirect()
+    if len(password) < 8:
+        flash('Password must be at least 8 characters.', 'error')
+        return _user_management_redirect()
+    if password != confirm_password:
+        flash('Passwords do not match.', 'error')
+        return _user_management_redirect()
+    now = datetime.now(timezone.utc)
+    trial_expires = now + timedelta(days=_AUTH_TRIAL_DAYS)
+    created = _sb_auth_admin_create_user(
+        email,
+        password,
+        user_metadata={
+            'display_name': username,
+            'username': username,
+            'is_admin': is_admin,
+            'trial_started_at': _isoformat_utc(now),
+            'trial_expires_at': _isoformat_utc(trial_expires),
+            'trial_days': _AUTH_TRIAL_DAYS,
+        },
+    ) if _sb_auth_admin_create_user else {}
+    created_user = (created or {}).get('user') or {}
+    if not isinstance(created_user, dict) or not created_user.get('id'):
+        flash('Unable to create user.', 'error')
+        return _user_management_redirect()
+    auth_like = _auth_record_from_supabase_user(created_user)
+    updates = {
+        'username': username,
+        'display_name': username,
+        'is_admin': is_admin,
+        'trial_started_at': _isoformat_utc(now),
+        'trial_expires_at': _isoformat_utc(trial_expires),
+    }
+    if access == 'free':
+        updates.update(_subscription_update_for_plan('free', current_auth_user=auth_like))
+    elif access in {'monthly', 'yearly'}:
+        updates.update(_subscription_update_for_plan(access, current_auth_user=auth_like))
+    else:
+        updates.update({
+            'subscription_status': 'trialing',
+            'subscription_plan': 'trial',
+            'billing_interval': None,
+            'subscription_started_at': None,
+            'subscription_ends_at': None,
+        })
+    if _sb_upsert_user_account:
+        _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+    flash(f"User created for {email} with {'admin' if is_admin else 'member'} access.", 'success')
+    return _user_management_redirect()
+
+
+@main_bp.route('/admin/users/<user_id>/free', methods=['POST'])
+def user_management_free_page(user_id: str):
+    guard = _require_admin_page()
+    if guard is not None:
+        return guard
+    auth_row = _sb_auth_admin_get_user(user_id) if _sb_auth_admin_get_user else None
+    if not auth_row:
+        flash('User not found.', 'error')
+        return _user_management_redirect()
+    if str(request.form.get('confirm_free') or '').strip() != '1':
+        flash('Confirm the free-access change to continue.', 'error')
+        return _user_management_redirect()
+    auth_like = _auth_record_from_supabase_user(auth_row, _sb_get_user_account(user_id) if _sb_get_user_account else None)
+    if _sb_upsert_user_account:
+        _sb_upsert_user_account(_build_account_payload(auth_like, _subscription_update_for_plan('free', current_auth_user=auth_like)))
+    flash(f"{auth_like.get('email') or 'User'} now has free access.", 'success')
+    return _user_management_redirect()
+
+
+@main_bp.route('/admin/users/<user_id>/password', methods=['POST'])
+def user_management_password_page(user_id: str):
+    guard = _require_admin_page()
+    if guard is not None:
+        return guard
+    password = str(request.form.get('password') or '')
+    confirm_password = str(request.form.get('confirm_password') or '')
+    if len(password) < 8:
+        flash('Password must be at least 8 characters.', 'error')
+        return _user_management_redirect()
+    if password != confirm_password:
+        flash('Passwords do not match.', 'error')
+        return _user_management_redirect()
+    if _sb_auth_admin_update_user:
+        _sb_auth_admin_update_user(user_id, {'password': password})
+    flash('Password reset completed.', 'success')
+    return _user_management_redirect()
+
+
+@main_bp.route('/admin/users/<user_id>/delete', methods=['POST'])
+def user_management_delete_page(user_id: str):
+    guard = _require_admin_page()
+    if guard is not None:
+        return guard
+    current_auth_user = _refresh_current_auth_user() or _current_auth_user()
+    if str(current_auth_user.get('user_id') or '') == str(user_id):
+        flash('Delete your own account from Account instead.', 'error')
+        return _user_management_redirect()
+    if str(request.form.get('confirm_delete') or '').strip() != '1':
+        flash('Confirm the delete action to continue.', 'error')
+        return _user_management_redirect()
+    if _sb_auth_admin_delete_user:
+        _sb_auth_admin_delete_user(user_id)
+    elif _sb_delete_user_account:
+        _sb_delete_user_account(user_id)
+    flash('User deleted.', 'success')
+    return _user_management_redirect()
+
+
+@main_bp.route('/logout', methods=['POST'])
+def logout_page():
+    _clear_auth_session()
+    flash('Logged out.', 'success')
+    return redirect(url_for('main.login_page'))
+
+
+@main_bp.route('/stripe/webhook', methods=['POST'])
+def stripe_webhook_page():
+    if not _stripe_portal_enabled() or not _stripe_webhook_secret():
+        return jsonify({'error': 'stripe_webhook_not_configured'}), 503
+    payload = request.get_data(cache=False, as_text=False)
+    signature = request.headers.get('Stripe-Signature', '')
+    try:
+        stripe_client = _stripe_client()
+        event = stripe_client.Webhook.construct_event(payload, signature, _stripe_webhook_secret())
+    except Exception:
+        current_app.logger.exception('Stripe webhook verification failed.')
+        return jsonify({'error': 'invalid_signature'}), 400
+
+    event_type = str(event.get('type') or '').strip()
+    data = event.get('data') or {}
+    obj = data.get('object') or {}
+    if not isinstance(obj, dict):
+        obj = dict(obj)
+
+    try:
+        if event_type == 'checkout.session.completed':
+            _sync_stripe_checkout_session(obj)
+        elif event_type in {'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'}:
+            _sync_stripe_subscription(obj)
+    except Exception:
+        current_app.logger.exception('Stripe webhook sync failed for %s.', event_type)
+        return jsonify({'error': 'sync_failed'}), 500
+    return jsonify({'received': True})
 
 
 @main_bp.route('/projections')
@@ -1826,6 +3168,87 @@ def teams_page():
     )
 
 
+_ABOUT_GLOSSARY_SECTIONS: List[Dict[str, Any]] = [
+    {
+        'title': 'Game States',
+        'items': [
+            {'abbr': '5v5', 'name': 'Five-on-Five', 'description': 'Even-strength play with five skaters aside.'},
+            {'abbr': 'PP', 'name': 'Power Play', 'description': 'A team skates with a manpower advantage after an opponent penalty.'},
+            {'abbr': 'PK', 'name': 'Penalty Kill', 'description': 'A team defends while shorthanded after taking a penalty.'},
+            {'abbr': 'SH', 'name': 'Shorthanded', 'description': 'Play while a team has fewer skaters on the ice than the opponent.'},
+            {'abbr': 'EV', 'name': 'Even Strength', 'description': 'Any non-special-teams situation with equal manpower.'},
+        ],
+    },
+    {
+        'title': 'Ice Time And Usage',
+        'items': [
+            {'abbr': 'GP', 'name': 'Games Played', 'description': 'Number of games included for the player or team.'},
+            {'abbr': 'TOI', 'name': 'Time On Ice', 'description': 'Total ice time, usually shown in minutes.'},
+            {'abbr': 'QoT', 'name': 'Quality of Teammates', 'description': 'Estimate of the strength of a player’s typical teammates.'},
+            {'abbr': 'QoC', 'name': 'Quality of Competition', 'description': 'Estimate of the strength of the opponents a player usually faces.'},
+            {'abbr': 'ZS', 'name': 'Zone Starts', 'description': 'Deployment context showing how favorable or defensive a player’s starting shifts are.'},
+        ],
+    },
+    {
+        'title': 'Shot And Chance Metrics',
+        'items': [
+            {'abbr': 'CF', 'name': 'Corsi For', 'description': 'All shot attempts for while the player or team is on the ice.'},
+            {'abbr': 'CA', 'name': 'Corsi Against', 'description': 'All shot attempts against while the player or team is on the ice.'},
+            {'abbr': 'FF', 'name': 'Fenwick For', 'description': 'Unblocked shot attempts for while the player or team is on the ice.'},
+            {'abbr': 'FA', 'name': 'Fenwick Against', 'description': 'Unblocked shot attempts against while the player or team is on the ice.'},
+            {'abbr': 'SF', 'name': 'Shots For', 'description': 'Shots on goal for while the player or team is on the ice.'},
+            {'abbr': 'SA', 'name': 'Shots Against', 'description': 'Shots on goal against while the player or team is on the ice.'},
+            {'abbr': 'xG', 'name': 'Expected Goals', 'description': 'Model-based estimate of how many goals a set of shots should produce.'},
+            {'abbr': 'xGF', 'name': 'Expected Goals For', 'description': 'Expected goals generated by the player or team.'},
+            {'abbr': 'xGA', 'name': 'Expected Goals Against', 'description': 'Expected goals allowed by the player or team.'},
+            {'abbr': 'ixG', 'name': 'Individual Expected Goals', 'description': 'Expected goals from the player’s own shots.'},
+        ],
+    },
+    {
+        'title': 'Results And Percentages',
+        'items': [
+            {'abbr': 'GF', 'name': 'Goals For', 'description': 'Goals scored by the player’s team while he is on the ice.'},
+            {'abbr': 'GA', 'name': 'Goals Against', 'description': 'Goals allowed by the player’s team while he is on the ice.'},
+            {'abbr': 'GSAx', 'name': 'Goals Saved Above Expected', 'description': 'Goalie metric comparing actual goals allowed to expected goals against.'},
+            {'abbr': 'GAx', 'name': 'Goals Above Expected', 'description': 'Difference between actual goals and expected goals in player shooting views.'},
+            {'abbr': 'Sh%', 'name': 'Shooting Percentage', 'description': 'Goals divided by shots on goal.'},
+            {'abbr': 'Sv%', 'name': 'Save Percentage', 'description': 'Saves divided by shots on goal against.'},
+            {'abbr': 'xSv%', 'name': 'Expected Save Percentage', 'description': 'Save percentage implied by expected goals against.'},
+            {'abbr': 'dSv%', 'name': 'Delta Save Percentage', 'description': 'Actual save percentage minus expected save percentage.'},
+            {'abbr': 'PDO', 'name': 'PDO', 'description': 'Combined on-ice shooting and save percentage, often used as a puck-luck indicator.'},
+        ],
+    },
+    {
+        'title': 'Playmaking And Discipline',
+        'items': [
+            {'abbr': 'A1', 'name': 'Primary Assists', 'description': 'Assists awarded to the last passer before a goal scorer.'},
+            {'abbr': 'A2', 'name': 'Secondary Assists', 'description': 'Second assists awarded on a goal.'},
+            {'abbr': 'PIM', 'name': 'Penalty Minutes', 'description': 'Minutes assessed for penalties.'},
+        ],
+    },
+    {
+        'title': 'Modeling And Projection Terms',
+        'items': [
+            {'abbr': 'RAPM', 'name': 'Regularized Adjusted Plus-Minus', 'description': 'Model that estimates player impact while adjusting for teammates, opponents, and usage.'},
+        ],
+    },
+]
+
+
+@main_bp.route('/about')
+def about_page():
+    """About page with app overview and glossary."""
+    return render_template(
+        'about.html',
+        teams=TEAM_ROWS,
+        active_tab='About',
+        show_filters=False,
+        show_season_state=False,
+        show_include_historic=False,
+        glossary_sections=_ABOUT_GLOSSARY_SECTIONS,
+    )
+
+
 @main_bp.route('/odds/<int:game_id>')
 def odds_page(game_id: int):
     """Odds page showing ML history for a game (from Sheet1)."""
@@ -1975,6 +3398,462 @@ def api_player_projections_sheets():
     return j
 
 
+@main_bp.route('/api/player-current-projections')
+def api_player_current_projections():
+    """Fetch current-season player projections for the lineup editor.
+
+    Returns rows keyed by player id, preferring player_current_projections and falling back
+    to the legacy player projections source when the current table is unavailable.
+    """
+    data = _load_current_player_projections_cached()
+    out = {str(k): v for k, v in data.items()}
+    j = jsonify(out)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
+_PLAYOFF_SERIES_HOME_PATTERN: Tuple[bool, ...] = (True, True, False, False, True, False, True)
+_PLAYOFF_RESTED_RESTED_SITUATION = -0.153396566
+_PLAYOFF_SERIES_ORDER: Tuple[str, ...] = ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O')
+_PLAYOFF_SERIES_CHILDREN: Dict[str, Tuple[str, str]] = {
+    'I': ('A', 'B'),
+    'J': ('C', 'D'),
+    'K': ('E', 'F'),
+    'L': ('G', 'H'),
+    'M': ('I', 'J'),
+    'N': ('K', 'L'),
+    'O': ('M', 'N'),
+}
+_PLAYOFF_BRACKET_ROUNDS: Dict[str, Tuple[str, ...]] = {
+    'eastRound1': ('A', 'B', 'C', 'D'),
+    'westRound1': ('E', 'F', 'G', 'H'),
+    'eastRound2': ('I', 'J'),
+    'westRound2': ('K', 'L'),
+    'conferenceFinals': ('M', 'N'),
+    'final': ('O',),
+}
+
+
+def _current_playoff_bracket_year(now: Optional[datetime] = None) -> int:
+    try:
+        season_i = int(current_season_id(now))
+        return int(str(season_i)[4:])
+    except Exception:
+        d = now or datetime.utcnow()
+        return d.year if d.month < 9 else d.year + 1
+
+
+def _load_playoff_bracket_cached(year: int) -> Dict[str, Any]:
+    try:
+        ttl_s = max(30, int(os.getenv('PLAYOFF_BRACKET_CACHE_TTL_SECONDS', '300') or '300'))
+    except Exception:
+        ttl_s = 300
+    now = time.time()
+    cached = _PLAYOFF_BRACKET_CACHE.get(int(year))
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
+    url = f'https://api-web.nhle.com/v1/playoff-bracket/{int(year)}'
+    try:
+        resp = requests.get(url, timeout=20)
+        if resp.status_code != 200:
+            return {}
+        data = resp.json() if resp.content else {}
+    except Exception:
+        return {}
+
+    if isinstance(data, dict):
+        _PLAYOFF_BRACKET_CACHE[int(year)] = (now, data)
+        return data
+    return {}
+
+
+def _matchup_projection_summary(away_abbrev: str,
+                                home_abbrev: str,
+                                lineups_all: Dict[str, Any],
+                                proj_map: Dict[int, Dict[str, Any]],
+                                situation_value: float = _PLAYOFF_RESTED_RESTED_SITUATION) -> Dict[str, float]:
+    proj_away = _team_proj_from_lineup(str(away_abbrev), lineups_all, proj_map)
+    proj_home = _team_proj_from_lineup(str(home_abbrev), lineups_all, proj_map)
+    dproj = proj_away - proj_home
+    win_away = 1.0 / (1.0 + math.exp(-(dproj) - situation_value))
+    return {
+        'projAway': float(proj_away),
+        'projHome': float(proj_home),
+        'dProj': float(dproj),
+        'winProbAway': float(win_away),
+        'winProbHome': float(1.0 - win_away),
+        'situationValue': float(situation_value),
+    }
+
+
+def _compute_series_outcome_distribution(top_abbrev: str,
+                                         bottom_abbrev: str,
+                                         top_wins: int,
+                                         bottom_wins: int,
+                                         lineups_all: Dict[str, Any],
+                                         proj_map: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+    total_played = max(0, int(top_wins) + int(bottom_wins))
+    future_games: List[Dict[str, Any]] = []
+    for game_index in range(total_played, len(_PLAYOFF_SERIES_HOME_PATTERN)):
+        top_is_home = bool(_PLAYOFF_SERIES_HOME_PATTERN[game_index])
+        if top_is_home:
+            home_abbrev = str(top_abbrev or '').upper()
+            away_abbrev = str(bottom_abbrev or '').upper()
+            summary = _matchup_projection_summary(away_abbrev, home_abbrev, lineups_all, proj_map)
+            top_win_prob = float(summary['winProbHome'])
+        else:
+            home_abbrev = str(bottom_abbrev or '').upper()
+            away_abbrev = str(top_abbrev or '').upper()
+            summary = _matchup_projection_summary(away_abbrev, home_abbrev, lineups_all, proj_map)
+            top_win_prob = float(summary['winProbAway'])
+        future_games.append({
+            'gameNumber': int(game_index + 1),
+            'homeTeam': home_abbrev,
+            'awayTeam': away_abbrev,
+            'topSeedWinProb': float(top_win_prob),
+            'bottomSeedWinProb': float(1.0 - top_win_prob),
+        })
+
+    states: Dict[Tuple[int, int], float] = {(int(top_wins), int(bottom_wins)): 1.0}
+    for game in future_games:
+        next_states: Dict[Tuple[int, int], float] = {}
+        top_win_prob = float(game['topSeedWinProb'])
+        for (cur_top, cur_bottom), prob in states.items():
+            if cur_top >= 4 or cur_bottom >= 4:
+                next_states[(cur_top, cur_bottom)] = next_states.get((cur_top, cur_bottom), 0.0) + float(prob)
+                continue
+            next_states[(cur_top + 1, cur_bottom)] = next_states.get((cur_top + 1, cur_bottom), 0.0) + float(prob) * top_win_prob
+            next_states[(cur_top, cur_bottom + 1)] = next_states.get((cur_top, cur_bottom + 1), 0.0) + float(prob) * (1.0 - top_win_prob)
+        states = next_states
+
+    top_outcomes = {f'4-{losses}': 0.0 for losses in range(4)}
+    bottom_outcomes = {f'4-{losses}': 0.0 for losses in range(4)}
+    for (final_top, final_bottom), prob in states.items():
+        if final_top == 4 and 0 <= final_bottom <= 3:
+            top_outcomes[f'4-{final_bottom}'] += float(prob)
+        elif final_bottom == 4 and 0 <= final_top <= 3:
+            bottom_outcomes[f'4-{final_top}'] += float(prob)
+
+    return {
+        'futureGames': future_games,
+        'topSeedOutcomeProbs': top_outcomes,
+        'bottomSeedOutcomeProbs': bottom_outcomes,
+        'topSeedSeriesWinProb': float(sum(top_outcomes.values())),
+        'bottomSeedSeriesWinProb': float(sum(bottom_outcomes.values())),
+    }
+
+
+def _playoff_team_payload(team_info: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(team_info, dict):
+        return {}
+    return {
+        'id': team_info.get('id'),
+        'abbrev': team_info.get('abbrev'),
+        'name': team_info.get('name'),
+        'commonName': team_info.get('commonName'),
+        'logo': team_info.get('logo'),
+        'darkLogo': team_info.get('darkLogo'),
+        'placeNameWithPreposition': team_info.get('placeNameWithPreposition'),
+    }
+
+
+def _playoff_team_payload_for_abbrev(abbrev: str, team_info_by_abbrev: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    team_info = team_info_by_abbrev.get(str(abbrev or '').upper()) or {'abbrev': str(abbrev or '').upper()}
+    return _playoff_team_payload(team_info)
+
+
+def _playoff_probability_rows(prob_map: Dict[str, float],
+                              team_info_by_abbrev: Dict[str, Dict[str, Any]],
+                              limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for team_abbrev, prob in (prob_map or {}).items():
+        p = float(prob or 0.0)
+        if p <= 0:
+            continue
+        rows.append({
+            'team': _playoff_team_payload_for_abbrev(team_abbrev, team_info_by_abbrev),
+            'prob': p,
+        })
+    rows.sort(key=lambda item: (-float(item['prob']), str(((item.get('team') or {}).get('abbrev') or ''))))
+    if isinstance(limit, int) and limit > 0:
+        return rows[:limit]
+    return rows
+
+
+def _build_actual_playoff_series_node(item: Dict[str, Any],
+                                      team_info_by_abbrev: Dict[str, Dict[str, Any]],
+                                      lineups_all: Dict[str, Any],
+                                      proj_map: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+    top_team = _playoff_team_payload(item.get('topSeedTeam') or {})
+    bottom_team = _playoff_team_payload(item.get('bottomSeedTeam') or {})
+    top_abbrev = str(top_team.get('abbrev') or '').upper()
+    bottom_abbrev = str(bottom_team.get('abbrev') or '').upper()
+    top_wins = int(item.get('topSeedWins') or 0)
+    bottom_wins = int(item.get('bottomSeedWins') or 0)
+
+    series_dist = _compute_series_outcome_distribution(
+        top_abbrev,
+        bottom_abbrev,
+        top_wins,
+        bottom_wins,
+        lineups_all,
+        proj_map,
+    )
+    top_slot_probs = {top_abbrev: 1.0}
+    bottom_slot_probs = {bottom_abbrev: 1.0}
+    winner_prob_map = {
+        top_abbrev: float(series_dist['topSeedSeriesWinProb']),
+        bottom_abbrev: float(series_dist['bottomSeedSeriesWinProb']),
+    }
+    matchup_rows = [{
+        'matchupProb': 1.0,
+        'topTeam': top_team,
+        'bottomTeam': bottom_team,
+        'topTeamSeriesWinProb': float(series_dist['topSeedSeriesWinProb']),
+        'bottomTeamSeriesWinProb': float(series_dist['bottomSeedSeriesWinProb']),
+    }]
+
+    return {
+        'seriesUrl': item.get('seriesUrl'),
+        'seriesTitle': item.get('seriesTitle'),
+        'seriesAbbrev': item.get('seriesAbbrev'),
+        'seriesLetter': item.get('seriesLetter'),
+        'playoffRound': item.get('playoffRound'),
+        'topSeedRank': item.get('topSeedRank'),
+        'topSeedRankAbbrev': item.get('topSeedRankAbbrev'),
+        'topSeedWins': top_wins,
+        'bottomSeedRank': item.get('bottomSeedRank'),
+        'bottomSeedRankAbbrev': item.get('bottomSeedRankAbbrev'),
+        'bottomSeedWins': bottom_wins,
+        'topSeedTeam': top_team,
+        'bottomSeedTeam': bottom_team,
+        'futureGames': series_dist['futureGames'],
+        'topSeedOutcomeProbs': series_dist['topSeedOutcomeProbs'],
+        'bottomSeedOutcomeProbs': series_dist['bottomSeedOutcomeProbs'],
+        'topSeedSeriesWinProb': float(series_dist['topSeedSeriesWinProb']),
+        'bottomSeedSeriesWinProb': float(series_dist['bottomSeedSeriesWinProb']),
+        'topSlotTeamProbs': _playoff_probability_rows(top_slot_probs, team_info_by_abbrev),
+        'bottomSlotTeamProbs': _playoff_probability_rows(bottom_slot_probs, team_info_by_abbrev),
+        'winnerProbs': _playoff_probability_rows(winner_prob_map, team_info_by_abbrev),
+        'matchups': matchup_rows,
+        'winnerProbMap': winner_prob_map,
+        'topSlotProbMap': top_slot_probs,
+        'bottomSlotProbMap': bottom_slot_probs,
+        'isProjected': False,
+    }
+
+
+def _build_projected_playoff_series_node(item: Dict[str, Any],
+                                         top_slot_probs: Dict[str, float],
+                                         bottom_slot_probs: Dict[str, float],
+                                         team_info_by_abbrev: Dict[str, Dict[str, Any]],
+                                         lineups_all: Dict[str, Any],
+                                         proj_map: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+    winner_prob_map: Dict[str, float] = {}
+    top_slot_series_win_prob = 0.0
+    bottom_slot_series_win_prob = 0.0
+    matchups: List[Dict[str, Any]] = []
+
+    for top_abbrev, top_appearance_prob in (top_slot_probs or {}).items():
+        for bottom_abbrev, bottom_appearance_prob in (bottom_slot_probs or {}).items():
+            matchup_prob = float(top_appearance_prob or 0.0) * float(bottom_appearance_prob or 0.0)
+            if matchup_prob <= 0:
+                continue
+            series_dist = _compute_series_outcome_distribution(
+                str(top_abbrev or '').upper(),
+                str(bottom_abbrev or '').upper(),
+                0,
+                0,
+                lineups_all,
+                proj_map,
+            )
+            top_prob = float(series_dist['topSeedSeriesWinProb'])
+            bottom_prob = float(series_dist['bottomSeedSeriesWinProb'])
+            winner_prob_map[str(top_abbrev).upper()] = winner_prob_map.get(str(top_abbrev).upper(), 0.0) + matchup_prob * top_prob
+            winner_prob_map[str(bottom_abbrev).upper()] = winner_prob_map.get(str(bottom_abbrev).upper(), 0.0) + matchup_prob * bottom_prob
+            top_slot_series_win_prob += matchup_prob * top_prob
+            bottom_slot_series_win_prob += matchup_prob * bottom_prob
+            matchups.append({
+                'matchupProb': matchup_prob,
+                'topTeam': _playoff_team_payload_for_abbrev(str(top_abbrev).upper(), team_info_by_abbrev),
+                'bottomTeam': _playoff_team_payload_for_abbrev(str(bottom_abbrev).upper(), team_info_by_abbrev),
+                'topTeamSeriesWinProb': top_prob,
+                'bottomTeamSeriesWinProb': bottom_prob,
+            })
+
+    matchups.sort(
+        key=lambda row: (
+            -float(row.get('matchupProb') or 0.0),
+            -float(row.get('topTeamSeriesWinProb') or 0.0),
+            str((((row.get('topTeam') or {}).get('abbrev')) or '')),
+            str((((row.get('bottomTeam') or {}).get('abbrev')) or '')),
+        )
+    )
+    return {
+        'seriesUrl': item.get('seriesUrl'),
+        'seriesTitle': item.get('seriesTitle'),
+        'seriesAbbrev': item.get('seriesAbbrev'),
+        'seriesLetter': item.get('seriesLetter'),
+        'playoffRound': item.get('playoffRound'),
+        'topSeedRank': item.get('topSeedRank'),
+        'topSeedRankAbbrev': item.get('topSeedRankAbbrev'),
+        'topSeedWins': int(item.get('topSeedWins') or 0),
+        'bottomSeedRank': item.get('bottomSeedRank'),
+        'bottomSeedRankAbbrev': item.get('bottomSeedRankAbbrev'),
+        'bottomSeedWins': int(item.get('bottomSeedWins') or 0),
+        'topSeedTeam': None,
+        'bottomSeedTeam': None,
+        'futureGames': [],
+        'topSeedOutcomeProbs': {},
+        'bottomSeedOutcomeProbs': {},
+        'topSeedSeriesWinProb': float(top_slot_series_win_prob),
+        'bottomSeedSeriesWinProb': float(bottom_slot_series_win_prob),
+        'topSlotTeamProbs': _playoff_probability_rows(top_slot_probs, team_info_by_abbrev),
+        'bottomSlotTeamProbs': _playoff_probability_rows(bottom_slot_probs, team_info_by_abbrev),
+        'winnerProbs': _playoff_probability_rows(winner_prob_map, team_info_by_abbrev),
+        'matchups': matchups[:12],
+        'winnerProbMap': winner_prob_map,
+        'topSlotProbMap': dict(top_slot_probs or {}),
+        'bottomSlotProbMap': dict(bottom_slot_probs or {}),
+        'isProjected': True,
+    }
+
+
+def _build_playoff_projection_payload(bracket: Dict[str, Any],
+                                      lineups_all: Dict[str, Any],
+                                      proj_map: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+    team_info_by_abbrev: Dict[str, Dict[str, Any]] = {}
+    raw_series_by_letter: Dict[str, Dict[str, Any]] = {}
+    for item in (bracket.get('series') or []):
+        letter = str(item.get('seriesLetter') or '').upper().strip()
+        if not letter:
+            continue
+        raw_series_by_letter[letter] = item
+        for key in ('topSeedTeam', 'bottomSeedTeam'):
+            team = item.get(key) or {}
+            team_abbrev = str(team.get('abbrev') or '').upper().strip()
+            if team_abbrev:
+                team_info_by_abbrev[team_abbrev] = _playoff_team_payload(team)
+
+    nodes_by_letter: Dict[str, Dict[str, Any]] = {}
+    current_series: List[Dict[str, Any]] = []
+    for letter in _PLAYOFF_SERIES_ORDER:
+        item = raw_series_by_letter.get(letter)
+        if not item:
+            continue
+        top_team = item.get('topSeedTeam') or {}
+        bottom_team = item.get('bottomSeedTeam') or {}
+        has_actual_matchup = bool(top_team.get('abbrev')) and bool(bottom_team.get('abbrev'))
+        if has_actual_matchup:
+            node = _build_actual_playoff_series_node(item, team_info_by_abbrev, lineups_all, proj_map)
+            current_series.append(node)
+        else:
+            deps = _PLAYOFF_SERIES_CHILDREN.get(letter)
+            if not deps:
+                continue
+            top_source = nodes_by_letter.get(deps[0]) or {}
+            bottom_source = nodes_by_letter.get(deps[1]) or {}
+            node = _build_projected_playoff_series_node(
+                item,
+                dict(top_source.get('winnerProbMap') or {}),
+                dict(bottom_source.get('winnerProbMap') or {}),
+                team_info_by_abbrev,
+                lineups_all,
+                proj_map,
+            )
+        nodes_by_letter[letter] = node
+
+    bracket_series = [nodes_by_letter[letter] for letter in _PLAYOFF_SERIES_ORDER if letter in nodes_by_letter]
+
+    second_round_probs: Dict[str, float] = {}
+    conference_final_probs: Dict[str, float] = {}
+    final_probs: Dict[str, float] = {}
+    cup_probs: Dict[str, float] = dict((nodes_by_letter.get('O') or {}).get('winnerProbMap') or {})
+
+    for letter in _PLAYOFF_BRACKET_ROUNDS['eastRound2'] + _PLAYOFF_BRACKET_ROUNDS['westRound2']:
+        node = nodes_by_letter.get(letter) or {}
+        for side_key in ('topSlotProbMap', 'bottomSlotProbMap'):
+            for team_abbrev, prob in (node.get(side_key) or {}).items():
+                second_round_probs[team_abbrev] = second_round_probs.get(team_abbrev, 0.0) + float(prob or 0.0)
+    for letter in ('M', 'N'):
+        node = nodes_by_letter.get(letter) or {}
+        for side_key in ('topSlotProbMap', 'bottomSlotProbMap'):
+            for team_abbrev, prob in (node.get(side_key) or {}).items():
+                conference_final_probs[team_abbrev] = conference_final_probs.get(team_abbrev, 0.0) + float(prob or 0.0)
+    final_node = nodes_by_letter.get('O') or {}
+    for side_key in ('topSlotProbMap', 'bottomSlotProbMap'):
+        for team_abbrev, prob in (final_node.get(side_key) or {}).items():
+            final_probs[team_abbrev] = final_probs.get(team_abbrev, 0.0) + float(prob or 0.0)
+
+    all_team_abbrevs = sorted(set(team_info_by_abbrev.keys()) | set(second_round_probs.keys()) | set(conference_final_probs.keys()) | set(final_probs.keys()) | set(cup_probs.keys()))
+    team_summary_rows: List[Dict[str, Any]] = []
+    for team_abbrev in all_team_abbrevs:
+        team_summary_rows.append({
+            'team': _playoff_team_payload_for_abbrev(team_abbrev, team_info_by_abbrev),
+            'secondRoundProb': float(second_round_probs.get(team_abbrev, 0.0)),
+            'conferenceFinalProb': float(conference_final_probs.get(team_abbrev, 0.0)),
+            'stanleyCupFinalProb': float(final_probs.get(team_abbrev, 0.0)),
+            'stanleyCupProb': float(cup_probs.get(team_abbrev, 0.0)),
+        })
+    team_summary_rows.sort(
+        key=lambda row: (
+            -float(row.get('stanleyCupProb') or 0.0),
+            -float(row.get('stanleyCupFinalProb') or 0.0),
+            -float(row.get('conferenceFinalProb') or 0.0),
+            str((((row.get('team') or {}).get('abbrev')) or '')),
+        )
+    )
+
+    return {
+        'series': current_series,
+        'bracketSeries': bracket_series,
+        'bracketRounds': {key: [nodes_by_letter[letter] for letter in letters if letter in nodes_by_letter] for key, letters in _PLAYOFF_BRACKET_ROUNDS.items()},
+        'stanleyCupProbabilities': team_summary_rows,
+        'assumptions': {
+            'homeIcePattern': '2-2-1-1-1',
+            'futureRoundsTopSlotHasHomeIce': True,
+        },
+    }
+
+
+@main_bp.route('/api/projections/series')
+def api_projections_series():
+    """Return playoff series win probabilities using current lineup-based team projections."""
+    year_raw = request.args.get('year')
+    try:
+        bracket_year = int(str(year_raw).strip()) if year_raw not in (None, '') else int(_current_playoff_bracket_year())
+    except Exception:
+        bracket_year = int(_current_playoff_bracket_year())
+
+    bracket = _load_playoff_bracket_cached(bracket_year)
+    if not bracket:
+        return jsonify({'year': bracket_year, 'series': [], 'error': 'fetch_failed'}), 502
+
+    lineups_all = _load_lineups_all()
+    proj_map = _load_current_player_projections_cached()
+    playoff_payload = _build_playoff_projection_payload(bracket, lineups_all, proj_map)
+
+    j = jsonify({
+        'year': bracket_year,
+        'bracketLogo': bracket.get('bracketLogo'),
+        'bracketLogoFr': bracket.get('bracketLogoFr'),
+        'series': playoff_payload.get('series') or [],
+        'bracketSeries': playoff_payload.get('bracketSeries') or [],
+        'bracketRounds': playoff_payload.get('bracketRounds') or {},
+        'stanleyCupProbabilities': playoff_payload.get('stanleyCupProbabilities') or [],
+        'assumptions': playoff_payload.get('assumptions') or {},
+    })
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
 @main_bp.route('/api/projections/games')
 def api_projections_games():
     """Return list of games for 'today', 'yesterday', or 'tomorrow' based on Eastern Time.
@@ -2110,9 +3989,9 @@ def api_projections_games():
     except Exception:
         prev_set = set()
 
-    # Load lineups and player projections once
+    # Load lineups and current player projections once
     lineups_all = _load_lineups_all()
-    proj_map = _load_player_projections_cached()  # Use Google Sheets (same as frontend)
+    proj_map = _load_current_player_projections_cached()
     # Situation mapping values
     SITUATION = {
         'Away-B2B-B2B': -0.126602018,
@@ -10033,6 +11912,7 @@ def _load_skater_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
                             'team': team,
                             'position': pos,
                             'positionCode': pos_raw,
+                            'birthDate': str(row.get('birthDate') or '').strip(),
                         }
     except Exception:
         out = {}
@@ -10098,6 +11978,7 @@ def _load_goalie_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
                         'team': team,
                         'position': 'G',
                         'positionCode': pos_raw,
+                        'birthDate': str(row.get('birthDate') or '').strip(),
                     }
     except Exception:
         out = {}
@@ -10350,11 +12231,237 @@ def api_player_projections_league():
     return j
 
 
+@main_bp.route('/api/skaters/current-projections')
+def api_skaters_current_projections():
+    """Current centered skater projections for the Skaters projections tab.
+
+    Returns current-season skaters only, enriched with team identity and 5v5 context.
+    """
+    team = str(request.args.get('team') or '').strip().upper()
+    try:
+        season_i = int(str(request.args.get('season') or '').strip() or current_season_id())
+    except Exception:
+        try:
+            season_i = int(current_season_id())
+        except Exception:
+            season_i = 0
+
+    proj_map = _load_current_player_projections_cached() or {}
+    roster_map = _load_all_rosters_for_season_cached(season_i) or _load_all_rosters_cached() or {}
+    ctx_rows = _load_context_static_csv() or []
+
+    ctx_by_pid: Dict[int, Dict[str, Optional[float]]] = {}
+    for row in ctx_rows:
+        try:
+            row_season = _safe_int(row.get('Season'))
+            if season_i > 0 and row_season and int(row_season) != int(season_i):
+                continue
+            if str(row.get('StrengthState') or '').strip() != '5v5':
+                continue
+            pid_i = _safe_int(row.get('PlayerID') or row.get('player_id') or row.get('playerId'))
+            if not pid_i or pid_i <= 0:
+                continue
+            ctx_by_pid[int(pid_i)] = {
+                'QoT': _parse_locale_float(row.get('QoT_blend_xG67_G33')),
+                'QoC': _parse_locale_float(row.get('QoC_blend_xG67_G33')),
+                'ZS': _parse_locale_float(row.get('ZS_Difficulty')),
+            }
+        except Exception:
+            continue
+
+    players: List[Dict[str, Any]] = []
+    for pid, raw in proj_map.items():
+        try:
+            pid_i = _safe_int(raw.get('player_id') or raw.get('playerId') or pid)
+            if not pid_i or pid_i <= 0:
+                continue
+
+            raw_pos = str(raw.get('position') or '').strip().upper()
+            pos = raw_pos
+            roster_info = roster_map.get(int(pid_i)) or {}
+            if roster_info.get('position'):
+                pos = str(roster_info.get('position') or '').strip().upper() or pos
+            if pos.startswith('G'):
+                continue
+
+            team_abbrev = str(roster_info.get('team') or '').strip().upper()
+            if team and team_abbrev != team:
+                continue
+
+            projected_value = _parse_locale_float(raw.get('projected_value'))
+            gp = _safe_int(raw.get('games_in_window') or raw.get('window_games') or raw.get('gp')) or 0
+
+            players.append({
+                'playerId': int(pid_i),
+                'name': str(raw.get('player') or roster_info.get('name') or '').strip(),
+                'team': team_abbrev,
+                'position': pos,
+                'gp': int(gp),
+                'projectedValue': float(projected_value) if projected_value is not None else None,
+                'projection': float(projected_value) if projected_value is not None else None,
+                'contextData': ctx_by_pid.get(int(pid_i), {'QoT': None, 'QoC': None, 'ZS': None}),
+            })
+        except Exception:
+            continue
+
+    players.sort(
+        key=lambda row: (
+            float(row.get('projectedValue')) if row.get('projectedValue') is not None else float('-inf'),
+            str(row.get('name') or ''),
+        ),
+        reverse=True,
+    )
+
+    j = jsonify({'players': players, 'season': season_i})
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
+def _age_from_birthdate(birth_date: Any, today: Optional[datetime] = None) -> Optional[float]:
+    try:
+        raw = str(birth_date or '').strip()
+        if not raw:
+            return None
+        born = datetime.strptime(raw[:10], '%Y-%m-%d').date()
+        ref = (today or datetime.utcnow()).date()
+        days = (ref - born).days
+        if days <= 0:
+            return None
+        return float(days) / 365.2425
+    except Exception:
+        return None
+
+
+@main_bp.route('/api/teams/current-projections')
+def api_teams_current_projections():
+    """Current centered team/player projections for the Teams projections tab."""
+    try:
+        season_i = int(str(request.args.get('season') or '').strip() or current_season_id())
+    except Exception:
+        try:
+            season_i = int(current_season_id())
+        except Exception:
+            season_i = 0
+
+    proj_map = _load_current_player_projections_cached() or {}
+    skater_bios = _load_skater_bios_season_cached(season_i) or {}
+    goalie_bios = _load_goalie_bios_season_cached(season_i) or {}
+    roster_map = {**skater_bios, **goalie_bios}
+    lineups_all = _load_lineups_all() or {}
+
+    lineup_pids_by_team: Dict[str, set[int]] = {}
+    for team_abbrev, node in lineups_all.items():
+        try:
+            team_key = str(team_abbrev or '').strip().upper()
+            if not team_key:
+                continue
+            ids: set[int] = set()
+            for bucket in ('forwards', 'defense', 'goalies'):
+                for player in (node.get(bucket) or []):
+                    pid_i = _safe_int((player or {}).get('playerId'))
+                    if pid_i and pid_i > 0:
+                        ids.add(int(pid_i))
+            lineup_pids_by_team[team_key] = ids
+        except Exception:
+            continue
+
+    players: List[Dict[str, Any]] = []
+    for pid, raw in proj_map.items():
+        try:
+            pid_i = _safe_int(raw.get('player_id') or raw.get('playerId') or pid)
+            if not pid_i or pid_i <= 0:
+                continue
+            info = roster_map.get(int(pid_i)) or {}
+            team_abbrev = str(info.get('team') or '').strip().upper()
+            if not team_abbrev:
+                continue
+            pos = str(raw.get('position') or info.get('position') or '').strip().upper()
+            if pos.startswith(('L', 'R', 'C')):
+                pos = 'F'
+            elif pos.startswith('D'):
+                pos = 'D'
+            elif pos.startswith('G'):
+                pos = 'G'
+            else:
+                pos = str(info.get('position') or 'F').strip().upper() or 'F'
+            projection = _parse_locale_float(raw.get('projected_value'))
+            age_years = _age_from_birthdate(info.get('birthDate'))
+            players.append({
+                'playerId': int(pid_i),
+                'name': str(info.get('name') or raw.get('player') or '').strip(),
+                'team': team_abbrev,
+                'position': pos,
+                'projection': float(projection) if projection is not None else None,
+                'age': float(age_years) if age_years is not None else None,
+                'inCurrentLineup': int(pid_i) in lineup_pids_by_team.get(team_abbrev, set()),
+            })
+        except Exception:
+            continue
+
+    players.sort(key=lambda row: (str(row.get('team') or ''), str(row.get('position') or ''), -(float(row.get('projection')) if row.get('projection') is not None else -9999.0), str(row.get('name') or '')))
+
+    j = jsonify({'players': players, 'season': season_i})
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
 def _load_player_projections_cached() -> Dict[int, Dict[str, Any]]:
     """Load player projections from Google Sheets (with CSV fallback) into memory (TTL cached)."""
     return _load_player_projections_from_sheets()
 
 _PLAYER_PROJECTIONS_SHEETS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
+
+def _load_current_player_projections_cached() -> Dict[int, Dict[str, Any]]:
+    """Load current-season game projection inputs from player_current_projections.
+
+    Falls back to the legacy player projections source if the current table is unavailable.
+    """
+    global _CURRENT_PLAYER_PROJECTIONS_CACHE
+    try:
+        ttl_s = max(30, int(os.getenv('PLAYER_PROJECTIONS_CACHE_TTL_SECONDS', '300') or '300'))
+    except Exception:
+        ttl_s = 300
+    now = time.time()
+    if _CURRENT_PLAYER_PROJECTIONS_CACHE and (now - _CURRENT_PLAYER_PROJECTIONS_CACHE[0]) < ttl_s:
+        return _CURRENT_PLAYER_PROJECTIONS_CACHE[1]
+
+    try:
+        season_i = int(current_season_id())
+    except Exception:
+        season_i = 0
+
+    sb_rows = _sb_read(
+        'player_current_projections',
+        columns='season,player_id,position,raw_projected_value,projected_value,games_in_window,rookie_factor,source_player_id,source_game_id,model_key',
+        filters={
+            'season': f'eq.{season_i}',
+            'model_key': 'eq.preseason_updating',
+        },
+    ) if season_i > 0 else None
+
+    if sb_rows is not None and len(sb_rows) > 0:
+        out: Dict[int, Dict[str, Any]] = {}
+        for r in sb_rows:
+            try:
+                pid_raw = r.get('player_id') or r.get('playerId')
+                pid = _safe_int(pid_raw)
+                if not pid or pid <= 0:
+                    continue
+                out[pid] = r
+            except Exception:
+                continue
+        _CURRENT_PLAYER_PROJECTIONS_CACHE = (now, out)
+        return out
+
+    data = _load_player_projections_cached()
+    _CURRENT_PLAYER_PROJECTIONS_CACHE = (now, data)
+    return data
 
 def _load_player_projections_from_sheets() -> Dict[int, Dict[str, Any]]:
     """Load player projections. Tries Supabase, falls back to CSV."""
@@ -10600,11 +12707,21 @@ def _safe_float(v: Any) -> Optional[float]:
         return None
 
 def _proj_value_for_player(row: Optional[Dict[str, Any]]) -> float:
-    """Sum of (Age + Rookie + EVO + EVD + PP + SH + GSAx) for a projections row.
+    """Return the player contribution used in team game projection aggregation.
+
+    Prefer the uncentered current-projection value when available. Otherwise fall back
+    to the legacy (Age + Rookie + EVO + EVD + PP + SH + GSAx) row shape.
     Non-numeric values are treated as 0. Handles comma decimal separators.
     """
     if not row:
         return 0.0
+    raw_projected_value = _parse_locale_float(
+        row.get('raw_projected_value')
+        or row.get('rawProjectedValue')
+        or row.get('RawProjectedValue')
+    )
+    if raw_projected_value is not None:
+        return float(raw_projected_value)
     def f(k: str) -> float:
         try:
             v = row.get(k)

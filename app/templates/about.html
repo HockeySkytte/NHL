@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% block head %}
+<style>
+  .about-shell{ max-width:1180px; margin:0 auto; }
+  .about-hero{ position:relative; overflow:hidden; padding:28px 28px 24px; border:1px solid rgba(120,145,185,0.18); border-radius:24px; background:radial-gradient(circle at top left, rgba(77,163,255,0.18), transparent 34%), linear-gradient(180deg, rgba(18,25,40,0.96), rgba(10,14,22,0.88)); box-shadow:0 22px 48px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.04); }
+  .about-kicker{ margin:0 0 10px; font-size:12px; font-weight:900; letter-spacing:.18em; text-transform:uppercase; color:#99badf; }
+  .about-title{ margin:0; font-size:40px; line-height:1.02; font-weight:900; color:#f4f8ff; max-width:760px; }
+  .about-copy{ margin:16px 0 0; max-width:760px; font-size:15px; line-height:1.7; color:rgba(226,233,244,0.9); }
+  .about-tabs{ display:flex; gap:10px; flex-wrap:wrap; margin:22px 0 16px; }
+  .about-tabs button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:10px 16px; border-radius:999px; font-size:13px; font-weight:800; letter-spacing:.04em; cursor:pointer; }
+  .about-tabs button.active{ background:var(--accent); border-color:var(--accent); color:#091018; }
+  .about-panel[hidden]{ display:none !important; }
+  .about-grid{ display:grid; grid-template-columns:1.2fr .85fr; gap:18px; }
+  .about-card{ border:1px solid rgba(120,145,185,0.16); border-radius:20px; background:linear-gradient(180deg, rgba(16,22,35,0.94), rgba(10,14,22,0.88)); padding:20px; box-shadow:0 16px 36px rgba(0,0,0,0.2); }
+  .about-card h2{ margin:0 0 10px; font-size:13px; font-weight:900; letter-spacing:.16em; text-transform:uppercase; color:#9fb8d7; }
+  .about-card p{ margin:0; font-size:14px; line-height:1.7; color:rgba(225,232,242,0.9); }
+  .about-list{ display:grid; gap:12px; margin-top:14px; }
+  .about-list-item{ padding:14px 16px; border-radius:16px; background:rgba(255,255,255,0.03); border:1px solid rgba(120,145,185,0.12); }
+  .about-list-item strong{ display:block; margin-bottom:6px; font-size:13px; color:#eef4ff; }
+  .glossary-intro{ margin:0 0 16px; color:rgba(224,231,241,0.9); font-size:14px; line-height:1.65; }
+  .glossary-section{ margin-top:20px; }
+  .glossary-section:first-of-type{ margin-top:0; }
+  .glossary-title{ margin:0 0 12px; font-size:13px; font-weight:900; letter-spacing:.16em; text-transform:uppercase; color:#9fb8d7; }
+  .glossary-table{ width:100%; border-collapse:collapse; }
+  .glossary-table th, .glossary-table td{ padding:12px 10px; border-top:1px solid rgba(255,255,255,0.06); text-align:left; vertical-align:top; }
+  .glossary-table thead th{ border-top:none; color:var(--text-dim); font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+  .glossary-table td:first-child{ width:110px; font-weight:900; color:#f0f6ff; letter-spacing:.05em; }
+  .glossary-table td:nth-child(2){ width:240px; color:#d7e5f8; font-weight:700; }
+  .glossary-table td:last-child{ color:rgba(224,231,241,0.9); line-height:1.55; }
+
+  @media (max-width: 920px){
+    .about-grid{ grid-template-columns:1fr; }
+    .about-title{ font-size:32px; }
+  }
+
+  @media (max-width: 640px){
+    .about-hero{ padding:22px 18px 18px; border-radius:20px; }
+    .about-title{ font-size:27px; }
+    .about-copy{ font-size:14px; }
+    .about-card{ padding:16px; border-radius:18px; }
+    .glossary-table th, .glossary-table td{ padding:10px 8px; font-size:13px; }
+    .glossary-table td:first-child{ width:76px; }
+    .glossary-table td:nth-child(2){ width:160px; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="about-shell">
+  <section class="about-hero">
+    <p class="about-kicker">About The App</p>
+    <h1 class="about-title">One place for live NHL projections, player context, RAPM, and matchup tools.</h1>
+    <p class="about-copy">This app combines NHL schedule data, lineup scraping, static RAPM/context exports, live game models, and player projection tables into one workflow. The glossary tab below collects the short forms used across skaters, goalies, projections, standings, and lineup tools so the metrics are easier to read quickly.</p>
+  </section>
+
+  <div class="about-tabs" role="tablist" aria-label="About tabs">
+    <button id="aboutTabOverview" class="active" type="button" role="tab" aria-selected="true">Overview</button>
+    <button id="aboutTabGlossary" type="button" role="tab" aria-selected="false">Glossary</button>
+  </div>
+
+  <section id="aboutPanelOverview" class="about-panel" role="tabpanel">
+    <div class="about-grid">
+      <article class="about-card">
+        <h2>What The App Covers</h2>
+        <p>The app brings together game projections, lineup-driven playoff odds, player cards, shooting and Edge views, RAPM, context metrics, and team-level comparisons. Most pages use the same shared team and season state so it is easy to move from a player page into team or game context without resetting the workflow.</p>
+        <div class="about-list">
+          <div class="about-list-item">
+            <strong>Projections</strong>
+            Current game and playoff probabilities, lineup-based team totals, and centered player projection values.
+          </div>
+          <div class="about-list-item">
+            <strong>Skaters And Goalies</strong>
+            Player cards, RAPM, context, shooting breakdowns, Edge data, and season tables.
+          </div>
+          <div class="about-list-item">
+            <strong>Team And Line Tools</strong>
+            Roster context, line combinations, pairings, and usage-driven comparisons.
+          </div>
+        </div>
+      </article>
+      <aside class="about-card">
+        <h2>How To Read The Metrics</h2>
+        <p>Most metrics are shown either as raw values, rates, percentiles, or centered projection values. Context metrics such as QoT, QoC, and ZS describe deployment, while RAPM attempts to isolate player impact by adjusting for teammates and opponents. Projection values on the current skater pages are centered, so positive values indicate players projected above baseline and negative values indicate players projected below baseline.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section id="aboutPanelGlossary" class="about-panel" role="tabpanel" hidden>
+    <p class="glossary-intro">These are the abbreviations used across the app’s cards, tables, charts, exports, and projection views.</p>
+    {% for section in glossary_sections %}
+    <section class="glossary-section">
+      <h2 class="glossary-title">{{ section['title'] }}</h2>
+      <table class="glossary-table">
+        <thead>
+          <tr>
+            <th>Abbrev.</th>
+            <th>Name</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in section['items'] %}
+          <tr>
+            <td>{{ item.abbr }}</td>
+            <td>{{ item.name }}</td>
+            <td>{{ item.description }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endfor %}
+  </section>
+</div>
+
+<script>
+(function(){
+  const overviewBtn = document.getElementById('aboutTabOverview');
+  const glossaryBtn = document.getElementById('aboutTabGlossary');
+  const overviewPanel = document.getElementById('aboutPanelOverview');
+  const glossaryPanel = document.getElementById('aboutPanelGlossary');
+
+  function setAboutTab(which){
+    const showGlossary = which === 'glossary';
+    overviewBtn?.classList.toggle('active', !showGlossary);
+    glossaryBtn?.classList.toggle('active', showGlossary);
+    overviewBtn?.setAttribute('aria-selected', showGlossary ? 'false' : 'true');
+    glossaryBtn?.setAttribute('aria-selected', showGlossary ? 'true' : 'false');
+    if(overviewPanel) overviewPanel.hidden = showGlossary;
+    if(glossaryPanel) glossaryPanel.hidden = !showGlossary;
+  }
+
+  overviewBtn?.addEventListener('click', ()=> setAboutTab('overview'));
+  glossaryBtn?.addEventListener('click', ()=> setAboutTab('glossary'));
+})();
+</script>
+{% endblock %}

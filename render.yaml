@@ -6,6 +6,19 @@ services:
     startCommand: "gunicorn --bind 0.0.0.0:$PORT wsgi:app"
     autoDeploy: true
     plan: free
+    envVars:
+      - key: FLASK_SECRET_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_MONTHLY_ID
+        sync: false
+      - key: STRIPE_PRICE_YEARLY_ID
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
 cronJobs:
   - name: update-lineups-30m
     schedule: "*/30 * * * *"

@@ -24,11 +24,19 @@
   .icon-btn:active{ transform:translateY(1px); }
   .icon{ width:20px; height:20px; display:block; }
   .mobile-summary{ display:none; font-size:12px; color:var(--text-dim); font-weight:650; letter-spacing:.2px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mobile-summary.empty{ display:none !important; }
 
   .mobile-menu{ display:none; border:1px solid #232a3a; border-radius:12px; background:rgba(255,255,255,0.02); overflow:hidden; }
   .mobile-menu a{ display:block; padding:12px 12px; text-decoration:none; color:var(--text); font-weight:750; letter-spacing:.2px; border-bottom:1px solid #232a3a; }
   .mobile-menu a:last-child{ border-bottom:none; }
   .mobile-menu a.active{ background:rgba(255,255,255,0.03); outline:2px solid rgba(77,163,255,0.20); outline-offset:-2px; }
+
+  .flash-stack{ display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+  .flash{ border:1px solid #2a3142; border-radius:12px; padding:10px 12px; font-size:13px; font-weight:650; }
+  .flash.success{ background:rgba(78, 205, 145, 0.10); border-color:rgba(78, 205, 145, 0.35); color:#cbf5df; }
+  .flash.error{ background:rgba(255, 106, 106, 0.10); border-color:rgba(255, 106, 106, 0.35); color:#ffd0d0; }
+  .flash.info{ background:rgba(77, 163, 255, 0.10); border-color:rgba(77, 163, 255, 0.35); color:#d8ebff; }
+  .flash.warning{ background:rgba(255, 198, 92, 0.10); border-color:rgba(255, 198, 92, 0.35); color:#ffe9bf; }
 
   .filters-shell{ margin-top:12px; }
   .filters-hd{ display:none; align-items:center; justify-content:space-between; gap:10px; padding:10px 10px; border:1px solid #232a3a; border-radius:12px; background:rgba(255,255,255,0.02); }
@@ -41,6 +49,17 @@
   nav.tabs > a { position:relative; top:10px; padding:12px 6px 18px; font-size:13px; font-weight:600; color:var(--text-dim); text-decoration:none; letter-spacing:.4px; white-space:nowrap; }
   nav.tabs > a.active, nav.tabs > a:hover { color:var(--text); }
   nav.tabs > a.active::after { content:""; position:absolute; left:0; right:0; bottom:10px; height:4px; border-radius:4px; background:var(--accent); box-shadow:0 0 8px -1px var(--accent); }
+  .nav-spacer{ flex:1 1 auto; }
+  .nav-user-link, details.nav-user > summary{ position:relative; top:0; display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; border-radius:10px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--value-text, var(--text)); text-decoration:none; font-size:13px; font-weight:700; cursor:pointer; list-style:none; }
+  details.nav-user{ position:relative; align-self:center; margin-left:8px; }
+  details.nav-user > summary::-webkit-details-marker{ display:none; }
+  details.nav-user[open] > summary{ outline:2px solid rgba(77,163,255,0.25); }
+  .nav-user-menu{ position:absolute; right:0; top:44px; min-width:190px; padding:8px; border-radius:12px; border:1px solid #2a3142; background:#111827; box-shadow:0 20px 40px rgba(0,0,0,0.35); display:grid; gap:6px; z-index:80; }
+  .nav-user-menu a, .nav-user-menu button{ display:flex; width:100%; align-items:center; justify-content:flex-start; min-height:38px; padding:0 10px; border-radius:8px; border:1px solid transparent; background:transparent; color:var(--text); font-size:13px; font-weight:700; text-decoration:none; cursor:pointer; }
+  .nav-user-menu a:hover, .nav-user-menu button:hover{ background:rgba(255,255,255,0.04); border-color:#2a3142; }
+  .mobile-menu form{ margin:0; }
+  .mobile-menu button{ display:block; width:100%; padding:12px 12px; text-align:left; background:transparent; border:none; color:var(--text); font-weight:750; letter-spacing:.2px; }
+  .icon-btn[hidden]{ display:none !important; }
     .filters { display:flex; flex-direction:column; gap:18px; }
     label { display:flex; flex-direction:column; font-size:12px; gap:6px; text-transform:uppercase; letter-spacing:.9px; color:var(--text-dim); font-weight:600; }
   select { background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; padding:10px 12px; border-radius:8px; font-size:14px; font-weight:500; appearance:none; -webkit-appearance:none; -moz-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239aa4b1'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; background-size:18px; padding-right:42px; }
@@ -83,6 +102,7 @@
     header img.logo{ height:44px; }
     h1{ font-size:18px; }
     .mobile-summary{ display:block; }
+    .mobile-summary.empty{ display:none !important; }
     .filters-hd{ display:flex; }
     .filters-hd{ cursor:pointer; user-select:none; }
     .mobile-menu{ margin-top:10px; }
@@ -136,8 +156,20 @@
         <a href="/goalies" class="{% if active_tab=='Goalies' %}active{% endif %}">Goalies</a>
         <a href="/line-tool" class="{% if active_tab=='Line Tool' %}active{% endif %}">Line Tool</a>
         <a href="/teams" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
+        <a href="/about" class="{% if active_tab=='About' %}active{% endif %}">About</a>
+        {% if auth_user %}
+        <a href="{{ url_for('main.account_page') }}">Account</a>
+        {% if auth_user.is_admin %}
+        <a href="{{ url_for('main.user_management_page') }}">User Management</a>
+        {% endif %}
+        <form method="post" action="{{ url_for('main.logout_page') }}">
+          <button type="submit">Logout</button>
+        </form>
+        {% else %}
+        <a href="{{ url_for('main.login_page', next=auth_login_target) }}">Login</a>
+        {% endif %}
       </div>
-
+      {% if show_filters is not defined or show_filters %}
       <div class="filters-shell">
         <div class="filters-hd">
           <div class="ttl">Slicers</div>
@@ -174,6 +206,7 @@
         {% endif %}
       </div>
       </div>
+      {% endif %}
     </aside>
     <div>
       <nav class="tabs">
@@ -185,9 +218,35 @@
   <a href="/goalies" class="{% if active_tab=='Goalies' %}active{% endif %}">Goalies</a>
   <a href="/line-tool" class="{% if active_tab=='Line Tool' %}active{% endif %}">Line Tool</a>
   <a href="/teams" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
-  <a href="#" class="{% if active_tab=='About' %}active{% endif %}">About</a>
+  <a href="/about" class="{% if active_tab=='About' %}active{% endif %}">About</a>
+  <span class="nav-spacer"></span>
+  {% if auth_user %}
+  <details class="nav-user">
+    <summary>{{ auth_user.username or auth_user.display_name or 'Account' }}</summary>
+    <div class="nav-user-menu">
+      <a href="{{ url_for('main.account_page') }}">Account</a>
+      {% if auth_user.is_admin %}
+      <a href="{{ url_for('main.user_management_page') }}">User Management</a>
+      {% endif %}
+      <form method="post" action="{{ url_for('main.logout_page') }}">
+        <button type="submit">Logout</button>
+      </form>
+    </div>
+  </details>
+  {% else %}
+  <a class="nav-user-link" href="{{ url_for('main.login_page', next=auth_login_target) }}">Login</a>
+  {% endif %}
       </nav>
       <main>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-stack">
+          {% for category, message in messages %}
+          <div class="flash {{ category or 'info' }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
         {% block content %}{% endblock %}
       </main>
     </div>
@@ -205,6 +264,70 @@
     const filtersHd = document.querySelector('.filters-hd');
     const filtersSummary = document.getElementById('filtersSummary');
     const mobileSlicerSummary = document.getElementById('mobileSlicerSummary');
+
+    function updateSlicerSummary(label){
+      try{
+        const text = String(label || '').trim();
+        if(filtersSummary) filtersSummary.textContent = text;
+        if(mobileSlicerSummary){
+          mobileSlicerSummary.textContent = text;
+          mobileSlicerSummary.classList.toggle('empty', !text);
+        }
+      }catch(_){/*noop*/}
+    }
+
+    function setFiltersCollapsed(collapsed){
+      try{
+        document.body.classList.toggle('filters-collapsed', !!collapsed);
+        localStorage.setItem('globalFiltersCollapsed_v1', collapsed ? '1' : '0');
+        if(btnMobileFilters) btnMobileFilters.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      }catch(_){/*noop*/}
+    }
+
+    function isMobile(){
+      try{ return window.matchMedia && window.matchMedia('(max-width: 980px)').matches; }catch(_){ return false; }
+    }
+
+    function closeMobileMenu(){
+      try{
+        if(!mobileMenuPanel) return;
+        mobileMenuPanel.hidden = true;
+        btnMobileMenu && btnMobileMenu.setAttribute('aria-expanded', 'false');
+      }catch(_){/*noop*/}
+    }
+
+    try{
+      const hasFilters = !!(teamSelect && seasonSelect);
+      if(btnMobileFilters) btnMobileFilters.hidden = !hasFilters;
+      if(!hasFilters) updateSlicerSummary('');
+      btnMobileMenu && btnMobileMenu.addEventListener('click', ()=>{
+        if(!mobileMenuPanel) return;
+        const open = !mobileMenuPanel.hidden;
+        mobileMenuPanel.hidden = open;
+        btnMobileMenu.setAttribute('aria-expanded', open ? 'false' : 'true');
+      });
+      btnMobileFilters && btnMobileFilters.addEventListener('click', ()=>{
+        const collapsed = document.body.classList.contains('filters-collapsed');
+        setFiltersCollapsed(!collapsed);
+      });
+      filtersHd && filtersHd.addEventListener('click', ()=>{
+        const collapsed = document.body.classList.contains('filters-collapsed');
+        setFiltersCollapsed(!collapsed);
+      });
+      mobileMenuPanel && mobileMenuPanel.addEventListener('click', (e)=>{
+        const a = e.target && e.target.closest ? e.target.closest('a') : null;
+        if(a) closeMobileMenu();
+      });
+      document.addEventListener('click', (e)=>{
+        if(!isMobile()) return;
+        if(!mobileMenuPanel || mobileMenuPanel.hidden) return;
+        const t = e.target;
+        if(btnMobileMenu && btnMobileMenu.contains(t)) return;
+        if(mobileMenuPanel.contains(t)) return;
+        closeMobileMenu();
+      });
+    }catch(_){/*noop*/}
+
     if(!teamSelect || !seasonSelect) return;
 
     // Global slicers: Team + Season must stay consistent across pages.
@@ -247,68 +370,14 @@
       }catch(_){/*noop*/}
     }
 
-    function updateSlicerSummary(){
+    function updateSlicerSummaryFromFilters(){
       try{
         const team = String(teamSelect?.value||'').trim();
         const seasonRaw = String(seasonSelect?.value||'').trim();
         const season = /^\d{8}$/.test(seasonRaw) ? seasonRaw : '';
-        const label = [team||'—', season||'—'].join(' · ');
-        if(filtersSummary) filtersSummary.textContent = label;
-        if(mobileSlicerSummary) mobileSlicerSummary.textContent = label;
+        updateSlicerSummary([team||'—', season||'—'].join(' · '));
       }catch(_){/*noop*/}
     }
-
-    function setFiltersCollapsed(collapsed){
-      try{
-        document.body.classList.toggle('filters-collapsed', !!collapsed);
-        localStorage.setItem('globalFiltersCollapsed_v1', collapsed ? '1' : '0');
-        if(btnMobileFilters) btnMobileFilters.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      }catch(_){/*noop*/}
-    }
-
-    function isMobile(){
-      try{ return window.matchMedia && window.matchMedia('(max-width: 980px)').matches; }catch(_){ return false; }
-    }
-
-    function closeMobileMenu(){
-      try{
-        if(!mobileMenuPanel) return;
-        mobileMenuPanel.hidden = true;
-        btnMobileMenu && btnMobileMenu.setAttribute('aria-expanded', 'false');
-      }catch(_){/*noop*/}
-    }
-
-    // Mobile controls
-    try{
-      btnMobileMenu && btnMobileMenu.addEventListener('click', ()=>{
-        if(!mobileMenuPanel) return;
-        const open = !mobileMenuPanel.hidden;
-        mobileMenuPanel.hidden = open;
-        btnMobileMenu.setAttribute('aria-expanded', open ? 'false' : 'true');
-      });
-      btnMobileFilters && btnMobileFilters.addEventListener('click', ()=>{
-        const collapsed = document.body.classList.contains('filters-collapsed');
-        setFiltersCollapsed(!collapsed);
-      });
-      filtersHd && filtersHd.addEventListener('click', ()=>{
-        const collapsed = document.body.classList.contains('filters-collapsed');
-        setFiltersCollapsed(!collapsed);
-      });
-      // Close menu when navigating
-      mobileMenuPanel && mobileMenuPanel.addEventListener('click', (e)=>{
-        const a = e.target && e.target.closest ? e.target.closest('a') : null;
-        if(a) closeMobileMenu();
-      });
-      // Close menu on outside click (mobile only)
-      document.addEventListener('click', (e)=>{
-        if(!isMobile()) return;
-        if(!mobileMenuPanel || mobileMenuPanel.hidden) return;
-        const t = e.target;
-        if(btnMobileMenu && btnMobileMenu.contains(t)) return;
-        if(mobileMenuPanel.contains(t)) return;
-        closeMobileMenu();
-      });
-    }catch(_){/*noop*/}
     function parseTeams(){
       const tag = document.getElementById('teams-data');
       if(!tag) return [];
@@ -348,7 +417,7 @@
       if(prev && list.find(t=>t.Team===prev)) teamSelect.value = prev; else if(list.length) teamSelect.value = list[0].Team;
       localStorage.setItem('team', teamSelect.value);
       __urlTeam = null;
-      updateSlicerSummary();
+      updateSlicerSummaryFromFilters();
     }
     async function loadSeasons(){
       const team = teamSelect.value; if(!team) return;
@@ -362,7 +431,7 @@
         __urlSeason = null;
         handleSeasonStateAvailability();
         syncUrlAndNav();
-        updateSlicerSummary();
+        updateSlicerSummaryFromFilters();
       } catch(e){ seasonSelect.innerHTML='<option>Error</option>'; }
     }
     function handleSeasonStateAvailability(){
@@ -375,8 +444,8 @@
       if(typeof loadStandings==='function') loadStandings();
     }
     // Event listeners
-    teamSelect.addEventListener('change', ()=>{ localStorage.setItem('team', teamSelect.value); setTheme(); syncUrlAndNav(); updateSlicerSummary(); loadSeasons(); });
-    seasonSelect.addEventListener('change', ()=>{ localStorage.setItem('season', seasonSelect.value); syncUrlAndNav(); updateSlicerSummary(); handleSeasonStateAvailability(); triggerDataReload(); });
+    teamSelect.addEventListener('change', ()=>{ localStorage.setItem('team', teamSelect.value); setTheme(); syncUrlAndNav(); updateSlicerSummaryFromFilters(); loadSeasons(); });
+    seasonSelect.addEventListener('change', ()=>{ localStorage.setItem('season', seasonSelect.value); syncUrlAndNav(); updateSlicerSummaryFromFilters(); handleSeasonStateAvailability(); triggerDataReload(); });
     if(seasonStateSelect) seasonStateSelect.addEventListener('change', ()=> triggerDataReload());
     if(includeHistoric) includeHistoric.addEventListener('change', ()=>{ populateTeams(); setTheme(); loadSeasons(); });
     // Init
@@ -386,7 +455,7 @@
       setFiltersCollapsed(isMobile() ? wantCollapsed : false);
     }catch(_){/*noop*/}
 
-    populateTeams(); setTheme(); loadSeasons(); syncUrlAndNav(); updateSlicerSummary();
+    populateTeams(); setTheme(); loadSeasons(); syncUrlAndNav(); updateSlicerSummaryFromFilters();
   })();
   </script>
   {% block scripts %}{% endblock %}

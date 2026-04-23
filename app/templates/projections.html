@@ -1,6 +1,10 @@
 {% extends 'base.html' %}
 {% block head %}
 <style>
+  .proj-page-tabs{ display:flex; gap:10px; align-items:center; margin:0 0 16px 0; flex-wrap:wrap; }
+  .proj-page-tabs button{ background:transparent; border:1px solid #2a3142; color:var(--value-text, var(--text)); min-height:40px; padding:0 16px; font-size:14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
+  .proj-page-tabs button.active{ outline:2px solid var(--accent); background:rgba(255,255,255,0.03); }
+  .proj-panel[hidden]{ display:none !important; }
   .odds-row{ display:flex; justify-content:flex-end; align-items:center; margin:0 0 10px 0; }
   .proj-toolbar{ display:flex; gap:10px; align-items:center; margin:0 0 16px 0; }
   .proj-toolbar button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; font-size:14px; border-radius:8px; font-weight:600; cursor:pointer; }
@@ -52,13 +56,80 @@
   .seg-pos{ background:#4f6cf6; }
   .seg-neg{ background:#ff6a6a; }
   .proj-num{ font-size:12px; color:var(--text-dim); min-width:70px; text-align:right; }
+  .series-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; }
+  .series-card{ background:#0f1522; border:1px solid #2a3142; border-radius:16px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.28); }
+  .series-card-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 14px 0; }
+  .series-meta{ color:var(--text-dim); font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+  .series-score{ font-size:14px; font-weight:700; color:var(--text); }
+  .series-team-row{ display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center; padding:10px 0; border-top:1px solid rgba(255,255,255,.06); }
+  .series-team-row:first-of-type{ border-top:none; }
+  .series-team-ident{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .series-team-ident img{ width:38px; height:38px; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+  .series-team-name{ font-size:15px; font-weight:700; color:var(--text); }
+  .series-team-seed{ font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.06em; }
+  .series-team-wins{ min-width:26px; text-align:center; font-size:18px; font-weight:800; color:var(--text); }
+  .series-team-prob{ min-width:84px; text-align:right; }
+  .series-prob-chip, .cup-prob-chip, .bracket-prob-chip{ display:inline-flex; align-items:center; justify-content:center; min-width:74px; padding:6px 10px; border-radius:999px; font-size:14px; font-weight:800; }
+  .series-breakdown{ width:100%; border-collapse:collapse; margin-top:12px; }
+  .series-breakdown th, .series-breakdown td{ padding:8px 6px; border-top:1px solid rgba(255,255,255,.06); text-align:center; }
+  .series-breakdown th{ color:var(--text-dim); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+  .series-breakdown td{ font-size:14px; color:var(--text); }
+  .series-breakdown td:first-child, .series-breakdown th:first-child{ text-align:left; }
+  .series-next-game{ margin-top:12px; color:var(--text-dim); font-size:12px; }
+  .placeholder-panel{ background:#0f1522; border:1px dashed #2a3142; border-radius:16px; padding:28px 24px; text-align:center; color:var(--text-dim); }
+  .bracket-panel-toolbar{ display:flex; justify-content:flex-end; margin:0 0 12px 0; }
+  .bracket-panel-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:999px; font-size:13px; font-weight:700; cursor:pointer; }
+  .bracket-shell{ width:100%; overflow-x:auto; padding-bottom:8px; }
+  .playoff-bracket{ min-width:1320px; display:grid; grid-template-columns: 1.2fr 0.95fr 0.85fr 1fr 0.85fr 0.95fr 1.2fr; gap:14px; align-items:center; }
+  .bracket-column{ display:flex; flex-direction:column; gap:18px; }
+  .bracket-column.center{ justify-content:center; }
+  .bracket-column-title{ text-align:center; color:var(--text-dim); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+  .bracket-series-card{ background:#0f1522; border:1px solid #2a3142; border-radius:16px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,.22); }
+  .bracket-series-card.projected{ border-style:dashed; }
+  .bracket-series-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 8px 0; }
+  .bracket-series-label{ color:var(--text-dim); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+  .bracket-scoreline{ color:var(--text); font-size:13px; font-weight:700; }
+  .bracket-team-line{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; border-top:1px solid rgba(255,255,255,.06); }
+  .bracket-team-line:first-of-type{ border-top:none; }
+  .bracket-team-meta{ display:flex; align-items:center; gap:8px; min-width:0; }
+  .bracket-team-meta img{ width:40px; height:40px; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+  .bracket-team-name{ color:var(--text); font-size:13px; font-weight:700; }
+  .bracket-team-subtext{ color:var(--text-dim); font-size:11px; }
+  .bracket-wins-chip{ display:inline-flex; align-items:center; justify-content:center; min-width:22px; padding:3px 6px; border-radius:999px; background:#1b2536; color:var(--text); font-size:12px; font-weight:800; }
+  .cup-shell{ background:transparent; border:none; border-radius:0; padding:0; }
+  .cup-table-wrap{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .cup-table{ width:100%; min-width:720px; border-collapse:collapse; }
+  .cup-table th, .cup-table td{ padding:10px 8px; border-top:1px solid rgba(255,255,255,.06); text-align:center; }
+  .cup-table thead th{ border-top:none; color:var(--text-dim); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+  .cup-table td:first-child, .cup-table th:first-child{ text-align:left; }
+  .cup-team-cell{ display:flex; align-items:center; gap:10px; }
+  .cup-team-cell img{ width:52px; height:52px; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+  .cup-team-name{ color:var(--text); font-weight:700; }
+
+  #bracketPanel:fullscreen{ background:#0b1017; padding:18px; overflow:auto; }
+  #bracketPanel:fullscreen #bracketRoot{ padding-left:0; padding-right:0; }
+  #bracketPanel:fullscreen .bracket-shell{ overflow:visible; }
+  #bracketPanel:fullscreen .playoff-bracket{ min-width:0; width:100%; grid-template-columns: 1.2fr 0.96fr 0.86fr 1fr 0.86fr 0.96fr 1.2fr; gap:16px; align-items:start; }
+  #bracketPanel:fullscreen .bracket-series-card{ padding:10px; }
 
   @media (max-width: 980px){
+    .bracket-panel-toolbar{ padding-left:12px; padding-right:12px; }
+    .proj-page-tabs{ padding-left:12px; padding-right:12px; gap:8px; }
+    .proj-page-tabs button{ padding:0 12px; min-height:36px; font-size:12px; }
     .odds-row{ justify-content:flex-start; }
     /* Use the full canvas width for the table on mobile */
     main{ padding-left:0; padding-right:0; }
     .odds-row, .proj-toolbar, .proj-title{ padding-left:12px; padding-right:12px; }
     #projRoot{ width:100%; margin:0; overflow:hidden; }
+    #seriesRoot, #bracketRoot, #cupRoot{ padding-left:12px; padding-right:12px; }
+    .playoff-bracket{ min-width:1120px; }
+    .cup-table{ min-width:620px; }
+    .cup-table th, .cup-table td{ padding:7px 5px; font-size:11px; }
+    .cup-table thead th{ font-size:10px; }
+    .cup-team-cell{ gap:8px; }
+    .cup-team-cell img{ width:42px; height:42px; }
+    .cup-team-name{ font-size:13px; }
+    .cup-prob-chip{ min-width:58px; padding:4px 6px; font-size:11px; }
 
     /* Buttons: no padding, fixed tap-height */
     .odds-toggle button{ padding:0; font-size:12px; height:32px; min-width:88px; display:inline-flex; align-items:center; justify-content:center; }
@@ -143,20 +214,40 @@
 </style>
 {% endblock %}
 {% block content %}
-<div class="odds-row">
-  <div class="odds-toggle">
-    <span style="margin-right:6px;color:var(--text-dim);font-size:12px;letter-spacing:.3px;">Odds:</span>
-    <button id="oddsAmerican" class="active">American</button>
-    <button id="oddsDecimal">Decimal</button>
+<div class="proj-page-tabs">
+  <button id="pageTabGames" class="active">Games</button>
+  <button id="pageTabSeries">Series</button>
+  <button id="pageTabBracket">Bracket</button>
+  <button id="pageTabCup">Stanley Cup Probability</button>
+</div>
+<div id="gamesPanel" class="proj-panel">
+  <div class="odds-row">
+    <div class="odds-toggle">
+      <span style="margin-right:6px;color:var(--text-dim);font-size:12px;letter-spacing:.3px;">Odds:</span>
+      <button id="oddsAmerican" class="active">American</button>
+      <button id="oddsDecimal">Decimal</button>
+    </div>
   </div>
+  <div class="proj-toolbar">
+    <button id="btnYesterday">Yesterday (ET)</button>
+    <button id="btnToday" class="active">Today (ET)</button>
+    <button id="btnTomorrow">Tomorrow (ET)</button>
+  </div>
+  <h2 id="projDateTitle" class="proj-title"></h2>
+  <div id="projRoot"></div>
 </div>
-<div class="proj-toolbar">
-  <button id="btnYesterday">Yesterday (ET)</button>
-  <button id="btnToday" class="active">Today (ET)</button>
-  <button id="btnTomorrow">Tomorrow (ET)</button>
+<div id="seriesPanel" class="proj-panel" hidden>
+  <div id="seriesRoot"></div>
 </div>
-<h2 id="projDateTitle" class="proj-title"></h2>
-<div id="projRoot"></div>
+<div id="bracketPanel" class="proj-panel" hidden>
+  <div class="bracket-panel-toolbar">
+    <button id="bracketFullscreenBtn" class="bracket-panel-btn" type="button">Full screen</button>
+  </div>
+  <div id="bracketRoot"></div>
+</div>
+<div id="cupPanel" class="proj-panel" hidden>
+  <div id="cupRoot"></div>
+</div>
 
 <!-- Lineups Modal -->
 <div id="lineupModal" class="modal-backdrop">
@@ -181,6 +272,18 @@
 {% block scripts %}
 <script>
 const root = document.getElementById('projRoot');
+const pageTabGames = document.getElementById('pageTabGames');
+const pageTabSeries = document.getElementById('pageTabSeries');
+const pageTabBracket = document.getElementById('pageTabBracket');
+const pageTabCup = document.getElementById('pageTabCup');
+const gamesPanel = document.getElementById('gamesPanel');
+const seriesPanel = document.getElementById('seriesPanel');
+const bracketPanel = document.getElementById('bracketPanel');
+const cupPanel = document.getElementById('cupPanel');
+const bracketFullscreenBtn = document.getElementById('bracketFullscreenBtn');
+const seriesRoot = document.getElementById('seriesRoot');
+const bracketRoot = document.getElementById('bracketRoot');
+const cupRoot = document.getElementById('cupRoot');
 const btnToday = document.getElementById('btnToday');
 const btnYesterday = document.getElementById('btnYesterday');
 const btnTomorrow = document.getElementById('btnTomorrow');
@@ -200,10 +303,12 @@ window._lineupsCache = window._lineupsCache || null; // contents of lineups_all.
 window._rosterCache = window._rosterCache || {}; // { [TEAM]: roster json from /api/roster/<TEAM>/current }
 window._currentGamesById = window._currentGamesById || {};
 window._winOverrides = window._winOverrides || {}; // { [gameId]: { away: p, home: p } }
-window._projCsvCache = window._projCsvCache || null; // { [playerId:number]: { pos: 'F'|'D'|'G', Age: num, Rookie: num, EVO: num, EVD: num, PP: num, SH: num, GSAx: num } }
+window._currentProjCache = window._currentProjCache || null; // { [playerId:number]: { pos: 'F'|'D'|'G', displayTotal: num|null, rawTotal: num|null } }
+window._playoffCache = window._playoffCache || null;
 
 let _dialogState = null; // { gameId, side, teamAbbrev, baselineCount }
 let _currentWhich = 'today';
+let _activeProjTab = 'games';
 
 let oddsMode = 'american'; // 'american' | 'decimal'
 
@@ -558,6 +663,276 @@ function renderTable(games){
   });
 }
 
+function formatPct(prob){
+  const p = Number(prob);
+  return Number.isFinite(p) ? `${(p * 100).toFixed(1)}%` : 'n/a';
+}
+
+function probHeatBg(prob){
+  const p = clamp(Number(prob)||0, 0, 1);
+  const low = { r: 198, g: 72, b: 72 };
+  const mid = { r: 49, g: 60, b: 79 };
+  const high = { r: 74, g: 127, b: 255 };
+  let from = low;
+  let to = mid;
+  let t = p / 0.5;
+  if(p >= 0.5){
+    from = mid;
+    to = high;
+    t = (p - 0.5) / 0.5;
+  }
+  const r = Math.round(from.r + ((to.r - from.r) * t));
+  const g = Math.round(from.g + ((to.g - from.g) * t));
+  const b = Math.round(from.b + ((to.b - from.b) * t));
+  return `rgba(${r},${g},${b},0.9)`;
+}
+
+function renderProbChip(prob, cls='series-prob-chip'){
+  const bg = probHeatBg(prob);
+  return `<span class="${cls}" style="background:${bg}; color:${getTextColorForBg(bg)}">${formatPct(prob)}</span>`;
+}
+
+function getTeamDisplayName(team){
+  return team?.commonName?.default || team?.name?.default || team?.abbrev || 'TBD';
+}
+
+function getTeamLogo(team){
+  return team?.darkLogo || team?.logo || '';
+}
+
+function renderSeries(seriesItems){
+  if(!Array.isArray(seriesItems) || !seriesItems.length){
+    seriesRoot.innerHTML = '<div class="placeholder-panel">No active playoff series are available from the NHL bracket feed.</div>';
+    return;
+  }
+  const scoreKeys = ['4-0', '4-1', '4-2', '4-3'];
+  const cards = seriesItems.map(item=>{
+    const top = item.topSeedTeam || {};
+    const bottom = item.bottomSeedTeam || {};
+    const topLogo = top.darkLogo || top.logo || '';
+    const bottomLogo = bottom.darkLogo || bottom.logo || '';
+    const topName = getTeamDisplayName(top);
+    const bottomName = getTeamDisplayName(bottom);
+    const nextGame = Array.isArray(item.futureGames) && item.futureGames.length ? item.futureGames[0] : null;
+    const nextGameHtml = nextGame
+      ? `<div class="series-next-game">Next: Game ${nextGame.gameNumber} in ${nextGame.homeTeam} (${formatPct(nextGame.topSeedWinProb)} ${top.abbrev||topName} win probability)</div>`
+      : '<div class="series-next-game">Series complete.</div>';
+    const breakdownRows = scoreKeys.map(score=>`<tr>
+      <td>${score}</td>
+      <td>${formatPct(item.topSeedOutcomeProbs?.[score])}</td>
+      <td>${formatPct(item.bottomSeedOutcomeProbs?.[score])}</td>
+    </tr>`).join('');
+    return `<article class="series-card">
+      <div class="series-card-head">
+        <div>
+          <div class="series-score">Current score: ${top.abbrev || topName} ${Number(item.topSeedWins||0)} - ${Number(item.bottomSeedWins||0)} ${bottom.abbrev || bottomName}</div>
+        </div>
+        <div class="series-meta">${item.seriesAbbrev || ''} ${item.seriesLetter ? `• ${item.seriesLetter}` : ''}</div>
+      </div>
+      <div class="series-team-row">
+        <div class="series-team-ident">
+          <img src="${topLogo}" alt="${top.abbrev || topName}" />
+          <div>
+            <div class="series-team-name">${topName}</div>
+            <div class="series-team-seed">${item.topSeedRankAbbrev || ''}</div>
+          </div>
+        </div>
+        <div class="series-team-wins">${Number(item.topSeedWins||0)}</div>
+        <div class="series-team-prob">${renderProbChip(item.topSeedSeriesWinProb)}</div>
+      </div>
+      <div class="series-team-row">
+        <div class="series-team-ident">
+          <img src="${bottomLogo}" alt="${bottom.abbrev || bottomName}" />
+          <div>
+            <div class="series-team-name">${bottomName}</div>
+            <div class="series-team-seed">${item.bottomSeedRankAbbrev || ''}</div>
+          </div>
+        </div>
+        <div class="series-team-wins">${Number(item.bottomSeedWins||0)}</div>
+        <div class="series-team-prob">${renderProbChip(item.bottomSeedSeriesWinProb)}</div>
+      </div>
+      <table class="series-breakdown">
+        <thead>
+          <tr>
+            <th>Finish</th>
+            <th>${top.abbrev || topName}</th>
+            <th>${bottom.abbrev || bottomName}</th>
+          </tr>
+        </thead>
+        <tbody>${breakdownRows}</tbody>
+      </table>
+      ${nextGameHtml}
+    </article>`;
+  }).join('');
+  seriesRoot.innerHTML = `<div class="series-grid">${cards}</div>`;
+}
+
+function renderBracketTeamLine(teamRow, wins=null, chipProb=null, subtext=''){
+  const team = teamRow?.team || teamRow || {};
+  const logo = getTeamLogo(team);
+  const name = getTeamDisplayName(team);
+  const winsHtml = Number.isFinite(Number(wins)) ? `<span class="bracket-wins-chip">${Number(wins)}</span>` : '';
+  const chipHtml = chipProb!=null ? renderProbChip(chipProb, 'bracket-prob-chip') : '';
+  const subtextHtml = subtext ? `<div class="bracket-team-subtext">${subtext}</div>` : '';
+  return `<div class="bracket-team-line">
+    <div class="bracket-team-meta">
+      ${logo ? `<img src="${logo}" alt="${team?.abbrev || name}" />` : ''}
+      <div>
+        <div class="bracket-team-name">${name}</div>
+        ${subtextHtml}
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      ${winsHtml}
+      ${chipHtml}
+    </div>
+  </div>`;
+}
+
+function renderProjectedSlot(rows){
+  const list = Array.isArray(rows) ? rows : [];
+  if(!list.length){
+    return '<div class="bracket-team-line"><div class="bracket-team-name">TBD</div></div>';
+  }
+  return list.map(row=> renderBracketTeamLine(row, 0, row.prob, 'Make series')).join('');
+}
+
+function renderBracketSeriesNode(node){
+  if(!node) return '';
+  const projected = !!node.isProjected;
+  const head = `<div class="bracket-series-head">
+    <div class="bracket-series-label">${node.seriesAbbrev || ''} ${node.seriesLetter ? `• ${node.seriesLetter}` : ''}</div>
+    <div class="bracket-scoreline">${projected ? 'Projected' : `${Number(node.topSeedWins||0)}-${Number(node.bottomSeedWins||0)}`}</div>
+  </div>`;
+  const body = projected
+    ? `${renderProjectedSlot(node.topSlotTeamProbs)}${renderProjectedSlot(node.bottomSlotTeamProbs)}`
+    : `${renderBracketTeamLine(node.topSeedTeam, node.topSeedWins, node.topSeedSeriesWinProb, node.topSeedRankAbbrev || '')}${renderBracketTeamLine(node.bottomSeedTeam, node.bottomSeedWins, node.bottomSeedSeriesWinProb, node.bottomSeedRankAbbrev || '')}`;
+  return `<article class="bracket-series-card ${projected ? 'projected' : ''}">${head}${body}</article>`;
+}
+
+function renderBracket(rounds){
+  if(!rounds || !rounds.final || !rounds.final.length){
+    bracketRoot.innerHTML = '<div class="placeholder-panel">Bracket simulation is unavailable.</div>';
+    return;
+  }
+  const column = (title, nodes, extraClass='') => `<section class="bracket-column ${extraClass}"><div class="bracket-column-title">${title}</div>${(nodes||[]).map(renderBracketSeriesNode).join('')}</section>`;
+  bracketRoot.innerHTML = `<div class="bracket-shell">
+    <div class="playoff-bracket">
+      ${column('West First Round', rounds.westRound1)}
+      ${column('West Second Round', rounds.westRound2)}
+      ${column('West Final', [rounds.conferenceFinals?.[1]].filter(Boolean))}
+      ${column('Stanley Cup Final', rounds.final, 'center')}
+      ${column('East Final', [rounds.conferenceFinals?.[0]].filter(Boolean))}
+      ${column('East Second Round', rounds.eastRound2)}
+      ${column('East First Round', rounds.eastRound1)}
+    </div>
+  </div>`;
+}
+
+function renderCup(rows){
+  if(!Array.isArray(rows) || !rows.length){
+    cupRoot.innerHTML = '<div class="placeholder-panel">Stanley Cup probabilities are unavailable.</div>';
+    return;
+  }
+  const body = rows.map(row=>{
+    const team = row.team || {};
+    const logo = getTeamLogo(team);
+    const name = getTeamDisplayName(team);
+    return `<tr>
+      <td>
+        <div class="cup-team-cell">
+          ${logo ? `<img src="${logo}" alt="${team.abbrev || name}" />` : ''}
+          <div>
+            <div class="cup-team-name">${name}</div>
+            <div class="series-meta">${team.abbrev || ''}</div>
+          </div>
+        </div>
+      </td>
+      <td>${renderProbChip(row.secondRoundProb, 'cup-prob-chip')}</td>
+      <td>${renderProbChip(row.conferenceFinalProb, 'cup-prob-chip')}</td>
+      <td>${renderProbChip(row.stanleyCupFinalProb, 'cup-prob-chip')}</td>
+      <td>${renderProbChip(row.stanleyCupProb, 'cup-prob-chip')}</td>
+    </tr>`;
+  }).join('');
+  cupRoot.innerHTML = `<div class="cup-shell">
+    <div class="cup-table-wrap">
+      <table class="cup-table">
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th>Round 2</th>
+            <th>Conference Final</th>
+            <th>Stanley Cup Final</th>
+            <th>Stanley Cup</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function updateBracketFullscreenButton(){
+  if(!bracketFullscreenBtn) return;
+  bracketFullscreenBtn.textContent = document.fullscreenElement === bracketPanel ? 'Exit full screen' : 'Full screen';
+}
+
+async function toggleBracketFullscreen(){
+  try{
+    if(document.fullscreenElement === bracketPanel){
+      await document.exitFullscreen();
+      return;
+    }
+    if(bracketPanel?.requestFullscreen){
+      await bracketPanel.requestFullscreen();
+    }
+  }catch(err){
+    console.error('[toggleBracketFullscreen] failed:', err);
+  }finally{
+    updateBracketFullscreenButton();
+  }
+}
+
+async function loadPlayoffData(){
+  try{
+    seriesRoot.innerHTML = '<div class="live-empty">Loading series…</div>';
+    bracketRoot.innerHTML = '<div class="live-empty">Loading bracket…</div>';
+    cupRoot.innerHTML = '<div class="live-empty">Loading Stanley Cup probabilities…</div>';
+    const r = await fetch('/api/projections/series', { cache:'no-store' });
+    const js = await r.json();
+    if(!r.ok){
+      throw new Error(js?.error || `HTTP ${r.status}`);
+    }
+    window._playoffCache = js;
+    renderSeries(js.series || []);
+    renderBracket(js.bracketRounds || {});
+    renderCup(js.stanleyCupProbabilities || []);
+  }catch(err){
+    console.error('[loadPlayoffData] failed:', err);
+    seriesRoot.innerHTML = '<div class="placeholder-panel">Error loading playoff series projections.</div>';
+    bracketRoot.innerHTML = '<div class="placeholder-panel">Error loading bracket projections.</div>';
+    cupRoot.innerHTML = '<div class="placeholder-panel">Error loading Stanley Cup probabilities.</div>';
+  }
+}
+
+function setActiveProjTab(tab){
+  _activeProjTab = tab;
+  const map = {
+    games: { btn: pageTabGames, panel: gamesPanel },
+    series: { btn: pageTabSeries, panel: seriesPanel },
+    bracket: { btn: pageTabBracket, panel: bracketPanel },
+    cup: { btn: pageTabCup, panel: cupPanel },
+  };
+  Object.entries(map).forEach(([key, entry])=>{
+    const active = key === tab;
+    entry.btn?.classList.toggle('active', active);
+    if(entry.panel) entry.panel.hidden = !active;
+  });
+  if(tab !== 'games' && !window._playoffCache){
+    loadPlayoffData();
+  }
+}
+
 function setActiveWhich(which){
   _currentWhich = which;
   btnToday.classList.toggle('active', which==='today');
@@ -569,6 +944,12 @@ function setActiveWhich(which){
 btnToday.addEventListener('click', ()=>{ setActiveWhich('today'); loadGames('today'); });
 btnYesterday.addEventListener('click', ()=>{ setActiveWhich('yesterday'); loadGames('yesterday'); });
 btnTomorrow.addEventListener('click', ()=>{ setActiveWhich('tomorrow'); loadGames('tomorrow'); });
+pageTabGames?.addEventListener('click', ()=>{ setActiveProjTab('games'); });
+pageTabSeries?.addEventListener('click', ()=>{ setActiveProjTab('series'); });
+pageTabBracket?.addEventListener('click', ()=>{ setActiveProjTab('bracket'); });
+pageTabCup?.addEventListener('click', ()=>{ setActiveProjTab('cup'); });
+bracketFullscreenBtn?.addEventListener('click', ()=>{ toggleBracketFullscreen(); });
+document.addEventListener('fullscreenchange', updateBracketFullscreenButton);
 
 // Restore preferred odds mode
 const savedMode = localStorage.getItem('oddsMode');
@@ -621,6 +1002,7 @@ oddsDecimalBtn?.addEventListener('click', ()=>{
 });
 
 setActiveWhich('today');
+setActiveProjTab('games');
 loadGames('today');
 applyProjectionsTextColors();
 
@@ -681,38 +1063,47 @@ async function ensureRosterCache(teamAbbrev){
   }
 }
 
-async function ensureProjectionsCsv(){
-  if(window._projCsvCache) return window._projCsvCache;
+async function ensureCurrentProjections(){
+  if(window._currentProjCache) return window._currentProjCache;
   try{
-    const r = await fetch('/api/player-projections/sheets', { cache:'no-store' });
+    const r = await fetch('/api/player-current-projections', { cache:'no-store' });
     if(!r.ok) return null;
     const data = await r.json();
     if(!data || typeof data !== 'object') return null;
-    // Helper to parse numbers with comma decimal separator (like RAPM does)
     const parseLocaleNumber = (val) => {
-      if(val == null || val === '') return 0;
+      if(val == null || val === '') return null;
       if(typeof val === 'number') return val;
       const s = String(val).trim().replace(',', '.');
       const n = Number(s);
-      return Number.isFinite(n) ? n : 0;
+      return Number.isFinite(n) ? n : null;
     };
-    // Convert from { playerId: { PlayerID, Position, Age, ... }, ... } to same format
     const map = {};
     for(const [id, row] of Object.entries(data)){
       const pid = Number(id);
       if(!pid) continue;
-      const pos = String(row.Position || row.Pos || '').trim().toUpperCase();
-      const getNum = (k) => parseLocaleNumber(row[k]);
+      const pos = String(row.position || row.Position || row.Pos || '').trim().toUpperCase();
+      const legacyTotal = [
+        parseLocaleNumber(row.Age),
+        parseLocaleNumber(row.Rookie),
+        parseLocaleNumber(row.EVO),
+        parseLocaleNumber(row.EVD),
+        parseLocaleNumber(row.PP),
+        parseLocaleNumber(row.SH),
+        parseLocaleNumber(row.GSAx),
+      ].reduce((sum, value)=> sum + (Number.isFinite(value) ? value : 0), 0);
+      const projectedValue = parseLocaleNumber(row.projected_value ?? row.projectedValue);
+      const rawProjectedValue = parseLocaleNumber(row.raw_projected_value ?? row.rawProjectedValue);
       map[pid] = {
         pos: (pos||'F')[0],
-        Age: getNum('Age'), Rookie: getNum('Rookie'), EVO: getNum('EVO'), EVD: getNum('EVD'), PP: getNum('PP'), SH: getNum('SH'), GSAx: getNum('GSAx')
+        displayTotal: Number.isFinite(projectedValue) ? projectedValue : legacyTotal,
+        rawTotal: Number.isFinite(rawProjectedValue) ? rawProjectedValue : legacyTotal,
       };
     }
-    window._projCsvCache = map;
-    try{ console.log('[projections] Sheets3 loaded:', Object.keys(map).length, 'players'); }catch(_){/* ignore */}
+    window._currentProjCache = map;
+    try{ console.log('[projections] current player projections loaded:', Object.keys(map).length, 'players'); }catch(_){/* ignore */}
     return map;
   }catch(e){ 
-    console.error('[projections] Failed to load from Sheets3:', e);
+    console.error('[projections] Failed to load current player projections:', e);
     return null; 
   }
 }
@@ -764,11 +1155,6 @@ function unitOf(p){
   return (p.unit||'').toString().toUpperCase();
 }
 
-function projValueFromMetrics(m){
-  if(!m) return 0;
-  return (m.Age||0)+(m.Rookie||0)+(m.EVO||0)+(m.EVD||0)+(m.PP||0)+(m.SH||0)+(m.GSAx||0);
-}
-
 function buildPlayerList(teamAbbrev, projMap, roster){
   // Base list from Sheets lineups; then append missing roster players as EXT.
   const lu = getTeamLineup(teamAbbrev);
@@ -781,8 +1167,9 @@ function buildPlayerList(teamAbbrev, projMap, roster){
     const unit = String(it.unit||'').toUpperCase();
     const pos = posCode;
     const metrics = (id0 && projMap) ? projMap[id0] : null;
-    const total = metrics ? projValueFromMetrics(metrics) : null;
-    arr.push({ id: id0, name, pos, unit, metrics, total });
+    const total = metrics && Number.isFinite(metrics.displayTotal) ? metrics.displayTotal : null;
+    const rawTotal = metrics && Number.isFinite(metrics.rawTotal) ? metrics.rawTotal : null;
+    arr.push({ id: id0, name, pos, unit, metrics, total, rawTotal });
   };
   // Keep original order from lineup; no re-sort to preserve lines/pairs
   for(const it of (lu.goalies||[])) pushItem(goalies, it, 'G');
@@ -801,8 +1188,9 @@ function buildPlayerList(teamAbbrev, projMap, roster){
     if(!name) return;
     existingIds.add(id0);
     const metrics = (id0 && projMap) ? projMap[id0] : null;
-    const total = metrics ? projValueFromMetrics(metrics) : null;
-    arr.push({ id: id0, name, pos: posCode, unit: 'EXT', metrics, total });
+    const total = metrics && Number.isFinite(metrics.displayTotal) ? metrics.displayTotal : null;
+    const rawTotal = metrics && Number.isFinite(metrics.rawTotal) ? metrics.rawTotal : null;
+    arr.push({ id: id0, name, pos: posCode, unit: 'EXT', metrics, total, rawTotal });
   };
 
   if(roster){
@@ -822,7 +1210,7 @@ function clearModal(){
 async function openLineupDialog(gameId, side, teamAbbrev){
   clearModal();
   const [_, projMap, roster] = await Promise.all([
-    ensureLineupsCache(), ensureProjectionsCsv(), ensureRosterCache(teamAbbrev)
+    ensureLineupsCache(), ensureCurrentProjections(), ensureRosterCache(teamAbbrev)
   ]);
   const list = buildPlayerList(teamAbbrev, projMap||{}, roster||null);
   try{ console.log('[modal] open for', teamAbbrev, 'players:', list.length); }catch(_){/* noop */}
@@ -905,7 +1293,7 @@ function recomputeWinWithSelection(gameId, side, selected){
   const projBaseHome = Number(g.projections.projHome) || 0;
   const sVal = Number(g.projections.situationValue) || 0;
   const team = side==='away' ? (g.awayTeam?.abbrev||'') : (g.homeTeam?.abbrev||'');
-  const projMap = window._projCsvCache || {};
+  const projMap = window._currentProjCache || {};
   const ROOKIE_FALLBACK = { 'D': -0.031768511, 'F': -0.024601581, 'G': -0.12 };
   const sumTeam = ()=>{
     let total = 0;
@@ -914,14 +1302,14 @@ function recomputeWinWithSelection(gameId, side, selected){
       const POS = (p.pos||'F').toUpperCase()[0];
       if(POS==='G') continue;
       const m = (p.id && projMap[p.id]) ? projMap[p.id] : null;
-      if(m) total += projValueFromMetrics(m); else total += (ROOKIE_FALLBACK[POS] ?? ROOKIE_FALLBACK['F']);
+      if(m && Number.isFinite(m.rawTotal)) total += m.rawTotal; else total += (ROOKIE_FALLBACK[POS] ?? ROOKIE_FALLBACK['F']);
     }
     // Goalies: include only one, prefer unit G1
     const goalies = selected.filter(p=> (p.pos||'F').toUpperCase().startsWith('G'));
     let gPick = goalies.find(p=> String(p.unit||'').toUpperCase()==='G1') || goalies[0] || null;
     if(gPick){
       const m = (gPick.id && projMap[gPick.id]) ? projMap[gPick.id] : null;
-      const gValue = m ? projValueFromMetrics(m) : ROOKIE_FALLBACK['G'];
+      const gValue = (m && Number.isFinite(m.rawTotal)) ? m.rawTotal : ROOKIE_FALLBACK['G'];
       console.log('[recompute] Selected goalie:', gPick.name, 'ID:', gPick.id, 'Metrics:', m, 'Value:', gValue);
       total += gValue;
     }

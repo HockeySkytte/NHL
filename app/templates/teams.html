@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 
 {% block extra_filters %}
 <label id="cardSeasonStateWrap">Season State
@@ -91,17 +91,10 @@
   .proj-subtab-btn.active{ outline:2px solid var(--accent); }
   .proj-subpanel{ margin-top:14px; background:transparent; border:none; border-radius:12px; padding:16px; }
   .proj-subpanel[hidden]{ display:none !important; }
-  .proj-ov-grid{ display:grid; grid-template-columns: 360px 1fr; gap:14px; align-items:start; }
-  @media (max-width: 980px){ .proj-ov-grid{ grid-template-columns:1fr; } }
-  .proj-radar{ border:none; border-radius:12px; padding:10px; background:transparent; min-height:320px; height:360px; max-height:360px; overflow:hidden; }
-  @media (max-width: 980px){ .proj-radar{ height:340px; max-height:340px; } }
-  #projTeamRadar{ width:100% !important; height:100% !important; display:block; }
-  .kpi-card{ background:rgba(0,0,0,.12); border:none; border-radius:12px; padding:12px 12px; text-align:center; }
-  .kpi-title{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
-  .kpi-value{ margin-top:6px; font-size:18px; font-weight:850; color:var(--text); font-variant-numeric: tabular-nums; }
-  .kpi-list{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
   .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
-  .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
+  .proj-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+  .proj-toggle-group{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .proj-toggle-label{ font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:800; }
   .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
   .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
   .proj-table{ width:100%; border-collapse:collapse; font-size:14px; }
@@ -138,7 +131,7 @@
     .edge-card{ padding-left:10px; padding-right:10px; }
     .edge-zone-rink{ width:100%; max-width:520px; aspect-ratio: 535 / 1260; height:auto; margin:10px auto 2px; border-radius:14px; overflow:hidden; background:rgba(255,255,255,0.02); }
 
-    /* Image asset is landscape. Size it to container height (≈ 235.5% of width), then rotate. */
+    /* Image asset is landscape. Size it to container height (Ôëê 235.5% of width), then rotate. */
     .edge-zone-rink img{ position:absolute; left:50%; top:50%; width:235.5%; height:auto; border-radius:0; transform:translate(-50%,-50%) rotate(90deg); transform-origin:center; }
 
     /* Lay out KPIs in thirds: DZ / NZ / OZ */
@@ -302,26 +295,21 @@
     <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
       <div id="projPanelInner">
         <div class="proj-subtabs" role="tablist" aria-label="Team projections tabs">
-          <button id="projTabOverview" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Overview</button>
-          <button id="projTabTeam" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">Team</button>
+          <button id="projTabTeam" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Team</button>
           <button id="projTabLeague" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">League</button>
         </div>
 
-        <section id="projPanelOverview" class="proj-subpanel" role="tabpanel">
-          <div class="proj-ov-grid">
-            <div id="projOverviewKpis" class="kpi-list"></div>
-            <div class="proj-radar">
-              <canvas id="projTeamRadar"></canvas>
-            </div>
-          </div>
-        </section>
-
-        <section id="projPanelTeam" class="proj-subpanel" role="tabpanel" hidden>
+        <section id="projPanelTeam" class="proj-subpanel" role="tabpanel">
           <canvas id="projTeamStack" style="width:100%; height:420px;"></canvas>
         </section>
 
         <section id="projPanelLeague" class="proj-subpanel" role="tabpanel" hidden>
-          <div class="proj-export-wrap">
+          <div class="proj-toolbar">
+            <div class="proj-toggle-group" aria-label="League projections player scope">
+              <span class="proj-toggle-label">Show</span>
+              <button id="projLeagueModeAll" class="proj-subtab-btn active" type="button" aria-pressed="true">All Players</button>
+              <button id="projLeagueModeLineup" class="proj-subtab-btn" type="button" aria-pressed="false">Current Lineup</button>
+            </div>
             <button id="projExportCsv" class="proj-export-btn">Export CSV</button>
           </div>
           <div class="proj-table-wrap">
@@ -427,15 +415,14 @@ const scY = document.getElementById('scY');
 const pdChartEl = document.getElementById('pdChart');
 const scChartEl = document.getElementById('scChart');
 
-const projTabOverview = document.getElementById('projTabOverview');
 const projTabTeam = document.getElementById('projTabTeam');
 const projTabLeague = document.getElementById('projTabLeague');
-const projPanelOverview = document.getElementById('projPanelOverview');
 const projPanelTeam = document.getElementById('projPanelTeam');
 const projPanelLeague = document.getElementById('projPanelLeague');
-const projOverviewKpis = document.getElementById('projOverviewKpis');
 const projLeagueTable = document.getElementById('projLeagueTable');
 const projExportCsv = document.getElementById('projExportCsv');
+const projLeagueModeAll = document.getElementById('projLeagueModeAll');
+const projLeagueModeLineup = document.getElementById('projLeagueModeLineup');
 
 const btnConfigureTable = document.getElementById('btnConfigureTable');
 const btnReloadTable = document.getElementById('btnReloadTable');
@@ -461,10 +448,10 @@ let __pdChart = null;
 let __scChart = null;
 let __scatterCache = new Map();
 let __chartsLastKey = '';
-let __projLeaguePlayers = null;
+let __projLeaguePlayersBySeason = new Map();
 let __projTeamChart = null;
-let __projRadarChart = null;
-let __projLeagueSort = { key: 'total', dir: 'desc' };
+let __projLeagueSort = { key: 'projTotal', dir: 'desc' };
+let __projLeagueMode = 'all';
 let __tableLastKey = '';
 let __logoImgCache = new Map();
 
@@ -569,7 +556,7 @@ function _edgePct(obj){
 
 function _edgeFmtValue(metricKey, value){
   const v = Number(value);
-  if(!Number.isFinite(v)) return '—';
+  if(!Number.isFinite(v)) return 'ÔÇö';
   const m = String(metricKey||'');
   if(m === 'topShotSpeed' || m === 'avgShotSpeed' || m === 'maxSkatingSpeed') return v.toFixed(1);
   if(m === 'distanceTotal' || m === 'distancePer60') return v.toFixed(1);
@@ -598,11 +585,11 @@ function renderEdgeZoneKpi(metricKey, obj, zoneLabel){
   const pct = _edgePct(obj);
   const pctOk = (pct != null);
   const rank = Number(obj?.rank);
-  const pillText = Number.isFinite(rank) ? _ordinal(rank) : '—';
+  const pillText = Number.isFinite(rank) ? _ordinal(rank) : 'ÔÇö';
   const accent = pctOk ? pctToColor(Number(pct)) : 'rgba(255,255,255,0.55)';
   const valText = _edgeFmtValue(metricKey, obj?.value);
   const avgText = _edgeFmtValue(metricKey, obj?.avg);
-  const showAvg = (obj?.avg != null) && avgText !== '—';
+  const showAvg = (obj?.avg != null) && avgText !== 'ÔÇö';
   return `
     <div class="edge-zone-pill" style="border-color:${accent}; color:${accent};">${pillText}</div>
     <div class="edge-zone-value">${valText}</div>
@@ -613,7 +600,7 @@ function renderEdgeZoneKpi(metricKey, obj, zoneLabel){
 
 function fmtSmart(x){
   const n = Number(x);
-  if(!Number.isFinite(n)) return '—';
+  if(!Number.isFinite(n)) return 'ÔÇö';
   const abs = Math.abs(n);
   if(abs >= 100) return n.toFixed(0);
   if(abs >= 10) return n.toFixed(1);
@@ -670,7 +657,7 @@ function updateHeader(){
   const rates = String(cardRates?.value||'Totals');
   const parts = [
     ['Team', ab],
-    ['Season', season || '—'],
+    ['Season', season || 'ÔÇö'],
     ['Scope', scope],
     ['State', seasonState],
     ['Rates', rates],
@@ -684,7 +671,7 @@ function updateSlicerSummaries(){
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
   const rates = String(cardRates?.value||'Totals');
-  const txt = `Season ${season || '—'} · ${seasonState} · ${strengthState} · ${rates} · ${scope}`;
+  const txt = `Season ${season || 'ÔÇö'} ┬À ${seasonState} ┬À ${strengthState} ┬À ${rates} ┬À ${scope}`;
   if(cardSlicerSummary) cardSlicerSummary.textContent = txt;
   if(chartsSlicerSummary) chartsSlicerSummary.textContent = txt;
   if(tableSlicerSummary) tableSlicerSummary.textContent = txt;
@@ -703,7 +690,8 @@ function saveTeamsState(){
       rates: String(cardRates?.value||'Totals'),
       edge: { ...(__edgeState || {}) },
       charts: { pdX:String(pdX?.value||''), pdY:String(pdY?.value||''), scX:String(scX?.value||''), scY:String(scY?.value||'') },
-      projectionsSubtab: (projTabOverview?.classList.contains('active') ? 'overview' : (projTabTeam?.classList.contains('active') ? 'team' : 'league')),
+      projectionsSubtab: (projTabLeague?.classList.contains('active') ? 'league' : 'team'),
+      projectionsMode: String(__projLeagueMode || 'all'),
     };
     localStorage.setItem(TEAMS_STATE_KEY, JSON.stringify(state));
   }catch(_){/*noop*/}
@@ -739,7 +727,8 @@ function restoreTeamsState(){
     }catch(_){/*noop*/}
 
     try{ __restoreChartAxes = (s.charts && typeof s.charts === 'object') ? s.charts : null; }catch(_){/*noop*/}
-    try{ __restoreProjSubtab = String(s.projectionsSubtab||'') || null; }catch(_){/*noop*/}
+    try{ __restoreProjSubtab = (String(s.projectionsSubtab||'').toLowerCase() === 'league') ? 'league' : 'team'; }catch(_){/*noop*/}
+    try{ __projLeagueMode = (String(s.projectionsMode||'').toLowerCase() === 'lineup') ? 'lineup' : 'all'; }catch(_){/*noop*/}
     try{ if(!__restoreActiveTab) __restoreActiveTab = String(s.activeTab||'') || null; }catch(_){/*noop*/}
   }catch(_){/*noop*/}
 }
@@ -799,7 +788,7 @@ async function loadEdgePanel(){
 
   const seasonInt = parseInt(season, 10);
   if(Number.isFinite(seasonInt) && seasonInt < 20212022){
-    edgePanelInner.innerHTML = `<div class="team-empty" style="padding:10px 0;">NHL Edge data is available starting in 2021/22. (Selected season: ${season || '—'})</div>`;
+    edgePanelInner.innerHTML = `<div class="team-empty" style="padding:10px 0;">NHL Edge data is available starting in 2021/22. (Selected season: ${season || 'ÔÇö'})</div>`;
     return;
   }
 
@@ -1040,17 +1029,17 @@ function sectionTitleForSlot(slot){
 function metricValueText(mid, val){
   const m = String(mid||'');
   if(m.endsWith('%') || m.includes('Sv%') || m.includes('Sh%') || m.endsWith('Pctg')){
-    return val==null ? '—' : `${fmtSmart(val)}%`;
+    return val==null ? 'ÔÇö' : `${fmtSmart(val)}%`;
   }
   // For differential/above-expected style metrics, show a leading '+' when positive.
   if(m.includes('+/-') || m.endsWith('Ax')){
-    if(val == null) return '—';
+    if(val == null) return 'ÔÇö';
     const n = Number(val);
-    if(!Number.isFinite(n)) return '—';
+    if(!Number.isFinite(n)) return 'ÔÇö';
     return n > 0 ? `+${fmtSmart(n)}` : fmtSmart(n);
   }
-  if(m.includes('PDO')) return val==null ? '—' : fmtSmart(val);
-  return val==null ? '—' : fmtSmart(val);
+  if(m.includes('PDO')) return val==null ? 'ÔÇö' : fmtSmart(val);
+  return val==null ? 'ÔÇö' : fmtSmart(val);
 }
 
 function fillPctBar(fillEl, pct){
@@ -1499,50 +1488,60 @@ async function renderCharts(){
   }
 }
 
+function setProjLeagueMode(which){
+  const w = String(which||'all').toLowerCase() === 'lineup' ? 'lineup' : 'all';
+  __projLeagueMode = w;
+  projLeagueModeAll?.classList.toggle('active', w === 'all');
+  projLeagueModeLineup?.classList.toggle('active', w === 'lineup');
+  projLeagueModeAll?.setAttribute('aria-pressed', w === 'all' ? 'true' : 'false');
+  projLeagueModeLineup?.setAttribute('aria-pressed', w === 'lineup' ? 'true' : 'false');
+  saveTeamsState();
+}
+
 function setActiveProjSubtab(which){
-  const w = String(which||'overview').toLowerCase();
-  const isO = w === 'overview';
+  const w = String(which||'team').toLowerCase();
   const isT = w === 'team';
   const isL = w === 'league';
-  projTabOverview?.classList.toggle('active', isO);
   projTabTeam?.classList.toggle('active', isT);
   projTabLeague?.classList.toggle('active', isL);
-  projTabOverview?.setAttribute('aria-selected', isO ? 'true' : 'false');
   projTabTeam?.setAttribute('aria-selected', isT ? 'true' : 'false');
   projTabLeague?.setAttribute('aria-selected', isL ? 'true' : 'false');
-  if(projPanelOverview) projPanelOverview.hidden = !isO;
   if(projPanelTeam) projPanelTeam.hidden = !isT;
   if(projPanelLeague) projPanelLeague.hidden = !isL;
   saveTeamsState();
 }
 
 try{
-  projTabOverview?.addEventListener('click', ()=>{ setActiveProjSubtab('overview'); renderProjections(); });
   projTabTeam?.addEventListener('click', ()=>{ setActiveProjSubtab('team'); renderProjections(); });
   projTabLeague?.addEventListener('click', ()=>{ setActiveProjSubtab('league'); renderProjections(); });
+  projLeagueModeAll?.addEventListener('click', ()=>{ setProjLeagueMode('all'); renderProjections(); });
+  projLeagueModeLineup?.addEventListener('click', ()=>{ setProjLeagueMode('lineup'); renderProjections(); });
 }catch(_){/*noop*/}
 
 async function ensureProjLeaguePlayers(){
-  if(__projLeaguePlayers) return __projLeaguePlayers;
+  const season = String(seasonSelect?.value || '').trim() || 'current';
+  if(__projLeaguePlayersBySeason.has(season)) return __projLeaguePlayersBySeason.get(season) || [];
   let js = null;
   try{
-    const r = await fetch('/api/player-projections/league?include_goalies=1', { cache:'no-store' });
+    const r = await fetch(`/api/teams/current-projections?season=${encodeURIComponent(season)}`, { cache:'no-store' });
     if(!r.ok){
-      __projLeaguePlayers = [];
-      return __projLeaguePlayers;
+      __projLeaguePlayersBySeason.set(season, []);
+      return [];
     }
     js = await r.json();
   }catch(e){
-    __projLeaguePlayers = [];
-    return __projLeaguePlayers;
+    __projLeaguePlayersBySeason.set(season, []);
+    return [];
   }
-  __projLeaguePlayers = Array.isArray(js?.players) ? js.players : [];
-  return __projLeaguePlayers;
+  const players = Array.isArray(js?.players) ? js.players : [];
+  __projLeaguePlayersBySeason.set(season, players);
+  return players;
 }
 
-function buildTeamAggsFromLeague(leaguePlayers){
+function buildTeamAggsFromLeague(leaguePlayers, mode='all'){
   const teamsMap = new Map();
   for(const p of (leaguePlayers||[])){
+    if(mode === 'lineup' && !p?.inCurrentLineup) continue;
     const team = String(p?.team||'').toUpperCase();
     if(!team) continue;
     if(!teamsMap.has(team)){
@@ -1550,118 +1549,35 @@ function buildTeamAggsFromLeague(leaguePlayers){
         team,
         teamName: teamNameByAbbrev[team] || team,
         players: 0,
-        Age: 0,
-        Rookie: 0,
-        EVO: 0,
-        EVD: 0,
-        PP: 0,
-        SH: 0,
-        GSAx: 0,
-        total: 0,
-        totalWithGSAx: 0,
+        ageSum: 0,
+        ageCount: 0,
+        projForwards: 0,
+        projDefenders: 0,
+        projGoalies: 0,
+        projTotal: 0,
       });
     }
     const row = teamsMap.get(team);
     row.players += 1;
-    for(const k of ['Age','Rookie','EVO','EVD','PP','SH','total','GSAx']){
-      const v = Number(p?.[k]);
-      if(Number.isFinite(v)) row[k] += v;
+    const age = Number(p?.age);
+    if(Number.isFinite(age) && age > 0){
+      row.ageSum += age;
+      row.ageCount += 1;
+    }
+    const projection = Number(p?.projection);
+    if(Number.isFinite(projection)){
+      const pos = String(p?.position||'').toUpperCase();
+      if(pos === 'D') row.projDefenders += projection;
+      else if(pos === 'G') row.projGoalies += projection;
+      else row.projForwards += projection;
+      row.projTotal += projection;
     }
   }
   const out = Array.from(teamsMap.values());
-  out.forEach(t=>{ t.totalWithGSAx = (Number(t.total)||0) + (Number(t.GSAx)||0); });
-  out.sort((a,b)=> Number(b.totalWithGSAx||0) - Number(a.totalWithGSAx||0));
+  out.forEach(t=>{ t.avgAge = t.ageCount ? (t.ageSum / t.ageCount) : null; });
+  out.sort((a,b)=> Number(b.projTotal||0) - Number(a.projTotal||0));
   out.forEach((t,i)=>{ t.rank = i+1; });
   return out;
-}
-
-function renderOverviewKpis(teamAbbrev, teamAgg){
-  if(!projOverviewKpis) return;
-  const ab = String(teamAbbrev||'').toUpperCase();
-  const row = (teamAgg||[]).find(t=>String(t.team||'').toUpperCase() === ab) || null;
-  if(!row){
-    projOverviewKpis.innerHTML = '';
-    return;
-  }
-
-  const items = [
-    ['Players', row.players],
-    ['Total', fmt3(row.totalWithGSAx)],
-    ['Age', fmt3(row.Age)],
-    ['Rookie', fmt3(row.Rookie)],
-    ['EVO', fmt3(row.EVO)],
-    ['EVD', fmt3(row.EVD)],
-    ['PP', fmt3(row.PP)],
-    ['SH', fmt3(row.SH)],
-    ['GSAx', fmt3(row.GSAx)],
-  ];
-
-  projOverviewKpis.innerHTML = items.map(([k,v])=> (
-    `<div class="kpi-card"><div class="kpi-title">${k}</div><div class="kpi-value">${(v==null||v==='')?'—':v}</div></div>`
-  )).join('');
-}
-
-function renderTeamRadar(teamAbbrev, teamAgg, teamColor){
-  const ctx = document.getElementById('projTeamRadar')?.getContext('2d');
-  if(!ctx || typeof Chart === 'undefined') return;
-  if(__projRadarChart){ try{ __projRadarChart.destroy(); }catch(_){/*noop*/} __projRadarChart=null; }
-
-  const ab = String(teamAbbrev||'').toUpperCase();
-  const row = (teamAgg||[]).find(t=>String(t.team||'').toUpperCase() === ab) || null;
-  if(!row) return;
-
-  const metrics = ['Age','Rookie','EVO','EVD','PP','SH','GSAx'];
-  const valuesByMetric = {};
-  for(const m of metrics){ valuesByMetric[m] = (teamAgg||[]).map(t=> Number(t[m])); }
-  const pct = metrics.map(m=>{
-    const v = Number(row[m]);
-    const pr = pctRank(valuesByMetric[m], v);
-    return pr==null ? 0 : pr;
-  });
-
-  const accent = teamColor || themeAccent();
-  const grid = 'rgba(154,164,177,0.16)';
-  const tick = themeTextDim();
-  __projRadarChart = new Chart(ctx, {
-    type: 'radar',
-    data: {
-      labels: metrics,
-      datasets: [{
-        label: `${row.teamName} (${ab})`,
-        data: pct,
-        borderColor: mixHex(accent, '#ffffff', 0.10),
-        backgroundColor: mixHex(accent, '#ffffff', 0.35),
-        pointBackgroundColor: mixHex(accent, '#ffffff', 0.10),
-        pointRadius: 3,
-        borderWidth: 2,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'nearest', intersect: false },
-      plugins: {
-        legend: { labels: { color: tick, font: { size: 13, weight:'700' } } },
-        tooltip: {
-          callbacks: {
-            title: () => '',
-            label: () => '',
-            afterBody: () => metrics.map((m, i) => `${m}: ${pct[i].toFixed(1)}%`).join('\n'),
-          }
-        }
-      },
-      scales: {
-        r: {
-          min: 0,
-          max: 100,
-          ticks: { display: false },
-          grid: { color: grid },
-          angleLines: { color: grid },
-          pointLabels: { color: tick, font: { size: 12, weight:'800' } },
-        }
-      }
-    }
-  });
 }
 
 function renderProjTeamStack(teamAbbrev, leaguePlayers){
@@ -1672,35 +1588,23 @@ function renderProjTeamStack(teamAbbrev, leaguePlayers){
   const list = (leaguePlayers||[])
     .filter(p=>String(p.team||'').toUpperCase() === ab)
     .slice()
-    .sort((a,b)=>{
-      const at = (Number(a.total)||0) + (Number(a.GSAx)||0);
-      const bt = (Number(b.total)||0) + (Number(b.GSAx)||0);
-      return bt - at;
-    });
+    .sort((a,b)=> (Number(b.projection)||0) - (Number(a.projection)||0));
 
   const labels = list.map(p=>p.name || String(p.playerId));
-  const metrics = ['Age','Rookie','EVO','EVD','PP','SH','GSAx'];
-  const accent = themeAccent();
   const tick = themeTextDim();
   const grid = 'rgba(154,164,177,0.14)';
-
-  const colors = [
-    mixHex(accent,'#ffffff',0.05),
-    mixHex(accent,'#ffffff',0.18),
-    mixHex(accent,'#ffffff',0.32),
-    mixHex(accent,'#ffffff',0.46),
-    mixHex(accent,'#ffffff',0.60),
-    mixHex(accent,'#ffffff',0.74),
-    mixHex(accent,'#ffffff',0.88),
-  ];
-
-  const datasets = metrics.map((m, idx)=>({
-    label: m,
-    data: list.map(p=>Number(p[m]||0)),
-    backgroundColor: colors[idx % colors.length],
+  const datasets = [{
+    label: 'Projection',
+    data: list.map(p=> Number.isFinite(Number(p.projection)) ? Number(p.projection) : 0),
+    backgroundColor: list.map(p=>{
+      const pos = String(p.position||'').toUpperCase();
+      if(pos === 'D') return 'rgba(77,163,255,0.78)';
+      if(pos === 'G') return 'rgba(255,206,84,0.82)';
+      return 'rgba(255,255,255,0.74)';
+    }),
     borderColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
-  }));
+  }];
 
   if(__projTeamChart){ try{ __projTeamChart.destroy(); }catch(_){/*noop*/} __projTeamChart=null; }
   __projTeamChart = new Chart(ctx, {
@@ -1711,23 +1615,25 @@ function renderProjTeamStack(teamAbbrev, leaguePlayers){
       maintainAspectRatio: false,
       indexAxis: 'y',
       plugins: {
-        legend: { labels: { color: tick, font:{ size: 12, weight:'800' } } },
-        tooltip: { callbacks: { footer: (items)=>{
-          const i = items?.[0]?.dataIndex;
-          if(i==null) return '';
-          const t = Number(list[i]?.total);
-          const g = Number(list[i]?.GSAx);
-          const tw = (Number.isFinite(t)?t:0) + (Number.isFinite(g)?g:0);
-          const parts = [];
-          if(Number.isFinite(t)) parts.push(`Total: ${t.toFixed(3)}`);
-          if(Number.isFinite(g)) parts.push(`GSAx: ${g.toFixed(3)}`);
-          parts.push(`Total+GSAx: ${tw.toFixed(3)}`);
-          return parts.join(' · ');
-        } } }
+        legend: { display: false },
+        tooltip: { callbacks: {
+          label: (context)=> `Projection: ${fmt3(context.raw)}`,
+          footer: (items)=>{
+            const i = items?.[0]?.dataIndex;
+            if(i == null) return '';
+            const parts = [];
+            const pos = String(list[i]?.position || '').toUpperCase();
+            if(pos) parts.push(`Position: ${pos}`);
+            const age = Number(list[i]?.age);
+            if(Number.isFinite(age)) parts.push(`Age: ${age.toFixed(1)}`);
+            if(list[i]?.inCurrentLineup) parts.push('Current lineup');
+            return parts.join(' · ');
+          },
+        } }
       },
       scales: {
-        x: { stacked: true, ticks: { color: tick }, grid: { color: grid } },
-        y: { stacked: true, ticks: { color: tick, autoSkip: false }, grid: { display:false } },
+        x: { ticks: { color: tick }, grid: { color: grid } },
+        y: { ticks: { color: tick, autoSkip: false }, grid: { display:false } },
       }
     }
   });
@@ -1752,7 +1658,7 @@ function exportRowsToCsv(filename, rows){
 
 function renderLeagueTable(teamAgg){
   if(!projLeagueTable) return;
-  const sortKey = String(__projLeagueSort.key||'totalWithGSAx');
+  const sortKey = String(__projLeagueSort.key||'projTotal');
   const sortDir = String(__projLeagueSort.dir||'desc');
   const ab = String(teamSelect?.value||'').toUpperCase();
 
@@ -1772,19 +1678,16 @@ function renderLeagueTable(teamAgg){
     { key:'rank', label:'Rank', cls:'num' },
     { key:'teamName', label:'Team', cls:'name' },
     { key:'players', label:'Players', cls:'num' },
-    { key:'totalWithGSAx', label:'Total', cls:'num' },
-    { key:'Age', label:'Age', cls:'num' },
-    { key:'Rookie', label:'Rookie', cls:'num' },
-    { key:'EVO', label:'EVO', cls:'num' },
-    { key:'EVD', label:'EVD', cls:'num' },
-    { key:'PP', label:'PP', cls:'num' },
-    { key:'SH', label:'SH', cls:'num' },
-    { key:'GSAx', label:'GSAx', cls:'num' },
+    { key:'avgAge', label:'Avg. Age', cls:'num' },
+    { key:'projForwards', label:'Proj. Forwards', cls:'num' },
+    { key:'projDefenders', label:'Proj. Defenders', cls:'num' },
+    { key:'projGoalies', label:'Proj. Goalies', cls:'num' },
+    { key:'projTotal', label:'Proj. Total', cls:'num' },
   ];
 
   const th = cols.map(c=>{
     const isS = c.key === sortKey;
-    const ind = isS ? (sortDir==='asc'?'▲':'▼') : '';
+    const ind = isS ? (sortDir==='asc'?'Ôû▓':'Ôû╝') : '';
     return `<th class="${c.cls||''} ${c.cls==='num'?'num':''}" data-sort="${c.key}">${c.label}${ind?`<span class="sort-ind">${ind}</span>`:''}</th>`;
   }).join('');
 
@@ -1795,7 +1698,7 @@ function renderLeagueTable(teamAgg){
         const logo = teamLogoUrl(p.team);
         const name = String(p.teamName||p.team||'');
         const cell = `<div style="display:flex; align-items:center; gap:10px;">
-          <img src="${logo}" alt="${String(p.team||'')}" style="width:32px; height:32px; object-fit:contain;" />
+          <img src="${logo}" alt="${String(p.team||'')}" style="width:40px; height:40px; object-fit:contain;" />
           <span>${name}</span>
         </div>`;
         return `<td class="name">${cell}</td>`;
@@ -1829,25 +1732,29 @@ async function renderProjections(){
   updateSlicerSummaries();
   const team = String(teamSelect?.value||'').trim();
   const leaguePlayers = await ensureProjLeaguePlayers();
-  const teamAgg = buildTeamAggsFromLeague(leaguePlayers);
-  const active = projTabOverview?.classList.contains('active') ? 'overview' : (projTabTeam?.classList.contains('active') ? 'team' : 'league');
+  const teamAgg = buildTeamAggsFromLeague(leaguePlayers, __projLeagueMode);
+  const active = projTabLeague?.classList.contains('active') ? 'league' : 'team';
 
-  if(active === 'overview'){
-    renderOverviewKpis(team, teamAgg);
-    renderTeamRadar(team, teamAgg);
-  } else if(active === 'team'){
-    renderProjTeamStack(team, leaguePlayers);
-  } else {
-    renderLeagueTable(teamAgg);
-  }
+  setProjLeagueMode(__projLeagueMode);
+  if(active === 'team') renderProjTeamStack(team, leaguePlayers);
+  else renderLeagueTable(teamAgg);
 }
 
 try{
   projExportCsv?.addEventListener('click', async ()=>{
     const leaguePlayers = await ensureProjLeaguePlayers();
-    const teamAgg = buildTeamAggsFromLeague(leaguePlayers);
+    const teamAgg = buildTeamAggsFromLeague(leaguePlayers, __projLeagueMode);
     if(!teamAgg.length) return;
-    exportRowsToCsv('team_projections_league.csv', teamAgg);
+    exportRowsToCsv('team_projections_league.csv', teamAgg.map(row=>({
+      Rank: row.rank,
+      Team: row.teamName,
+      Players: row.players,
+      'Avg. Age': Number.isFinite(Number(row.avgAge)) ? fmt3(row.avgAge) : '',
+      'Proj. Forwards': fmt3(row.projForwards),
+      'Proj. Defenders': fmt3(row.projDefenders),
+      'Proj. Goalies': fmt3(row.projGoalies),
+      'Proj. Total': fmt3(row.projTotal),
+    })));
   });
 }catch(_){/*noop*/}
 
@@ -2041,7 +1948,7 @@ async function loadTablePanel(){
     function renderTable(activeSortKey, activeSortDir){
       const head = cols.map(c=>{
         const isS = c.key === activeSortKey;
-        const ind = isS ? (activeSortDir==='asc'?'▲':'▼') : '';
+        const ind = isS ? (activeSortDir==='asc'?'Ôû▓':'Ôû╝') : '';
         return `<th class="${c.cls||''}" data-sort="${c.key}">${c.label}${ind?`<span class=\"sort-ind\">${ind}</span>`:''}</th>`;
       }).join('');
 
@@ -2051,12 +1958,12 @@ async function loadTablePanel(){
           if(c.key==='rank') return `<td class="num">${idx+1}</td>`;
           if(c.key==='team') return `<td>${String(r.team||'')}</td>`;
           const v = r[c.key];
-          const txt = Number.isFinite(Number(v)) ? fmtSmart(v) : '—';
+          const txt = Number.isFinite(Number(v)) ? fmtSmart(v) : 'ÔÇö';
           const metricName = String((c.key||'').split('|')[1] || c.key || '');
           const isPctHeat = (metricName === 'CF%' || metricName === 'xGF%' || metricName === 'GF%');
           const bg = isPctHeat ? pct703050Color(v) : null;
           if(isPctHeat){
-            const disp = Number.isFinite(Number(v)) ? `${fmtSmart(v)}%` : '—';
+            const disp = Number.isFinite(Number(v)) ? `${fmtSmart(v)}%` : 'ÔÇö';
             const pillBg = bg || 'rgba(255,255,255,0.10)';
             return `<td class="num pct"><span class="pct-chip" style="background:${pillBg};">${disp}</span></td>`;
           }

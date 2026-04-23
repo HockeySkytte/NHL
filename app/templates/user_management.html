@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+{% block head %}
+<style>
+  .users-shell{ max-width:1080px; margin:0 auto; }
+  .users-card{ background:#0f1522; border:1px solid #2a3142; border-radius:18px; padding:22px; box-shadow:0 18px 44px rgba(0,0,0,0.34); }
+  .users-kicker{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
+  .users-card h2{ margin:10px 0 8px; font-size:30px; line-height:1.05; }
+  .users-copy{ color:var(--text-dim); font-size:14px; line-height:1.55; margin-bottom:18px; }
+  .users-summary{ display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:10px; margin-bottom:18px; }
+  .users-stat{ border:1px solid #2a3142; border-radius:14px; background:rgba(255,255,255,0.02); padding:12px; }
+  .users-stat .lbl{ font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:800; }
+  .users-stat .val{ margin-top:6px; font-size:20px; font-weight:800; color:var(--text); }
+  .users-filters{ display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:10px; margin-bottom:18px; }
+  .users-filters input, .users-filters select{ width:100%; box-sizing:border-box; background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; border-radius:10px; padding:11px 12px; font-size:14px; }
+  .users-filter-btn{ min-height:42px; padding:0 14px; border:none; border-radius:10px; background:var(--accent); color:#0b1017; font-size:14px; font-weight:800; cursor:pointer; }
+  .users-create{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; border:1px solid #2a3142; border-radius:14px; background:rgba(255,255,255,0.02); padding:16px; }
+  .users-create h3{ grid-column:1 / -1; margin:0; font-size:16px; }
+  .users-create label{ display:grid; gap:6px; font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:700; }
+  .users-create input, .users-create select{ width:100%; box-sizing:border-box; background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; border-radius:10px; padding:11px 12px; font-size:14px; }
+  .users-create .full{ grid-column:1 / -1; }
+  .users-create .check{ display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; }
+  .users-create .check input{ width:16px; height:16px; }
+  .users-submit{ grid-column:1 / -1; min-height:42px; border:none; border-radius:10px; background:var(--accent); color:#0b1017; font-size:14px; font-weight:800; cursor:pointer; }
+  .users-list{ display:grid; gap:12px; margin-top:18px; }
+  .user-row{ border:1px solid #2a3142; border-radius:14px; background:rgba(255,255,255,0.02); padding:16px; }
+  .user-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .user-name{ font-size:18px; font-weight:800; color:var(--text); }
+  .user-email{ color:var(--text-dim); font-size:13px; margin-top:4px; }
+  .user-badges{ display:flex; gap:8px; flex-wrap:wrap; }
+  .user-badge{ padding:5px 8px; border-radius:999px; border:1px solid #2a3142; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); }
+  .user-meta{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; margin-top:14px; }
+  .user-metric{ border:1px solid #2a3142; border-radius:12px; background:rgba(255,255,255,0.02); padding:10px; }
+  .user-metric .lbl{ font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:800; }
+  .user-metric .val{ margin-top:6px; font-size:14px; font-weight:700; color:var(--text); }
+  .user-actions{ display:grid; grid-template-columns:1fr auto auto; gap:10px; margin-top:14px; align-items:end; }
+  .user-actions form{ margin:0; }
+  .user-actions label{ display:grid; gap:6px; font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:700; }
+  .user-actions input{ width:100%; box-sizing:border-box; background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; border-radius:10px; padding:11px 12px; font-size:14px; }
+  .user-btn{ min-height:40px; padding:0 14px; border-radius:10px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--value-text, var(--text)); font-size:13px; font-weight:700; cursor:pointer; }
+  .user-help{ margin:0; color:var(--text-dim); font-size:13px; line-height:1.5; }
+  .inline-confirm{ border:1px dashed #2a3142; border-radius:12px; padding:10px 12px; background:rgba(255,255,255,0.02); }
+  .inline-confirm > summary{ list-style:none; cursor:pointer; font-size:13px; font-weight:800; color:var(--text); }
+  .inline-confirm > summary::-webkit-details-marker{ display:none; }
+  .inline-confirm[open]{ border-style:solid; }
+  .inline-confirm form{ margin-top:12px; }
+  @media (max-width: 900px){ .user-meta{ grid-template-columns:repeat(2, minmax(0, 1fr)); } .user-actions{ grid-template-columns:1fr; } }
+  @media (max-width: 900px){ .users-summary, .users-filters{ grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px){ .users-create, .user-meta, .users-summary, .users-filters{ grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="users-shell">
+  <div class="users-card">
+    <div class="users-kicker">Admin</div>
+    <h2>User Management</h2>
+    <div class="users-copy">Create users, make accounts free, reset passwords, or delete accounts.</div>
+    <div class="users-summary">
+      <div class="users-stat"><div class="lbl">Visible Users</div><div class="val">{{ counts.total }}</div></div>
+      <div class="users-stat"><div class="lbl">Admins</div><div class="val">{{ counts.admins }}</div></div>
+      <div class="users-stat"><div class="lbl">Trial</div><div class="val">{{ counts.trial }}</div></div>
+      <div class="users-stat"><div class="lbl">Free</div><div class="val">{{ counts.free }}</div></div>
+      <div class="users-stat"><div class="lbl">Pro</div><div class="val">{{ counts.pro }}</div></div>
+    </div>
+    <form method="get" action="{{ url_for('main.user_management_page') }}" class="users-filters">
+      <input name="q" type="text" value="{{ filters.q }}" placeholder="Search email, username, plan" />
+      <select name="access">
+        <option value="all" {% if filters.access == 'all' %}selected{% endif %}>All access</option>
+        <option value="trial" {% if filters.access == 'trial' %}selected{% endif %}>Trial</option>
+        <option value="free" {% if filters.access == 'free' %}selected{% endif %}>Free</option>
+        <option value="pro" {% if filters.access == 'pro' %}selected{% endif %}>Pro</option>
+        <option value="inactive" {% if filters.access == 'inactive' %}selected{% endif %}>Inactive</option>
+      </select>
+      <select name="role">
+        <option value="all" {% if filters.role == 'all' %}selected{% endif %}>All roles</option>
+        <option value="admin" {% if filters.role == 'admin' %}selected{% endif %}>Admins</option>
+        <option value="member" {% if filters.role == 'member' %}selected{% endif %}>Members</option>
+      </select>
+      <button type="submit" class="users-filter-btn">Apply</button>
+    </form>
+    <form method="post" action="{{ url_for('main.user_management_create_page') }}" class="users-create">
+      <h3>Create User</h3>
+      <input type="hidden" name="filter_q" value="{{ filters.q }}" />
+      <input type="hidden" name="filter_access" value="{{ filters.access }}" />
+      <input type="hidden" name="filter_role" value="{{ filters.role }}" />
+      <label>Email
+        <input name="email" type="email" required />
+      </label>
+      <label>Username
+        <input name="username" type="text" required />
+      </label>
+      <label>Password
+        <input name="password" type="password" autocomplete="new-password" required />
+      </label>
+      <label>Confirm password
+        <input name="confirm_password" type="password" autocomplete="new-password" required />
+      </label>
+      <label>Access
+        <select name="access">
+          <option value="trial">Trial</option>
+          <option value="free">Free</option>
+          <option value="monthly">Pro Monthly</option>
+          <option value="yearly">Pro Yearly</option>
+        </select>
+      </label>
+      <label class="check full"><input name="is_admin" type="checkbox" /> <span>Admin user</span></label>
+      <p class="user-help full">Usernames and emails must be unique. Trial users get the current 7-day trial window.</p>
+      <button type="submit" class="users-submit">Create user</button>
+    </form>
+    <div class="users-list">
+      {% for user in users %}
+      <div class="user-row">
+        <div class="user-head">
+          <div>
+            <div class="user-name">{{ user.username or user.display_name or user.email }}</div>
+            <div class="user-email">{{ user.email }}</div>
+          </div>
+          <div class="user-badges">
+            {% if user.is_admin %}<div class="user-badge">Admin</div>{% endif %}
+            <div class="user-badge">{{ user.plan_label }}</div>
+            <div class="user-badge">{{ user.subscription_status or 'inactive' }}</div>
+          </div>
+        </div>
+        <div class="user-meta">
+          <div class="user-metric">
+            <div class="lbl">Access</div>
+            <div class="val">{{ user.access_label }}</div>
+          </div>
+          <div class="user-metric">
+            <div class="lbl">Trial Ends</div>
+            <div class="val">{{ user.trial_expires_at[:10] if user.trial_expires_at else '—' }}</div>
+          </div>
+          <div class="user-metric">
+            <div class="lbl">Created</div>
+            <div class="val">{{ user.created_at[:10] if user.created_at else '—' }}</div>
+          </div>
+          <div class="user-metric">
+            <div class="lbl">Last Sign In</div>
+            <div class="val">{{ user.last_sign_in_at[:10] if user.last_sign_in_at else '—' }}</div>
+          </div>
+        </div>
+        <div class="user-actions">
+          <form method="post" action="{{ url_for('main.user_management_password_page', user_id=user.user_id) }}">
+            <input type="hidden" name="filter_q" value="{{ filters.q }}" />
+            <input type="hidden" name="filter_access" value="{{ filters.access }}" />
+            <input type="hidden" name="filter_role" value="{{ filters.role }}" />
+            <label>Reset password
+              <input name="password" type="password" autocomplete="new-password" placeholder="New password" required />
+            </label>
+            <label>Confirm password
+              <input name="confirm_password" type="password" autocomplete="new-password" placeholder="Repeat password" required />
+            </label>
+            <button type="submit" class="user-btn">Reset password</button>
+          </form>
+          <details class="inline-confirm">
+            <summary>Make free</summary>
+            <form method="post" action="{{ url_for('main.user_management_free_page', user_id=user.user_id) }}">
+              <input type="hidden" name="filter_q" value="{{ filters.q }}" />
+              <input type="hidden" name="filter_access" value="{{ filters.access }}" />
+              <input type="hidden" name="filter_role" value="{{ filters.role }}" />
+              <input type="hidden" name="confirm_free" value="1" />
+              <p class="user-help">This changes the stored access state to free and removes recurring billing interval metadata.</p>
+              <button type="submit" class="user-btn">Confirm free access</button>
+            </form>
+          </details>
+          <details class="inline-confirm">
+            <summary>Delete</summary>
+            <form method="post" action="{{ url_for('main.user_management_delete_page', user_id=user.user_id) }}">
+              <input type="hidden" name="filter_q" value="{{ filters.q }}" />
+              <input type="hidden" name="filter_access" value="{{ filters.access }}" />
+              <input type="hidden" name="filter_role" value="{{ filters.role }}" />
+              <input type="hidden" name="confirm_delete" value="1" />
+              <p class="user-help">This removes the user from Supabase Auth and cascades the linked account row.</p>
+              <button type="submit" class="user-btn">Confirm delete</button>
+            </form>
+          </details>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

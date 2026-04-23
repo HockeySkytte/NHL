@@ -1,0 +1,35 @@
+create table if not exists public.player_current_projections (
+    season integer not null,
+    player_id bigint not null,
+    source_player_id bigint,
+    source_game_id bigint,
+    source_game_date date,
+    player text not null,
+    position text not null,
+    model_key text not null,
+    window_games integer not null,
+    weighting text not null,
+    games_in_window integer not null,
+    rookie_factor double precision not null,
+    poss_value double precision not null,
+    off_the_puck double precision not null,
+    gax double precision not null,
+    goalie_gsax double precision not null,
+    rookie_f double precision not null,
+    rookie_d double precision not null,
+    rookie_g double precision not null,
+    raw_poss_value double precision,
+    raw_off_the_puck double precision,
+    raw_gax double precision,
+    raw_goalie_gsax double precision,
+    raw_rookie_f double precision,
+    raw_rookie_d double precision,
+    raw_rookie_g double precision,
+    raw_projected_value double precision,
+    projected_value double precision not null,
+    generated_at timestamptz not null default now(),
+    primary key (season, player_id, model_key)
+);
+
+create index if not exists idx_player_current_projections_source_player
+    on public.player_current_projections (source_player_id, season);

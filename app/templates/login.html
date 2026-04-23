@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block head %}
+<style>
+  .auth-shell{ max-width:460px; margin:0 auto; }
+  .auth-card{ background:#0f1522; border:1px solid #2a3142; border-radius:18px; padding:22px; box-shadow:0 18px 44px rgba(0,0,0,0.34); }
+  .auth-kicker{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
+  .auth-card h2{ margin:10px 0 8px; font-size:30px; line-height:1.05; }
+  .auth-copy{ color:var(--text-dim); font-size:14px; line-height:1.55; margin-bottom:18px; }
+  .auth-form{ display:grid; gap:14px; }
+  .auth-form input{ width:100%; box-sizing:border-box; background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; padding:11px 12px; border-radius:10px; font-size:14px; }
+  .auth-form input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  .auth-submit{ min-height:42px; border:none; border-radius:10px; background:var(--accent); color:#0b1017; font-size:14px; font-weight:800; cursor:pointer; }
+  .auth-links{ margin-top:14px; color:var(--text-dim); font-size:13px; }
+  .auth-links a{ color:var(--text); font-weight:700; }
+  .auth-note{ margin-top:16px; padding:12px; border:1px solid #2a3142; border-radius:12px; background:rgba(255,255,255,0.02); color:var(--text-dim); font-size:13px; line-height:1.5; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-kicker">Account</div>
+    <h2>Log in</h2>
+    <div class="auth-copy">Use your Hockey Statistics account to access Projections.</div>
+    <form method="post" class="auth-form">
+      <input type="hidden" name="next" value="{{ next_url or '/projections' }}" />
+      <label>Email
+        <input name="email" type="email" autocomplete="email" required />
+      </label>
+      <label>Password
+        <input name="password" type="password" autocomplete="current-password" required />
+      </label>
+      <button type="submit" class="auth-submit">Log in</button>
+    </form>
+    <div class="auth-links">Need an account? <a href="{{ url_for('main.signup_page', next=next_url or '/projections') }}">Start your 7-day free trial</a></div>
+    {% if not auth_enabled %}
+    <div class="auth-note">Auth is not configured in this environment yet. Set the Supabase auth credentials before using login and signup.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

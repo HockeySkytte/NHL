@@ -160,7 +160,6 @@
   .rapm-axis .top{ top:0; }
   .rapm-axis .mid{ transform:translateY(-50%); }
   .rapm-axis .bot{ bottom:0; }
-
   .bars{ display:flex; gap:12px; align-items:flex-end; justify-content:center; flex:0; }
   .bar-col{ width:112px; }
   .bar-label{ text-align:center; font-size:12px; color:var(--text-dim); margin-top:8px; }
@@ -178,86 +177,7 @@
   .rapm-tooltip{ position:absolute; z-index:20; pointer-events:none; background:rgba(15,21,34,0.96); border:1px solid #2a3142; border-radius:10px; padding:10px 12px; box-shadow:0 10px 26px rgba(0,0,0,0.45); min-width:170px; display:none; }
   .rapm-tooltip .t-title{ font-weight:850; font-size:13px; color:rgba(255,255,255,0.95); margin-bottom:6px; letter-spacing:.2px; }
   .rapm-tooltip .t-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; color:rgba(255,255,255,0.86); }
-  .rapm-tooltip .dot{ width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:8px; flex:0 0 auto; }
-  .rapm-tooltip .lbl{ display:flex; align-items:center; min-width:0; }
-  .rapm-tooltip .val{ font-variant-numeric:tabular-nums; font-weight:800; }
 
-  .proj-subtabs{ display:flex; gap:12px; align-items:center; margin-top:6px; }
-  .proj-subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
-  .proj-subtab-btn.active{ outline:2px solid var(--accent); }
-  .proj-subpanel{ margin-top:14px; background:transparent; border:none; border-radius:12px; padding:16px; }
-  .proj-subpanel[hidden]{ display:none !important; }
-  .proj-grid{ display:grid; grid-template-columns: 320px 1fr; gap:16px; align-items:start; }
-  .kpi-card{ background:rgba(0,0,0,.12); border:none; border-radius:12px; padding:12px 12px; text-align:center; }
-  .kpi-title{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
-  .kpi-value{ margin-top:6px; font-size:18px; font-weight:850; color:var(--text); font-variant-numeric: tabular-nums; }
-  .kpi-list{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-  .proj-canvas{ width:100%; height:360px; }
-  #projPlayerRadar{ height:500px; }
-  #projTeamStack{ height:600px; }
-  .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
-  .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
-  .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
-  .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
-  .proj-table{ width:100%; border-collapse:collapse; font-size:14px; }
-  .proj-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
-  .proj-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; }
-  .proj-table td.name{ text-align:left; }
-  .proj-table th.name{ text-align:left; }
-  .proj-table td.num, .proj-table th.num{ text-align:center; }
-  .proj-table tr.selected-player{ background:var(--league-highlight-color, rgba(77,163,255,0.12)); }
-  .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
-
-  .edge-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
-  .edge-card{ background:transparent; border:none; border-radius:12px; padding:14px; }
-  .edge-title{ font-size:12px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; margin:0 0 10px 0; }
-  .edge-controls{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
-  .edge-control{ display:flex; align-items:center; gap:8px; }
-  .edge-control label{ font-size:12px; color:var(--text-dim); font-weight:800; letter-spacing:.4px; text-transform:uppercase; }
-  .edge-select{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 10px; border-radius:10px; font-weight:750; }
-
-  .edge-zone-rink{ position:relative; width:100%; max-width:520px; margin:10px auto 2px; }
-  .edge-zone-rink img{ width:100%; height:auto; display:block; border-radius:14px; filter: saturate(0.92) contrast(1.05); opacity:0.95; }
-  .edge-zone-kpi-row{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:12px; padding:0 16px; }
-  .edge-zone-kpi{ position:static; transform:none; flex:1 1 0; max-width:170px; min-width:0; background:rgba(7,10,16,0.78); border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:10px 10px; text-align:center; box-shadow: 0 10px 28px rgba(0,0,0,0.35); }
-  .edge-zone-pill{ display:inline-block; padding:5px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.25); background:rgba(15,21,34,0.92); font-weight:900; font-size:14px; letter-spacing:.2px; margin-bottom:10px; }
-  .edge-zone-value{ font-size:30px; font-weight:950; line-height:1.0; font-variant-numeric:tabular-nums; margin:0 0 6px 0; color:#ffffff; }
-  .edge-zone-avg{ font-size:12px; font-weight:850; letter-spacing:.4px; color:rgba(255,255,255,0.72); margin:0 0 6px 0; }
-  .edge-zone-label{ font-size:12px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; color:rgba(255,255,255,0.82); }
-  @media (max-width: 560px){
-    .edge-zone-kpi-row{ flex-direction:column; justify-content:center; gap:10px; padding:12px; }
-    .edge-zone-kpi{ width:86%; max-width:260px; padding:8px 8px; }
-    .edge-zone-value{ font-size:24px; }
-    .edge-zone-pill{ font-size:13px; padding:4px 10px; }
-  }
-
-  /* Portrait phones: show Zone Time on a vertical rink (DZ top, NZ middle, OZ bottom). */
-  @media (max-width: 560px) and (orientation: portrait){
-    /* Make the rink taller than the stacked KPI cards so zones stay aligned. */
-    .edge-card{ padding-left:10px; padding-right:10px; }
-    .edge-zone-rink{ width:100%; max-width:520px; aspect-ratio: 535 / 1260; height:auto; margin:2px auto 2px; border-radius:14px; overflow:hidden; background:rgba(255,255,255,0.02); }
-
-    /* Important: the image asset is landscape. To show the full rink after rotation, size it to the
-       container's height (≈ 235.5% of its width), then rotate around the center. */
-    .edge-zone-rink img{ position:absolute; left:50%; top:50%; width:235.5%; height:auto; border-radius:0; transform:translate(-50%,-50%) rotate(90deg); transform-origin:center; }
-
-    /* Lay out KPIs in thirds: DZ / NZ / OZ */
-    .edge-zone-kpi-row{ display:grid; grid-template-rows: 1fr 1fr 1fr; gap:10px; padding:12px 6px; justify-items:center; align-items:center; }
-    .edge-zone-kpi{ width:min(320px, 90%); max-width:320px; }
-  }
-
-  @media (max-width: 980px){
-    .edge-grid{ grid-template-columns: 1fr; }
-  }
-
-  .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:none; border-radius:12px; }
-  #tabPanelTable{ min-width:0; }
-  #tablePanelInner{ min-width:0; }
-  .metrics-table{ width:max-content; min-width:100%; border-collapse:separate; border-spacing:0; font-size:14px; table-layout:auto; }
-  .metrics-table th{ position:sticky; top:0; background:#0f1522; text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 12px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; user-select:none; white-space:nowrap; z-index:2; }
-  .metrics-table td{ padding:10px 12px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric: tabular-nums; }
-  .metrics-table th, .metrics-table td{ min-width:92px; }
-  .metrics-table td.name, .metrics-table th.name{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ width:64px; min-width:64px; max-width:64px; }
   .metrics-table td.rank, .metrics-table td.name{ position:sticky; background:#0f1522; z-index:1; }
@@ -279,7 +199,6 @@
   .table-metric input{ margin:0; flex:0 0 auto; cursor:pointer; }
   .table-metric span{ cursor:pointer; flex:1 1 auto; }
 
-  /* ── Shooting tab ── */
   .shoot-kpis{ display:grid; grid-template-columns: repeat(8, 1fr); gap:10px; margin-bottom:14px; }
   @media (max-width:980px){ .shoot-kpis{ grid-template-columns: repeat(3, 1fr); } }
   .shoot-kpi{ background:rgba(0,0,0,.12); border:1px solid #2a3142; border-radius:12px; padding:10px 8px; text-align:center; }
@@ -563,21 +482,12 @@
     <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
       <div id="projPanelInner">
         <div class="proj-subtabs" role="tablist" aria-label="Skater projections tabs">
-          <button id="projTabPlayer" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Player</button>
-          <button id="projTabTeam" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">Team</button>
+          <button id="projTabTeam" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Team</button>
           <button id="projTabLeague" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">League</button>
         </div>
 
-        <section id="projPanelPlayer" class="proj-subpanel" role="tabpanel">
-          <div class="proj-grid">
-            <div id="projPlayerKpis" class="kpi-list"></div>
-            <div style="min-width:0;">
-              <canvas id="projPlayerRadar" class="proj-canvas"></canvas>
-            </div>
-          </div>
-        </section>
-
-        <section id="projPanelTeam" class="proj-subpanel" role="tabpanel" hidden>
+        <section id="projPanelTeam" class="proj-subpanel" role="tabpanel">
+          <div id="projTeamEmpty" class="skater-empty" hidden>No current projections found for this roster.</div>
           <canvas id="projTeamStack" class="proj-canvas"></canvas>
         </section>
 
@@ -754,13 +664,11 @@ let __restoreProjSubtab = null;
 let __isRestoringSkatersState = false;
 let __isBootingSkatersPage = true;
 
-const projTabPlayer = document.getElementById('projTabPlayer');
 const projTabTeam = document.getElementById('projTabTeam');
 const projTabLeague = document.getElementById('projTabLeague');
-const projPanelPlayer = document.getElementById('projPanelPlayer');
 const projPanelTeam = document.getElementById('projPanelTeam');
 const projPanelLeague = document.getElementById('projPanelLeague');
-const projPlayerKpis = document.getElementById('projPlayerKpis');
+const projTeamEmpty = document.getElementById('projTeamEmpty');
 const projLeagueTable = document.getElementById('projLeagueTable');
 const projExportCsv = document.getElementById('projExportCsv');
 
@@ -784,9 +692,10 @@ const tableMetricPicker = document.getElementById('tableMetricPicker');
 const tableConfigStatus = document.getElementById('tableConfigStatus');
 
 let __projLeaguePlayers = null;
+let __projLeaguePlayersKey = '';
 let __projRadarChart = null;
 let __projTeamChart = null;
-let __projLeagueSort = { key: 'total', dir: 'desc' };
+let __projLeagueSort = { key: 'projection', dir: 'desc' };
 
 let __rapmCache = null;
 let __ctxCache = null;
@@ -1020,7 +929,7 @@ function chartsViewActive(){
 function getActiveProjSubtabKey(){
   if(projTabTeam?.classList.contains('active')) return 'team';
   if(projTabLeague?.classList.contains('active')) return 'league';
-  return 'player';
+  return 'team';
 }
 
 function saveSkatersState(){
@@ -1102,7 +1011,7 @@ async function initSkatersPage(){
   try{
     // Restore saved state first.
     restoreSkatersState();
-    try{ setActiveProjSubtab(__restoreProjSubtab || 'player'); }catch(_){/*noop*/}
+    try{ setActiveProjSubtab(__restoreProjSubtab || 'team'); }catch(_){/*noop*/}
     updateCardSlicerSummary();
 
     setDefaultHeadshot();
@@ -1151,13 +1060,11 @@ function chartsSetHighlightMode(mode){
   if(chartsHlTeam) chartsHlTeam.setAttribute('aria-pressed', m==='team' ? 'true' : 'false');
   try{ __pdChart && __pdChart.update('none'); }catch(_){/*noop*/}
   try{ __scChart && __scChart.update('none'); }catch(_){/*noop*/}
-  saveSkatersState();
-}
+    const active = which === 'league' ? 'league' : 'team';
+    const isT = active === 'team';
 
-try{
   chartsHlPlayer?.addEventListener('click', ()=> chartsSetHighlightMode('player'));
   chartsHlTeam?.addEventListener('click', ()=> chartsSetHighlightMode('team'));
-}catch(_){/*noop*/}
 
 async function fetchScatter(xMetricId, yMetricId){
   const season = String(seasonSelect?.value||'').trim();
@@ -1182,122 +1089,9 @@ async function fetchScatter(xMetricId, yMetricId){
   __scatterCache.set(key, data);
   return data;
 }
-
-function makeScatterChart(canvasEl, title){
-  if(!canvasEl || typeof Chart === 'undefined') return null;
-
-  const avgLinesPlugin = {
-    id: 'avgLines',
-    beforeDatasetsDraw(chart){
-      try{
         const ds = chart?.data?.datasets?.[0];
         const pts = Array.isArray(ds?.data) ? ds.data : [];
         let sx = 0, sy = 0, n = 0;
-        for(const p of pts){
-          const x = Number(p?.x);
-          const y = Number(p?.y);
-          if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
-          sx += x; sy += y; n++;
-        }
-        if(n <= 0) return;
-        const mx = sx / n;
-        const my = sy / n;
-        const xScale = chart.scales?.x;
-        const yScale = chart.scales?.y;
-        if(!xScale || !yScale) return;
-
-        const xPix = xScale.getPixelForValue(mx);
-        const yPix = yScale.getPixelForValue(my);
-        const ca = chart.chartArea;
-        if(!ca) return;
-
-        const ctx = chart.ctx;
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(ca.left, ca.top, ca.right - ca.left, ca.bottom - ca.top);
-        ctx.clip();
-
-        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-        ctx.lineWidth = 2;
-
-        // vertical avg line
-        ctx.beginPath();
-        ctx.moveTo(xPix, ca.top);
-        ctx.lineTo(xPix, ca.bottom);
-        ctx.stroke();
-
-        // horizontal avg line
-        ctx.beginPath();
-        ctx.moveTo(ca.left, yPix);
-        ctx.lineTo(ca.right, yPix);
-        ctx.stroke();
-
-        ctx.restore();
-      }catch(_){/*noop*/}
-    }
-  };
-
-  const highlightBadgePlugin = {
-    id: 'highlightBadge',
-    afterDatasetsDraw(chart){
-      try{
-        const ctx = chart.ctx;
-        const meta = chart.getDatasetMeta(0);
-        const mode = __chartsHighlightMode;
-        const wantTeam = String(teamSelect?.value||'').toUpperCase();
-        const wantPid = String(playerSelect?.value||'');
-        const season = String(seasonSelect?.value||'').trim();
-        const selectedTeam = String(teamSelect?.value||'').trim();
-        meta.data.forEach((ptEl, i)=>{
-          const raw = chart.data.datasets[0].data[i];
-          if(!raw) return;
-          const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
-            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
-          if(!isHit) return;
-          const p = ptEl.getProps(['x','y'], true);
-
-          const outerR = 14;
-          // Keep the overall badge size the same (outerR), but let the image fill more of it.
-          const innerR = 12.6;
-
-          ctx.save();
-          // Backplate + ring
-          ctx.beginPath();
-          ctx.fillStyle = 'rgba(10,14,22,0.92)';
-          ctx.arc(p.x, p.y, outerR, 0, Math.PI*2);
-          ctx.fill();
-          ctx.lineWidth = 3.5;
-          ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-          ctx.stroke();
-
-          // Clip + image inside circle
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, innerR, 0, Math.PI*2);
-          ctx.clip();
-
-          let img = null;
-          if(mode === 'player'){
-            // Player highlight uses the selected player's mug.
-            img = getPlayerMugImage(season, selectedTeam, raw.playerId);
-          }else{
-            // Team highlight uses team logo.
-            img = getTeamLogoImage(raw.team);
-          }
-
-          if(img && img.complete){
-            const d = innerR * 2;
-            const pad = (mode === 'team') ? 0.35 : 0.0;
-            const zoom = (mode === 'player') ? 1.18 : 1.08;
-
-            // Note: NHL team logos are often SVG, which may report naturalWidth=0.
-            // In that case, fall back to a simple drawImage without source-cropping.
-            const iw = Number(img.naturalWidth || img.width || 0);
-            const ih = Number(img.naturalHeight || img.height || 0);
-            const side = Math.min(iw, ih);
-
-            try{
               if(side > 0 && Number.isFinite(zoom) && zoom > 0){
                 const crop = side / zoom;
                 if(crop > 0){
@@ -1306,51 +1100,47 @@ function makeScatterChart(canvasEl, title){
                   ctx.drawImage(
                     img,
                     sx, sy, crop, crop,
-                    p.x - innerR + pad,
+      .sort((a,b)=>Number(b.projectedValue||0)-Number(a.projectedValue||0));
+
+    if(projTeamEmpty) projTeamEmpty.hidden = list.length > 0;
+    const teamCanvas = document.getElementById('projTeamStack');
+    if(teamCanvas) teamCanvas.style.display = list.length ? '' : 'none';
+    if(!list.length) return;
                     p.y - innerR + pad,
                     d - 2*pad,
-                    d - 2*pad
                   );
                 }else{
                   ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad);
-                }
-              }else{
-                ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad);
-              }
-            }catch(_){
-              try{ ctx.drawImage(img, p.x - innerR + pad, p.y - innerR + pad, d - 2*pad, d - 2*pad); }catch(__){/*noop*/}
-            }
-          }
-          ctx.restore();
-        });
-      }catch(_){/*noop*/}
-    }
-  };
-
-  const chart = new Chart(canvasEl.getContext('2d'), {
-    type: 'scatter',
-    data: {
-      datasets: [{
         label: title,
         data: [],
         pointBackgroundColor: (ctx)=>{
-          const raw = ctx.raw || {};
+      data: {
+        labels,
+        datasets: [{
+          label: 'Projection',
+          data: list.map(p=>Number(p.projectedValue||0)),
+          backgroundColor: list.map(p=>Number(p.projectedValue||0) >= 0 ? mixHex(accent, '#ffffff', 0.24) : 'rgba(255,106,106,0.88)'),
+          borderColor: list.map(p=>Number(p.projectedValue||0) >= 0 ? mixHex(accent, '#ffffff', 0.08) : 'rgba(255,161,161,0.92)'),
+          borderWidth: 1.2,
+          borderRadius: 8,
+        }],
+      },
           const mode = __chartsHighlightMode;
           const wantTeam = String(teamSelect?.value||'').toUpperCase();
           const wantPid = String(playerSelect?.value||'');
           const isHit = (mode === 'player')
             ? (wantPid && String(raw.playerId) === wantPid)
             : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
-          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.16)';
+          tooltip: { callbacks: { footer: (items)=>{
         },
         pointBorderColor: (ctx)=>{
-          const raw = ctx.raw || {};
-          const mode = __chartsHighlightMode;
+            const gp = Number(list[i]?.gp || 0);
+            return Number.isFinite(gp) ? `GP: ${gp}` : '';
           const wantTeam = String(teamSelect?.value||'').toUpperCase();
           const wantPid = String(playerSelect?.value||'');
           const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
-            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          x: { ticks: { color: tick }, grid: { color: grid }, title:{ display:true, text:'Centered Projection', color:tick, font:{ size:12, weight:'800' } } },
+          y: { ticks: { color: tick, autoSkip: false }, grid: { display:false } },
           return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.10)';
         },
         pointBorderWidth: (ctx)=>{
@@ -1361,27 +1151,21 @@ function makeScatterChart(canvasEl, title){
           const isHit = (mode === 'player')
             ? (wantPid && String(raw.playerId) === wantPid)
             : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
-          return isHit ? 0 : 1;
+      { key:'team', label:'Team', team:true },
         },
         pointRadius: (ctx)=>{
-          const raw = ctx.raw || {};
-          const mode = __chartsHighlightMode;
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const wantPid = String(playerSelect?.value||'');
-          const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
             : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
           // The actual highlight badge is drawn by the plugin.
           return isHit ? 10 : 4;
-        },
+      { key:'projection', label:'Projection', num:true },
         pointHoverRadius: 10,
         pointStyle: 'circle',
       }]
     },
     options: {
       responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
+      const av = (sortKey === 'QoT' || sortKey === 'QoC' || sortKey === 'ZS') ? a?.contextData?.[sortKey] : a?.[sortKey];
+      const bv = (sortKey === 'QoT' || sortKey === 'QoC' || sortKey === 'ZS') ? b?.contextData?.[sortKey] : b?.[sortKey];
         legend: { display:false },
         tooltip: {
           callbacks: {
@@ -3018,151 +2802,41 @@ function pctRank(values, v){
 }
 
 function setActiveProjSubtab(which){
-  const isP = which === 'player';
-  const isT = which === 'team';
-  const isL = which === 'league';
-  projTabPlayer?.classList.toggle('active', isP);
+  const active = which === 'league' ? 'league' : 'team';
+  const isT = active === 'team';
+  const isL = active === 'league';
   projTabTeam?.classList.toggle('active', isT);
   projTabLeague?.classList.toggle('active', isL);
-  projTabPlayer?.setAttribute('aria-selected', isP ? 'true' : 'false');
   projTabTeam?.setAttribute('aria-selected', isT ? 'true' : 'false');
   projTabLeague?.setAttribute('aria-selected', isL ? 'true' : 'false');
-  if(projPanelPlayer) projPanelPlayer.hidden = !isP;
   if(projPanelTeam) projPanelTeam.hidden = !isT;
   if(projPanelLeague) projPanelLeague.hidden = !isL;
 }
 
 async function ensureProjLeaguePlayers(){
-  if(__projLeaguePlayers) return __projLeaguePlayers;
+  const season = String(seasonSelect?.value || '').trim();
+  const cacheKey = season || 'current';
+  if(__projLeaguePlayers && __projLeaguePlayersKey === cacheKey) return __projLeaguePlayers;
   let js = null;
   try{
-    const r = await fetch('/api/player-projections/league', { cache:'no-store' });
+    const url = `/api/skaters/current-projections?season=${encodeURIComponent(season)}`;
+    const r = await fetch(url, { cache:'no-store' });
     if(!r.ok){
-      console.error('[projections] /api/player-projections/league failed:', r.status);
+      console.error('[projections] /api/skaters/current-projections failed:', r.status);
       __projLeaguePlayers = [];
+      __projLeaguePlayersKey = cacheKey;
       return __projLeaguePlayers;
     }
     js = await r.json();
   }catch(e){
-    console.error('[projections] /api/player-projections/league failed:', e);
+    console.error('[projections] /api/skaters/current-projections failed:', e);
     __projLeaguePlayers = [];
+    __projLeaguePlayersKey = cacheKey;
     return __projLeaguePlayers;
   }
   __projLeaguePlayers = Array.isArray(js?.players) ? js.players : [];
-  // Debug: log team distribution
-  const teamCounts = {};
-  __projLeaguePlayers.forEach(p => {
-    const t = p.team || '(no team)';
-    teamCounts[t] = (teamCounts[t] || 0) + 1;
-  });
-  console.log('[projections] League players by team:', teamCounts);
-  console.log('[projections] Total players loaded:', __projLeaguePlayers.length);
+  __projLeaguePlayersKey = cacheKey;
   return __projLeaguePlayers;
-}
-
-function renderPlayerKpisFromLeague(p, ctx){
-  if(!projPlayerKpis) return;
-  if(!p){
-    projPlayerKpis.innerHTML = '<div class="skater-empty" style="grid-column:1 / -1; padding:8px 2px;">Select a player to view projections.</div>';
-    return;
-  }
-  const items = [
-    ['Position', p.position],
-    ['GP', p.gp],
-    ['Age', fmt3(p.Age)],
-    ['Rookie', fmt3(p.Rookie)],
-    ['EVO', fmt3(p.EVO)],
-    ['EVD', fmt3(p.EVD)],
-    ['PP', fmt3(p.PP)],
-    ['SH', fmt3(p.SH)],
-    ['QoT', ctx?.QoT != null ? fmt3(ctx.QoT) : '—'],
-    ['QoC', ctx?.QoC != null ? fmt3(ctx.QoC) : '—'],
-    ['ZS', ctx?.ZS != null ? fmt3(ctx.ZS) : '—'],
-    ['Total', fmt3(p.total)],
-  ];
-  projPlayerKpis.innerHTML = items.map(([k,v])=>(
-    `<div class="kpi-card"><div class="kpi-title">${k}</div><div class="kpi-value">${(v==null||v==='')?'—':v}</div></div>`
-  )).join('');
-}
-
-function renderPlayerRadarFromLeague(p, leaguePlayers, contextData, teamColor){
-  const ctx = document.getElementById('projPlayerRadar')?.getContext('2d');
-  if(!ctx) return;
-  if(__projRadarChart){ try{ __projRadarChart.destroy(); }catch(_){/*noop*/} __projRadarChart=null; }
-  if(!p) return;
-
-  const metrics = ['EVO','EVD','PP','SH','QoT','QoC','ZS'];
-  const groupPos = String(p.position||'F').toUpperCase().startsWith('D') ? 'D' : 'F';
-  const pool = (leaguePlayers||[]).filter(x=>String(x.position||'').toUpperCase().startsWith(groupPos));
-  const valuesByMetric = {};
-  for(const m of metrics){ 
-    if(m === 'QoT' || m === 'QoC' || m === 'ZS'){
-      valuesByMetric[m] = pool.map(x=>Number(x.contextData?.[m]));
-    } else {
-      valuesByMetric[m] = pool.map(x=>Number(x[m]));
-    }
-  }
-  const pct = metrics.map(m=>{
-    let v;
-    if(m === 'QoT' || m === 'QoC' || m === 'ZS'){
-      v = Number(contextData?.[m]);
-    } else {
-      v = Number(p[m]);
-    }
-    const pr = pctRank(valuesByMetric[m], v);
-    return pr==null ? 0 : pr;
-  });
-
-  const accent = teamColor || themeAccent();
-  const grid = 'rgba(154,164,177,0.16)';
-  const tick = themeTextDim();
-
-  __projRadarChart = new Chart(ctx, {
-    type: 'radar',
-    data: {
-      labels: metrics,
-      datasets: [{
-        label: `${p.name || p.playerId} (${groupPos})`,
-        data: pct,
-        borderColor: mixHex(accent, '#ffffff', 0.10),
-        backgroundColor: mixHex(accent, '#ffffff', 0.35),
-        pointBackgroundColor: mixHex(accent, '#ffffff', 0.10),
-        pointRadius: 3,
-        borderWidth: 2,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {
-        mode: 'nearest',
-        intersect: false,
-      },
-      plugins: {
-        legend: { labels: { color: tick, font: { size: 13, weight:'700' } } },
-        tooltip: { 
-          callbacks: { 
-            title: () => '',
-            label: (ctx) => '',
-            afterBody: (items) => {
-              if(!items || !items[0]) return '';
-              return metrics.map((m, i) => `${m}: ${pct[i].toFixed(1)}%`);
-            }
-          } 
-        }
-      },
-      scales: {
-        r: {
-          min: 0,
-          max: 100,
-          ticks: { display: false },
-          grid: { color: grid },
-          angleLines: { color: grid },
-          pointLabels: { color: tick, font: { size: 12, weight:'800' } },
-        }
-      }
-    }
-  });
 }
 
 function renderTeamStackFromLeague(team, leaguePlayers, teamColor){
@@ -3262,40 +2936,39 @@ function renderLeagueTable(players, selectedPlayerId){
   const head = `<thead><tr>${cols.map(c=>{
     const active = c.key === sortKey;
     const ind = active ? `<span class="sort-ind">${sortDir==='asc'?'▲':'▼'}</span>` : '';
-    const cls = c.name ? 'name' : (c.num ? 'num' : '');
+    const cls = c.name ? 'name' : (c.team ? 'team' : (c.num ? 'num' : ''));
     return `<th class="${cls}" data-key="${c.key}">${c.label}${ind}</th>`;
   }).join('')}</tr></thead>`;
 
   const body = `<tbody>${list.map(p=>{
     const isSelected = String(p.playerId) === String(selectedPlayerId||'');
     const rowCls = isSelected ? ' class="selected-player"' : '';
-    const td = (val, num, isName)=>{
+    const td = (val, num, isName, isTeam)=>{
       if(num){
         const n = Number(val);
         const s = Number.isFinite(n) ? (Number.isInteger(n) ? String(n) : n.toFixed(3)) : '';
         return `<td class="num">${s || '—'}</td>`;
       }
       if(isName){
-        return `<td class="name">${(val==null||val==='')?'—':String(val)}</td>`;
+        return `<td class="name">${(val==null||val==='')?'—':escapeHtml(String(val))}</td>`;
+      }
+      if(isTeam){
+        const team = String(val||'').trim().toUpperCase();
+        const logo = team ? `<img src="${teamLogoUrl(team)}" alt="${escapeHtml(team)} logo" />` : '';
+        return `<td class="team"><div class="proj-team-cell">${logo}<span>${team || '—'}</span></div></td>`;
       }
       return `<td>${(val==null||val==='')?'—':String(val)}</td>`;
     };
     return `<tr${rowCls}>
       ${td(p._rank,true,false)}
       ${td(p.name,false,true)}
-      ${td(p.team,false,false)}
+      ${td(p.team,false,false,true)}
       ${td(p.position,false,false)}
       ${td(p.gp,true,false)}
-      ${td(p.Age,true,false)}
-      ${td(p.Rookie,true,false)}
-      ${td(p.EVO,true,false)}
-      ${td(p.EVD,true,false)}
-      ${td(p.PP,true,false)}
-      ${td(p.SH,true,false)}
       ${td(p.contextData?.QoT,true,false)}
       ${td(p.contextData?.QoC,true,false)}
       ${td(p.contextData?.ZS,true,false)}
-      ${td(p.total,true,false)}
+      ${td(p.projection,true,false)}
     </tr>`;
   }).join('')}</tbody>`;
 
@@ -4166,37 +3839,8 @@ async function loadProjectionsPanel(){
   }
   const playerId = playerSelect?.value;
   const teamAbbrev = String(teamSelect?.value||'').toUpperCase();
-  const season = seasonSelect?.value;
   try{
     const league = await ensureProjLeaguePlayers();
-    
-    // Fetch context data for all league players
-    const contextPromises = league.map(async (p)=>{
-      try{
-        const r = await fetch(`/api/context/player/${encodeURIComponent(p.playerId)}?season=${encodeURIComponent(season||'')}`, { cache:'no-store' });
-        const data = await r.json();
-        if(!data?.error && Array.isArray(data.rows)){
-          // Find the 5v5 row
-          const row5v5 = data.rows.find(row => String(row.StrengthState||'') === '5v5');
-          if(row5v5){
-            const parseNum = (val) => {
-              if(val == null) return null;
-              // If already a number, return it
-              if(typeof val === 'number') return Number.isFinite(val) ? val : null;
-              // Parse string values
-              const n = parseLocaleNumber(val);
-              return Number.isFinite(n) ? n : null;
-            };
-            p.contextData = { 
-              QoT: parseNum(row5v5.QoT_blend_xG67_G33), 
-              QoC: parseNum(row5v5.QoC_blend_xG67_G33), 
-              ZS: parseNum(row5v5.ZS_Difficulty) 
-            };
-          }
-        }
-      }catch(_){ /* ignore context fetch failures */ }
-    });
-    await Promise.all(contextPromises);
 
     const teamObj = teams.find(tm=>String(tm?.Team||tm?.team||'').toUpperCase() === teamAbbrev);
     const teamColor = teamObj?.Color || teamObj?.color || null;
@@ -4210,15 +3854,12 @@ async function loadProjectionsPanel(){
     }
 
     renderLeagueTable(league, playerId);
-
-    const p = league.find(x=>String(x.playerId) === String(playerId||''));
-    const playerContext = p?.contextData || null;
-    renderPlayerKpisFromLeague(p, playerContext);
-    renderPlayerRadarFromLeague(p, league, playerContext, teamColor);
-
     renderTeamStackFromLeague(teamAbbrev, league, teamColor);
   }catch(e){
-    if(projPlayerKpis) projPlayerKpis.innerHTML = '<div class="skater-empty" style="grid-column:1 / -1; padding:8px 2px;">Error loading projections.</div>';
+    if(projTeamEmpty){
+      projTeamEmpty.hidden = false;
+      projTeamEmpty.textContent = 'Error loading projections.';
+    }
   }
 }
 
@@ -4877,13 +4518,12 @@ ccImportFile?.addEventListener('change', async ()=>{
   }
 });
 
-projTabPlayer?.addEventListener('click', ()=> { setActiveProjSubtab('player'); saveSkatersState(); });
 projTabTeam?.addEventListener('click', ()=> { setActiveProjSubtab('team'); saveSkatersState(); });
 projTabLeague?.addEventListener('click', ()=> { setActiveProjSubtab('league'); saveSkatersState(); });
 
 projExportCsv?.addEventListener('click', ()=>{
   if(!__projLeaguePlayers || !__projLeaguePlayers.length) return;
-  const cols = ['name','team','position','gp','Age','Rookie','EVO','EVD','PP','SH','QoT','QoC','ZS','total'];
+  const cols = ['name','team','position','gp','QoT','QoC','ZS','projection'];
   const header = cols.join(',');
   const rows = __projLeaguePlayers.filter(p=>p.name && String(p.name).trim()).map(p=>{
     return cols.map(c=>{

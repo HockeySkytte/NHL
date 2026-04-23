@@ -132,14 +132,14 @@
   .btn:hover{ background:rgba(255,255,255,0.05); }
   .btn.primary{ outline:2px solid var(--accent); }
 
-  .rapm-controls{ display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; margin-bottom:14px; }
-  .rapm-controls label{ min-width:160px; }
+  .rapm-controls{ display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; margin:0 auto 18px; max-width:1150px; padding:14px 16px; border:1px solid rgba(120,145,185,0.18); border-radius:20px; background:linear-gradient(180deg, rgba(18,25,40,0.9), rgba(10,14,22,0.72)); box-shadow:0 18px 40px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.04); backdrop-filter:blur(10px); }
+  .rapm-controls label{ min-width:160px; color:rgba(230,236,246,0.95); font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
   .rapm-controls select{ color:var(--value-text, var(--text)); }
 
-  .rapm-split{ display:grid; grid-template-columns: 1.4fr 0.8fr 0.8fr; gap:14px; max-width:1150px; margin:0 auto; }
-  .rapm-sect{ --rapmBarH: 340px; border:none; border-radius:12px; padding:12px 12px 10px; background:transparent; }
-  .rapm-sect h3{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
-  .toi{ margin-top:8px; font-size:12px; color:rgba(255,255,255,0.90); text-align:center; font-weight:750; }
+  .rapm-split{ display:grid; grid-template-columns: 1.4fr 0.8fr 0.8fr; gap:16px; max-width:1150px; margin:0 auto; }
+  .rapm-sect{ --rapmBarH: 340px; border:1px solid rgba(112,138,178,0.18); border-radius:22px; padding:16px 16px 14px; background:radial-gradient(circle at top, rgba(70,116,255,0.16), transparent 42%), linear-gradient(180deg, rgba(15,21,34,0.96), rgba(9,13,21,0.86)); box-shadow:0 18px 40px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.04); }
+  .rapm-sect h3{ margin:0 0 14px; font-size:13px; letter-spacing:.16em; text-transform:uppercase; color:rgba(240,244,251,0.95); font-weight:900; }
+  .toi{ margin-top:12px; font-size:11px; color:rgba(188,198,214,0.92); text-align:center; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
 
   .charts-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
   @media (max-width: 1100px){ .charts-grid{ grid-template-columns:1fr; } }
@@ -156,27 +156,27 @@
   @media (max-width: 980px){ .chart-area{ height:420px; } }
   .chart-canvas{ width:100% !important; height:100% !important; display:block; }
 
-  .rapm-row{ display:flex; gap:3px; align-items:flex-start; justify-content:center; }
-  .rapm-axis{ width:40px; height:var(--rapmBarH); position:relative; }
-  .rapm-axis .lbl{ position:absolute; left:0; font-size:11px; color:var(--text-dim); }
+  .rapm-row{ display:flex; gap:10px; align-items:flex-start; justify-content:center; }
+  .rapm-axis{ width:46px; height:var(--rapmBarH); position:relative; }
+  .rapm-axis .lbl{ position:absolute; left:0; font-size:10px; color:#b2bfd4; font-weight:800; letter-spacing:.08em; }
   .rapm-axis .top{ top:0; }
   .rapm-axis .mid{ transform:translateY(-50%); }
   .rapm-axis .bot{ bottom:0; }
 
-  .bars{ display:flex; gap:12px; align-items:flex-end; justify-content:center; flex:0; }
-  .bar-col{ width:112px; }
-  .bar-label{ text-align:center; font-size:12px; color:var(--text-dim); margin-top:8px; }
-  .bar-value{ text-align:center; font-size:12px; font-weight:750; margin-top:6px; }
-  .bar-area{ position:relative; height:var(--rapmBarH); border-radius:10px; background:rgba(255,255,255,0.02); border:none; overflow:hidden; }
-  .bar-line{ position:absolute; left:0; right:0; height:1px; background:#273246; }
-  .bar{ position:absolute; left:14%; width:72%; border-radius:8px; background:var(--accent); opacity:1; }
-  .bar.neg{ background:#ff6a6a; opacity:1; }
+  .bars{ display:flex; gap:14px; align-items:flex-end; justify-content:center; flex:0; }
+  .bar-col{ width:120px; }
+  .bar-label{ text-align:center; font-size:11px; color:#aebad0; margin-top:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+  .bar-value{ text-align:center; font-size:13px; font-weight:850; margin-top:7px; color:#eef4ff; }
+  .bar-area{ position:relative; height:var(--rapmBarH); border-radius:16px; background:linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015)); border:1px solid rgba(124,143,179,0.16); overflow:hidden; box-shadow:inset 0 1px 0 rgba(255,255,255,0.04); }
+  .bar-line{ position:absolute; left:0; right:0; height:1px; background:rgba(143,161,191,0.22); }
+  .bar{ position:absolute; left:18%; width:64%; border-radius:12px 12px 6px 6px; background:linear-gradient(180deg, rgba(118,176,255,0.96), rgba(67,109,255,0.96)); box-shadow:0 10px 20px rgba(49,94,255,0.28); opacity:1; }
+  .bar.neg{ background:linear-gradient(180deg, rgba(255,146,146,0.95), rgba(198,72,72,0.95)); box-shadow:0 10px 20px rgba(196,72,72,0.24); opacity:1; }
 
-  .rapm-career{ max-width:1150px; margin:0 auto; }
+  .rapm-career{ max-width:1150px; margin:0 auto; padding:16px; border:1px solid rgba(112,138,178,0.18); border-radius:22px; background:radial-gradient(circle at top, rgba(70,116,255,0.16), transparent 38%), linear-gradient(180deg, rgba(15,21,34,0.96), rgba(9,13,21,0.86)); box-shadow:0 18px 40px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.04); }
   .rapm-career .career-area{ width:100%; flex:1; min-width:0; }
   .rapm-career svg{ position:absolute; inset:0; width:100%; height:100%; }
-  .rapm-career-legend{ display:flex; gap:22px; align-items:center; justify-content:center; margin-top:10px; color:rgba(255,255,255,0.90); font-size:14px; letter-spacing:.2px; font-weight:750; }
-  .rapm-career-legend .sw{ width:12px; height:12px; border-radius:3px; display:inline-block; margin-right:8px; }
+  .rapm-career-legend{ display:flex; gap:22px; align-items:center; justify-content:center; margin-top:14px; color:rgba(232,239,248,0.92); font-size:13px; letter-spacing:.08em; font-weight:800; text-transform:uppercase; }
+  .rapm-career-legend .sw{ width:12px; height:12px; border-radius:999px; display:inline-block; margin-right:8px; }
   .rapm-tooltip{ position:absolute; z-index:20; pointer-events:none; background:rgba(15,21,34,0.96); border:1px solid #2a3142; border-radius:10px; padding:10px 12px; box-shadow:0 10px 26px rgba(0,0,0,0.45); min-width:170px; display:none; }
   .rapm-tooltip .t-title{ font-weight:850; font-size:13px; color:rgba(255,255,255,0.95); margin-bottom:6px; letter-spacing:.2px; }
   .rapm-tooltip .t-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; color:rgba(255,255,255,0.86); }

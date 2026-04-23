@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+{% block head %}
+<style>
+  .account-shell{ max-width:760px; margin:0 auto; }
+  .account-card{ background:#0f1522; border:1px solid #2a3142; border-radius:18px; padding:22px; box-shadow:0 18px 44px rgba(0,0,0,0.34); }
+  .account-kicker{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
+  .account-card h2{ margin:10px 0 8px; font-size:30px; line-height:1.05; }
+  .account-copy{ color:var(--text-dim); font-size:14px; line-height:1.55; margin-bottom:18px; }
+  .account-status{ margin-bottom:18px; padding:14px 16px; border:1px solid #2a3142; border-radius:14px; background:rgba(255,255,255,0.03); }
+  .account-status strong{ display:block; margin-bottom:6px; font-size:15px; color:var(--text); }
+  .account-status span{ color:var(--text-dim); font-size:13px; line-height:1.5; }
+  .account-banner{ margin-bottom:18px; padding:14px 16px; border:1px solid #2a3142; border-radius:14px; background:rgba(255,255,255,0.03); }
+  .account-banner.success{ border-color:rgba(78, 205, 145, 0.35); background:rgba(78, 205, 145, 0.08); }
+  .account-banner.info{ border-color:rgba(77, 163, 255, 0.35); background:rgba(77, 163, 255, 0.08); }
+  .account-banner strong{ display:block; margin-bottom:6px; color:var(--text); font-size:15px; }
+  .account-banner span{ color:var(--text-dim); font-size:13px; line-height:1.5; }
+  .account-grid{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .account-metric{ border:1px solid #2a3142; border-radius:14px; background:rgba(255,255,255,0.02); padding:14px; }
+  .account-metric .lbl{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
+  .account-metric .val{ margin-top:8px; color:var(--text); font-size:18px; font-weight:800; }
+  .account-actions{ display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
+  .account-link, .account-btn{ display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border-radius:10px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--value-text, var(--text)); font-size:13px; font-weight:700; text-decoration:none; cursor:pointer; }
+  .account-link.primary{ outline:2px solid var(--accent); background:rgba(255,255,255,0.03); }
+  .account-note{ margin-top:16px; padding:12px; border:1px solid #2a3142; border-radius:12px; background:rgba(255,255,255,0.02); color:var(--text-dim); font-size:13px; line-height:1.5; }
+  .account-pricing{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin-top:18px; }
+  .account-plan{ border:1px solid #2a3142; border-radius:14px; background:rgba(255,255,255,0.02); padding:16px; }
+  .account-plan .plan-name{ font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
+  .account-plan .plan-price{ margin-top:8px; color:var(--text); font-size:24px; font-weight:900; }
+  .account-plan .plan-copy{ margin-top:8px; color:var(--text-dim); font-size:13px; line-height:1.5; }
+  .account-sections{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin-top:18px; }
+  .account-section{ border:1px solid #2a3142; border-radius:14px; background:rgba(255,255,255,0.02); padding:16px; }
+  .account-section h3{ margin:0 0 12px; font-size:16px; }
+  .account-form{ display:grid; gap:12px; }
+  .account-form label{ display:grid; gap:6px; font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:700; }
+  .account-form input, .account-form select{ width:100%; box-sizing:border-box; background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; border-radius:10px; padding:11px 12px; font-size:14px; }
+  .account-form input:focus, .account-form select:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  .account-inline-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+  .account-help{ margin:0; color:var(--text-dim); font-size:13px; line-height:1.5; }
+  .inline-confirm{ margin-top:12px; border:1px dashed #2a3142; border-radius:12px; padding:10px 12px; background:rgba(255,255,255,0.02); }
+  .inline-confirm > summary{ list-style:none; cursor:pointer; font-size:13px; font-weight:800; color:var(--text); }
+  .inline-confirm > summary::-webkit-details-marker{ display:none; }
+  .inline-confirm[open]{ border-style:solid; }
+  .inline-confirm .account-form{ margin-top:12px; }
+  .account-danger{ border-color:rgba(255,106,106,0.35); }
+  .account-danger .account-btn{ border-color:rgba(255,106,106,0.35); }
+  @media (max-width: 640px){ .account-grid{ grid-template-columns:1fr; } }
+  @media (max-width: 640px){ .account-pricing{ grid-template-columns:1fr; } }
+  @media (max-width: 640px){ .account-sections{ grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="account-shell">
+  <div class="account-card">
+    <div class="account-kicker">Account</div>
+    <h2>{{ auth_user.username or auth_user.display_name }}</h2>
+    <div class="account-copy">{{ auth_user.email }}</div>
+    {% if billing_banner %}
+    <div class="account-banner {{ billing_banner.category }}">
+      <strong>{{ billing_banner.title }}</strong>
+      <span>{{ billing_banner.detail }}</span>
+    </div>
+    {% endif %}
+    <div class="account-status">
+      <strong>{{ auth_user.access_label }} · {{ auth_user.plan_label }}</strong>
+      <span>
+        {% if auth_user.subscription_plan == 'trial' %}
+        Trial access runs until {{ auth_user.trial_expires_at[:10] if auth_user.trial_expires_at else 'the end of the trial window' }}.
+        {% elif auth_user.subscription_plan == 'free' %}
+        This account has free access without recurring billing.
+        {% elif auth_user.billing_interval == 'monthly' %}
+        This account is on the monthly plan at $5/month.
+        {% elif auth_user.billing_interval == 'yearly' %}
+        This account is on the yearly plan at $40/year.
+        {% else %}
+        Projections access depends on the current subscription state shown below.
+        {% endif %}
+      </span>
+    </div>
+    <div class="account-grid">
+      <div class="account-metric">
+        <div class="lbl">Username</div>
+        <div class="val">{{ auth_user.username or '—' }}</div>
+      </div>
+      <div class="account-metric">
+        <div class="lbl">Access</div>
+        <div class="val">{{ auth_user.access_label }}</div>
+      </div>
+      <div class="account-metric">
+        <div class="lbl">Trial Ends</div>
+        <div class="val">{{ auth_user.trial_expires_at[:10] if auth_user.trial_expires_at else '—' }}</div>
+      </div>
+      <div class="account-metric">
+        <div class="lbl">Plan</div>
+        <div class="val">{{ auth_user.plan_label }}</div>
+      </div>
+      <div class="account-metric">
+        <div class="lbl">Status</div>
+        <div class="val">{{ 'Active' if auth_user.has_access else 'Expired' }}</div>
+      </div>
+    </div>
+    <div class="account-actions">
+      <a class="account-link primary" href="{{ url_for('main.game_projections_page') }}">Open Projections</a>
+      <form method="post" action="{{ url_for('main.logout_page') }}">
+        <button type="submit" class="account-btn">Log out</button>
+      </form>
+    </div>
+    <div class="account-pricing">
+      {% for plan in plan_options %}
+      <div class="account-plan">
+        <div class="plan-name">{{ plan.label }}</div>
+        <div class="plan-price">{{ plan.price_label }}</div>
+        <div class="plan-copy">{{ plan.detail }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if not auth_user.has_access %}
+    <div class="account-note">Your trial has ended, so Projections stays locked until billing is connected to one of the plans above.</div>
+    {% else %}
+    <div class="account-note">Only Projections is currently behind the paywall. Skaters, Goalies, Teams, and Line Tool stay open.</div>
+    {% endif %}
+    <div class="account-sections">
+      <section class="account-section">
+        <h3>Plan</h3>
+        {% if billing.checkout_enabled %}
+        <p class="account-help">Payments are handled in Stripe. The browser never receives the Stripe secret key; this form only posts to the server, which creates a secure Checkout or Billing Portal session.</p>
+        {% elif billing.partial_config %}
+        <p class="account-help">Stripe billing is partially configured. Missing: {{ billing.missing_config|join(', ') }}.</p>
+        {% else %}
+        <p class="account-help">Switching plans updates the stored access state immediately in the app until Stripe is configured.</p>
+        {% endif %}
+        <form method="post" action="{{ url_for('main.account_plan_update_page') }}" class="account-form">
+          <label>Choose plan
+            <select name="plan">
+              <option value="monthly" {% if auth_user.billing_interval == 'monthly' %}selected{% endif %}>Pro Monthly - $5/month</option>
+              <option value="yearly" {% if auth_user.billing_interval == 'yearly' %}selected{% endif %}>Pro Yearly - $40/year</option>
+            </select>
+          </label>
+          <div class="account-inline-actions">
+            <button type="submit" class="account-btn">{% if billing.checkout_enabled and auth_user.stripe_subscription_id %}Open Stripe billing{% elif billing.checkout_enabled %}Continue to Stripe checkout{% else %}Update plan{% endif %}</button>
+          </div>
+        </form>
+        {% if billing.portal_enabled %}
+        <form method="post" action="{{ url_for('main.account_billing_portal_page') }}" class="account-form" style="margin-top:12px;">
+          <button type="submit" class="account-btn">Manage billing in Stripe</button>
+        </form>
+        {% endif %}
+        {% if billing.checkout_enabled and auth_user.stripe_customer_id %}
+        <div class="account-note" style="margin-top:12px;">Use the Stripe Billing Portal to change plans, update payment methods, or cancel without exposing payment details to the app.</div>
+        {% else %}
+        <details class="inline-confirm">
+          <summary>Unsubscribe</summary>
+          <form method="post" action="{{ url_for('main.account_unsubscribe_page') }}" class="account-form">
+            <p class="account-help">This removes paid access immediately in the app until a plan is reactivated.</p>
+            <input type="hidden" name="confirm_unsubscribe" value="1" />
+            <button type="submit" class="account-btn">Confirm unsubscribe</button>
+          </form>
+        </details>
+        {% endif %}
+      </section>
+      <section class="account-section">
+        <h3>Username</h3>
+        <p class="account-help">Usernames must be unique and use 3-32 lowercase letters, numbers, dots, dashes, or underscores.</p>
+        <form method="post" action="{{ url_for('main.account_profile_update_page') }}" class="account-form">
+          <label>Username
+            <input name="username" type="text" value="{{ auth_user.username or '' }}" required />
+          </label>
+          <button type="submit" class="account-btn">Save username</button>
+        </form>
+      </section>
+      <section class="account-section">
+        <h3>Password</h3>
+        <p class="account-help">Use at least 8 characters. You will keep your current session after the change.</p>
+        <form method="post" action="{{ url_for('main.account_password_update_page') }}" class="account-form">
+          <label>New password
+            <input name="password" type="password" autocomplete="new-password" required />
+          </label>
+          <label>Confirm password
+            <input name="confirm_password" type="password" autocomplete="new-password" required />
+          </label>
+          <button type="submit" class="account-btn">Change password</button>
+        </form>
+      </section>
+      <section class="account-section account-danger">
+        <h3>Delete Account</h3>
+        <div class="account-copy">Deleting the account removes your login and unsubscribes it immediately. If billing is managed in Stripe, cancel or remove it there first.</div>
+        <details class="inline-confirm">
+          <summary>Delete this account</summary>
+          <form method="post" action="{{ url_for('main.account_delete_page') }}" class="account-form">
+            <label>Type DELETE to confirm
+              <input name="confirmation" type="text" autocomplete="off" required />
+            </label>
+            <button type="submit" class="account-btn">Delete account</button>
+          </form>
+        </details>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

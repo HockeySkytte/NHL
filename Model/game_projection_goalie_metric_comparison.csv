@@ -1,0 +1,4 @@
+goalie_metric_key,goalie_metric_label,goalie_feature,inseason_test_logloss,inseason_test_auc,combined_test_logloss,combined_test_auc
+gsaa,GSAA,goalie_gsaa,0.6695750296229177,0.6129083001030337,0.6561044361274092,0.638948431082408
+gsax_on,xg_on_a - ga,goalie_gsax_on,0.6694521642918518,0.6129869517000542,0.6561382427724386,0.639072893474022
+gsax_all,xga - ga,goalie_gsax_all,0.6692352834842069,0.6138953776456431,0.6561514483526425,0.6389830039689675
