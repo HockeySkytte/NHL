@@ -2,8 +2,8 @@ name: Daily NHL data update + rebuild lines
 
 on:
   schedule:
-    # Every day at 11:00 AM UTC
-    - cron: "0 11 * * *"
+    # Every day at 18:00 UTC, after Moncton source data is expected to be available.
+    - cron: "0 18 * * *"
   workflow_dispatch:
     inputs:
       date:
@@ -24,12 +24,15 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     env:
       # Supabase (read + write)
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # Moncton source database for player projection exports
+      DATABASE_MONCTON_URL: ${{ secrets.DATABASE_MONCTON_URL }}
 
       # Disable model preload — scripts don't need it
       XG_PRELOAD: "0"
@@ -72,3 +75,17 @@ jobs:
             --replace-date \
             --rebuild-lines \
             --rebuild-seasonstats
+
+      - name: Export player-game projections
+        run: |
+          python -u scripts/export_preseason_updating_player_projections.py \
+            --season "${{ steps.params.outputs.season }}" \
+            --skip-ensure-table \
+            --refresh-data \
+            --refresh-player-cache
+
+      - name: Export current player projections
+        run: |
+          python -u scripts/export_current_player_projections.py \
+            --skip-ensure-table \
+            --refresh-player-cache
