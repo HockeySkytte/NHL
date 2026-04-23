@@ -87,6 +87,10 @@ NAME_NORMALIZATION_ALIASES = {
 PROFILE_METRIC_COLS = STAT_COLS + ROOKIE_COLS
 
 
+def coerce_nullable_int_ids(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(series, errors="coerce").astype("Int64")
+
+
 def normalize_person_name(value: object) -> str:
     text_value = str(value or "").strip()
     if not text_value:
@@ -182,6 +186,8 @@ def load_moncton_players(refresh_cache: bool = False) -> pd.DataFrame:
         MONCTON_PLAYER_CACHE.parent.mkdir(parents=True, exist_ok=True)
         players.to_csv(MONCTON_PLAYER_CACHE, index=False)
 
+    players["playerid"] = coerce_nullable_int_ids(players["playerid"])
+    players = players.dropna(subset=["playerid"]).copy()
     players["source_player_name"] = players["source_player_name"].fillna("").astype(str).str.strip()
     players = players.drop_duplicates(subset=["playerid"], keep="last")
     return players
@@ -223,6 +229,7 @@ def compute_player_projections(
     centered_profiles = center_metrics_by_position(raw_profiles)
 
     profiles = raw_profiles.copy()
+    profiles["playerid"] = coerce_nullable_int_ids(profiles["playerid"])
     for col in PROFILE_METRIC_COLS:
         profiles[f"raw_{col}"] = raw_profiles[col]
         profiles[col] = centered_profiles[col]
@@ -254,7 +261,7 @@ def compute_player_projections(
         profiles["raw_projected_value"] += profiles[raw_feature_name].fillna(0.0) * coef
         profiles["projected_value"] += profiles[feature_name].fillna(0.0) * coef
 
-    projections = profiles.merge(moncton_players, on="playerid", how="left")
+    projections = profiles.merge(moncton_players.copy(), on="playerid", how="left")
     projections["source_player_name"] = projections["source_player_name"].fillna("")
     projections["season"] = projections["season"].astype(str)
     return projections
