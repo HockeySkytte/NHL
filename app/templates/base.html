@@ -50,8 +50,8 @@
   nav.tabs > a.active, nav.tabs > a:hover { color:var(--text); }
   nav.tabs > a.active::after { content:""; position:absolute; left:0; right:0; bottom:10px; height:4px; border-radius:4px; background:var(--accent); box-shadow:0 0 8px -1px var(--accent); }
   .nav-spacer{ flex:1 1 auto; }
-  .nav-user-link, details.nav-user > summary{ position:relative; top:0; display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; border-radius:10px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--value-text, var(--text)); text-decoration:none; font-size:13px; font-weight:700; cursor:pointer; list-style:none; transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease; }
-  .nav-user-link{ align-self:center; margin-left:8px; padding:0 14px; background:linear-gradient(180deg, rgba(28,34,51,0.98), rgba(16,21,33,0.98)); box-shadow:0 10px 22px rgba(0,0,0,0.18); }
+  .nav-user-link, details.nav-user > summary{ position:relative; top:0; display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; border-radius:10px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--value-text, var(--text)); text-decoration:none; font-size:13px; font-weight:700; cursor:pointer; list-style:none; line-height:1; transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+  .nav-user-link{ align-self:center; margin-left:8px; padding:0 16px; border-radius:12px; border-color:rgba(77,163,255,0.28); background:linear-gradient(180deg, rgba(18,24,38,0.92), rgba(11,15,24,0.92)); color:#edf5ff; box-shadow:none; }
   .nav-user-link:hover, .nav-user-link:focus-visible, details.nav-user > summary:hover, details.nav-user > summary:focus-visible{ border-color:rgba(77,163,255,0.55); box-shadow:0 0 0 3px rgba(77,163,255,0.12); transform:translateY(-1px); outline:none; }
   .nav-user-link:active, details.nav-user > summary:active{ transform:translateY(0); }
   details.nav-user{ position:relative; align-self:center; margin-left:8px; }
@@ -236,7 +236,7 @@
       </form>
     </div>
   </details>
-  {% else %}
+  {% elif active_tab is not none %}
   <a class="nav-user-link" href="{{ url_for('main.login_page', next=auth_login_target) }}">Login</a>
   {% endif %}
       </nav>

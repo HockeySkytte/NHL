@@ -54,7 +54,7 @@
   .subtabs{ display:flex; gap:12px; align-items:center; margin-top:10px; flex-wrap:wrap; }
   .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
   .subtab-btn.active{ outline:2px solid var(--accent); }
-  .panel{ margin-top:8px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:8px 8px 6min-width:0; }
+  .panel{ margin-top:8px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:8px 8px 6px; min-width:0; }
 
   #tabPanelCard.panel{ padding:10px 10px 8px; }
   .card-panel-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:2px 2px 10px; }
@@ -131,7 +131,7 @@
     .edge-card{ padding-left:10px; padding-right:10px; }
     .edge-zone-rink{ width:100%; max-width:520px; aspect-ratio: 535 / 1260; height:auto; margin:10px auto 2px; border-radius:14px; overflow:hidden; background:rgba(255,255,255,0.02); }
 
-    /* Image asset is landscape. Size it to container height (Ôëê 235.5% of width), then rotate. */
+    /* Image asset is landscape. Size it to container height (about 235.5% of width), then rotate. */
     .edge-zone-rink img{ position:absolute; left:50%; top:50%; width:235.5%; height:auto; border-radius:0; transform:translate(-50%,-50%) rotate(90deg); transform-origin:center; }
 
     /* Lay out KPIs in thirds: DZ / NZ / OZ */
@@ -556,7 +556,7 @@ function _edgePct(obj){
 
 function _edgeFmtValue(metricKey, value){
   const v = Number(value);
-  if(!Number.isFinite(v)) return 'ÔÇö';
+  if(!Number.isFinite(v)) return '—';
   const m = String(metricKey||'');
   if(m === 'topShotSpeed' || m === 'avgShotSpeed' || m === 'maxSkatingSpeed') return v.toFixed(1);
   if(m === 'distanceTotal' || m === 'distancePer60') return v.toFixed(1);
@@ -585,11 +585,11 @@ function renderEdgeZoneKpi(metricKey, obj, zoneLabel){
   const pct = _edgePct(obj);
   const pctOk = (pct != null);
   const rank = Number(obj?.rank);
-  const pillText = Number.isFinite(rank) ? _ordinal(rank) : 'ÔÇö';
+  const pillText = Number.isFinite(rank) ? _ordinal(rank) : '—';
   const accent = pctOk ? pctToColor(Number(pct)) : 'rgba(255,255,255,0.55)';
   const valText = _edgeFmtValue(metricKey, obj?.value);
   const avgText = _edgeFmtValue(metricKey, obj?.avg);
-  const showAvg = (obj?.avg != null) && avgText !== 'ÔÇö';
+  const showAvg = (obj?.avg != null) && avgText !== '—';
   return `
     <div class="edge-zone-pill" style="border-color:${accent}; color:${accent};">${pillText}</div>
     <div class="edge-zone-value">${valText}</div>
@@ -600,7 +600,7 @@ function renderEdgeZoneKpi(metricKey, obj, zoneLabel){
 
 function fmtSmart(x){
   const n = Number(x);
-  if(!Number.isFinite(n)) return 'ÔÇö';
+  if(!Number.isFinite(n)) return '—';
   const abs = Math.abs(n);
   if(abs >= 100) return n.toFixed(0);
   if(abs >= 10) return n.toFixed(1);
@@ -657,7 +657,7 @@ function updateHeader(){
   const rates = String(cardRates?.value||'Totals');
   const parts = [
     ['Team', ab],
-    ['Season', season || 'ÔÇö'],
+    ['Season', season || '—'],
     ['Scope', scope],
     ['State', seasonState],
     ['Rates', rates],
@@ -671,10 +671,12 @@ function updateSlicerSummaries(){
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
   const rates = String(cardRates?.value||'Totals');
-  const txt = `Season ${season || 'ÔÇö'} ┬À ${seasonState} ┬À ${strengthState} ┬À ${rates} ┬À ${scope}`;
-  if(cardSlicerSummary) cardSlicerSummary.textContent = txt;
-  if(chartsSlicerSummary) chartsSlicerSummary.textContent = txt;
-  if(tableSlicerSummary) tableSlicerSummary.textContent = txt;
+  const fmtSeason = /^\d{8}$/.test(season) ? `${season.slice(0,4)}/${season.slice(4,8)}` : (season || '—');
+  const stateLabel = seasonState === 'playoffs' ? 'Playoffs' : seasonState === 'all' ? 'All' : 'Regular';
+  const text = [fmtSeason, stateLabel, strengthState, rates, scope].filter(Boolean).join(' - ');
+  if(cardSlicerSummary) cardSlicerSummary.textContent = text;
+  if(chartsSlicerSummary) chartsSlicerSummary.textContent = text;
+  if(tableSlicerSummary) tableSlicerSummary.textContent = text;
   updateHeader();
 }
 
@@ -788,7 +790,7 @@ async function loadEdgePanel(){
 
   const seasonInt = parseInt(season, 10);
   if(Number.isFinite(seasonInt) && seasonInt < 20212022){
-    edgePanelInner.innerHTML = `<div class="team-empty" style="padding:10px 0;">NHL Edge data is available starting in 2021/22. (Selected season: ${season || 'ÔÇö'})</div>`;
+    edgePanelInner.innerHTML = `<div class="team-empty" style="padding:10px 0;">NHL Edge data is available starting in 2021/22. (Selected season: ${season || '—'})</div>`;
     return;
   }
 
@@ -1029,17 +1031,17 @@ function sectionTitleForSlot(slot){
 function metricValueText(mid, val){
   const m = String(mid||'');
   if(m.endsWith('%') || m.includes('Sv%') || m.includes('Sh%') || m.endsWith('Pctg')){
-    return val==null ? 'ÔÇö' : `${fmtSmart(val)}%`;
+    return val==null ? '—' : `${fmtSmart(val)}%`;
   }
   // For differential/above-expected style metrics, show a leading '+' when positive.
   if(m.includes('+/-') || m.endsWith('Ax')){
-    if(val == null) return 'ÔÇö';
+    if(val == null) return '—';
     const n = Number(val);
-    if(!Number.isFinite(n)) return 'ÔÇö';
+    if(!Number.isFinite(n)) return '—';
     return n > 0 ? `+${fmtSmart(n)}` : fmtSmart(n);
   }
-  if(m.includes('PDO')) return val==null ? 'ÔÇö' : fmtSmart(val);
-  return val==null ? 'ÔÇö' : fmtSmart(val);
+  if(m.includes('PDO')) return val==null ? '—' : fmtSmart(val);
+  return val==null ? '—' : fmtSmart(val);
 }
 
 function fillPctBar(fillEl, pct){
@@ -1687,7 +1689,7 @@ function renderLeagueTable(teamAgg){
 
   const th = cols.map(c=>{
     const isS = c.key === sortKey;
-    const ind = isS ? (sortDir==='asc'?'Ôû▓':'Ôû╝') : '';
+    const ind = isS ? (sortDir==='asc'?'▲':'▼') : '';
     return `<th class="${c.cls||''} ${c.cls==='num'?'num':''}" data-sort="${c.key}">${c.label}${ind?`<span class="sort-ind">${ind}</span>`:''}</th>`;
   }).join('');
 
@@ -1948,7 +1950,7 @@ async function loadTablePanel(){
     function renderTable(activeSortKey, activeSortDir){
       const head = cols.map(c=>{
         const isS = c.key === activeSortKey;
-        const ind = isS ? (activeSortDir==='asc'?'Ôû▓':'Ôû╝') : '';
+        const ind = isS ? (activeSortDir==='asc'?'▲':'▼') : '';
         return `<th class="${c.cls||''}" data-sort="${c.key}">${c.label}${ind?`<span class=\"sort-ind\">${ind}</span>`:''}</th>`;
       }).join('');
 
@@ -1958,12 +1960,12 @@ async function loadTablePanel(){
           if(c.key==='rank') return `<td class="num">${idx+1}</td>`;
           if(c.key==='team') return `<td>${String(r.team||'')}</td>`;
           const v = r[c.key];
-          const txt = Number.isFinite(Number(v)) ? fmtSmart(v) : 'ÔÇö';
+          const txt = Number.isFinite(Number(v)) ? fmtSmart(v) : '—';
           const metricName = String((c.key||'').split('|')[1] || c.key || '');
           const isPctHeat = (metricName === 'CF%' || metricName === 'xGF%' || metricName === 'GF%');
           const bg = isPctHeat ? pct703050Color(v) : null;
           if(isPctHeat){
-            const disp = Number.isFinite(Number(v)) ? `${fmtSmart(v)}%` : 'ÔÇö';
+            const disp = Number.isFinite(Number(v)) ? `${fmtSmart(v)}%` : '—';
             const pillBg = bg || 'rgba(255,255,255,0.10)';
             return `<td class="num pct"><span class="pct-chip" style="background:${pillBg};">${disp}</span></td>`;
           }

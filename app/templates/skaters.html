@@ -178,6 +178,70 @@
   .rapm-tooltip .t-title{ font-weight:850; font-size:13px; color:rgba(255,255,255,0.95); margin-bottom:6px; letter-spacing:.2px; }
   .rapm-tooltip .t-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; color:rgba(255,255,255,0.86); }
 
+  .proj-subtabs{ display:flex; gap:12px; align-items:center; margin-top:6px; }
+  .proj-subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
+  .proj-subtab-btn.active{ outline:2px solid var(--accent); }
+  .proj-subpanel{ margin-top:14px; background:transparent; border:none; border-radius:12px; padding:16px; }
+  .proj-subpanel[hidden]{ display:none !important; }
+  .proj-grid{ display:grid; grid-template-columns: 320px 1fr; gap:16px; align-items:start; }
+  .kpi-card{ background:rgba(0,0,0,.12); border:none; border-radius:12px; padding:12px 12px; text-align:center; }
+  .kpi-title{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
+  .kpi-value{ margin-top:6px; font-size:18px; font-weight:850; color:var(--text); font-variant-numeric: tabular-nums; }
+  .kpi-list{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .proj-canvas{ width:100%; height:360px; }
+  #projPlayerRadar{ height:500px; }
+  #projTeamStack{ height:600px; }
+  .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
+  .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
+  .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
+  .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
+  .proj-table{ width:100%; border-collapse:collapse; font-size:14px; }
+  .proj-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
+  .proj-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; }
+  .proj-table td.name{ text-align:left; }
+  .proj-table th.name{ text-align:left; }
+  .proj-table td.team, .proj-table th.team{ text-align:left; }
+  .proj-table td.num, .proj-table th.num{ text-align:center; }
+  .proj-team-cell{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .proj-team-cell img{ width:28px; height:28px; object-fit:contain; flex:0 0 auto; }
+  .proj-team-cell span{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .proj-table tr.selected-player{ background:var(--league-highlight-color, rgba(77,163,255,0.12)); }
+  .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
+
+  .edge-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
+  .edge-card{ background:transparent; border:none; border-radius:12px; padding:14px; }
+  .edge-title{ font-size:12px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; margin:0 0 10px 0; }
+  .edge-controls{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+  .edge-control{ display:flex; align-items:center; gap:8px; }
+  .edge-control label{ font-size:12px; color:var(--text-dim); font-weight:800; letter-spacing:.4px; text-transform:uppercase; }
+  .edge-select{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 10px; border-radius:10px; font-weight:750; }
+  .edge-zone-rink{ position:relative; width:100%; max-width:520px; margin:10px auto 2px; }
+  .edge-zone-rink img{ width:100%; height:auto; display:block; border-radius:14px; filter: saturate(0.92) contrast(1.05); opacity:0.95; }
+  .edge-zone-kpi-row{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:12px; padding:0 16px; }
+  .edge-zone-kpi{ position:static; transform:none; flex:1 1 0; max-width:170px; min-width:0; background:rgba(7,10,16,0.78); border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:10px 10px; text-align:center; box-shadow: 0 10px 28px rgba(0,0,0,0.35); }
+  .edge-zone-pill{ display:inline-block; padding:5px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.25); background:rgba(15,21,34,0.92); font-weight:900; font-size:14px; letter-spacing:.2px; margin-bottom:10px; }
+  .edge-zone-value{ font-size:30px; font-weight:950; line-height:1.0; font-variant-numeric:tabular-nums; margin:0 0 6px 0; color:#ffffff; }
+  .edge-zone-avg{ font-size:12px; font-weight:850; letter-spacing:.4px; color:rgba(255,255,255,0.72); margin:0 0 6px 0; }
+  .edge-zone-label{ font-size:12px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; color:rgba(255,255,255,0.82); }
+  @media (max-width: 560px){
+    .edge-zone-kpi-row{ flex-direction:column; justify-content:center; gap:10px; padding:12px; }
+    .edge-zone-kpi{ width:86%; max-width:260px; padding:8px 8px; }
+    .edge-zone-value{ font-size:24px; }
+    .edge-zone-pill{ font-size:13px; padding:4px 10px; }
+  }
+
+  @media (max-width: 560px) and (orientation: portrait){
+    .edge-card{ padding-left:10px; padding-right:10px; }
+    .edge-zone-rink{ width:100%; max-width:520px; aspect-ratio: 535 / 1260; height:auto; margin:2px auto 2px; border-radius:14px; overflow:hidden; background:rgba(255,255,255,0.02); }
+    .edge-zone-rink img{ position:absolute; left:50%; top:50%; width:235.5%; height:auto; border-radius:0; transform:translate(-50%,-50%) rotate(90deg); transform-origin:center; }
+    .edge-zone-kpi-row{ display:grid; grid-template-rows: 1fr 1fr 1fr; gap:10px; padding:12px 6px; justify-items:center; align-items:center; }
+    .edge-zone-kpi{ width:min(320px, 90%); max-width:320px; }
+  }
+
+  @media (max-width: 980px){
+    .edge-grid{ grid-template-columns: 1fr; }
+  }
+
   .metrics-table td.rank, .metrics-table th.rank{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ width:64px; min-width:64px; max-width:64px; }
   .metrics-table td.rank, .metrics-table td.name{ position:sticky; background:#0f1522; z-index:1; }
@@ -793,24 +857,6 @@ const PLAY_DRIVING_METRICS = [
   { id:'Play Driving|RAPM xGF', label:'RAPM xGF' },
   { id:'Play Driving|RAPM xGA', label:'RAPM xGA' },
   { id:'Play Driving|RAPM xG+/-', label:'RAPM xG+/-' },
-];
-
-const SHOOTING_CONTEXT_METRICS = [
-  { id:'Shooting|iShots or iFenwick', label:'Individual Shots/Fenwick' },
-  { id:'Shooting|ixG', label:'Individual xG' },
-  { id:'Production|iGoals', label:'Individual Goals' },
-  { id:'Shooting|Sh% or FSh%', label:'Individual Sh%' },
-  { id:'Shooting|xSh% or xFSh%', label:'Individual xSh%' },
-  { id:'Shooting|dSh% or dFSh%', label:'Individual dSh%' },
-  { id:'Shooting|GAx', label:'Individual GAx' },
-  { id:'Context|Sh%', label:'On-ice Sh%' },
-  { id:'Context|Sv%', label:'On-ice Sv%' },
-  { id:'Context|PDO', label:'PDO' },
-  { id:'Context|GAx', label:'On-ice GAx' },
-  { id:'Context|GSAx', label:'GSAx' },
-  { id:'Context|QoT', label:'QoT' },
-  { id:'Context|QoC', label:'QoC' },
-  { id:'Context|ZS', label:'ZS' },
 ];
 
 function metricLabel(metricId){
@@ -2947,7 +2993,14 @@ async function ensureProjLeaguePlayers(){
     __projLeaguePlayersKey = cacheKey;
     return __projLeaguePlayers;
   }
-  __projLeaguePlayers = Array.isArray(js?.players) ? js.players : [];
+  const rawPlayers = Array.isArray(js?.players) ? js.players : (Array.isArray(js) ? js : []);
+  __projLeaguePlayers = rawPlayers.map(p=>({
+    ...p,
+    QoT: p?.QoT ?? p?.contextData?.QoT ?? null,
+    QoC: p?.QoC ?? p?.contextData?.QoC ?? null,
+    ZS: p?.ZS ?? p?.contextData?.ZS ?? null,
+    projection: Number.isFinite(Number(p?.projection)) ? Number(p.projection) : (Number.isFinite(Number(p?.projectedValue)) ? Number(p.projectedValue) : null),
+  }));
   __projLeaguePlayersKey = cacheKey;
   return __projLeaguePlayers;
 }
@@ -2960,30 +3013,22 @@ function renderTeamStackFromLeague(team, leaguePlayers, teamColor){
   const list = (leaguePlayers||[])
     .filter(p=>String(p.team||'').toUpperCase() === String(team||'').toUpperCase())
     .slice()
-    .sort((a,b)=>Number(b.total||0)-Number(a.total||0));
+    .sort((a,b)=>Number(b.projection||b.projectedValue||0)-Number(a.projection||a.projectedValue||0));
+
+  if(!list.length) return;
 
   const labels = list.map(p=>p.name || String(p.playerId));
-  const metrics = ['Age','Rookie','EVO','EVD','PP','SH'];
   const accent = teamColor || themeAccent();
   const tick = themeTextDim();
   const grid = 'rgba(154,164,177,0.14)';
-
-  const colors = [
-    mixHex(accent,'#ffffff',0.05),
-    mixHex(accent,'#ffffff',0.18),
-    mixHex(accent,'#ffffff',0.32),
-    mixHex(accent,'#ffffff',0.46),
-    mixHex(accent,'#ffffff',0.60),
-    mixHex(accent,'#ffffff',0.74),
-  ];
-
-  const datasets = metrics.map((m, idx)=>({
-    label: m,
-    data: list.map(p=>Number(p[m]||0)),
-    backgroundColor: colors[idx % colors.length],
+  const datasets = [{
+    label: 'Projection',
+    data: list.map(p=>Number(p.projection||p.projectedValue||0)),
+    backgroundColor: mixHex(accent,'#ffffff',0.18),
     borderColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
-  }));
+    borderRadius: 8,
+  }];
 
   __projTeamChart = new Chart(ctx, {
     type: 'bar',
@@ -2993,17 +3038,23 @@ function renderTeamStackFromLeague(team, leaguePlayers, teamColor){
       maintainAspectRatio: false,
       indexAxis: 'y',
       plugins: {
-        legend: { labels: { color: tick, font:{ size: 12, weight:'800' } } },
+        legend: { display:false },
         tooltip: { callbacks: { footer: (items)=>{
           const i = items?.[0]?.dataIndex;
           if(i==null) return '';
-          const t = Number(list[i]?.total);
-          return Number.isFinite(t) ? `Total: ${t.toFixed(3)}` : '';
+          const p = list[i] || {};
+          const lines = [];
+          const total = Number(p.projection ?? p.projectedValue);
+          if(Number.isFinite(total)) lines.push(`Projection: ${total.toFixed(3)}`);
+          if(Number.isFinite(Number(p.QoT))) lines.push(`QoT: ${Number(p.QoT).toFixed(3)}`);
+          if(Number.isFinite(Number(p.QoC))) lines.push(`QoC: ${Number(p.QoC).toFixed(3)}`);
+          if(Number.isFinite(Number(p.ZS))) lines.push(`ZS: ${Number(p.ZS).toFixed(3)}`);
+          return lines;
         } } }
       },
       scales: {
-        x: { stacked: true, ticks: { color: tick }, grid: { color: grid } },
-        y: { stacked: true, ticks: { color: tick, autoSkip: false }, grid: { display:false } },
+        x: { ticks: { color: tick }, grid: { color: grid } },
+        y: { ticks: { color: tick, autoSkip: false }, grid: { display:false } },
       }
     }
   });
@@ -3017,16 +3068,10 @@ function renderLeagueTable(players, selectedPlayerId){
     { key:'team', label:'Team' },
     { key:'position', label:'Pos' },
     { key:'gp', label:'GP', num:true },
-    { key:'Age', label:'Age', num:true },
-    { key:'Rookie', label:'Rookie', num:true },
-    { key:'EVO', label:'EVO', num:true },
-    { key:'EVD', label:'EVD', num:true },
-    { key:'PP', label:'PP', num:true },
-    { key:'SH', label:'SH', num:true },
     { key:'QoT', label:'QoT', num:true },
     { key:'QoC', label:'QoC', num:true },
     { key:'ZS', label:'ZS', num:true },
-    { key:'total', label:'Total', num:true },
+    { key:'projection', label:'Projection', num:true },
   ];
 
   const sortKey = __projLeagueSort.key;
@@ -3078,10 +3123,10 @@ function renderLeagueTable(players, selectedPlayerId){
       ${td(p.team,false,false,true)}
       ${td(p.position,false,false)}
       ${td(p.gp,true,false)}
-      ${td(p.contextData?.QoT,true,false)}
-      ${td(p.contextData?.QoC,true,false)}
-      ${td(p.contextData?.ZS,true,false)}
-      ${td(p.projection,true,false)}
+      ${td(p.QoT,true,false)}
+      ${td(p.QoC,true,false)}
+      ${td(p.ZS,true,false)}
+      ${td(p.projection ?? p.projectedValue,true,false)}
     </tr>`;
   }).join('')}</tbody>`;
 
@@ -4646,7 +4691,7 @@ projExportCsv?.addEventListener('click', ()=>{
   const rows = __projLeaguePlayers.filter(p=>p.name && String(p.name).trim()).map(p=>{
     return cols.map(c=>{
       if(c === 'QoT' || c === 'QoC' || c === 'ZS'){
-        const v = p.contextData?.[c];
+        const v = p[c] ?? p.contextData?.[c];
         return v != null ? String(v) : '';
       }
       const v = p[c];

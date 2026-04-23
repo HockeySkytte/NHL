@@ -914,6 +914,7 @@ function toggleZone(zoneId){
   updateZoneHighlights();
   renderKpis();
   renderHeatKpis();
+  updateLtVideoBtn();
 }
 
 function updateZoneHighlights(){
@@ -928,6 +929,7 @@ function clearZoneSelection(){
   updateZoneHighlights();
   renderKpis();
   renderHeatKpis();
+  updateLtVideoBtn();
 }
 ltZoneClear?.addEventListener('click', clearZoneSelection);
 
