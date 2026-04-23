@@ -31,6 +31,7 @@ from scripts.Game_Projection_Model import (
     _base_csv_exists,
     _get_engine,
     _load_csvs,
+    _save_base_csvs,
     GP_THRESHOLD,
     GOALIE_PRESEASON_LOOKBACK_SEASONS,
     ROOKIE_COLS,
@@ -162,6 +163,7 @@ def load_base_inputs(refresh_data: bool = False):
         pvm = load_pvm(conn, name_to_abbr)
         skaters = load_skaters(conn)
         goalies = load_goalies(conn)
+    _save_base_csvs(games, pvm, skaters, goalies)
     return games, pvm, skaters, goalies
 
 
@@ -594,7 +596,7 @@ def prepare_export_df(matched: pd.DataFrame, artifact: dict, model_key: str) -> 
     export_df["player_id"] = export_df["player_id"].astype(int)
     export_df["source_player_id"] = export_df["playerid"].astype(int)
     export_df["season"] = export_df["season"].astype(int)
-    export_df["generated_at"] = pd.Timestamp.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    export_df["generated_at"] = pd.Timestamp.now("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
     export_df["game_date"] = pd.to_datetime(export_df["date"]).dt.strftime("%Y-%m-%d")
     export_df["model_key"] = model_key
     export_df["window_games"] = int(artifact.get("window_games", artifact.get("gp_threshold", 41)))
@@ -976,7 +978,7 @@ def prepare_current_projection_export_df(
     export_df["model_key"] = model_key
     export_df["window_games"] = int(artifact.get("window_games", artifact.get("gp_threshold", 41)))
     export_df["weighting"] = str(artifact.get("weighting", model_key))
-    export_df["generated_at"] = pd.Timestamp.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    export_df["generated_at"] = pd.Timestamp.now("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
 
     export_df = export_df.rename(
         columns={

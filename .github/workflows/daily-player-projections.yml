@@ -62,6 +62,4 @@ jobs:
       - name: Export current player projections
         run: |
           python -u scripts/export_current_player_projections.py \
-            --skip-ensure-table \
-            --refresh-data \
-            --refresh-player-cache
+            --skip-ensure-table
