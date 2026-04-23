@@ -22,6 +22,7 @@ import sys
 import uuid
 import json
 import tempfile
+import pandas as pd
 try:
     # Python 3.9+: IANA timezones
     from zoneinfo import ZoneInfo  # type: ignore
@@ -1216,12 +1217,20 @@ _GOALIES_TEAM_BY_SEASON_MAP_CACHE: Dict[Tuple[int, str], Tuple[float, Dict[int, 
 _RAPM_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
 _CURRENT_PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
+_PLAYER_GAME_PROJECTION_EXPORT_CACHE: Dict[int, Tuple[float, Dict[int, List[Dict[str, Any]]]]] = {}
+_PLAYER_GAME_PERFORMANCE_CACHE: Dict[int, Tuple[float, Dict[int, Dict[int, float]]]] = {}
 _CONTEXT_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _SEASONSTATS_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _TEAMSEASONSTATS_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _CARD_METRICS_DEF_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 _RAPM_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
 _CONTEXT_PLAYER_STATIC_CACHE: Dict[Tuple[int, Optional[int]], Tuple[float, List[Dict[str, Any]]]] = {}
+
+_SKATER_PROJECTION_COEFS = {
+    'poss_value': 0.098010715415619,
+    'off_the_puck': 0.070504541853348,
+    'gax': 0.063566677671400,
+}
 _SEASONSTATS_AGG_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[int, Dict[str, Any]], Dict[int, str]]] = {}
 _PLAYOFF_BRACKET_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 
@@ -12320,6 +12329,100 @@ def api_skaters_current_projections():
     return j
 
 
+@main_bp.route('/api/skaters/player-projection-trend/<int:player_id>')
+def api_skaters_player_projection_trend(player_id: int):
+    """Return a player's season projection trend for the Skaters projections tab."""
+    pid = int(player_id)
+    if pid <= 0:
+        return jsonify({'error': 'invalid_player_id'}), 400
+
+    try:
+        season_i = int(str(request.args.get('season') or '').strip() or current_season_id())
+    except Exception:
+        try:
+            season_i = int(current_season_id())
+        except Exception:
+            season_i = 0
+
+    if season_i <= 0:
+        return jsonify({'error': 'invalid_season'}), 400
+
+    sb_rows = _sb_read(
+        'player_game_projections',
+        columns='season,game_id,source_game_id,game_date,player_id,source_player_id,team,opponent,position,projected_value,poss_value,off_the_puck,gax,games_in_window,model_key',
+        filters={
+            'season': f'eq.{season_i}',
+            'player_id': f'eq.{pid}',
+            'model_key': 'eq.preseason_updating',
+        },
+    ) or []
+
+    if not sb_rows:
+        sb_rows = _load_player_game_projection_export_rows_cached(season_i, pid)
+
+    if not sb_rows:
+        return jsonify({'error': 'not_found'}), 404
+
+    source_player_id = _safe_int((sb_rows[0] or {}).get('source_player_id')) if sb_rows else None
+    performance_by_game = _load_player_game_performance_rows_cached(season_i, source_player_id) if source_player_id else {}
+
+    def _sort_key(row: Dict[str, Any]) -> Tuple[str, int, int]:
+        game_date = str(row.get('game_date') or '').strip()
+        source_game_id = _safe_int(row.get('source_game_id')) or 0
+        game_id = _safe_int(row.get('game_id')) or 0
+        return (game_date, source_game_id, game_id)
+
+    rows_sorted = sorted(sb_rows, key=_sort_key)
+    points: List[Dict[str, Any]] = []
+    player_name = ''
+    position = ''
+    team_abbrev = ''
+    for idx, row in enumerate(rows_sorted, start=1):
+        projection = _parse_locale_float(row.get('projected_value'))
+        poss_value = _parse_locale_float(row.get('poss_value'))
+        off_the_puck = _parse_locale_float(row.get('off_the_puck'))
+        gax = _parse_locale_float(row.get('gax'))
+        source_game_id = _safe_int(row.get('source_game_id'))
+        performance = performance_by_game.get(int(source_game_id)) if source_game_id else None
+
+        if not player_name:
+            player_name = str(row.get('player') or '').strip()
+        if not position:
+            position = str(row.get('position') or '').strip().upper()
+        if not team_abbrev:
+            team_abbrev = str(row.get('team') or '').strip().upper()
+
+        points.append({
+            'gameNumber': idx,
+            'gameDate': str(row.get('game_date') or '').strip(),
+            'gameId': _safe_int(row.get('game_id')),
+            'sourceGameId': source_game_id,
+            'opponent': str(row.get('opponent') or '').strip().upper(),
+            'projection': float(projection) if projection is not None else None,
+            'performance': float(performance) if performance is not None else None,
+            'metrics': {
+                'possValue': float(poss_value) if poss_value is not None else None,
+                'offThePuck': float(off_the_puck) if off_the_puck is not None else None,
+                'gax': float(gax) if gax is not None else None,
+            },
+            'gamesInWindow': _safe_int(row.get('games_in_window')),
+        })
+
+    j = jsonify({
+        'playerId': pid,
+        'season': season_i,
+        'name': player_name,
+        'position': position,
+        'team': team_abbrev,
+        'points': points,
+    })
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
 def _age_from_birthdate(birth_date: Any, today: Optional[datetime] = None) -> Optional[float]:
     try:
         raw = str(birth_date or '').strip()
@@ -12462,6 +12565,168 @@ def _load_current_player_projections_cached() -> Dict[int, Dict[str, Any]]:
     data = _load_player_projections_cached()
     _CURRENT_PLAYER_PROJECTIONS_CACHE = (now, data)
     return data
+
+
+def _load_player_game_projection_export_rows_cached(season_i: int, player_id: int) -> List[Dict[str, Any]]:
+    """Load per-player season trend rows from the local export-validation cache."""
+    try:
+        ttl_s = max(30, int(os.getenv('PLAYER_PROJECTIONS_CACHE_TTL_SECONDS', '300') or '300'))
+    except Exception:
+        ttl_s = 300
+
+    now = time.time()
+    cached = _PLAYER_GAME_PROJECTION_EXPORT_CACHE.get(int(season_i))
+    if cached and (now - cached[0]) < ttl_s:
+        return list(cached[1].get(int(player_id), []))
+
+    try:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        export_path = os.path.join(project_root, 'data', 'game_projection', 'export_validation', f'{int(season_i)}_export.pkl')
+        if not os.path.exists(export_path):
+            return []
+        export_df = pd.read_pickle(export_path)
+    except Exception:
+        return []
+
+    try:
+        if 'model_key' in export_df.columns:
+            export_df = export_df[export_df['model_key'].astype(str) == 'preseason_updating'].copy()
+        if 'player_id' not in export_df.columns:
+            return []
+        export_df['player_id'] = pd.to_numeric(export_df['player_id'], errors='coerce').astype('Int64')
+        export_df = export_df[export_df['player_id'].notna()].copy()
+        if export_df.empty:
+            return []
+        export_df['player_id'] = export_df['player_id'].astype(int)
+    except Exception:
+        return []
+
+    player_map: Dict[int, List[Dict[str, Any]]] = {}
+    for row in export_df.to_dict(orient='records'):
+        try:
+            pid_i = _safe_int(row.get('player_id'))
+            if not pid_i or pid_i <= 0:
+                continue
+            player_map.setdefault(int(pid_i), []).append(row)
+        except Exception:
+            continue
+
+    _PLAYER_GAME_PROJECTION_EXPORT_CACHE[int(season_i)] = (now, player_map)
+    return list(player_map.get(int(player_id), []))
+
+
+def _projection_position_group(raw_position: Any) -> str:
+    pos = str(raw_position or '').strip().upper()
+    if pos.startswith(('L', 'R', 'C', 'F')):
+        return 'F'
+    if pos.startswith('D'):
+        return 'D'
+    if pos.startswith('G'):
+        return 'G'
+    return pos or 'F'
+
+
+def _load_player_game_performance_rows_cached(season_i: int, player_id: int) -> Dict[int, float]:
+    """Load cumulative in-season performance values from cached game-projection CSVs."""
+    try:
+        ttl_s = max(30, int(os.getenv('PLAYER_PROJECTIONS_CACHE_TTL_SECONDS', '300') or '300'))
+    except Exception:
+        ttl_s = 300
+
+    now = time.time()
+    cached = _PLAYER_GAME_PERFORMANCE_CACHE.get(int(season_i))
+    if cached and (now - cached[0]) < ttl_s:
+        return dict(cached[1].get(int(player_id), {}))
+
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    data_dir = os.path.join(project_root, 'data', 'game_projection')
+    games_path = os.path.join(data_dir, 'games.csv')
+    pvm_path = os.path.join(data_dir, 'pvm.csv')
+    skaters_path = os.path.join(data_dir, 'skaters.csv')
+    goalies_path = os.path.join(data_dir, 'goalies.csv')
+    if not all(os.path.exists(path) for path in (games_path, pvm_path, skaters_path, goalies_path)):
+        return {}
+
+    try:
+        season_key = str(int(season_i))
+        games = pd.read_csv(games_path, parse_dates=['date'], dtype={'season': str})
+        pvm = pd.read_csv(pvm_path, dtype={'season': str})
+        skaters = pd.read_csv(skaters_path, dtype={'season': str})
+        goalies = pd.read_csv(goalies_path, dtype={'season': str})
+    except Exception:
+        return {}
+
+    games = games[games['season'].astype(str) == season_key].copy()
+    pvm = pvm[pvm['season'].astype(str) == season_key].copy()
+    skaters = skaters[skaters['season'].astype(str) == season_key].copy()
+    goalies = goalies[goalies['season'].astype(str) == season_key].copy()
+    if games.empty or pvm.empty:
+        return {}
+
+    pvm['poss_value'] = (
+        pvm['faceoffs'].fillna(0.0)
+        + pvm['defensive'].fillna(0.0)
+        + pvm['passes'].fillna(0.0)
+        + pvm['carries'].fillna(0.0)
+        + pvm['dump_ins_outs'].fillna(0.0)
+    )
+    pvm['position_group'] = pvm['position'].apply(_projection_position_group)
+    pvm_pg = (
+        pvm.groupby(['season', 'playerid', 'gameid', 'position_group'], as_index=False)
+        .agg(
+            poss_value=('poss_value', 'sum'),
+            off_the_puck=('off_the_puck', 'sum'),
+        )
+        .rename(columns={'position_group': 'position'})
+    )
+
+    skater_pg = (
+        skaters.groupby(['season', 'playerid', 'gameid'], as_index=False)
+        .agg(ig=('ig', 'sum'), ixg=('ixg', 'sum'))
+    )
+    skater_pg['gax'] = skater_pg['ig'].fillna(0.0) - skater_pg['ixg'].fillna(0.0)
+
+    goalie_pg = (
+        goalies.groupby(['season', 'playerid', 'gameid'], as_index=False)
+        .agg(xg_on_a=('xg_on_a', 'sum'), ga=('ga', 'sum'))
+    )
+    goalie_pg['goalie_gsax'] = goalie_pg['xg_on_a'].fillna(0.0) - goalie_pg['ga'].fillna(0.0)
+
+    game_dates = games[['game_id', 'date']].rename(columns={'game_id': 'gameid'})
+    pg = (
+        pvm_pg
+        .merge(skater_pg[['season', 'playerid', 'gameid', 'gax']], on=['season', 'playerid', 'gameid'], how='left')
+        .merge(goalie_pg[['season', 'playerid', 'gameid', 'goalie_gsax']], on=['season', 'playerid', 'gameid'], how='left')
+        .merge(game_dates, on='gameid', how='inner')
+    )
+    if pg.empty:
+        return {}
+
+    pg['gax'] = pg['gax'].fillna(0.0)
+    for metric_name in _SKATER_PROJECTION_COEFS:
+        pg[metric_name] = pd.to_numeric(pg[metric_name], errors='coerce').fillna(0.0)
+        group_mean = pg.groupby(['season', 'position'])[metric_name].transform('mean')
+        pg[metric_name] = pg[metric_name] - group_mean.fillna(0.0)
+
+    pg['weighted_value'] = 0.0
+    for metric_name, coef in _SKATER_PROJECTION_COEFS.items():
+        pg['weighted_value'] += pg[metric_name] * float(coef)
+
+    pg = pg.sort_values(['playerid', 'date', 'gameid']).copy()
+    pg['game_number'] = pg.groupby(['season', 'playerid']).cumcount() + 1
+    pg['performance'] = pg.groupby(['season', 'playerid'])['weighted_value'].cumsum() / pg['game_number']
+
+    player_map: Dict[int, Dict[int, float]] = {}
+    for row in pg[['playerid', 'gameid', 'performance']].itertuples(index=False):
+        pid_i = _safe_int(getattr(row, 'playerid', None))
+        game_id = _safe_int(getattr(row, 'gameid', None))
+        perf = _parse_locale_float(getattr(row, 'performance', None))
+        if not pid_i or not game_id or perf is None:
+            continue
+        player_map.setdefault(int(pid_i), {})[int(game_id)] = float(perf)
+
+    _PLAYER_GAME_PERFORMANCE_CACHE[int(season_i)] = (now, player_map)
+    return dict(player_map.get(int(player_id), {}))
 
 def _load_player_projections_from_sheets() -> Dict[int, Dict[str, Any]]:
     """Load player projections. Tries Supabase, falls back to CSV."""
@@ -13488,6 +13753,7 @@ def api_game_pbp(game_id: int):
             if pid and pid not in candidate_ids:
                 candidate_ids.append(pid)
         p1_id = candidate_ids[0] if len(candidate_ids) > 0 else None
+
         p2_id = candidate_ids[1] if len(candidate_ids) > 1 else None
         p3_id = candidate_ids[2] if len(candidate_ids) > 2 else None
         p1_name = player_name(p1_id) if p1_id else None

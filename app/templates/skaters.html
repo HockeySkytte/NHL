@@ -189,9 +189,11 @@
   .kpi-value{ margin-top:6px; font-size:18px; font-weight:850; color:var(--text); font-variant-numeric: tabular-nums; }
   .kpi-list{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
   .proj-canvas{ width:100%; height:360px; }
+  #projPlayerTrend{ height:420px; }
   #projPlayerRadar{ height:500px; }
   #projTeamStack{ height:600px; }
   .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
+  .proj-player-empty{ margin-bottom:10px; }
   .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
   .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
   .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
@@ -546,11 +548,17 @@
     <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
       <div id="projPanelInner">
         <div class="proj-subtabs" role="tablist" aria-label="Skater projections tabs">
-          <button id="projTabTeam" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Team</button>
+          <button id="projTabPlayer" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Player</button>
+          <button id="projTabTeam" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">Team</button>
           <button id="projTabLeague" class="proj-subtab-btn" type="button" role="tab" aria-selected="false">League</button>
         </div>
 
-        <section id="projPanelTeam" class="proj-subpanel" role="tabpanel">
+        <section id="projPanelPlayer" class="proj-subpanel" role="tabpanel">
+          <div id="projPlayerEmpty" class="skater-empty proj-player-empty" hidden>No season projection history found for this player.</div>
+          <canvas id="projPlayerTrend" class="proj-canvas"></canvas>
+        </section>
+
+        <section id="projPanelTeam" class="proj-subpanel" role="tabpanel" hidden>
           <div id="projTeamEmpty" class="skater-empty" hidden>No current projections found for this roster.</div>
           <canvas id="projTeamStack" class="proj-canvas"></canvas>
         </section>
@@ -728,10 +736,14 @@ let __restoreProjSubtab = null;
 let __isRestoringSkatersState = false;
 let __isBootingSkatersPage = true;
 
+const projTabPlayer = document.getElementById('projTabPlayer');
 const projTabTeam = document.getElementById('projTabTeam');
 const projTabLeague = document.getElementById('projTabLeague');
+const projPanelPlayer = document.getElementById('projPanelPlayer');
 const projPanelTeam = document.getElementById('projPanelTeam');
 const projPanelLeague = document.getElementById('projPanelLeague');
+const projPlayerEmpty = document.getElementById('projPlayerEmpty');
+const projPlayerTrend = document.getElementById('projPlayerTrend');
 const projTeamEmpty = document.getElementById('projTeamEmpty');
 const projLeagueTable = document.getElementById('projLeagueTable');
 const projExportCsv = document.getElementById('projExportCsv');
@@ -757,6 +769,8 @@ const tableConfigStatus = document.getElementById('tableConfigStatus');
 
 let __projLeaguePlayers = null;
 let __projLeaguePlayersKey = '';
+let __projPlayerTrendChart = null;
+let __projPlayerTrendCache = new Map();
 let __projRadarChart = null;
 let __projTeamChart = null;
 let __projLeagueSort = { key: 'projection', dir: 'desc' };
@@ -973,9 +987,10 @@ function chartsViewActive(){
 }
 
 function getActiveProjSubtabKey(){
+  if(projTabPlayer?.classList.contains('active')) return 'player';
   if(projTabTeam?.classList.contains('active')) return 'team';
   if(projTabLeague?.classList.contains('active')) return 'league';
-  return 'team';
+  return 'player';
 }
 
 function saveSkatersState(){
@@ -1057,7 +1072,7 @@ async function initSkatersPage(){
   try{
     // Restore saved state first.
     restoreSkatersState();
-    try{ setActiveProjSubtab(__restoreProjSubtab || 'team'); }catch(_){/*noop*/}
+    try{ setActiveProjSubtab(__restoreProjSubtab || 'player'); }catch(_){/*noop*/}
     updateCardSlicerSummary();
 
     setDefaultHeadshot();
@@ -2961,15 +2976,127 @@ function pctRank(values, v){
 }
 
 function setActiveProjSubtab(which){
-  const active = which === 'league' ? 'league' : 'team';
+  const active = (which === 'player' || which === 'team' || which === 'league') ? which : 'player';
+  const isP = active === 'player';
   const isT = active === 'team';
   const isL = active === 'league';
+  projTabPlayer?.classList.toggle('active', isP);
   projTabTeam?.classList.toggle('active', isT);
   projTabLeague?.classList.toggle('active', isL);
+  projTabPlayer?.setAttribute('aria-selected', isP ? 'true' : 'false');
   projTabTeam?.setAttribute('aria-selected', isT ? 'true' : 'false');
   projTabLeague?.setAttribute('aria-selected', isL ? 'true' : 'false');
+  if(projPanelPlayer) projPanelPlayer.hidden = !isP;
   if(projPanelTeam) projPanelTeam.hidden = !isT;
   if(projPanelLeague) projPanelLeague.hidden = !isL;
+}
+
+async function ensureProjPlayerTrend(playerId, season){
+  const pid = String(playerId || '').trim();
+  const seasonId = String(season || '').trim();
+  if(!pid || !seasonId) return null;
+  const cacheKey = `${seasonId}|${pid}`;
+  if(__projPlayerTrendCache.has(cacheKey)) return __projPlayerTrendCache.get(cacheKey);
+  try{
+    const url = `/api/skaters/player-projection-trend/${encodeURIComponent(pid)}?season=${encodeURIComponent(seasonId)}`;
+    const r = await fetch(url, { cache:'no-store' });
+    if(!r.ok){
+      if(r.status !== 404) console.error('[projections] player trend failed:', r.status);
+      __projPlayerTrendCache.set(cacheKey, null);
+      return null;
+    }
+    const js = await r.json();
+    __projPlayerTrendCache.set(cacheKey, js);
+    return js;
+  }catch(e){
+    console.error('[projections] player trend failed:', e);
+    __projPlayerTrendCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+function renderProjPlayerTrend(trend, teamColor){
+  const ctx = projPlayerTrend?.getContext('2d');
+  if(!ctx) return;
+  if(__projPlayerTrendChart){ try{ __projPlayerTrendChart.destroy(); }catch(_){/*noop*/} __projPlayerTrendChart = null; }
+
+  const points = Array.isArray(trend?.points) ? trend.points : [];
+  if(projPlayerEmpty) projPlayerEmpty.hidden = points.length > 0;
+  if(!points.length){
+    if(projPlayerEmpty) projPlayerEmpty.textContent = 'No season projection history found for this player.';
+    return;
+  }
+
+  const accent = teamColor || themeAccent();
+  const tick = themeTextDim();
+  const grid = 'rgba(154,164,177,0.14)';
+  const projectionColor = accent;
+  const performanceColor = mixHex(accent, '#ffffff', 0.62);
+  const labels = points.map(p=>String(p.gameNumber || ''));
+
+  __projPlayerTrendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Projection',
+          data: points.map(p=>p.projection),
+          borderColor: projectionColor,
+          backgroundColor: projectionColor,
+          borderWidth: 3,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.25,
+          spanGaps: true,
+        },
+        {
+          label: 'Performance',
+          data: points.map(p=>p.performance),
+          borderColor: performanceColor,
+          backgroundColor: performanceColor,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          borderDash: [8, 6],
+          tension: 0.25,
+          spanGaps: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: tick, font:{ size: 12, weight:'800' } },
+        },
+        tooltip: {
+          callbacks: {
+            title: ()=>'',
+            label: (item)=>{
+              const value = Number(item?.parsed?.y);
+              if(!Number.isFinite(value)) return `${item.dataset.label}: -`;
+              return `${item.dataset.label}: ${value.toFixed(3)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display:true, text:'Game Number', color: tick, font:{ size: 12, weight:'800' } },
+          ticks: { color: tick, maxTicksLimit: 12 },
+          grid: { color: grid },
+        },
+        y: {
+          title: { display:true, text:'Value', color: tick, font:{ size: 12, weight:'800' } },
+          ticks: { color: tick },
+          grid: { color: grid },
+        },
+      },
+    },
+  });
 }
 
 async function ensureProjLeaguePlayers(){
@@ -3996,9 +4123,13 @@ async function loadProjectionsPanel(){
     return;
   }
   const playerId = playerSelect?.value;
+  const season = String(seasonSelect?.value || '').trim();
   const teamAbbrev = String(teamSelect?.value||'').toUpperCase();
   try{
-    const league = await ensureProjLeaguePlayers();
+    const [league, playerTrend] = await Promise.all([
+      ensureProjLeaguePlayers(),
+      ensureProjPlayerTrend(playerId, season),
+    ]);
 
     const teamObj = teams.find(tm=>String(tm?.Team||tm?.team||'').toUpperCase() === teamAbbrev);
     const teamColor = teamObj?.Color || teamObj?.color || null;
@@ -4011,9 +4142,14 @@ async function loadProjectionsPanel(){
       }
     }
 
+    renderProjPlayerTrend(playerTrend, teamColor);
     renderLeagueTable(league, playerId);
     renderTeamStackFromLeague(teamAbbrev, league, teamColor);
   }catch(e){
+    if(projPlayerEmpty){
+      projPlayerEmpty.hidden = false;
+      projPlayerEmpty.textContent = 'Error loading player projection history.';
+    }
     if(projTeamEmpty){
       projTeamEmpty.hidden = false;
       projTeamEmpty.textContent = 'Error loading projections.';
@@ -4681,6 +4817,7 @@ ccImportFile?.addEventListener('change', async ()=>{
   }
 });
 
+projTabPlayer?.addEventListener('click', ()=> { setActiveProjSubtab('player'); saveSkatersState(); });
 projTabTeam?.addEventListener('click', ()=> { setActiveProjSubtab('team'); saveSkatersState(); });
 projTabLeague?.addEventListener('click', ()=> { setActiveProjSubtab('league'); saveSkatersState(); });
 
