@@ -72,6 +72,12 @@
   label.checkbox-row { flex-direction:row; align-items:center; font-size:11px; letter-spacing:.8px; text-transform:uppercase; gap:8px; font-weight:600; }
   label.checkbox-row span { position:relative; top:1px; }
   label.checkbox-row input { accent-color:var(--accent); width:16px; height:16px; }
+  .about-headline-links{ display:flex; flex-direction:column; gap:8px; }
+  .about-headline-link{ display:block; text-decoration:none; color:#a5afbe; font-size:16px; font-weight:650; line-height:1.2; padding:8px 10px; border-radius:10px; border:1px solid transparent; transition:background .16s ease, border-color .16s ease, color .16s ease; }
+  .about-headline-link:hover{ background:rgba(255,255,255,0.04); border-color:#2a3142; }
+  .about-headline-link.active{ background:rgba(77,163,255,0.14); border-color:rgba(77,163,255,0.45); color:#f0f7ff; font-weight:750; }
+  .content-gradient-panel{ border:1px solid #263044; border-radius:16px; background:linear-gradient(160deg, rgba(27, 36, 56, 0.72), rgba(14, 19, 32, 0.9)); box-shadow:0 18px 42px rgba(0,0,0,0.3); }
+  .content-gradient-soft{ background:linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015)); }
   main { padding:26px 42px 24px; min-width:0; }
     .calendar-grid { width:100%; display:grid; grid-template-columns:repeat(7, 1fr); gap:6px; }
     .month-header { display:flex; justify-content:space-between; align-items:center; margin:6px 0 20px; }
@@ -174,13 +180,22 @@
       </div>
       {% if show_filters is not defined or show_filters %}
       <div class="filters-shell">
+        {% if not (about_headlines is defined and about_headlines) %}
         <div class="filters-hd">
           <div class="ttl">Slicers</div>
           <div class="right">
             <div id="filtersSummary" class="sum"></div>
           </div>
         </div>
+        {% endif %}
       <div class="filters">
+        {% if about_headlines is defined and about_headlines %}
+        <div id="aboutHeadlineLinks" class="about-headline-links" aria-label="About section links">
+          {% for item in about_headlines %}
+          <a class="about-headline-link {% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.title }}</a>
+          {% endfor %}
+        </div>
+        {% else %}
         <label>Team
           <select id="teamSelect"></select>
         </label>
@@ -206,6 +221,7 @@
           </a>
           <div class="brand-by">App by Hockey Skytte</div>
         </div>
+        {% endif %}
         {% endif %}
       </div>
       </div>
@@ -267,6 +283,7 @@
     const filtersHd = document.querySelector('.filters-hd');
     const filtersSummary = document.getElementById('filtersSummary');
     const mobileSlicerSummary = document.getElementById('mobileSlicerSummary');
+    const aboutHeadlineLinks = document.getElementById('aboutHeadlineLinks');
 
     function updateSlicerSummary(label){
       try{
@@ -300,9 +317,13 @@
     }
 
     try{
-      const hasFilters = !!(teamSelect && seasonSelect);
+      const hasFilters = !!((teamSelect && seasonSelect) || aboutHeadlineLinks);
       if(btnMobileFilters) btnMobileFilters.hidden = !hasFilters;
-      if(!hasFilters) updateSlicerSummary('');
+      if(aboutHeadlineLinks){
+        updateSlicerSummary('About sections');
+      }else if(!hasFilters){
+        updateSlicerSummary('');
+      }
       btnMobileMenu && btnMobileMenu.addEventListener('click', ()=>{
         if(!mobileMenuPanel) return;
         const open = !mobileMenuPanel.hidden;

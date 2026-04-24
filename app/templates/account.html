@@ -2,7 +2,7 @@
 {% block head %}
 <style>
   .account-shell{ max-width:760px; margin:0 auto; }
-  .account-card{ background:#0f1522; border:1px solid #2a3142; border-radius:18px; padding:22px; box-shadow:0 18px 44px rgba(0,0,0,0.34); }
+  .account-card{ background:linear-gradient(160deg, rgba(27, 36, 56, 0.72), rgba(14, 19, 32, 0.9)); border:1px solid #2a3142; border-radius:18px; padding:22px; box-shadow:0 18px 44px rgba(0,0,0,0.34); }
   .account-kicker{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
   .account-card h2{ margin:10px 0 8px; font-size:30px; line-height:1.05; }
   .account-copy{ color:var(--text-dim); font-size:14px; line-height:1.55; margin-bottom:18px; }
@@ -101,6 +101,7 @@
     <div class="account-actions">
       <a class="account-link primary" href="{{ url_for('main.game_projections_page') }}">Open Projections</a>
       <form method="post" action="{{ url_for('main.logout_page') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <button type="submit" class="account-btn">Log out</button>
       </form>
     </div>
@@ -129,6 +130,7 @@
         <p class="account-help">Switching plans updates the stored access state immediately in the app until Stripe is configured.</p>
         {% endif %}
         <form method="post" action="{{ url_for('main.account_plan_update_page') }}" class="account-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <label>Choose plan
             <select name="plan">
               <option value="monthly" {% if auth_user.billing_interval == 'monthly' %}selected{% endif %}>Pro Monthly - $5/month</option>
@@ -141,6 +143,7 @@
         </form>
         {% if billing.portal_enabled %}
         <form method="post" action="{{ url_for('main.account_billing_portal_page') }}" class="account-form" style="margin-top:12px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <button type="submit" class="account-btn">Manage billing in Stripe</button>
         </form>
         {% endif %}
@@ -150,6 +153,7 @@
         <details class="inline-confirm">
           <summary>Unsubscribe</summary>
           <form method="post" action="{{ url_for('main.account_unsubscribe_page') }}" class="account-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <p class="account-help">This removes paid access immediately in the app until a plan is reactivated.</p>
             <input type="hidden" name="confirm_unsubscribe" value="1" />
             <button type="submit" class="account-btn">Confirm unsubscribe</button>
@@ -161,6 +165,7 @@
         <h3>Username</h3>
         <p class="account-help">Usernames must be unique and use 3-32 lowercase letters, numbers, dots, dashes, or underscores.</p>
         <form method="post" action="{{ url_for('main.account_profile_update_page') }}" class="account-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <label>Username
             <input name="username" type="text" value="{{ auth_user.username or '' }}" required />
           </label>
@@ -171,6 +176,7 @@
         <h3>Password</h3>
         <p class="account-help">Use at least 8 characters. You will keep your current session after the change.</p>
         <form method="post" action="{{ url_for('main.account_password_update_page') }}" class="account-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
           <label>New password
             <input name="password" type="password" autocomplete="new-password" required />
           </label>
@@ -186,6 +192,7 @@
         <details class="inline-confirm">
           <summary>Delete this account</summary>
           <form method="post" action="{{ url_for('main.account_delete_page') }}" class="account-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <label>Type DELETE to confirm
               <input name="confirmation" type="text" autocomplete="off" required />
             </label>

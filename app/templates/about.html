@@ -1,160 +1,171 @@
 {% extends 'base.html' %}
-{% block head %}
-<style>
-  .about-shell{ max-width:1180px; margin:0 auto; }
-  .about-hero{ position:relative; overflow:hidden; padding:28px 28px 24px; border:1px solid rgba(120,145,185,0.18); border-radius:24px; background:radial-gradient(circle at top left, rgba(77,163,255,0.18), transparent 34%), linear-gradient(180deg, rgba(18,25,40,0.96), rgba(10,14,22,0.88)); box-shadow:0 22px 48px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.04); }
-  .about-hero-grid{ display:grid; grid-template-columns:minmax(0, 1.25fr) minmax(280px, .75fr); gap:18px; align-items:end; }
-  .about-kicker{ margin:0 0 10px; font-size:12px; font-weight:900; letter-spacing:.18em; text-transform:uppercase; color:#99badf; }
-  .about-title{ margin:0; font-size:40px; line-height:1.02; font-weight:900; color:#f4f8ff; max-width:760px; }
-  .about-copy{ margin:16px 0 0; max-width:760px; font-size:15px; line-height:1.7; color:rgba(226,233,244,0.9); }
-  .about-hero-note{ padding:18px 18px 16px; border-radius:18px; border:1px solid rgba(159,184,215,0.18); background:rgba(8,12,20,0.48); backdrop-filter:blur(10px); }
-  .about-hero-note h2{ margin:0 0 10px; font-size:12px; font-weight:900; letter-spacing:.16em; text-transform:uppercase; color:#9fb8d7; }
-  .about-hero-note p{ margin:0; font-size:14px; line-height:1.65; color:rgba(224,231,241,0.9); }
-  .about-pill-row{ display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
-  .about-pill{ padding:9px 12px; border-radius:999px; border:1px solid rgba(159,184,215,0.18); background:rgba(255,255,255,0.04); font-size:12px; font-weight:800; letter-spacing:.04em; color:#e7effb; }
-  .about-tabs{ display:flex; gap:10px; flex-wrap:wrap; margin:22px 0 16px; }
-  .about-tabs button{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:10px 16px; border-radius:999px; font-size:13px; font-weight:800; letter-spacing:.04em; cursor:pointer; }
-  .about-tabs button.active{ background:var(--accent); border-color:var(--accent); color:#091018; }
-  .about-panel[hidden]{ display:none !important; }
-  .about-grid{ display:grid; grid-template-columns:1.2fr .85fr; gap:18px; }
-  .about-card{ border:1px solid rgba(120,145,185,0.16); border-radius:20px; background:linear-gradient(180deg, rgba(16,22,35,0.94), rgba(10,14,22,0.88)); padding:20px; box-shadow:0 16px 36px rgba(0,0,0,0.2); }
-  .about-card h2{ margin:0 0 10px; font-size:13px; font-weight:900; letter-spacing:.16em; text-transform:uppercase; color:#9fb8d7; }
-  .about-card p{ margin:0; font-size:14px; line-height:1.7; color:rgba(225,232,242,0.9); }
-  .about-list{ display:grid; gap:12px; margin-top:14px; }
-  .about-list-item{ padding:14px 16px; border-radius:16px; background:rgba(255,255,255,0.03); border:1px solid rgba(120,145,185,0.12); }
-  .about-list-item strong{ display:block; margin-bottom:6px; font-size:13px; color:#eef4ff; }
-  .about-microcopy{ margin-top:14px; font-size:13px; line-height:1.65; color:rgba(206,217,231,0.88); }
-  .glossary-intro{ margin:0 0 16px; color:rgba(224,231,241,0.9); font-size:14px; line-height:1.65; }
-  .glossary-section{ margin-top:20px; }
-  .glossary-section:first-of-type{ margin-top:0; }
-  .glossary-title{ margin:0 0 12px; font-size:13px; font-weight:900; letter-spacing:.16em; text-transform:uppercase; color:#9fb8d7; }
-  .glossary-table{ width:100%; border-collapse:collapse; }
-  .glossary-table th, .glossary-table td{ padding:12px 10px; border-top:1px solid rgba(255,255,255,0.06); text-align:left; vertical-align:top; }
-  .glossary-table thead th{ border-top:none; color:var(--text-dim); font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
-  .glossary-table td:first-child{ width:110px; font-weight:900; color:#f0f6ff; letter-spacing:.05em; }
-  .glossary-table td:nth-child(2){ width:240px; color:#d7e5f8; font-weight:700; }
-  .glossary-table td:last-child{ color:rgba(224,231,241,0.9); line-height:1.55; }
 
-  @media (max-width: 920px){
-    .about-hero-grid{ grid-template-columns:1fr; }
-    .about-grid{ grid-template-columns:1fr; }
-    .about-title{ font-size:32px; }
-  }
-
-  @media (max-width: 640px){
-    .about-hero{ padding:22px 18px 18px; border-radius:20px; }
-    .about-title{ font-size:27px; }
-    .about-copy{ font-size:14px; }
-    .about-card{ padding:16px; border-radius:18px; }
-    .glossary-table th, .glossary-table td{ padding:10px 8px; font-size:13px; }
-    .glossary-table td:first-child{ width:76px; }
-    .glossary-table td:nth-child(2){ width:160px; }
-  }
-</style>
-{% endblock %}
 {% block content %}
-<div class="about-shell">
-  <section class="about-hero">
-    <div class="about-hero-grid">
-      <div>
-        <p class="about-kicker">About The App</p>
-        <h1 class="about-title">Built for nights when you want the schedule, the matchup context, and the player detail in the same place.</h1>
-        <p class="about-copy">The app pulls together live NHL schedule data, lineup updates, team context, player cards, RAPM, and game projections without forcing you to hop between separate tools. The goal is simple: get from a slate view to a player decision quickly, with enough context to trust the read.</p>
-        <div class="about-pill-row" aria-label="About highlights">
-          <span class="about-pill">Game projections</span>
-          <span class="about-pill">Player context</span>
-          <span class="about-pill">RAPM and usage</span>
-          <span class="about-pill">Line and team views</span>
-        </div>
-      </div>
-      <aside class="about-hero-note">
-        <h2>How most people use it</h2>
-        <p>Start with the slate or standings, move into skaters or goalies for player-level context, then use the line and team pages to check deployment, matchup environment, and shot quality. The glossary stays here as the quick reference when a page gets dense.</p>
-      </aside>
-    </div>
-  </section>
-
-  <div class="about-tabs" role="tablist" aria-label="About tabs">
-    <button id="aboutTabOverview" class="active" type="button" role="tab" aria-selected="true">Overview</button>
-    <button id="aboutTabGlossary" type="button" role="tab" aria-selected="false">Glossary</button>
-  </div>
-
-  <section id="aboutPanelOverview" class="about-panel" role="tabpanel">
-    <div class="about-grid">
-      <article class="about-card">
-        <h2>What You Can Do Here</h2>
-        <p>Most pages share the same team and season controls, so the workflow stays consistent while you move between schedule, player, and team views. That makes it easier to compare a projection with the underlying player profile instead of treating every page like a separate product.</p>
-        <div class="about-list">
-          <div class="about-list-item">
-            <strong>Work the slate</strong>
-            Use projections for win probability, lineup-aware expectations, and the broader game environment before drilling into the player pages.
-          </div>
-          <div class="about-list-item">
-            <strong>Check the player case</strong>
-            Skaters and goalies combine cards, shooting or goaltending views, RAPM, and context metrics so you can see production, usage, and quality together.
-          </div>
-          <div class="about-list-item">
-            <strong>Validate the environment</strong>
-            Team and line views help confirm how a player is being deployed, who he is running with, and where the chance generation is actually coming from.
-          </div>
-        </div>
-        <p class="about-microcopy">A lot of the value is in moving between those views quickly. The app is meant to be a working desk, not a single headline number.</p>
-      </article>
-      <aside class="about-card">
-        <h2>A Few Reading Notes</h2>
-        <p>Raw counts tell you volume. Rates help normalize usage. Context metrics such as QoT, QoC, and ZS describe the deployment behind the results, while RAPM is there to separate player impact from teammate and opponent effects. On the projection side, centered values are relative to baseline: positive means above expectation, negative means below it.</p>
-        <p class="about-microcopy">If a page feels abbreviation-heavy, use the glossary tab as the decoder ring. It collects the terms that repeat across skaters, goalies, projections, exports, and tables.</p>
-      </aside>
-    </div>
-  </section>
-
-  <section id="aboutPanelGlossary" class="about-panel" role="tabpanel" hidden>
-    <p class="glossary-intro">These are the short forms used across the cards, charts, exports, and projection views. If a table label feels familiar but not quite obvious, it is probably listed here.</p>
-    {% for section in glossary_sections %}
-    <section class="glossary-section">
-      <h2 class="glossary-title">{{ section['title'] }}</h2>
-      <table class="glossary-table">
-        <thead>
-          <tr>
-            <th>Abbrev.</th>
-            <th>Name</th>
-            <th>Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in section['items'] %}
-          <tr>
-            <td>{{ item.abbr }}</td>
-            <td>{{ item.name }}</td>
-            <td>{{ item.description }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </section>
-    {% endfor %}
-  </section>
-</div>
-
-<script>
-(function(){
-  const overviewBtn = document.getElementById('aboutTabOverview');
-  const glossaryBtn = document.getElementById('aboutTabGlossary');
-  const overviewPanel = document.getElementById('aboutPanelOverview');
-  const glossaryPanel = document.getElementById('aboutPanelGlossary');
-
-  function setAboutTab(which){
-    const showGlossary = which === 'glossary';
-    overviewBtn?.classList.toggle('active', !showGlossary);
-    glossaryBtn?.classList.toggle('active', showGlossary);
-    overviewBtn?.setAttribute('aria-selected', showGlossary ? 'false' : 'true');
-    glossaryBtn?.setAttribute('aria-selected', showGlossary ? 'true' : 'false');
-    if(overviewPanel) overviewPanel.hidden = showGlossary;
-    if(glossaryPanel) glossaryPanel.hidden = !showGlossary;
+<style>
+.about-page {
+  max-width: min(1280px, 96vw);
+  margin: 0 auto;
+  padding: 16px 0 26px;
+  border: 1px solid #263044;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(27, 36, 56, 0.72), rgba(14, 19, 32, 0.9));
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+.about-title {
+  margin: 0;
+  padding: 8px 24px 14px;
+  font-size: 36px;
+  line-height: 1.08;
+  letter-spacing: 0.2px;
+  color: #f4f8ff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.34);
+}
+.about-content {
+  margin: 0 16px;
+  padding: 22px 22px 24px;
+  border: 1px solid #2b364b;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.025));
+}
+.about-text {
+  white-space: pre-wrap;
+  line-height: 1.76;
+  font-size: 19px;
+  color: #dbe6f5;
+  margin: 0 0 18px;
+}
+.about-image-wrap {
+  margin: 10px 0 24px;
+  padding: 0;
+}
+.about-image {
+  display: block;
+  width: 100%;
+  max-width: 1240px;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 12px;
+  border: 1px solid #2b3447;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+}
+.about-image-missing {
+  width: 100%;
+  padding: 14px 12px;
+  border: 1px dashed #4a5671;
+  border-radius: 8px;
+  background: rgba(77, 163, 255, 0.08);
+  color: #d6e6fb;
+  font-size: 15px;
+}
+.glossary-page {
+  max-width: min(1280px, 96vw);
+  margin: 0 auto;
+  padding: 14px 0 34px;
+  border: 1px solid #263044;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(27, 36, 56, 0.72), rgba(14, 19, 32, 0.9));
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+.glossary-page h1 {
+  margin: 0;
+  padding: 18px 22px;
+  font-size: 30px;
+  color: #f2f7ff;
+}
+.glossary-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: transparent;
+  border: 1px solid #2b3447;
+}
+.glossary-table th,
+.glossary-table td {
+  border: 1px solid #2b3447;
+  text-align: left;
+  vertical-align: top;
+  padding: 11px;
+  color: #eaf0f8;
+  font-size: 17px;
+  line-height: 1.55;
+}
+.glossary-table thead th {
+  background: rgba(77, 163, 255, 0.16);
+  color: #f2f7ff;
+}
+.glossary-group td {
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: 700;
+}
+@media (max-width: 980px) {
+  .about-content {
+    margin: 0 10px;
+    padding: 16px 12px 18px;
   }
+  .about-text {
+    font-size: 17px;
+    line-height: 1.7;
+    margin: 0 0 14px;
+  }
+  .about-title {
+    font-size: 28px;
+    padding: 6px 14px 12px;
+  }
+  .about-image-wrap {
+    padding: 0;
+  }
+  .glossary-table th,
+  .glossary-table td {
+    font-size: 15px;
+    padding: 9px;
+  }
+}
+</style>
 
-  overviewBtn?.addEventListener('click', ()=> setAboutTab('overview'));
-  glossaryBtn?.addEventListener('click', ()=> setAboutTab('glossary'));
-})();
-</script>
+{% if about_is_glossary %}
+<section class="glossary-page">
+  <h1>Glossary</h1>
+  <table class="glossary-table" aria-label="Glossary">
+    <thead>
+      <tr>
+        <th scope="col">Term</th>
+        <th scope="col">Definition</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for section in glossary_sections %}
+      <tr class="glossary-group">
+        <td colspan="2">{{ section['title'] }}</td>
+      </tr>
+      {% for item in section['items'] %}
+      <tr>
+        <td><strong>{{ item['abbr'] }}</strong> - {{ item['name'] }}</td>
+        <td>{{ item['description'] }}</td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="about-page">
+  <h1 class="about-title">{{ about_section_title }}</h1>
+  <div class="about-content">
+    {% for segment in about_segments %}
+      {% if segment.type == 'text' and segment.value %}
+        <div class="about-text">{{ segment.value }}</div>
+      {% elif segment.type == 'image' %}
+        <div class="about-image-wrap">
+          {% if segment.exists %}
+            <img class="about-image" src="{{ segment.url }}" alt="{{ segment.token }}" loading="lazy">
+          {% else %}
+            <div class="about-image-missing">Missing image for {{ segment.token }}. Add {{ segment.filename }} to app/static/about.</div>
+          {% endif %}
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 {% endblock %}

@@ -22,6 +22,7 @@ import sys
 import uuid
 import json
 import tempfile
+import secrets
 import pandas as pd
 try:
     # Python 3.9+: IANA timezones
@@ -75,6 +76,7 @@ except Exception:
 main_bp = Blueprint('main', __name__)
 _AUTH_TRIAL_DAYS = 7
 _AUTH_SESSION_KEY = 'auth_user'
+_CSRF_SESSION_KEY = 'csrf_token'
 _AUTH_PLAN_OPTIONS = (
     {
         'key': 'monthly',
@@ -121,6 +123,32 @@ def _safe_next_url(value: Any) -> Optional[str]:
     if parsed.scheme or parsed.netloc:
         return None
     return raw
+
+
+def _csrf_token() -> str:
+    token = str(session.get(_CSRF_SESSION_KEY) or '').strip()
+    if token:
+        return token
+    token = secrets.token_urlsafe(32)
+    session[_CSRF_SESSION_KEY] = token
+    return token
+
+
+def _csrf_validate() -> bool:
+    expected = str(session.get(_CSRF_SESSION_KEY) or '').strip()
+    provided = str(request.form.get('csrf_token') or request.headers.get('X-CSRF-Token') or '').strip()
+    if not expected or not provided:
+        return False
+    try:
+        return secrets.compare_digest(expected, provided)
+    except Exception:
+        return False
+
+
+def _require_csrf_form() -> Optional[Any]:
+    if _csrf_validate():
+        return None
+    return make_response('Invalid CSRF token', 400)
 
 
 def _auth_redirect_target(default: str = '/projections') -> str:
@@ -696,6 +724,15 @@ def _require_admin_page() -> Optional[Any]:
     return redirect(url_for('main.account_page'))
 
 
+def _require_admin_api() -> Optional[Any]:
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    if not auth_user:
+        return jsonify({'error': 'auth_required', 'loginUrl': url_for('main.login_page', next=_auth_login_target())}), 401
+    if auth_user.get('is_admin'):
+        return None
+    return jsonify({'error': 'admin_required'}), 403
+
+
 def _find_user_account_by_username(username: Any, *, exclude_user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     wanted = _normalize_username(username)
     if not wanted or not _sb_list_user_accounts:
@@ -948,6 +985,7 @@ def inject_auth_state() -> Dict[str, Any]:
         'auth_user': _current_auth_user(),
         'auth_plan_options': _AUTH_PLAN_OPTIONS,
         'auth_login_target': _auth_login_target(),
+        'csrf_token': _csrf_token(),
     }
 
 
@@ -966,11 +1004,17 @@ def enforce_auth_for_premium_routes():
 # Update page (no link in app)
 @main_bp.route('/admin/update', methods=['GET'])
 def update_page():
+    guard = _require_admin_page()
+    if guard is not None:
+        return guard
     return render_template('update.html')
 
 # Optional DB connectivity check for admin use
 @main_bp.route('/admin/db-check', methods=['GET'])
 def admin_db_check():
+    guard = _require_admin_api()
+    if guard is not None:
+        return guard
     try:
         if _SUPABASE_OK:
             sb = _sb_client()
@@ -1050,6 +1094,11 @@ def _start_admin_job(command: List[str], cwd: str) -> str:
 
 @main_bp.route('/admin/job/<job_id>', methods=['GET'])
 def get_admin_job(job_id: str):
+    guard = _require_admin_api()
+    if guard is not None:
+        return guard
+    if not re.fullmatch(r'[0-9a-fA-F\-]{8,64}', str(job_id or '')):
+        return jsonify({'error': 'invalid_job_id'}), 400
     job = _read_job(job_id)
     if not job:
         return jsonify({'error': 'job_not_found'}), 404
@@ -1058,8 +1107,15 @@ def get_admin_job(job_id: str):
 # Run update_data.py with date (async job)
 @main_bp.route('/admin/run-update-data', methods=['POST'])
 def run_update_data():
-    data = request.get_json()
-    date = data.get('date')
+    guard = _require_admin_api()
+    if guard is not None:
+        return guard
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Expected JSON body'}), 400
+    date = str(data.get('date') or '').strip()
+    if date and not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date):
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD.'}), 400
     if not date:
         return jsonify({'error': 'Missing date'}), 400
     try:
@@ -1187,6 +1243,9 @@ def run_update_data():
 # Run lineups.py for all teams (async job)
 @main_bp.route('/admin/run-lineups', methods=['POST'])
 def run_lineups():
+    guard = _require_admin_api()
+    if guard is not None:
+        return guard
     try:
         project_root = os.path.abspath(os.path.join(current_app.root_path, '..'))
         script_path = os.path.join(project_root, 'scripts', 'lineups.py')
@@ -1937,6 +1996,9 @@ def account_plan_update_page():
     guard = _require_account_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     auth_user = _refresh_current_auth_user() or _current_auth_user()
     plan_key = str(request.form.get('plan') or '').strip().lower()
     if plan_key not in {'monthly', 'yearly'}:
@@ -1956,6 +2018,9 @@ def account_billing_portal_page():
     guard = _require_account_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     auth_user = _refresh_current_auth_user() or _current_auth_user()
     return _create_stripe_billing_portal_redirect(auth_user)
 
@@ -1965,6 +2030,9 @@ def account_unsubscribe_page():
     guard = _require_account_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     auth_user = _refresh_current_auth_user() or _current_auth_user()
     if _stripe_any_configured() and auth_user.get('stripe_customer_id'):
         return _create_stripe_billing_portal_redirect(auth_user)
@@ -1981,6 +2049,9 @@ def account_profile_update_page():
     guard = _require_account_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     auth_user = _refresh_current_auth_user() or _current_auth_user()
     username = _normalize_username(request.form.get('username'))
     if not _valid_username(username):
@@ -2012,6 +2083,9 @@ def account_password_update_page():
     guard = _require_account_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     auth_user = _refresh_current_auth_user() or _current_auth_user()
     password = str(request.form.get('password') or '')
     confirm_password = str(request.form.get('confirm_password') or '')
@@ -2031,6 +2105,9 @@ def account_delete_page():
     guard = _require_account_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     auth_user = _refresh_current_auth_user() or _current_auth_user()
     confirmation = str(request.form.get('confirmation') or '').strip().upper()
     if confirmation != 'DELETE':
@@ -2066,6 +2143,9 @@ def user_management_create_page():
     guard = _require_admin_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     username = _normalize_username(request.form.get('username'))
     email = str(request.form.get('email') or '').strip().lower()
     password = str(request.form.get('password') or '')
@@ -2139,6 +2219,9 @@ def user_management_free_page(user_id: str):
     guard = _require_admin_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     auth_row = _sb_auth_admin_get_user(user_id) if _sb_auth_admin_get_user else None
     if not auth_row:
         flash('User not found.', 'error')
@@ -2158,6 +2241,9 @@ def user_management_password_page(user_id: str):
     guard = _require_admin_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     password = str(request.form.get('password') or '')
     confirm_password = str(request.form.get('confirm_password') or '')
     if len(password) < 8:
@@ -2177,6 +2263,9 @@ def user_management_delete_page(user_id: str):
     guard = _require_admin_page()
     if guard is not None:
         return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
     current_auth_user = _refresh_current_auth_user() or _current_auth_user()
     if str(current_auth_user.get('user_id') or '') == str(user_id):
         flash('Delete your own account from Account instead.', 'error')
@@ -3268,18 +3357,649 @@ _ABOUT_GLOSSARY_SECTIONS: List[Dict[str, Any]] = [
     },
 ]
 
+_ABOUT_HEADLINES: List[str] = [
+    'Inside the App',
+    'What the App Does',
+    'How to Use the App',
+    'How to Interpret the Data',
+    'Understanding the xG Models',
+    'Understanding RAPM',
+    'A Practical Way to Read the App',
+    'Why This App Matters',
+    'Please Help Share the App and Support the Work',
+    'Future Perspectives',
+    'Glossary',
+]
+
+_ABOUT_SECTION_TEXT: Dict[str, str] = {
+    'inside-the-app': """Inside the App: A Modern NHL Analytics Platform for Fans, Analysts, and Hockey Nerds
+
+There are a lot of hockey sites that show scores, standings, and player stats. There are fewer that try to connect those things into one place and answer the bigger questions: What happened in this game? Which players are truly driving results? How dangerous were those chances? Which lines are working? How does a player look beyond points? Where is a team creating its edge?
+
+That is the problem this app is built to solve.
+
+At its core, the app is an NHL analytics workspace. It combines schedule and live-game information, player and team dashboards, game reports, expected goals models, RAPM, lineup-based tools, odds history, and projection views into one connected experience. It is designed for people who want more than surface-level hockey stats, but it is also designed to remain usable for people who are still learning how to read modern hockey analytics.
+
+This article walks through what the app does, how to use it, how to interpret the numbers, how the xG and RAPM models work, and where the platform can go next.""",
+    'what-the-app-does': """What the App Does
+
+The app is not a single leaderboard or a single model. It is a set of connected tools that let you move from a league-wide view down to a single game, single team, single line, or single player.
+
+1. Schedule and game discovery
+
+The home page is the front door. It gives you a schedule view that makes it easy to browse the calendar and jump into individual games. Instead of forcing users to start with raw data tables, the app starts with the hockey itself: what games are being played, what happened, and where you want to dig deeper.
+
+This matters because hockey analysis usually starts with context. Before you look at a RAPM chart or an xG split, you need to know which game, team, or player you are trying to understand.
+
+The schedule, standings and games include all games to ever have been played in the NHL - Dating back to the 1917/1918 season.
+(Picture1)
+2. Live Games
+
+The Live Games page surfaces games in progress in a format that is fast to scan. It is built for active follow-up rather than postgame reading. If you want to see what is happening right now, move directly from the schedule into the live layer and then into the full game page.
+
+For people who follow a slate of games at once, this page acts like a control panel.
+(live_games_image)
+
+3. Standings
+
+The Standings page gives the seasonal league view. That may sound simple, but standings matter because they are the baseline everyone already understands. The app uses standings as a bridge between familiar hockey language and more advanced analysis.
+
+You can think of standings as the answer to "what happened in the standings table," while the rest of the app increasingly answers "why?"
+(Picture2)
+
+4. Game pages
+
+The game page is one of the most important parts of the platform. It is where raw game context becomes real analysis.
+
+A game page includes:
+- A report view
+- Lineups
+- Play-by-play
+- Shifts
+
+The report view is where a lot of users will spend most of their time. This is where you can move beyond final score and start asking questions about shot quality, territory, pressure, and momentum.
+(Picture3)
+(Picture4)
+The play-by-play view lets you inspect the event stream directly. The shifts view lets you connect those events to who was actually on the ice. That is a major difference between a stats site and an analytics platform: the app is not just storing outcomes, it is trying to connect outcomes to players, matchups, usage, and context.
+You can download raw Play-by-Play and Shift data directly from the game pages.
+
+5. Skaters page
+
+The Skaters page is a full player-analysis workspace. It includes:
+- Card
+- Charts
+- Shooting
+- Edge
+- RAPM
+- Projections
+- Table View
+
+This is where a user can move from a specific player question to a broader league comparison.
+
+The Card tab gives a fast profile of the player. You can customize exactly what metrics you prefer the Card to show. The bar size and color indicate the percentile ranking.
+(Picture5)
+The Charts tab is for comparison and positioning. You can choose what metrics you want to compare.
+(Picture6)
+The Shooting tab helps explain finishing, shot patterns, and chance generation. You can filter the shots versus a specific goaltender, by clicking in the Goalie table. Likewise, you can filter the data by shot location using the Heat Map. The video button shows goals by the selected player.
+(Picture7)
+The Edge tab gives another layer of visual and context-driven interpretation. It loads the NHL EDGE data directly from the NHL Api.
+(Picture8)
+The RAPM tab isolates player impact more directly. You can read more about the RAPM models below. You can choose between different metrics and different outputs.
+(Picture9)
+The Projections tab provides forward-looking context. It shows the player projections used for the game projection model.
+(Picture10)
+The Table View lets you zoom out and compare one player against a larger peer group. You can configure the table view as you like, and all table views are downloadable.
+(Picture11)
+
+If you care about player evaluation, this is one of the app's deepest surfaces.
+
+6. Goalies page
+
+Goalies have their own dedicated space because skater logic and goalie logic should not be treated as the same problem.
+
+The Goalies page includes:
+- Card
+- Charts
+- Goaltending
+- Table View
+(Picture12)
+Goaltending is unusually noisy and unusually dependent on environment, workload, shot quality, and game state. A dedicated goalie page helps separate those questions cleanly instead of forcing goalie analysis into skater frameworks that do not fit.
+
+7. Teams page
+
+The Teams page shifts the lens from player-level evaluation to team identity and team performance.
+
+It includes:
+- Card
+- Charts
+- Edge
+- Projections
+- Table View
+
+This is where you can ask questions like:
+- Is this team winning through shot volume or shot quality?
+- Are they controlling play territorially?
+- Are they overperforming their underlying numbers?
+- How do they compare to the rest of the league?
+- Where are their strengths and weaknesses coming from?
+
+For many users, the Teams page will be the easiest gateway into analytics because team-level patterns are often easier to see before moving into player isolation.
+
+8. Line Tool
+
+The Line Tool is one of the most distinctive parts of the app.
+
+It includes:
+- A Heat Map view
+- WOWY analysis
+- Video integration
+- Line, pair, and player selection
+- KPI panels and zone-based filtering
+
+You can choose up to 5 players, but you can also just pick just one player to see his On-Ice statistics. You can also include a goaltender, to see if a player performs better in front of one goalie over the other. The Video button will show the goals with selected players on the ice together - Both for and against.
+(Picture13)
+In the heat map you can compare the performance to the team or the league. If the color is blue, it means that the selected players are performing better than the team average or league average. So, in the defensive zone blue means fewer shots and in the offensive zone blue means more shots.
+(Picture14)
+This is the kind of tool that turns data from static information into something you can actively test.
+
+You can use it to explore how combinations of players perform together, where they create or allow chances, and how results change depending on teammates. The WOWY view is especially useful when you want to ask whether a line's results are truly driven by the group or whether one player is carrying the outcome.
+On the WOWY page you can see the results with and without the selected players. It's setup so you see the data from the perspective of a particular player. You can of course change the perspective.
+(Picture15)
+
+This kind of lineup analysis is one of the hardest things to do well in hockey, and it is one of the places where the app becomes more than a dashboard.
+
+9. Odds page
+
+The app also includes odds tracking and odds history. That gives users another lens on games: not only what the model says, but how the market has moved. The odds data is from DraftKings via the NHL Api and it only gets updated from 12PM ET.
+(Picture16)
+That does not mean the app is only for betting. It means the platform understands that betting markets are one of the most useful real-world signals in hockey. Odds movement can reflect lineup news, goalie confirmations, injury updates, and market sentiment. When combined with the rest of the app, odds history becomes context rather than noise.
+
+10. Projections page
+
+The Projections page includes:
+- Games
+- Series
+- Bracket
+- Stanley Cup Probability
+(Picture17)
+(Picture18)
+
+This gives the app a forward-looking layer on top of the descriptive and diagnostic layers. Users can look at individual games, playoff series, bracket paths, and title probabilities in one place.
+
+This article is deliberately not going into the internals of the projection model, but from a product point of view, the projection surfaces are important because they connect the rest of the platform to decision-making and future-looking analysis.
+
+Getting access to the Projections page will require a subscription. This is what will cover the expenses, so even if you're not particularly interested in the game projections, you can help support the site by subscribing.
+
+11. Update and maintenance surfaces
+
+There are also update and admin capabilities in the app. Most users will never interact with them directly, but they matter because the platform is built around frequent refreshes and operational workflows, not static CSVs sitting on a forgotten page.
+
+That is part of what makes the app feel alive.""",
+    'how-to-use-the-app': """How to Use the App
+
+One of the biggest challenges in analytics is not building the model. It is helping people use it correctly.
+
+The best way to use this app is to think in layers.
+
+Start broad, then narrow
+
+A good workflow looks like this:
+1. Start on the schedule, live games, standings, or team page.
+2. Identify the game, team, or player you want to understand.
+3. Use team and player pages to form an initial hypothesis.
+4. Drop into the game page or line tool when you need to inspect the "why."
+
+For example:
+- If a team has been winning a lot, go to the Teams page and see whether that success is backed by chance quality or finishing.
+- If a player's point totals look weak, go to the Skaters page and see whether the underlying play-driving data tells a different story.
+- If a line is crushing territorially but not scoring, use the Line Tool and game reports to see whether the problem is finishing, shot quality, or usage.
+- If a game result looks surprising, open the game page and inspect the play-by-play, shifts, and report tabs.
+
+The app works best when you move between these surfaces instead of treating one chart as the whole answer.
+
+Use filters intentionally
+
+A lot of pages allow you to filter by:
+- Season
+- Season state
+- Strength state
+- Rates vs totals
+- xG model
+- Minimum thresholds like games played or time on ice
+
+These are not cosmetic controls. They change the question you are asking.
+
+If you choose totals, you are asking who produced the most overall value or volume. If you choose rates, you are asking who performed best on a per-minute or per-game basis. If you change strength state, you are separating even-strength results from special-teams results. If you set a minimum threshold, you are deciding how much you want to trade inclusiveness for reliability.
+
+That matters because hockey is a small-sample sport. A player can look elite in 100 minutes and ordinary in 1,000. The app gives you the tools to manage that tension, but the user still has to decide what kind of comparison is fair.""",
+    'how-to-interpret-the-data': """How to Interpret the Data
+
+The app includes a lot of numbers, but most of them can be grouped into a few simple questions.
+
+1. Results: what happened?
+
+These are the most familiar measures:
+- Goals
+- Wins
+- Points
+- Save percentage
+- Special teams outcomes
+- Scorelines
+
+They matter, but they are not enough on their own. Results can be noisy, especially in hockey.
+
+2. Process: how did it happen?
+
+This is where metrics like:
+- Corsi
+- Fenwick
+- xG
+- shot location
+- zone context
+- chance distributions
+- on-ice event rates
+
+become important.
+
+Process metrics help answer whether performance is sustainable. A team winning despite weak shot quality may be living on finishing or goaltending. A player with modest point totals but strong chance-driving metrics may be better than the box score suggests.
+
+3. Context: against whom, with whom, and in what role?
+
+This is where hockey gets more complex.
+
+A player's numbers are shaped by:
+- Teammates
+- Opponents
+- Usage
+- Zone starts
+- Special teams role
+- Score state
+- Game state
+- Team system
+
+The app tries to keep that context visible instead of flattening everything into one number.
+
+4. Isolation: what is the player or team actually contributing?
+
+This is where RAPM and lineup tools become especially useful. They are designed to go beyond "what happened while this player was on the ice" and move closer to "what effect did this player have?"
+
+No model can solve that perfectly. But the right tools can get you much closer than raw plus-minus, point totals, or on-ice goal share.""",
+    'understanding-the-xg-models': """Understanding the xG Models
+
+Expected goals, or xG, is one of the core ideas in modern hockey analysis. The goal of xG is simple: estimate the probability that a shot becomes a goal.
+
+That sounds straightforward, but the real value of xG is not the probability assigned to one shot. The real value is what happens when you add those probabilities up across shifts, periods, games, players, teams, and seasons.
+
+In this app, xG is used in multiple surfaces, and the app exposes different xG model choices because different event definitions can be useful for different analytical purposes.
+
+What xG is trying to measure
+
+At a high level, xG asks:
+
+If we saw this exact shot or shot-like event many times, how often would it become a goal?
+
+That lets you separate chance quality from actual finishing results.
+
+A team may score four goals on 1.8 expected goals because they finished well, got a few bounces, or faced weak goaltending. Another team may score once on 3.1 expected goals because they generated better chances than the final score suggests.
+
+That distinction is critical if you care about repeatability.
+
+The three xG model options in the app
+
+The app exposes three xG model views:
+
+- xG_S
+- xG_F
+- xG_F2
+
+These are not three completely unrelated philosophies. They are three related model variants.
+
+xG_S
+
+This is the shot-based model. It is trained on shot events and uses contextual features like:
+- venue
+- shot type
+- score state
+- rink context
+- strength state
+- box or ice location
+- last event context
+
+This is the cleanest traditional shot-model view in the app. If you want a direct shot-quality lens, this is the natural place to start. This is probably the best model for goaltender analysis - Depending on whether or not you believe can impact shot misses... And to what extent.
+
+xG_F
+
+This is a Fenwick-based model. Fenwick excludes blocked shots and focuses on unblocked attempts, which often gives a broader attacking-process view than shots on goal alone.
+
+This model includes the same core contextual structure as the shot model, but also adds event-sequence context such as the last event. That can help the model capture how a chance developed, not just where it ended.
+This is the preferred model for describing results.
+
+xG_F2
+
+This is also Fenwick-based, but with a slightly different feature set than xG_F. It uses venue, shot type, score state, rink context, strength state, and box location, while leaving out the last-event input.
+This is the preferred model for predictive analysis. A rebound shot have a much larger chance of becoming a goal, but they are also quite random. This is why excluding rebound effects increases the predictiveness of the model.
+
+
+How the models are trained
+
+The xG scripts train gradient-boosted tree classifiers using rolling multi-season windows. In plain English, that means the model is trained on recent historical seasons rather than treating all hockey history as equally relevant forever.
+
+That matters because the league changes:
+- shot habits change
+- team systems evolve
+- tracking and event recording can drift
+- scoring environments move over time
+
+Using rolling windows is a practical way to keep the models current without overreacting to only one season.
+
+The model inputs are categorical and contextual features that are converted into machine-readable form, then fed into XGBoost classifiers that estimate goal probability.
+
+How to interpret xG in the app
+
+A few practical rules help:
+
+- xG is about chance quality, not certainty.
+- Over one game, xG is descriptive, not definitive.
+- Over larger samples, xG becomes more informative.
+- xG is stronger when combined with usage and context, not read in isolation.
+- Differences between xG and goals can reveal finishing, goaltending, luck, or short-term variance.
+
+If a player consistently beats xG over many seasons, that may reflect real finishing talent. If a team beats xG for two weeks, that might just be a hot streak. The app is built to help you tell those apart.""",
+    'understanding-rapm': """Understanding RAPM
+
+RAPM stands for Regularized Adjusted Plus-Minus.
+
+It sounds technical because it is technical. But the intuition is simple: hockey is a five-man game at even strength and a deeply contextual game everywhere else. If you want to estimate individual impact, you need a method that tries to separate a player from his teammates, opponents, and deployment.
+
+That is what RAPM is trying to do.
+
+Why raw plus-minus is not enough
+
+Raw plus-minus tells you what happened while a player was on the ice. It does not tell you how much of that result belongs to the player.
+
+If someone spends all night with elite linemates against weak competition, raw plus-minus will flatter him. If someone plays brutal defensive minutes with weak support, raw plus-minus can punish him unfairly.
+
+RAPM exists because hockey is not a clean one-player sport.
+
+How RAPM works in this app
+
+The RAPM pipeline in the app:
+- builds shift-segment data from play-by-play and shifts
+- aggregates event outcomes by shift
+- tracks who was on the ice
+- models different outcomes with ridge regression
+- separates strength states like 5v5, power play, and penalty kill
+- outputs offensive, defensive, and differential views across metrics like Corsi, goals, and xG
+
+In other words, the model tries to learn how outcomes move when players are present, while controlling for the fact that players share the ice with teammates and opponents.
+
+The regularized part matters a lot. Hockey data is messy and collinear. The same players appear together repeatedly. Ridge regression helps stabilize those estimates and prevents the model from overreacting to noisy lineup combinations.
+
+What RAPM is measuring
+
+In the app, RAPM includes outputs tied to:
+- Corsi
+- goals
+- xG
+- offensive and defensive components
+- plus-minus style differentials
+- power-play and shorthanded states
+
+That means RAPM is not just one number. It is a family of adjusted impact estimates.
+
+A player may:
+- look strong offensively but weak defensively
+- grade well in xG impact but not goal results
+- show stronger value at 5v5 than on special teams
+- have more value in shot suppression than in shot creation
+
+That is the point. Good evaluation should separate those things.
+
+How to read RAPM correctly
+
+A few rules matter here too:
+
+- RAPM is an estimate, not a verdict.
+- It is strongest over larger samples.
+- It should be compared within role and context.
+- Offensive and defensive components should be read together.
+- xG-based RAPM is often more stable than goal-based RAPM.
+- Special teams RAPM should be treated carefully because the samples are smaller.
+
+If a player has strong xG RAPM and weaker goal RAPM, that often means the underlying process is better than the scoreboard results. If a player rates well in both, the case is stronger. If RAPM, xG, and lineup impacts all agree, confidence goes up.
+
+The app gives you multiple ways to test that agreement.""",
+    'a-practical-way-to-read-the-app': """A Practical Way to Read the App
+
+If you are new to hockey analytics, this is a good mental model:
+
+For teams
+Use:
+- Standings for results
+- Teams page for identity
+- Game page for game-level explanation
+- Projections page for future-facing context
+
+For skaters
+Use:
+- Card for summary
+- Charts for comparison
+- Shooting for chance and finishing context
+- RAPM for isolation
+- Table View for league benchmarking
+- Line Tool when you want to test teammate effects
+
+For goalies
+Use:
+- Card and Goaltending views first
+- Team and game context second
+- Never interpret goalie results without chance quality context
+
+For single games
+Use:
+- Game report first
+- Play-by-play second
+- Shifts when you want to connect events to personnel
+- Odds and live context when you want to understand how information moved before and during the game
+
+For lineup questions
+Use:
+- Line Tool
+- Heat map
+- WOWY
+- Video
+- Game report confirmation
+
+That last step matters. Numbers are strongest when they point you toward something you can then inspect more directly.""",
+    'why-this-app-matters': """Why This App Matters
+
+There are two kinds of hockey analytics products.
+
+The first kind gives you numbers.
+
+The second kind helps you think.
+
+This app is trying to be the second kind.
+
+It is built around the idea that hockey data becomes useful when users can move across levels:
+- from schedule to game
+- from team to player
+- from result to process
+- from process to context
+- from context to interpretation
+
+That is what makes a platform valuable. Not just one stat, one leaderboard, or one model, but the ability to connect the pieces.""",
+    'please-help-share-the-app-and-support-the-work': """Please Help Share the App and Support the Work
+
+If you use the app and find it valuable, the simplest way to help is to share it.
+
+Share it with:
+- hockey fans
+- fantasy players
+- writers
+- podcasters
+- analysts
+- team-level community accounts
+- anyone who wants a smarter way to look at the game
+
+Independent work grows because people pass it on.
+
+If you want better public hockey analytics tools, more transparent models, more useful player and team dashboards, and more features that go beyond generic stat pages, support matters. Time, infrastructure, data pipelines, model maintenance, and product development all cost something. Every person who shares the app, talks about it, links to it, or supports the project directly helps keep the work going.
+
+If you want this kind of platform to improve, please help put it in front of more people.""",
+    'future-perspectives': """Future Perspectives
+
+The app already covers a lot of ground, but there is still plenty of room to grow.
+
+A few directions that make sense for the future:
+
+1. More historical depth
+Deeper season archives, cross-era comparisons, and career trend tools would make the player and team pages even more useful.
+
+2. Better lineup and matchup analysis
+The Line Tool is already powerful, but there is room for richer matchup views, coach deployment patterns, and opposition-quality overlays.
+
+3. More video-linked analytics
+The bridge between numbers and film is one of the most interesting parts of modern sports analysis. More direct event-to-video connections would make the app even more valuable.
+
+4. Custom dashboards
+Different users care about different questions. Letting people save their own views, filters, tables, or metric bundles would make the app more personal and more efficient.
+
+5. Alerts and tracking
+Watchlists for players, teams, line combinations, or model-driven changes could turn the app from a destination into a daily tool.
+
+6. Expanded game reporting
+Game pages could grow into full postgame analytical reports with automated summaries, turning each game into a richer story.
+
+7. Public explainers and education
+A bigger library of built-in metric explanations, tutorials, and interpretation guides would help newer users get comfortable faster.
+
+8. Deeper team-style fingerprints
+It would be useful to have even clearer team identity views: rush teams, cycle teams, forecheck-heavy teams, slot-denial teams, east-west power-play teams, and so on.
+
+9. More goalie-specific modeling and visuals
+Goaltending remains one of the hardest analytical problems in hockey. A deeper goalie toolkit would be a natural extension of the current platform.
+
+10. Community-facing features
+Saved screenshots, exportable reports, sharable charts, and public comparison pages would make the app easier to spread organically.
+
+11. Adding contract context
+Including contract information and analysis would help answer if a player is living up to his contract.
+
+Closing
+
+The goal of this app is not to replace watching hockey. It is to deepen it.
+
+It is for the fan who wants to know whether a result was real.
+It is for the analyst who wants more than points and plus-minus.
+It is for the writer who wants sharper evidence.
+It is for the hockey obsessive who wants one place to explore the game properly.
+
+That is what makes the project worth building.
+
+If you have used the app, shared it, talked about it, or supported the work in any way: thank you.
+
+And if you want to help it grow, the best next step is simple: use it, share it, and tell other people why it matters.""",
+}
+
+
+def _about_slug_from_title(title: str) -> str:
+    slug = re.sub(r'[^a-z0-9]+', '-', str(title or '').strip().lower())
+    return slug.strip('-')
+
+
+def _about_nav_items(active_slug: str) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for title in _ABOUT_HEADLINES:
+        slug = _about_slug_from_title(title)
+        out.append({
+            'title': title,
+            'slug': slug,
+            'url': url_for('main.about_page_slug', section_slug=slug),
+            'active': slug == active_slug,
+        })
+    return out
+
+
+def _about_text_segments(text: str) -> List[Dict[str, Any]]:
+    token_re = re.compile(r'\((Picture\d+|live_games_image)\)')
+    segments: List[Dict[str, Any]] = []
+    pos = 0
+    for m in token_re.finditer(text or ''):
+        if m.start() > pos:
+            segments.append({'type': 'text', 'value': text[pos:m.start()]})
+        token = m.group(1)
+        if token == 'live_games_image':
+            fname = 'live_games_image.png'
+        else:
+            fname = f'{token}.png'
+        fpath = _static_path(os.path.join('about', fname))
+        segments.append({
+            'type': 'image',
+            'token': token,
+            'filename': fname,
+            'url': url_for('static', filename=f'about/{fname}'),
+            'exists': os.path.exists(fpath),
+        })
+        pos = m.end()
+    if pos < len(text or ''):
+        segments.append({'type': 'text', 'value': text[pos:]})
+    return segments
+
+
+def _about_strip_leading_heading(text: str, heading: str) -> str:
+    raw = str(text or '')
+    if not raw.strip():
+        return raw
+    lines = raw.splitlines()
+    if not lines:
+        return raw
+
+    first = lines[0].strip().rstrip(':').lower()
+    expected = str(heading or '').strip().rstrip(':').lower()
+    if first != expected:
+        return raw
+
+    idx = 1
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+    return '\n'.join(lines[idx:])
+
 
 @main_bp.route('/about')
 def about_page():
-    """About page with app overview and glossary."""
+    return redirect(url_for('main.about_page_slug', section_slug=_about_slug_from_title(_ABOUT_HEADLINES[0])))
+
+
+@main_bp.route('/about/<section_slug>')
+def about_page_slug(section_slug: str):
+    """About page with one headline section per route."""
+    section_slug = str(section_slug or '').strip().lower()
+    if not section_slug:
+        return redirect(url_for('main.about_page'))
+
+    valid_slugs = {_about_slug_from_title(x) for x in _ABOUT_HEADLINES}
+    if section_slug not in valid_slugs:
+        return redirect(url_for('main.about_page'))
+
+    is_glossary = (section_slug == _about_slug_from_title('Glossary'))
+    section_title = next((x for x in _ABOUT_HEADLINES if _about_slug_from_title(x) == section_slug), 'About')
+    section_text = _about_strip_leading_heading(_ABOUT_SECTION_TEXT.get(section_slug, ''), section_title)
+    segments = _about_text_segments(section_text) if section_text else []
+
     return render_template(
         'about.html',
         teams=TEAM_ROWS,
         active_tab='About',
-        show_filters=False,
+        show_filters=True,
         show_season_state=False,
         show_include_historic=False,
         glossary_sections=_ABOUT_GLOSSARY_SECTIONS,
+        about_headlines=_about_nav_items(section_slug),
+        about_section_slug=section_slug,
+        about_section_title=section_title,
+        about_segments=segments,
+        about_is_glossary=is_glossary,
     )
 
 
@@ -9959,6 +10679,9 @@ def admin_prestart_snapshots():
       - limit: number of rows to return for preview (default: 100, returns last N rows)
       - gameId: optional filter for a specific GameID (int) for preview
     """
+    guard = _require_admin_api()
+    if guard is not None:
+        return guard
     mode = str(request.args.get('mode', 'preview')).strip().lower()
     path = _prestart_csv_path()
     # Download mode

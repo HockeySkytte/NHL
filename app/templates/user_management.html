@@ -2,7 +2,7 @@
 {% block head %}
 <style>
   .users-shell{ max-width:1080px; margin:0 auto; }
-  .users-card{ background:#0f1522; border:1px solid #2a3142; border-radius:18px; padding:22px; box-shadow:0 18px 44px rgba(0,0,0,0.34); }
+  .users-card{ background:linear-gradient(160deg, rgba(27, 36, 56, 0.72), rgba(14, 19, 32, 0.9)); border:1px solid #2a3142; border-radius:18px; padding:22px; box-shadow:0 18px 44px rgba(0,0,0,0.34); }
   .users-kicker{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
   .users-card h2{ margin:10px 0 8px; font-size:30px; line-height:1.05; }
   .users-copy{ color:var(--text-dim); font-size:14px; line-height:1.55; margin-bottom:18px; }
@@ -78,6 +78,7 @@
       <button type="submit" class="users-filter-btn">Apply</button>
     </form>
     <form method="post" action="{{ url_for('main.user_management_create_page') }}" class="users-create">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <h3>Create User</h3>
       <input type="hidden" name="filter_q" value="{{ filters.q }}" />
       <input type="hidden" name="filter_access" value="{{ filters.access }}" />
@@ -140,6 +141,7 @@
         </div>
         <div class="user-actions">
           <form method="post" action="{{ url_for('main.user_management_password_page', user_id=user.user_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input type="hidden" name="filter_q" value="{{ filters.q }}" />
             <input type="hidden" name="filter_access" value="{{ filters.access }}" />
             <input type="hidden" name="filter_role" value="{{ filters.role }}" />
@@ -154,6 +156,7 @@
           <details class="inline-confirm">
             <summary>Make free</summary>
             <form method="post" action="{{ url_for('main.user_management_free_page', user_id=user.user_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
               <input type="hidden" name="filter_q" value="{{ filters.q }}" />
               <input type="hidden" name="filter_access" value="{{ filters.access }}" />
               <input type="hidden" name="filter_role" value="{{ filters.role }}" />
@@ -165,6 +168,7 @@
           <details class="inline-confirm">
             <summary>Delete</summary>
             <form method="post" action="{{ url_for('main.user_management_delete_page', user_id=user.user_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
               <input type="hidden" name="filter_q" value="{{ filters.q }}" />
               <input type="hidden" name="filter_access" value="{{ filters.access }}" />
               <input type="hidden" name="filter_role" value="{{ filters.role }}" />
