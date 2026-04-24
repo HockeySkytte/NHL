@@ -980,12 +980,20 @@ def _deny_premium_access(auth_user: Optional[Dict[str, Any]]) -> Any:
 
 @main_bp.app_context_processor
 def inject_auth_state() -> Dict[str, Any]:
+    social_default_title = 'NHL Analytics'
+    social_default_description = 'Live games, standings, projections, and deeper NHL analytics.'
+    social_default_image = url_for('static', filename='social-preview.png', _external=True)
+    social_default_url = request.url
     return {
         'auth_enabled': _auth_enabled(),
         'auth_user': _current_auth_user(),
         'auth_plan_options': _AUTH_PLAN_OPTIONS,
         'auth_login_target': _auth_login_target(),
         'csrf_token': _csrf_token(),
+        'social_default_title': social_default_title,
+        'social_default_description': social_default_description,
+        'social_default_image': social_default_image,
+        'social_default_url': social_default_url,
     }
 
 

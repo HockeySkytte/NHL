@@ -3,7 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NHL Analytics</title>
+  {% set _meta_title = meta_title if meta_title is defined and meta_title else social_default_title %}
+  {% set _meta_description = meta_description if meta_description is defined and meta_description else social_default_description %}
+  {% set _meta_image = meta_image if meta_image is defined and meta_image else social_default_image %}
+  {% set _meta_url = meta_url if meta_url is defined and meta_url else social_default_url %}
+  <title>{{ _meta_title }}</title>
+  <meta name="description" content="{{ _meta_description }}" />
+  <link rel="canonical" href="{{ _meta_url }}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="NHL Analytics" />
+  <meta property="og:title" content="{{ _meta_title }}" />
+  <meta property="og:description" content="{{ _meta_description }}" />
+  <meta property="og:url" content="{{ _meta_url }}" />
+  <meta property="og:image" content="{{ _meta_image }}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{ _meta_title }}" />
+  <meta name="twitter:description" content="{{ _meta_description }}" />
+  <meta name="twitter:image" content="{{ _meta_image }}" />
   <link rel="icon" type="image/png" href="/favicon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
