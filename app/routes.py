@@ -3301,7 +3301,7 @@ _SKATER_BIOS_CACHE: Dict[int, Tuple[float, Dict[int, Dict[str, str]]]] = {}
 def api_odds_history(game_id: int):
     """Return ML history time series for both teams for a given game id.
 
-    Data source: Supabase odds_snapshots table (primary), legacy odds_history table (fallback).
+    Data source: Supabase odds_snapshots.
     """
     # Team colors from Teams.csv
     color_by_team: Dict[str, str] = {}
@@ -3314,48 +3314,16 @@ def api_odds_history(game_id: int):
     except Exception:
         color_by_team = {}
 
+    away_abbrev, home_abbrev = _load_game_team_abbrevs(int(game_id))
     snapshot_rows = _load_odds_snapshot_rows(game_id=int(game_id))
-    _latest_snapshot, points_by_team = _build_odds_snapshot_payloads(snapshot_rows)
+    _latest_snapshot, points_by_team = _build_odds_snapshot_payloads(
+        snapshot_rows,
+        away_abbrev,
+        home_abbrev,
+    )
     if points_by_team:
         teams_out: List[Dict[str, Any]] = []
         for team_s, points in points_by_team.items():
-            teams_out.append({'abbrev': team_s, 'color': color_by_team.get(team_s) or None, 'points': points})
-        j = jsonify({'gameId': int(game_id), 'teams': teams_out})
-        try:
-            j.headers['Cache-Control'] = 'no-store'
-        except Exception:
-            pass
-        return j
-
-    # Legacy fallback.
-    sb_rows = _sb_read("odds_history", filters={"game_id": f"eq.{int(game_id)}"})
-    if sb_rows is not None and len(sb_rows) > 0:
-        series: Dict[str, Dict[str, float]] = {}
-        order: Dict[str, List[str]] = {}
-        for r in sb_rows:
-            ts_s = str(r.get('timestamp') or '').strip()
-            if not ts_s:
-                continue
-            team_s = str(r.get('team') or '').strip().upper()
-            if not team_s:
-                continue
-            ml = r.get('ml')
-            if ml is None:
-                continue
-            try:
-                ml = float(ml)
-            except Exception:
-                continue
-            series.setdefault(team_s, {})[ts_s] = ml
-            order.setdefault(team_s, []).append(ts_s)
-        teams_out: List[Dict[str, Any]] = []
-        for team_s, ts_map in series.items():
-            uniq_ts = list(dict.fromkeys(order.get(team_s, [])))
-            try:
-                uniq_ts.sort()
-            except Exception:
-                pass
-            points = [{'t': ts, 'ml': ts_map[ts], 'winProp': None} for ts in uniq_ts if ts in ts_map]
             teams_out.append({'abbrev': team_s, 'color': color_by_team.get(team_s) or None, 'points': points})
         j = jsonify({'gameId': int(game_id), 'teams': teams_out})
         try:
@@ -3377,7 +3345,7 @@ def api_odds_history(game_id: int):
 def api_lineups_all():
     """Return lineup data used by the projections lineup selector.
 
-    Source is Supabase dailyfaceoff_lineups (preferred) or static JSON fallback.
+    Source is Supabase dailyfaceoff_lineups.
     """
     try:
         data = _load_lineups_all()
@@ -3397,7 +3365,7 @@ def api_lineups_all():
         code = 'lineups_load_failed'
         j = jsonify({
             'error': code,
-            'hint': 'Check Supabase access or the static lineups fallback file',
+            'hint': 'Check Supabase access for dailyfaceoff_lineups',
         })
         try:
             j.headers['Cache-Control'] = 'no-store'
@@ -4081,18 +4049,6 @@ def api_projections_games():
         odds_map = _fetch_partner_odds_map(date_str)
     except Exception:
         odds_map = {}
-    # Started-game overrides from Google Sheets (latest ML + Win_Prop in Sheet1)
-    started_sheet_id = (os.getenv('STARTED_OVERRIDES_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
-    started_ws = (os.getenv('STARTED_OVERRIDES_WORKSHEET') or 'Sheet1').strip()
-    started_overrides: Dict[int, Dict[str, Any]] = {}
-    if started_sheet_id:
-        try:
-            started_overrides = _load_started_game_overrides_from_sheet(started_sheet_id, started_ws)
-        except Exception:
-            started_overrides = {}
-
-    # Fallback prestart snapshots (append-only CSV) and index by GameID
-    prestart_map = _load_prestart_snapshots_map()
     try:
         # Determine not-started strictly by comparing schedule startTimeUTC to current UTC
         from datetime import timezone as _tz
@@ -4126,7 +4082,7 @@ def api_projections_games():
                     g['odds'] = {'away': snapshot.get('oddsAway'), 'home': snapshot.get('oddsHome')}
                 elif gid in odds_map:
                     g['odds'] = odds_map.get(gid)
-            # When started, prefer the latest Supabase odds snapshot; else fallback to overrides/CSV snapshot
+            # When started, use the latest Supabase odds snapshot.
             if started and gid is not None:
                 if snapshot and (snapshot.get('oddsAway') is not None or snapshot.get('oddsHome') is not None):
                     g['prestart'] = {
@@ -4137,33 +4093,6 @@ def api_projections_games():
                         'betAwayPct': snapshot.get('betAwayPct'),
                         'betHomePct': snapshot.get('betHomePct'),
                     }
-                else:
-                    ov = started_overrides.get(gid)
-                    if isinstance(ov, dict) and ov:
-                    # Direct away/home fields
-                        if 'oddsAway' in ov or 'oddsHome' in ov or 'winAwayPct' in ov or 'winHomePct' in ov:
-                            g['prestart'] = {
-                                'oddsAway': ov.get('oddsAway'),
-                                'oddsHome': ov.get('oddsHome'),
-                                # If Win_Prop is blank, keep None so UI falls back to calculated probability
-                                'winAwayPct': ov.get('winAwayPct'),
-                                'winHomePct': ov.get('winHomePct'),
-                            }
-                    # Team-row shape: map Team->(ml, winPct) to away/home using the schedule abbrev
-                        elif isinstance(ov.get('_by_team'), dict):
-                            tm = ov.get('_by_team') or {}
-                            aa = ((g.get('awayTeam') or {}).get('abbrev') or '').upper()
-                            ha = ((g.get('homeTeam') or {}).get('abbrev') or '').upper()
-                            a_rec = tm.get(aa) if aa else None
-                            h_rec = tm.get(ha) if ha else None
-                            g['prestart'] = {
-                                'oddsAway': a_rec.get('ml') if isinstance(a_rec, dict) else None,
-                                'oddsHome': h_rec.get('ml') if isinstance(h_rec, dict) else None,
-                                'winAwayPct': a_rec.get('winPct') if isinstance(a_rec, dict) else None,
-                                'winHomePct': h_rec.get('winPct') if isinstance(h_rec, dict) else None,
-                            }
-                    elif gid in prestart_map:
-                        g['prestart'] = prestart_map.get(gid)
     except Exception:
         pass
 
@@ -12806,21 +12735,13 @@ def _load_player_projections_from_sheets() -> Dict[int, Dict[str, Any]]:
 _LINEUPS_ALL_CACHE: Optional[Tuple[float, Dict[str, Any]]] = None
 
 def _load_lineups_all() -> Dict[str, Any]:
-    """Load lineups from Supabase, falling back to static JSON.
-
-    Expected columns:
-      Timestamp, Team, Unit, Pos, PlayerName, playerId
-    """
     global _LINEUPS_ALL_CACHE
     ttl_s = int(os.getenv('LINEUPS_SHEET_CACHE_TTL_SECONDS', '300') or '300')
     now = time.time()
     if _LINEUPS_ALL_CACHE and (now - _LINEUPS_ALL_CACHE[0]) < max(1, ttl_s):
         return _LINEUPS_ALL_CACHE[1]
 
-    # Try the new Supabase dailyfaceoff_lineups table first, then legacy lineups.
     sb_raw = _sb_read("dailyfaceoff_lineups")
-    if not sb_raw:
-        sb_raw = _sb_read("lineups")
     if sb_raw:
         # Map Supabase snake_case → original column names used below
         rows = []
@@ -12834,17 +12755,8 @@ def _load_lineups_all() -> Dict[str, Any]:
                 'Timestamp': str(r.get('timestamp') or r.get('updated_at') or r.get('created_at') or r.get('Timestamp') or ''),
             })
     else:
-        # Try static JSON file (written by scripts/lineups.py)
-        json_path = _static_path('lineups_all.json')
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, 'r', encoding='utf-8') as _f:
-                    out = json.load(_f)
-                _LINEUPS_ALL_CACHE = (now, out)
-                return out
-            except Exception:
-                pass
-        rows = []
+        _LINEUPS_ALL_CACHE = (now, {})
+        return {}
 
     out: Dict[str, Any] = {}
     latest_ts_by_team: Dict[str, str] = {}
@@ -12893,6 +12805,33 @@ def _load_lineups_all() -> Dict[str, Any]:
     return out
 
 _ODDS_SNAPSHOT_ROWS_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+
+def _load_game_team_abbrevs(game_id: int) -> Tuple[str, str]:
+    try:
+        ttl = int(os.getenv('BOX_CACHE_TTL_SECONDS', '600') or '600')
+    except Exception:
+        ttl = 600
+
+    data = _cache_get(_BOX_CACHE, int(game_id), ttl) or {}
+    if not data:
+        try:
+            resp = requests.get(f'https://api-web.nhle.com/v1/gamecenter/{int(game_id)}/boxscore', timeout=20)
+            if resp.status_code == 200:
+                data = resp.json() or {}
+                try:
+                    max_items = max(1, int(os.getenv('BOX_CACHE_MAX_ITEMS', '64') or '64'))
+                except Exception:
+                    max_items = 64
+                try:
+                    _cache_set_multi_bounded(_BOX_CACHE, int(game_id), data, ttl_s=ttl, max_items=max_items)
+                except Exception:
+                    pass
+        except Exception:
+            data = {}
+
+    away = str(((data.get('awayTeam') or {}).get('abbrev') or (data.get('awayTeam') or {}).get('abbreviation') or '')).strip().upper()
+    home = str(((data.get('homeTeam') or {}).get('abbrev') or (data.get('homeTeam') or {}).get('abbreviation') or '')).strip().upper()
+    return away, home
 
 def _odds_snapshot_cache_key(game_ids: Optional[Iterable[int]] = None, game_id: Optional[int] = None) -> str:
     if game_id is not None:
@@ -12987,7 +12926,7 @@ def _load_odds_snapshot_rows(*, game_ids: Optional[Iterable[int]] = None, game_i
             filters = {'game_id': 'in.(' + ','.join(str(v) for v in vals) + ')'}
 
     rows = _sb_read('odds_snapshots', filters=filters)
-    if rows is None and filters:
+    if filters and not rows:
         alt_filters = {('gameid' if k == 'game_id' else k): v for k, v in filters.items()}
         rows = _sb_read('odds_snapshots', filters=alt_filters)
     out = rows or []
