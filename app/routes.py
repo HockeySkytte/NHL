@@ -1488,6 +1488,17 @@ def _build_games_for_date(date_et) -> List[Dict[str, Any]]:
         except Exception:
             continue
 
+    game_team_map: Dict[int, Tuple[str, str]] = {}
+    for g in out:
+        try:
+            gid_i = int(str(g.get('id')).strip())
+        except Exception:
+            continue
+        game_team_map[gid_i] = (
+            str((g.get('awayTeam') or {}).get('abbrev') or '').strip().upper(),
+            str((g.get('homeTeam') or {}).get('abbrev') or '').strip().upper(),
+        )
+    odds_snapshot_map = _load_latest_odds_snapshot_map(game_team_map)
     try:
         odds_map = _fetch_partner_odds_map(date_str)
     except Exception:
@@ -1513,8 +1524,22 @@ def _build_games_for_date(date_et) -> List[Dict[str, Any]]:
                     gid = int(str(raw_id).strip())
             except Exception:
                 gid = None
-            if not_started and gid is not None and gid in odds_map:
-                g['odds'] = odds_map.get(gid)
+            if gid is not None:
+                snapshot = odds_snapshot_map.get(gid)
+                if snapshot and (snapshot.get('oddsAway') is not None or snapshot.get('oddsHome') is not None):
+                    if not_started:
+                        g['odds'] = {'away': snapshot.get('oddsAway'), 'home': snapshot.get('oddsHome')}
+                    else:
+                        g['prestart'] = {
+                            'oddsAway': snapshot.get('oddsAway'),
+                            'oddsHome': snapshot.get('oddsHome'),
+                            'winAwayPct': snapshot.get('winAwayPct'),
+                            'winHomePct': snapshot.get('winHomePct'),
+                            'betAwayPct': snapshot.get('betAwayPct'),
+                            'betHomePct': snapshot.get('betHomePct'),
+                        }
+                elif not_started and gid in odds_map:
+                    g['odds'] = odds_map.get(gid)
     except Exception:
         pass
 
@@ -3276,7 +3301,7 @@ _SKATER_BIOS_CACHE: Dict[int, Tuple[float, Dict[int, Dict[str, str]]]] = {}
 def api_odds_history(game_id: int):
     """Return ML history time series for both teams for a given game id.
 
-    Data source: Supabase odds_history table (primary), Google Sheets worksheet (fallback).
+    Data source: Supabase odds_snapshots table (primary), legacy odds_history table (fallback).
     """
     # Team colors from Teams.csv
     color_by_team: Dict[str, str] = {}
@@ -3289,7 +3314,20 @@ def api_odds_history(game_id: int):
     except Exception:
         color_by_team = {}
 
-    # Try Supabase first
+    snapshot_rows = _load_odds_snapshot_rows(game_id=int(game_id))
+    _latest_snapshot, points_by_team = _build_odds_snapshot_payloads(snapshot_rows)
+    if points_by_team:
+        teams_out: List[Dict[str, Any]] = []
+        for team_s, points in points_by_team.items():
+            teams_out.append({'abbrev': team_s, 'color': color_by_team.get(team_s) or None, 'points': points})
+        j = jsonify({'gameId': int(game_id), 'teams': teams_out})
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j
+
+    # Legacy fallback.
     sb_rows = _sb_read("odds_history", filters={"game_id": f"eq.{int(game_id)}"})
     if sb_rows is not None and len(sb_rows) > 0:
         series: Dict[str, Dict[str, float]] = {}
@@ -3339,21 +3377,8 @@ def api_odds_history(game_id: int):
 def api_lineups_all():
     """Return lineup data used by the projections lineup selector.
 
-    Source is Supabase (preferred) or Google Sheets fallback.
+    Source is Supabase dailyfaceoff_lineups (preferred) or static JSON fallback.
     """
-    # If neither Supabase nor sheet id is configured, fail loudly.
-    sheet_id = (os.getenv('LINEUPS_SHEET_ID') or os.getenv('PROJECTIONS_SHEET_ID') or '').strip()
-    if not _SUPABASE_OK and not sheet_id:
-        j = jsonify({
-            'error': 'missing_sheet_id',
-            'hint': 'Set LINEUPS_SHEET_ID or PROJECTIONS_SHEET_ID (or configure Supabase)',
-        })
-        try:
-            j.headers['Cache-Control'] = 'no-store'
-        except Exception:
-            pass
-        return j, 500
-
     try:
         data = _load_lineups_all()
         j = jsonify(data)
@@ -3370,19 +3395,9 @@ def api_lineups_all():
             pass
         msg = str(e or '')
         code = 'lineups_load_failed'
-        if 'Missing Google credentials' in msg:
-            code = 'missing_google_credentials'
-        elif 'Invalid GOOGLE_SERVICE_ACCOUNT' in msg or 'Invalid Google service account JSON' in msg:
-            code = 'invalid_google_credentials'
-        elif 'SpreadsheetNotFound' in msg:
-            code = 'sheet_not_found_or_no_access'
-        elif 'WorksheetNotFound' in msg:
-            code = 'worksheet_not_found'
         j = jsonify({
             'error': code,
-            'hint': 'Check GOOGLE_SERVICE_ACCOUNT_JSON_* env vars and that the service account has access to the sheet',
-            'sheet_id': sheet_id,
-            'worksheet': worksheet,
+            'hint': 'Check Supabase access or the static lineups fallback file',
         })
         try:
             j.headers['Cache-Control'] = 'no-store'
@@ -4049,6 +4064,18 @@ def api_projections_games():
             # If anything fails, still return the game
             continue
 
+    game_team_map: Dict[int, Tuple[str, str]] = {}
+    for g in out:
+        try:
+            gid_i = int(str(g.get('id')).strip())
+        except Exception:
+            continue
+        game_team_map[gid_i] = (
+            str((g.get('awayTeam') or {}).get('abbrev') or '').strip().upper(),
+            str((g.get('homeTeam') or {}).get('abbrev') or '').strip().upper(),
+        )
+    odds_snapshot_map = _load_latest_odds_snapshot_map(game_team_map)
+
     # Attach odds for not-started games only, and attach prestart for started games
     try:
         odds_map = _fetch_partner_odds_map(date_str)
@@ -4093,36 +4120,50 @@ def api_projections_games():
                     gid = int(val_id)
             except Exception:
                 gid = None
-            if not_started and gid is not None and gid in odds_map:
-                g['odds'] = odds_map.get(gid)
-            # When started, prefer the latest Sheet1 overrides; else fallback to CSV snapshot
+            snapshot = odds_snapshot_map.get(gid) if gid is not None else None
+            if not_started and gid is not None:
+                if snapshot and (snapshot.get('oddsAway') is not None or snapshot.get('oddsHome') is not None):
+                    g['odds'] = {'away': snapshot.get('oddsAway'), 'home': snapshot.get('oddsHome')}
+                elif gid in odds_map:
+                    g['odds'] = odds_map.get(gid)
+            # When started, prefer the latest Supabase odds snapshot; else fallback to overrides/CSV snapshot
             if started and gid is not None:
-                ov = started_overrides.get(gid)
-                if isinstance(ov, dict) and ov:
+                if snapshot and (snapshot.get('oddsAway') is not None or snapshot.get('oddsHome') is not None):
+                    g['prestart'] = {
+                        'oddsAway': snapshot.get('oddsAway'),
+                        'oddsHome': snapshot.get('oddsHome'),
+                        'winAwayPct': snapshot.get('winAwayPct'),
+                        'winHomePct': snapshot.get('winHomePct'),
+                        'betAwayPct': snapshot.get('betAwayPct'),
+                        'betHomePct': snapshot.get('betHomePct'),
+                    }
+                else:
+                    ov = started_overrides.get(gid)
+                    if isinstance(ov, dict) and ov:
                     # Direct away/home fields
-                    if 'oddsAway' in ov or 'oddsHome' in ov or 'winAwayPct' in ov or 'winHomePct' in ov:
-                        g['prestart'] = {
-                            'oddsAway': ov.get('oddsAway'),
-                            'oddsHome': ov.get('oddsHome'),
-                            # If Win_Prop is blank, keep None so UI falls back to calculated probability
-                            'winAwayPct': ov.get('winAwayPct'),
-                            'winHomePct': ov.get('winHomePct'),
-                        }
+                        if 'oddsAway' in ov or 'oddsHome' in ov or 'winAwayPct' in ov or 'winHomePct' in ov:
+                            g['prestart'] = {
+                                'oddsAway': ov.get('oddsAway'),
+                                'oddsHome': ov.get('oddsHome'),
+                                # If Win_Prop is blank, keep None so UI falls back to calculated probability
+                                'winAwayPct': ov.get('winAwayPct'),
+                                'winHomePct': ov.get('winHomePct'),
+                            }
                     # Team-row shape: map Team->(ml, winPct) to away/home using the schedule abbrev
-                    elif isinstance(ov.get('_by_team'), dict):
-                        tm = ov.get('_by_team') or {}
-                        aa = ((g.get('awayTeam') or {}).get('abbrev') or '').upper()
-                        ha = ((g.get('homeTeam') or {}).get('abbrev') or '').upper()
-                        a_rec = tm.get(aa) if aa else None
-                        h_rec = tm.get(ha) if ha else None
-                        g['prestart'] = {
-                            'oddsAway': a_rec.get('ml') if isinstance(a_rec, dict) else None,
-                            'oddsHome': h_rec.get('ml') if isinstance(h_rec, dict) else None,
-                            'winAwayPct': a_rec.get('winPct') if isinstance(a_rec, dict) else None,
-                            'winHomePct': h_rec.get('winPct') if isinstance(h_rec, dict) else None,
-                        }
-                elif gid in prestart_map:
-                    g['prestart'] = prestart_map.get(gid)
+                        elif isinstance(ov.get('_by_team'), dict):
+                            tm = ov.get('_by_team') or {}
+                            aa = ((g.get('awayTeam') or {}).get('abbrev') or '').upper()
+                            ha = ((g.get('homeTeam') or {}).get('abbrev') or '').upper()
+                            a_rec = tm.get(aa) if aa else None
+                            h_rec = tm.get(ha) if ha else None
+                            g['prestart'] = {
+                                'oddsAway': a_rec.get('ml') if isinstance(a_rec, dict) else None,
+                                'oddsHome': h_rec.get('ml') if isinstance(h_rec, dict) else None,
+                                'winAwayPct': a_rec.get('winPct') if isinstance(a_rec, dict) else None,
+                                'winHomePct': h_rec.get('winPct') if isinstance(h_rec, dict) else None,
+                            }
+                    elif gid in prestart_map:
+                        g['prestart'] = prestart_map.get(gid)
     except Exception:
         pass
 
@@ -12776,19 +12817,21 @@ def _load_lineups_all() -> Dict[str, Any]:
     if _LINEUPS_ALL_CACHE and (now - _LINEUPS_ALL_CACHE[0]) < max(1, ttl_s):
         return _LINEUPS_ALL_CACHE[1]
 
-    # Try Supabase first (skip if table is empty)
-    sb_raw = _sb_read("lineups")
+    # Try the new Supabase dailyfaceoff_lineups table first, then legacy lineups.
+    sb_raw = _sb_read("dailyfaceoff_lineups")
+    if not sb_raw:
+        sb_raw = _sb_read("lineups")
     if sb_raw:
         # Map Supabase snake_case → original column names used below
         rows = []
         for r in sb_raw:
             rows.append({
-                'Team': r.get('team', ''),
-                'Unit': r.get('unit', ''),
-                'Pos': r.get('pos', ''),
-                'PlayerName': r.get('player_name', ''),
-                'playerId': r.get('player_id', ''),
-                'Timestamp': str(r.get('timestamp') or ''),
+                'Team': r.get('team') or r.get('Team') or '',
+                'Unit': r.get('unit') or r.get('line') or r.get('Unit') or '',
+                'Pos': r.get('pos') or r.get('position') or r.get('Pos') or '',
+                'PlayerName': r.get('player_name') or r.get('player') or r.get('name') or r.get('PlayerName') or '',
+                'playerId': r.get('player_id') or r.get('playerId') or r.get('PlayerID') or '',
+                'Timestamp': str(r.get('timestamp') or r.get('updated_at') or r.get('created_at') or r.get('Timestamp') or ''),
             })
     else:
         # Try static JSON file (written by scripts/lineups.py)
@@ -12847,6 +12890,220 @@ def _load_lineups_all() -> Dict[str, Any]:
         node['generated_at'] = latest_ts_by_team.get(t)
 
     _LINEUPS_ALL_CACHE = (now, out)
+    return out
+
+_ODDS_SNAPSHOT_ROWS_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+
+def _odds_snapshot_cache_key(game_ids: Optional[Iterable[int]] = None, game_id: Optional[int] = None) -> str:
+    if game_id is not None:
+        return f'game:{int(game_id)}'
+    if game_ids is None:
+        return 'all'
+    vals = sorted({int(gid) for gid in game_ids if gid})
+    return 'games:' + ','.join(str(v) for v in vals)
+
+def _snapshot_pick(row: Dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in row and row.get(key) not in (None, ''):
+            return row.get(key)
+    return None
+
+def _snapshot_percent(raw: Any) -> Optional[float]:
+    val = _parse_locale_float(raw)
+    if val is None:
+        return None
+    pct = float(val)
+    if 0.0 <= pct <= 1.0:
+        pct *= 100.0
+    return pct
+
+def _snapshot_ml(raw: Any) -> Optional[float]:
+    val = _parse_locale_float(raw)
+    if val is None:
+        return None
+    return float(val)
+
+def _snapshot_timestamp(row: Dict[str, Any]) -> str:
+    raw = _snapshot_pick(row, 'timestamp', 'timestamp_utc', 'snapshot_at', 'created_at', 'updated_at', 'TimestampUTC')
+    return str(raw or '').strip()
+
+def _snapshot_game_id(row: Dict[str, Any]) -> Optional[int]:
+    return _safe_int(_snapshot_pick(row, 'game_id', 'gameId', 'GameID', 'gameid'))
+
+def _snapshot_team(row: Dict[str, Any], side: Optional[str] = None) -> str:
+    if side == 'away':
+        raw = _snapshot_pick(row, 'away_team', 'away', 'away_abbrev', 'awayTeam', 'Away')
+    elif side == 'home':
+        raw = _snapshot_pick(row, 'home_team', 'home', 'home_abbrev', 'homeTeam', 'Home')
+    else:
+        raw = _snapshot_pick(row, 'team', 'team_abbrev', 'teamAbbrev', 'abbrev', 'Team')
+    return str(raw or '').strip().upper()
+
+def _snapshot_side_ml(row: Dict[str, Any], side: Optional[str] = None) -> Optional[float]:
+    if side == 'away':
+        raw = _snapshot_pick(row, 'odds_away', 'away_odds', 'away_ml', 'ml_away', 'oddsAway', 'OddsAway', 'awayPrice')
+    elif side == 'home':
+        raw = _snapshot_pick(row, 'odds_home', 'home_odds', 'home_ml', 'ml_home', 'oddsHome', 'OddsHome', 'homePrice')
+    else:
+        raw = _snapshot_pick(row, 'ml', 'odds', 'american_odds', 'price', 'value')
+    return _snapshot_ml(raw)
+
+def _snapshot_side_pct(row: Dict[str, Any], side: str, kind: str) -> Optional[float]:
+    if kind == 'win':
+        raw = _snapshot_pick(
+            row,
+            f'{side}_win_pct', f'win_{side}_pct', f'{side}WinPct',
+            f'{side}_win_prob', f'win_{side}_prob',
+            'winAwayPct' if side == 'away' else 'winHomePct',
+            'WinAway' if side == 'away' else 'WinHome'
+        )
+    else:
+        raw = _snapshot_pick(
+            row,
+            f'{side}_bet_pct', f'bet_{side}_pct', f'{side}BetPct',
+            'betAwayPct' if side == 'away' else 'betHomePct',
+            'BetAway' if side == 'away' else 'BetHome'
+        )
+    return _snapshot_percent(raw)
+
+def _load_odds_snapshot_rows(*, game_ids: Optional[Iterable[int]] = None, game_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    global _ODDS_SNAPSHOT_ROWS_CACHE
+    try:
+        ttl_s = max(10, int(os.getenv('ODDS_SNAPSHOTS_CACHE_TTL_SECONDS', '60') or '60'))
+    except Exception:
+        ttl_s = 60
+    cache_key = _odds_snapshot_cache_key(game_ids, game_id)
+    now = time.time()
+    cached = _ODDS_SNAPSHOT_ROWS_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
+    filters: Optional[Dict[str, str]] = None
+    if game_id is not None:
+        filters = {'game_id': f'eq.{int(game_id)}'}
+    elif game_ids is not None:
+        vals = sorted({int(gid) for gid in game_ids if gid})
+        if vals:
+            filters = {'game_id': 'in.(' + ','.join(str(v) for v in vals) + ')'}
+
+    rows = _sb_read('odds_snapshots', filters=filters)
+    if rows is None and filters:
+        alt_filters = {('gameid' if k == 'game_id' else k): v for k, v in filters.items()}
+        rows = _sb_read('odds_snapshots', filters=alt_filters)
+    out = rows or []
+    _ODDS_SNAPSHOT_ROWS_CACHE[cache_key] = (now, out)
+    return out
+
+def _build_odds_snapshot_payloads(rows: List[Dict[str, Any]], away_abbrev: str = '', home_abbrev: str = '') -> Tuple[Dict[str, Any], Dict[str, List[Dict[str, Any]]]]:
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for idx, row in enumerate(rows or []):
+        ts = _snapshot_timestamp(row) or f'row-{idx:08d}'
+        groups.setdefault(ts, []).append(row)
+
+    latest_payload: Dict[str, Any] = {}
+    points_by_team: Dict[str, List[Dict[str, Any]]] = {}
+
+    for ts in sorted(groups.keys()):
+        group = groups[ts]
+        by_team: Dict[str, Dict[str, Any]] = {}
+        payload: Dict[str, Any] = {
+            'timestamp': ts,
+            'awayTeam': away_abbrev or '',
+            'homeTeam': home_abbrev or '',
+            'oddsAway': None,
+            'oddsHome': None,
+            'winAwayPct': None,
+            'winHomePct': None,
+            'betAwayPct': None,
+            'betHomePct': None,
+        }
+        for row in group:
+            away_team = _snapshot_team(row, 'away')
+            home_team = _snapshot_team(row, 'home')
+            if away_team:
+                payload['awayTeam'] = away_team
+            if home_team:
+                payload['homeTeam'] = home_team
+
+            away_ml = _snapshot_side_ml(row, 'away')
+            home_ml = _snapshot_side_ml(row, 'home')
+            if away_ml is not None:
+                payload['oddsAway'] = away_ml
+            if home_ml is not None:
+                payload['oddsHome'] = home_ml
+
+            away_win = _snapshot_side_pct(row, 'away', 'win')
+            home_win = _snapshot_side_pct(row, 'home', 'win')
+            away_bet = _snapshot_side_pct(row, 'away', 'bet')
+            home_bet = _snapshot_side_pct(row, 'home', 'bet')
+            if away_win is not None:
+                payload['winAwayPct'] = away_win
+            if home_win is not None:
+                payload['winHomePct'] = home_win
+            if away_bet is not None:
+                payload['betAwayPct'] = away_bet
+            if home_bet is not None:
+                payload['betHomePct'] = home_bet
+
+            team_row = _snapshot_team(row)
+            if team_row:
+                team_rec = by_team.setdefault(team_row, {'ml': None, 'winPct': None, 'betPct': None})
+                team_ml = _snapshot_side_ml(row)
+                if team_ml is not None:
+                    team_rec['ml'] = team_ml
+                team_win = _snapshot_percent(_snapshot_pick(row, 'win_pct', 'win_prop', 'win_probability', 'implied_win_pct'))
+                team_bet = _snapshot_percent(_snapshot_pick(row, 'bet_pct', 'bet_prop', 'kelly_pct'))
+                if team_win is not None:
+                    team_rec['winPct'] = team_win
+                if team_bet is not None:
+                    team_rec['betPct'] = team_bet
+
+        payload['awayTeam'] = str(payload.get('awayTeam') or away_abbrev or '').upper()
+        payload['homeTeam'] = str(payload.get('homeTeam') or home_abbrev or '').upper()
+
+        away_team = str(payload.get('awayTeam') or '').upper()
+        home_team = str(payload.get('homeTeam') or '').upper()
+        if payload.get('oddsAway') is None and away_team and isinstance(by_team.get(away_team), dict):
+            payload['oddsAway'] = by_team[away_team].get('ml')
+            payload['winAwayPct'] = payload.get('winAwayPct') if payload.get('winAwayPct') is not None else by_team[away_team].get('winPct')
+            payload['betAwayPct'] = payload.get('betAwayPct') if payload.get('betAwayPct') is not None else by_team[away_team].get('betPct')
+        if payload.get('oddsHome') is None and home_team and isinstance(by_team.get(home_team), dict):
+            payload['oddsHome'] = by_team[home_team].get('ml')
+            payload['winHomePct'] = payload.get('winHomePct') if payload.get('winHomePct') is not None else by_team[home_team].get('winPct')
+            payload['betHomePct'] = payload.get('betHomePct') if payload.get('betHomePct') is not None else by_team[home_team].get('betPct')
+
+        added: set[str] = set()
+        if away_team and payload.get('oddsAway') is not None:
+            points_by_team.setdefault(away_team, []).append({'t': ts, 'ml': payload.get('oddsAway'), 'winProp': None})
+            added.add(away_team)
+        if home_team and payload.get('oddsHome') is not None:
+            points_by_team.setdefault(home_team, []).append({'t': ts, 'ml': payload.get('oddsHome'), 'winProp': None})
+            added.add(home_team)
+        for team_key, rec in by_team.items():
+            if team_key in added or rec.get('ml') is None:
+                continue
+            points_by_team.setdefault(team_key, []).append({'t': ts, 'ml': rec.get('ml'), 'winProp': None})
+
+        payload['_by_team'] = by_team
+        latest_payload = payload
+
+    return latest_payload, points_by_team
+
+def _load_latest_odds_snapshot_map(game_team_map: Dict[int, Tuple[str, str]]) -> Dict[int, Dict[str, Any]]:
+    if not game_team_map:
+        return {}
+    rows = _load_odds_snapshot_rows(game_ids=game_team_map.keys())
+    by_game: Dict[int, List[Dict[str, Any]]] = {}
+    for row in rows:
+        gid = _snapshot_game_id(row)
+        if gid:
+            by_game.setdefault(int(gid), []).append(row)
+    out: Dict[int, Dict[str, Any]] = {}
+    for gid, teams in game_team_map.items():
+        away_abbrev, home_abbrev = teams
+        payload, _ = _build_odds_snapshot_payloads(by_game.get(int(gid), []), away_abbrev, home_abbrev)
+        if payload:
+            out[int(gid)] = payload
     return out
 
 def _load_player_projections_csv() -> Dict[int, Dict[str, Any]]:

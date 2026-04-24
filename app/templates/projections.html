@@ -299,7 +299,7 @@ const playerListEl = document.getElementById('playerList');
 const lineupTeamInfoEl = document.getElementById('lineupTeamInfo');
 
 // Caches and overrides
-window._lineupsCache = window._lineupsCache || null; // contents of lineups_all.json
+window._lineupsCache = window._lineupsCache || null; // contents of /api/lineups/all
 window._rosterCache = window._rosterCache || {}; // { [TEAM]: roster json from /api/roster/<TEAM>/current }
 window._currentGamesById = window._currentGamesById || {};
 window._winOverrides = window._winOverrides || {}; // { [gameId]: { away: p, home: p } }
