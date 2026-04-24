@@ -244,6 +244,12 @@
     .edge-grid{ grid-template-columns: 1fr; }
   }
 
+  .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:none; border-radius:12px; }
+  .metrics-table{ width:max-content; min-width:100%; border-collapse:separate; border-spacing:0; font-size:14px; table-layout:auto; }
+  .metrics-table th{ position:sticky; top:0; background:#0f1522; text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 12px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; user-select:none; white-space:nowrap; z-index:2; }
+  .metrics-table td{ padding:10px 12px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric:tabular-nums; }
+  .metrics-table th, .metrics-table td{ min-width:92px; }
+  .metrics-table td.name, .metrics-table th.name{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ width:64px; min-width:64px; max-width:64px; }
   .metrics-table td.rank, .metrics-table td.name{ position:sticky; background:#0f1522; z-index:1; }
@@ -871,6 +877,23 @@ const PLAY_DRIVING_METRICS = [
   { id:'Play Driving|RAPM xGF', label:'RAPM xGF' },
   { id:'Play Driving|RAPM xGA', label:'RAPM xGA' },
   { id:'Play Driving|RAPM xG+/-', label:'RAPM xG+/-' },
+];
+
+const SHOOTING_CONTEXT_METRICS = [
+  { id:'Shooting|iShots or iFenwick', label:'Attempts' },
+  { id:'Shooting|ixG', label:'ixG' },
+  { id:'Shooting|Sh% or FSh%', label:'Sh%' },
+  { id:'Shooting|xSh% or xFSh%', label:'xSh%' },
+  { id:'Shooting|dSh% or dFSh%', label:'dSh%' },
+  { id:'Shooting|GAx', label:'GAx' },
+  { id:'Context|Sh%', label:'On-ice Sh%' },
+  { id:'Context|Sv%', label:'On-ice Sv%' },
+  { id:'Context|PDO', label:'On-ice PDO' },
+  { id:'Context|GAx', label:'On-ice GAx' },
+  { id:'Context|GSAx', label:'On-ice GSAx' },
+  { id:'Context|QoT', label:'QoT' },
+  { id:'Context|QoC', label:'QoC' },
+  { id:'Context|ZS', label:'ZS' },
 ];
 
 function metricLabel(metricId){
