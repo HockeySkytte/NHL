@@ -12863,7 +12863,7 @@ def _snapshot_ml(raw: Any) -> Optional[float]:
     return float(val)
 
 def _snapshot_timestamp(row: Dict[str, Any]) -> str:
-    raw = _snapshot_pick(row, 'timestamp', 'timestamp_utc', 'snapshot_at', 'created_at', 'updated_at', 'TimestampUTC')
+    raw = _snapshot_pick(row, 'timestamp', 'timestamp_utc', 'fetched_at_utc', 'snapshot_at', 'created_at', 'updated_at', 'TimestampUTC')
     return str(raw or '').strip()
 
 def _snapshot_game_id(row: Dict[str, Any]) -> Optional[int]:
@@ -12884,7 +12884,7 @@ def _snapshot_side_ml(row: Dict[str, Any], side: Optional[str] = None) -> Option
     elif side == 'home':
         raw = _snapshot_pick(row, 'odds_home', 'home_odds', 'home_ml', 'ml_home', 'oddsHome', 'OddsHome', 'homePrice')
     else:
-        raw = _snapshot_pick(row, 'ml', 'odds', 'american_odds', 'price', 'value')
+        raw = _snapshot_pick(row, 'money_line_2_way', 'ml', 'odds', 'american_odds', 'price', 'value')
     return _snapshot_ml(raw)
 
 def _snapshot_side_pct(row: Dict[str, Any], side: str, kind: str) -> Optional[float]:
@@ -13013,15 +13013,30 @@ def _build_odds_snapshot_payloads(rows: List[Dict[str, Any]], away_abbrev: str =
 
         added: set[str] = set()
         if away_team and payload.get('oddsAway') is not None:
-            points_by_team.setdefault(away_team, []).append({'t': ts, 'ml': payload.get('oddsAway'), 'winProp': None})
+            away_win_prop = _parse_locale_float(payload.get('winAwayPct'))
+            points_by_team.setdefault(away_team, []).append({
+                't': ts,
+                'ml': payload.get('oddsAway'),
+                'winProp': (away_win_prop / 100.0) if away_win_prop is not None else None,
+            })
             added.add(away_team)
         if home_team and payload.get('oddsHome') is not None:
-            points_by_team.setdefault(home_team, []).append({'t': ts, 'ml': payload.get('oddsHome'), 'winProp': None})
+            home_win_prop = _parse_locale_float(payload.get('winHomePct'))
+            points_by_team.setdefault(home_team, []).append({
+                't': ts,
+                'ml': payload.get('oddsHome'),
+                'winProp': (home_win_prop / 100.0) if home_win_prop is not None else None,
+            })
             added.add(home_team)
         for team_key, rec in by_team.items():
             if team_key in added or rec.get('ml') is None:
                 continue
-            points_by_team.setdefault(team_key, []).append({'t': ts, 'ml': rec.get('ml'), 'winProp': None})
+            rec_win_pct = _parse_locale_float(rec.get('winPct'))
+            points_by_team.setdefault(team_key, []).append({
+                't': ts,
+                'ml': rec.get('ml'),
+                'winProp': (rec_win_pct / 100.0) if rec_win_pct is not None else None,
+            })
 
         payload['_by_team'] = by_team
         latest_payload = payload
