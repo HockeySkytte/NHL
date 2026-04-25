@@ -136,3 +136,44 @@ def test_admin_form_post_requires_csrf(monkeypatch, client):
     form_data['csrf_token'] = 'csrf-admin'
     good = client.post('/admin/users/create', data=form_data, follow_redirects=False)
     assert good.status_code in (301, 302, 303, 307, 308)
+
+
+def test_account_plan_stripe_failure_is_handled(monkeypatch, client):
+    auth_user = {
+        'user_id': 'user-1',
+        'is_admin': False,
+        'has_access': True,
+        'email': 'user@example.com',
+        'username': 'user1',
+        'stripe_subscription_id': '',
+    }
+    monkeypatch.setattr(routes, '_refresh_current_auth_user', lambda: auth_user)
+    monkeypatch.setattr(routes, '_current_auth_user', lambda: auth_user)
+    monkeypatch.setattr(routes, '_stripe_any_configured', lambda: True)
+    monkeypatch.setattr(routes, '_stripe_missing_config', lambda plan_key=None: [])
+    monkeypatch.setattr(routes, '_stripe_price_id', lambda _plan_key: 'price_test_123')
+
+    class _CheckoutSessionApi:
+        @staticmethod
+        def create(**kwargs):
+            raise RuntimeError('stripe unavailable')
+
+    class _CheckoutApi:
+        Session = _CheckoutSessionApi
+
+    class _StripeClient:
+        checkout = _CheckoutApi
+
+    monkeypatch.setattr(routes, '_stripe_client', lambda: _StripeClient())
+
+    with client.session_transaction() as sess:
+        sess[routes._AUTH_SESSION_KEY] = auth_user
+        sess[routes._CSRF_SESSION_KEY] = 'csrf-ok'
+
+    response = client.post(
+        '/account/plan',
+        data={'plan': 'monthly', 'csrf_token': 'csrf-ok'},
+        follow_redirects=False,
+    )
+    assert response.status_code in (301, 302, 303, 307, 308)
+    assert '/account' in (response.headers.get('Location') or '')

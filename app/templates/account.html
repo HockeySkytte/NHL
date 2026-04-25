@@ -116,15 +116,11 @@
     </div>
     {% if not auth_user.has_access %}
     <div class="account-note">Your trial has ended, so Projections stays locked until billing is connected to one of the plans above.</div>
-    {% else %}
-    <div class="account-note">Only Projections is currently behind the paywall. Skaters, Goalies, Teams, and Line Tool stay open.</div>
     {% endif %}
     <div class="account-sections">
       <section class="account-section">
         <h3>Plan</h3>
-        {% if billing.checkout_enabled %}
-        <p class="account-help">Payments are handled in Stripe. The browser never receives the Stripe secret key; this form only posts to the server, which creates a secure Checkout or Billing Portal session.</p>
-        {% elif billing.partial_config %}
+        {% if billing.partial_config %}
         <p class="account-help">Stripe billing is partially configured. Missing: {{ billing.missing_config|join(', ') }}.</p>
         {% else %}
         <p class="account-help">Switching plans updates the stored access state immediately in the app until Stripe is configured.</p>

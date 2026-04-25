@@ -545,8 +545,16 @@ def _create_stripe_checkout_redirect(auth_user: Dict[str, Any], plan_key: str) -
         session_payload['customer'] = customer_id
     else:
         session_payload['customer_email'] = str(auth_user.get('email') or '').strip().lower()
-    checkout_session = stripe_client.checkout.Session.create(**session_payload)
-    return redirect(str(checkout_session.url), code=303)
+    try:
+        checkout_session = stripe_client.checkout.Session.create(**session_payload)
+        checkout_url = str(getattr(checkout_session, 'url', '') or '').strip()
+        if not checkout_url:
+            raise RuntimeError('Stripe checkout session did not include a redirect URL.')
+    except Exception:
+        current_app.logger.exception('Stripe checkout creation failed for auth_user_id=%s.', auth_user.get('user_id'))
+        flash('Could not start Stripe checkout right now. Please try again in a moment.', 'error')
+        return redirect(url_for('main.account_page'))
+    return redirect(checkout_url, code=303)
 
 
 def _create_stripe_billing_portal_redirect(auth_user: Dict[str, Any]) -> Any:
@@ -558,11 +566,19 @@ def _create_stripe_billing_portal_redirect(auth_user: Dict[str, Any]) -> Any:
         flash('No Stripe billing profile exists yet for this account. Start checkout first.', 'error')
         return redirect(url_for('main.account_page'))
     stripe_client = _stripe_client()
-    portal_session = stripe_client.billing_portal.Session.create(
-        customer=customer_id,
-        return_url=_absolute_url_for('main.account_page'),
-    )
-    return redirect(str(portal_session.url), code=303)
+    try:
+        portal_session = stripe_client.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=_absolute_url_for('main.account_page'),
+        )
+        portal_url = str(getattr(portal_session, 'url', '') or '').strip()
+        if not portal_url:
+            raise RuntimeError('Stripe billing portal session did not include a redirect URL.')
+    except Exception:
+        current_app.logger.exception('Stripe billing portal creation failed for auth_user_id=%s.', auth_user.get('user_id'))
+        flash('Could not open Stripe billing right now. Please try again in a moment.', 'error')
+        return redirect(url_for('main.account_page'))
+    return redirect(portal_url, code=303)
 
 
 def _sync_user_account_from_supabase_user(user: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
