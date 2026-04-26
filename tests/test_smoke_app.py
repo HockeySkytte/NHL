@@ -283,3 +283,71 @@ def test_backfill_retries_without_username_on_conflict(monkeypatch):
     assert len(calls) == 2
     assert calls[0].get('username') == 'duplicate_name'
     assert calls[1].get('username') is None
+
+
+def test_admin_sync_users_route(monkeypatch, client):
+    admin_user = {
+        'user_id': 'admin-1',
+        'is_admin': True,
+        'has_access': True,
+        'email': 'admin@example.com',
+    }
+    auth_user = {
+        'id': 'u-300',
+        'email': 'u300@example.com',
+        'created_at': '2026-04-26T00:00:00Z',
+        'user_metadata': {'username': 'u300'},
+        'app_metadata': {},
+    }
+
+    monkeypatch.setattr(routes, '_refresh_current_auth_user', lambda: admin_user)
+    monkeypatch.setattr(routes, '_current_auth_user', lambda: admin_user)
+    monkeypatch.setattr(routes, '_sb_auth_admin_list_users', lambda: [auth_user])
+    monkeypatch.setattr(routes, '_sb_list_user_accounts', lambda: [])
+    monkeypatch.setattr(routes, '_sb_upsert_user_account', lambda payload: payload)
+
+    with client.session_transaction() as sess:
+        sess[routes._AUTH_SESSION_KEY] = admin_user
+        sess[routes._CSRF_SESSION_KEY] = 'csrf-admin'
+
+    response = client.post(
+        '/admin/users/sync',
+        data={'csrf_token': 'csrf-admin'},
+        follow_redirects=False,
+    )
+    assert response.status_code in (301, 302, 303, 307, 308)
+    assert '/admin/users' in (response.headers.get('Location') or '')
+
+
+def test_admin_make_free_reports_persist_failure(monkeypatch, client):
+    admin_user = {
+        'user_id': 'admin-1',
+        'is_admin': True,
+        'has_access': True,
+        'email': 'admin@example.com',
+    }
+    target_auth = {
+        'id': 'user-free-2',
+        'email': 'free2@example.com',
+        'created_at': '2026-04-25T00:00:00Z',
+        'user_metadata': {'username': 'free2'},
+        'app_metadata': {},
+    }
+
+    monkeypatch.setattr(routes, '_refresh_current_auth_user', lambda: admin_user)
+    monkeypatch.setattr(routes, '_current_auth_user', lambda: admin_user)
+    monkeypatch.setattr(routes, '_sb_auth_admin_get_user', lambda user_id: target_auth if user_id == 'user-free-2' else None)
+    monkeypatch.setattr(routes, '_sb_get_user_account', lambda user_id: None)
+    monkeypatch.setattr(routes, '_sb_upsert_user_account', lambda payload: None)
+    monkeypatch.setattr(routes, '_user_management_redirect', lambda: routes.redirect('/admin/users'))
+
+    with client.session_transaction() as sess:
+        sess[routes._AUTH_SESSION_KEY] = admin_user
+        sess[routes._CSRF_SESSION_KEY] = 'csrf-admin'
+
+    response = client.post(
+        '/admin/users/user-free-2/free',
+        data={'confirm_free': '1', 'csrf_token': 'csrf-admin'},
+        follow_redirects=False,
+    )
+    assert response.status_code in (301, 302, 303, 307, 308)

@@ -77,6 +77,13 @@
       </select>
       <button type="submit" class="users-filter-btn">Apply</button>
     </form>
+    <form method="post" action="{{ url_for('main.user_management_sync_page') }}" style="margin-bottom:18px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="hidden" name="filter_q" value="{{ filters.q }}" />
+      <input type="hidden" name="filter_access" value="{{ filters.access }}" />
+      <input type="hidden" name="filter_role" value="{{ filters.role }}" />
+      <button type="submit" class="user-btn">Sync users now</button>
+    </form>
     <form method="post" action="{{ url_for('main.user_management_create_page') }}" class="users-create">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <h3>Create User</h3>
@@ -154,32 +161,24 @@
             <button type="submit" class="user-btn">Reset password</button>
           </form>
           {% if not (user.subscription_plan == 'free' and user.subscription_status == 'active') %}
-          <details class="inline-confirm">
-            <summary>Make free</summary>
-            <form method="post" action="{{ url_for('main.user_management_free_page', user_id=user.user_id) }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-              <input type="hidden" name="filter_q" value="{{ filters.q }}" />
-              <input type="hidden" name="filter_access" value="{{ filters.access }}" />
-              <input type="hidden" name="filter_role" value="{{ filters.role }}" />
-              <input type="hidden" name="confirm_free" value="1" />
-              <p class="user-help">This changes the stored access state to free and removes recurring billing interval metadata.</p>
-              <button type="submit" class="user-btn">Confirm free access</button>
-            </form>
-          </details>
+          <form method="post" action="{{ url_for('main.user_management_free_page', user_id=user.user_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input type="hidden" name="filter_q" value="{{ filters.q }}" />
+            <input type="hidden" name="filter_access" value="{{ filters.access }}" />
+            <input type="hidden" name="filter_role" value="{{ filters.role }}" />
+            <input type="hidden" name="confirm_free" value="1" />
+            <button type="submit" class="user-btn">Make free</button>
+          </form>
           {% endif %}
           {% if user.subscription_plan == 'free' and user.subscription_status == 'active' %}
-          <details class="inline-confirm">
-            <summary>Cancel free</summary>
-            <form method="post" action="{{ url_for('main.user_management_cancel_free_page', user_id=user.user_id) }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-              <input type="hidden" name="filter_q" value="{{ filters.q }}" />
-              <input type="hidden" name="filter_access" value="{{ filters.access }}" />
-              <input type="hidden" name="filter_role" value="{{ filters.role }}" />
-              <input type="hidden" name="confirm_cancel_free" value="1" />
-              <p class="user-help">This removes free access and marks the account as inactive immediately.</p>
-              <button type="submit" class="user-btn">Confirm cancel free</button>
-            </form>
-          </details>
+          <form method="post" action="{{ url_for('main.user_management_cancel_free_page', user_id=user.user_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input type="hidden" name="filter_q" value="{{ filters.q }}" />
+            <input type="hidden" name="filter_access" value="{{ filters.access }}" />
+            <input type="hidden" name="filter_role" value="{{ filters.role }}" />
+            <input type="hidden" name="confirm_cancel_free" value="1" />
+            <button type="submit" class="user-btn">Cancel free</button>
+          </form>
           {% endif %}
           <details class="inline-confirm">
             <summary>Delete</summary>

@@ -883,6 +883,45 @@ def _backfill_missing_user_accounts(auth_users: List[Dict[str, Any]], account_by
             account_by_id[user_id] = created
 
 
+def _sync_auth_users_to_accounts(*, only_missing: bool = True) -> Dict[str, Any]:
+    auth_users = _sb_auth_admin_list_users() if _sb_auth_admin_list_users else []
+    account_by_id = {
+        str(row.get('auth_user_id') or ''): row
+        for row in (_sb_list_user_accounts() if _sb_list_user_accounts else [])
+        if row.get('auth_user_id')
+    }
+    scanned = 0
+    inserted_or_updated = 0
+    skipped = 0
+    failed = 0
+    failed_ids: List[str] = []
+    for auth_user in auth_users:
+        if not isinstance(auth_user, dict):
+            continue
+        user_id = str(auth_user.get('id') or '').strip()
+        if not user_id:
+            continue
+        scanned += 1
+        existing = account_by_id.get(user_id)
+        if only_missing and existing is not None:
+            skipped += 1
+            continue
+        saved = _ensure_user_account_row(auth_user, existing)
+        if isinstance(saved, dict) and saved.get('auth_user_id'):
+            inserted_or_updated += 1
+            account_by_id[user_id] = saved
+        else:
+            failed += 1
+            failed_ids.append(user_id)
+    return {
+        'scanned': scanned,
+        'inserted_or_updated': inserted_or_updated,
+        'skipped': skipped,
+        'failed': failed,
+        'failed_ids': failed_ids[:10],
+    }
+
+
 def _user_management_rows(*, query: str = '', access_filter: str = 'all', role_filter: str = 'all') -> List[Dict[str, Any]]:
     auth_users = _sb_auth_admin_list_users() if _sb_auth_admin_list_users else []
     account_by_id = {
@@ -2232,6 +2271,37 @@ def user_management_page():
     return render_template('user_management.html', active_tab=None, show_filters=False, auth_user=auth_user, users=users, plan_options=_AUTH_PLAN_OPTIONS, filters=filters, counts=counts)
 
 
+@main_bp.route('/admin/users/sync', methods=['POST'])
+def user_management_sync_page():
+    guard = _require_admin_page()
+    if guard is not None:
+        return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
+    results = _sync_auth_users_to_accounts(only_missing=True)
+    if results.get('failed'):
+        failed_ids = ', '.join(results.get('failed_ids') or [])
+        flash(
+            'Sync completed with failures. '
+            f"scanned={results.get('scanned', 0)}, "
+            f"saved={results.get('inserted_or_updated', 0)}, "
+            f"skipped={results.get('skipped', 0)}, "
+            f"failed={results.get('failed', 0)}"
+            + (f". Sample failed ids: {failed_ids}" if failed_ids else ''),
+            'error',
+        )
+    else:
+        flash(
+            'Sync complete. '
+            f"scanned={results.get('scanned', 0)}, "
+            f"saved={results.get('inserted_or_updated', 0)}, "
+            f"skipped={results.get('skipped', 0)}, "
+            'success',
+        )
+    return _user_management_redirect()
+
+
 @main_bp.route('/admin/users/create', methods=['POST'])
 def user_management_create_page():
     guard = _require_admin_page()
@@ -2302,8 +2372,12 @@ def user_management_create_page():
             'subscription_started_at': None,
             'subscription_ends_at': None,
         })
+    saved_row = None
     if _sb_upsert_user_account:
-        _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+        saved_row = _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+    if _sb_upsert_user_account and not saved_row:
+        flash('User was created in Supabase Auth, but user_accounts sync failed. Use Sync users now and check logs.', 'error')
+        return _user_management_redirect()
     flash(f"User created for {email} with {'admin' if is_admin else 'member'} access.", 'success')
     return _user_management_redirect()
 
@@ -2324,8 +2398,12 @@ def user_management_free_page(user_id: str):
         flash('Confirm the free-access change to continue.', 'error')
         return _user_management_redirect()
     auth_like = _auth_record_from_supabase_user(auth_row, _sb_get_user_account(user_id) if _sb_get_user_account else None)
+    saved_row = None
     if _sb_upsert_user_account:
-        _sb_upsert_user_account(_build_account_payload(auth_like, _subscription_update_for_plan('free', current_auth_user=auth_like)))
+        saved_row = _sb_upsert_user_account(_build_account_payload(auth_like, _subscription_update_for_plan('free', current_auth_user=auth_like)))
+    if _sb_upsert_user_account and not saved_row:
+        flash('Could not persist free-access update in user_accounts. Use Sync users now and check logs.', 'error')
+        return _user_management_redirect()
     flash(f"{auth_like.get('email') or 'User'} now has free access.", 'success')
     return _user_management_redirect()
 
@@ -2351,8 +2429,12 @@ def user_management_cancel_free_page(user_id: str):
         return _user_management_redirect()
     updates = _subscription_update_for_plan('unsubscribe', current_auth_user=auth_like)
     updates['trial_expires_at'] = _isoformat_utc(datetime.now(timezone.utc))
+    saved_row = None
     if _sb_upsert_user_account:
-        _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+        saved_row = _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+    if _sb_upsert_user_account and not saved_row:
+        flash('Could not persist cancel-free update in user_accounts. Use Sync users now and check logs.', 'error')
+        return _user_management_redirect()
     flash(f"{auth_like.get('email') or 'User'} free access has been canceled.", 'success')
     return _user_management_redirect()
 
