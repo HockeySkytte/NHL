@@ -592,25 +592,31 @@ def _create_stripe_billing_portal_redirect(auth_user: Dict[str, Any]) -> Any:
     return redirect(portal_url, code=303)
 
 
-def _create_stripe_donation_checkout_redirect(auth_user: Dict[str, Any], amount_raw: Any) -> Any:
+def _create_stripe_donation_checkout_redirect(auth_user: Optional[Dict[str, Any]], amount_raw: Any, *, guest_email: str = '') -> Any:
+    error_redirect_target = url_for('main.account_page') if auth_user else url_for('main.donation_page')
     if not _stripe_portal_enabled():
         flash('Stripe is not configured yet for donations.', 'error')
-        return redirect(url_for('main.account_page'))
+        return redirect(error_redirect_target)
     try:
         amount = float(str(amount_raw or '').strip())
     except Exception:
         flash('Enter a valid donation amount.', 'error')
-        return redirect(url_for('main.account_page'))
+        return redirect(error_redirect_target)
     amount_cents = int(round(amount * 100.0))
     if amount_cents < 100:
         flash('Minimum donation is $1.00.', 'error')
-        return redirect(url_for('main.account_page'))
+        return redirect(error_redirect_target)
     if amount_cents > 500000:
         flash('Maximum donation is $5,000.00 per checkout.', 'error')
-        return redirect(url_for('main.account_page'))
+        return redirect(error_redirect_target)
 
     stripe_client = _stripe_client()
-    customer_id = str(auth_user.get('stripe_customer_id') or '').strip() or None
+    _auth = auth_user or {}
+    customer_id = str(_auth.get('stripe_customer_id') or '').strip() or None
+    resolved_email = str(_auth.get('email') or '').strip().lower() or guest_email.strip().lower()
+    user_id = str(_auth.get('user_id') or '').strip()
+    success_base = _absolute_url_for('main.account_page') if auth_user else _absolute_url_for('main.donation_page')
+    cancel_base = success_base
     session_payload: Dict[str, Any] = {
         'mode': 'payment',
         'line_items': [{
@@ -623,28 +629,28 @@ def _create_stripe_donation_checkout_redirect(auth_user: Dict[str, Any], amount_
             },
             'quantity': 1,
         }],
-        'success_url': _absolute_url_for('main.account_page') + '?billing=donation_success',
-        'cancel_url': _absolute_url_for('main.account_page') + '?billing=donation_canceled',
-        'client_reference_id': str(auth_user.get('user_id') or '').strip(),
+        'success_url': success_base + '?billing=donation_success',
+        'cancel_url': cancel_base + '?billing=donation_canceled',
+        'client_reference_id': user_id,
         'metadata': {
-            'auth_user_id': str(auth_user.get('user_id') or '').strip(),
+            'auth_user_id': user_id,
             'kind': 'donation',
             'amount_cents': str(amount_cents),
         },
     }
     if customer_id:
         session_payload['customer'] = customer_id
-    else:
-        session_payload['customer_email'] = str(auth_user.get('email') or '').strip().lower()
+    elif resolved_email:
+        session_payload['customer_email'] = resolved_email
     try:
         checkout_session = stripe_client.checkout.Session.create(**session_payload)
         checkout_url = str(getattr(checkout_session, 'url', '') or '').strip()
         if not checkout_url:
             raise RuntimeError('Stripe donation checkout session did not include a redirect URL.')
     except Exception:
-        current_app.logger.exception('Stripe donation checkout creation failed for auth_user_id=%s.', auth_user.get('user_id'))
+        current_app.logger.exception('Stripe donation checkout creation failed for auth_user_id=%s.', user_id or 'guest')
         flash('Could not start donation checkout right now. Please try again in a moment.', 'error')
-        return redirect(url_for('main.account_page'))
+        return redirect(error_redirect_target)
     return redirect(checkout_url, code=303)
 
 
@@ -2274,6 +2280,16 @@ def account_donate_page():
     return _create_stripe_donation_checkout_redirect(auth_user, request.form.get('donation_amount'))
 
 
+@main_bp.route('/donate', methods=['POST'])
+def public_donate_page():
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
+    guest_email = str(request.form.get('guest_email') or '').strip().lower()
+    auth_user = _current_auth_user()
+    return _create_stripe_donation_checkout_redirect(auth_user or None, request.form.get('donation_amount'), guest_email=guest_email)
+
+
 @main_bp.route('/account/unsubscribe', methods=['POST'])
 def account_unsubscribe_page():
     guard = _require_account_page()
@@ -2653,6 +2669,11 @@ def stripe_webhook_page():
 def game_projections_page():
     """Game Projections page showing today's games by Eastern Time, with toggle to yesterday."""
     return render_template('projections.html', teams=TEAM_ROWS, active_tab='Game Projections', show_season_state=False)
+
+
+@main_bp.route('/donation')
+def donation_page():
+    return render_template('donation.html', active_tab='Donation', show_filters=False)
 
 
 @main_bp.route('/skaters')

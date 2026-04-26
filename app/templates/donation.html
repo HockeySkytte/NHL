@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block head %}
+<style>
+  .donation-shell{ max-width:860px; margin:0 auto; }
+  .donation-card{ background:linear-gradient(160deg, rgba(27, 36, 56, 0.72), rgba(14, 19, 32, 0.9)); border:1px solid #2a3142; border-radius:18px; padding:24px; box-shadow:0 18px 44px rgba(0,0,0,0.34); }
+  .donation-kicker{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
+  .donation-card h2{ margin:10px 0 10px; font-size:34px; line-height:1.05; }
+  .donation-copy{ color:var(--text-dim); font-size:15px; line-height:1.65; margin:0 0 12px; }
+  .donation-actions{ margin-top:18px; display:flex; gap:10px; flex-wrap:wrap; }
+  .donation-btn, .donation-link{ display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:0 16px; border-radius:10px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--value-text, var(--text)); font-size:14px; font-weight:800; text-decoration:none; cursor:pointer; }
+  .donation-btn.primary, .donation-link.primary{ outline:2px solid var(--accent); background:rgba(255,255,255,0.03); }
+  .donation-form{ margin-top:16px; display:grid; gap:10px; max-width:340px; }
+  .donation-form label{ display:grid; gap:6px; font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:700; }
+  .donation-form input{ width:100%; box-sizing:border-box; background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; border-radius:10px; padding:11px 12px; font-size:14px; }
+  .donation-form input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="donation-shell">
+  <div class="donation-card">
+    <div class="donation-kicker">Support</div>
+    <h2>Support Future Development</h2>
+    <p class="donation-copy">If this app helps your hockey analysis, you can support the creator with a one-time donation of any amount. Donations help cover hosting, data, and development time for future improvements.</p>
+    <p class="donation-copy">If your main goal is full access to the Projections page, the best option is a Pro subscription from your account page.</p>
+
+    <form method="post" action="{{ url_for('main.public_donate_page') }}" class="donation-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      {% if not auth_user %}
+      <label>Email (optional — for your Stripe receipt)
+        <input name="guest_email" type="email" placeholder="you@example.com" autocomplete="email" />
+      </label>
+      {% endif %}
+      <label>Donation amount (USD)
+        <input name="donation_amount" type="number" min="1" step="1" value="5" required />
+      </label>
+      <button type="submit" class="donation-btn primary">Donate via Stripe</button>
+    </form>
+    {% if not auth_user %}
+    <div class="donation-actions">
+      <a class="donation-link" href="{{ url_for('main.signup_page') }}">Create account</a>
+    </div>
+    {% endif %}
+    {% if auth_user %}
+    <div class="donation-actions">
+      <a class="donation-link" href="{{ url_for('main.account_page') }}">Manage account and plans</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

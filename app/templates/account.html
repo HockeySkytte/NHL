@@ -105,15 +105,17 @@
         <button type="submit" class="account-btn">Log out</button>
       </form>
     </div>
+    {% if not (auth_user.subscription_plan == 'free' and auth_user.subscription_status == 'active') %}
     <div class="account-pricing">
       {% for plan in plan_options %}
       <div class="account-plan">
         <div class="plan-name">{{ plan.label }}</div>
         <div class="plan-price">{{ plan.price_label }}</div>
-        <div class="plan-copy">{{ plan.detail }}</div>
+        <div class="plan-copy">{% if auth_user.subscription_plan == 'free' and auth_user.subscription_status == 'active' %}{% if plan.key == 'monthly' %}Upgrade to Pro Monthly to unlock full Projections access while keeping billing flexible.{% elif plan.key == 'yearly' %}Upgrade to Pro Yearly for full Projections access at the lowest annual price.{% else %}{{ plan.detail }}{% endif %}{% else %}{{ plan.detail }}{% endif %}</div>
       </div>
       {% endfor %}
     </div>
+    {% endif %}
     {% if not auth_user.has_access %}
     <div class="account-note">Your trial has ended, so Projections stays locked until billing is connected to one of the plans above.</div>
     {% endif %}

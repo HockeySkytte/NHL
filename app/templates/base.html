@@ -75,9 +75,11 @@
   details.nav-user{ position:relative; align-self:center; margin-left:8px; }
   details.nav-user > summary::-webkit-details-marker{ display:none; }
   details.nav-user[open] > summary{ outline:2px solid rgba(77,163,255,0.25); }
-  .nav-user-menu{ position:absolute; right:0; top:44px; min-width:190px; padding:8px; border-radius:12px; border:1px solid #2a3142; background:#111827; box-shadow:0 20px 40px rgba(0,0,0,0.35); display:grid; gap:6px; z-index:80; }
+  .nav-user-menu{ position:absolute; right:0; top:44px; min-width:190px; padding:8px; border-radius:12px; border:1px solid #2a3142; background:#111827; box-shadow:0 20px 40px rgba(0,0,0,0.35); display:grid; gap:6px; z-index:80; overflow:hidden; }
   .nav-user-menu a, .nav-user-menu button{ display:flex; width:100%; align-items:center; justify-content:flex-start; min-height:38px; padding:0 10px; border-radius:8px; border:1px solid transparent; background:transparent; color:var(--text); font-size:13px; font-weight:700; text-decoration:none; cursor:pointer; }
   .nav-user-menu a:hover, .nav-user-menu button:hover{ background:rgba(255,255,255,0.04); border-color:#2a3142; }
+    .nav-user-menu form{ display:contents; }
+    nav.tabs > .nav-user-link{ top:auto; padding:0 16px; align-self:center; }
   .mobile-menu form{ margin:0; }
   .mobile-menu button{ display:block; width:100%; padding:12px 12px; text-align:left; background:transparent; border:none; color:var(--text); font-weight:750; letter-spacing:.2px; }
   .icon-btn[hidden]{ display:none !important; }
@@ -184,6 +186,7 @@
         <a href="/line-tool" class="{% if active_tab=='Line Tool' %}active{% endif %}">Line Tool</a>
         <a href="/teams" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
         <a href="/about" class="{% if active_tab=='About' %}active{% endif %}">About</a>
+        <a href="/donation" class="{% if active_tab=='Donation' %}active{% endif %}">Donation</a>
         {% if auth_user %}
         <a href="{{ url_for('main.account_page') }}">Account</a>
         {% if auth_user.is_admin %}
@@ -256,6 +259,7 @@
   <a href="/line-tool" class="{% if active_tab=='Line Tool' %}active{% endif %}">Line Tool</a>
   <a href="/teams" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
   <a href="/about" class="{% if active_tab=='About' %}active{% endif %}">About</a>
+  <a href="/donation" class="{% if active_tab=='Donation' %}active{% endif %}">Donation</a>
   <span class="nav-spacer"></span>
   {% if auth_user %}
   <details class="nav-user">

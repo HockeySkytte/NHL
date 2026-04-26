@@ -38,6 +38,12 @@ def test_about_glossary_page(client):
     assert b'Glossary' in response.data
 
 
+def test_donation_page(client):
+    response = client.get('/donation')
+    assert response.status_code == 200
+    assert b'Support Future Development' in response.data
+
+
 def test_account_requires_login(client):
     response = client.get('/account', follow_redirects=False)
     assert response.status_code in (301, 302, 307, 308)
@@ -411,6 +417,7 @@ def test_account_page_shows_donation_for_active_free(monkeypatch, client):
     assert b'Support the App' in response.data
     assert b'Donate via Stripe' in response.data
     assert b'<h3>Plan</h3>' not in response.data
+    assert b'Upgrade to Pro Monthly to unlock full Projections access' not in response.data
 
 
 def test_account_donate_redirects_to_checkout(monkeypatch, client):
