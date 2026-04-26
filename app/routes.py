@@ -592,6 +592,62 @@ def _create_stripe_billing_portal_redirect(auth_user: Dict[str, Any]) -> Any:
     return redirect(portal_url, code=303)
 
 
+def _create_stripe_donation_checkout_redirect(auth_user: Dict[str, Any], amount_raw: Any) -> Any:
+    if not _stripe_portal_enabled():
+        flash('Stripe is not configured yet for donations.', 'error')
+        return redirect(url_for('main.account_page'))
+    try:
+        amount = float(str(amount_raw or '').strip())
+    except Exception:
+        flash('Enter a valid donation amount.', 'error')
+        return redirect(url_for('main.account_page'))
+    amount_cents = int(round(amount * 100.0))
+    if amount_cents < 100:
+        flash('Minimum donation is $1.00.', 'error')
+        return redirect(url_for('main.account_page'))
+    if amount_cents > 500000:
+        flash('Maximum donation is $5,000.00 per checkout.', 'error')
+        return redirect(url_for('main.account_page'))
+
+    stripe_client = _stripe_client()
+    customer_id = str(auth_user.get('stripe_customer_id') or '').strip() or None
+    session_payload: Dict[str, Any] = {
+        'mode': 'payment',
+        'line_items': [{
+            'price_data': {
+                'currency': 'usd',
+                'product_data': {
+                    'name': 'NHL Analytics Donation',
+                },
+                'unit_amount': amount_cents,
+            },
+            'quantity': 1,
+        }],
+        'success_url': _absolute_url_for('main.account_page') + '?billing=donation_success',
+        'cancel_url': _absolute_url_for('main.account_page') + '?billing=donation_canceled',
+        'client_reference_id': str(auth_user.get('user_id') or '').strip(),
+        'metadata': {
+            'auth_user_id': str(auth_user.get('user_id') or '').strip(),
+            'kind': 'donation',
+            'amount_cents': str(amount_cents),
+        },
+    }
+    if customer_id:
+        session_payload['customer'] = customer_id
+    else:
+        session_payload['customer_email'] = str(auth_user.get('email') or '').strip().lower()
+    try:
+        checkout_session = stripe_client.checkout.Session.create(**session_payload)
+        checkout_url = str(getattr(checkout_session, 'url', '') or '').strip()
+        if not checkout_url:
+            raise RuntimeError('Stripe donation checkout session did not include a redirect URL.')
+    except Exception:
+        current_app.logger.exception('Stripe donation checkout creation failed for auth_user_id=%s.', auth_user.get('user_id'))
+        flash('Could not start donation checkout right now. Please try again in a moment.', 'error')
+        return redirect(url_for('main.account_page'))
+    return redirect(checkout_url, code=303)
+
+
 def _sync_user_account_from_supabase_user(user: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     base_record = _auth_record_from_supabase_user(user)
     auth_user_id = str(base_record.get('user_id') or '').strip()
@@ -2146,6 +2202,18 @@ def account_page():
             'title': 'Stripe checkout canceled',
             'detail': 'No billing changes were applied.',
         }
+    elif billing_status == 'donation_success':
+        billing_banner = {
+            'category': 'success',
+            'title': 'Thank you for your donation',
+            'detail': 'Your support helps keep the app running and improving.',
+        }
+    elif billing_status == 'donation_canceled':
+        billing_banner = {
+            'category': 'info',
+            'title': 'Donation checkout canceled',
+            'detail': 'No donation was processed.',
+        }
     return render_template(
         'account.html',
         active_tab=None,
@@ -2170,6 +2238,9 @@ def account_plan_update_page():
     if plan_key not in {'monthly', 'yearly'}:
         flash('Choose a valid plan.', 'error')
         return redirect(url_for('main.account_page'))
+    if str(auth_user.get('subscription_plan') or '').strip() == 'free' and str(auth_user.get('subscription_status') or '').strip().lower() == 'active':
+        flash('This account already has free access. No Stripe checkout is needed.', 'info')
+        return redirect(url_for('main.account_page'))
     if _stripe_any_configured():
         if auth_user.get('stripe_subscription_id'):
             return _create_stripe_billing_portal_redirect(auth_user)
@@ -2189,6 +2260,18 @@ def account_billing_portal_page():
         return csrf_guard
     auth_user = _refresh_current_auth_user() or _current_auth_user()
     return _create_stripe_billing_portal_redirect(auth_user)
+
+
+@main_bp.route('/account/donate', methods=['POST'])
+def account_donate_page():
+    guard = _require_account_page()
+    if guard is not None:
+        return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    return _create_stripe_donation_checkout_redirect(auth_user, request.form.get('donation_amount'))
 
 
 @main_bp.route('/account/unsubscribe', methods=['POST'])

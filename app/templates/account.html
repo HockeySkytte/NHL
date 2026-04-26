@@ -118,6 +118,21 @@
     <div class="account-note">Your trial has ended, so Projections stays locked until billing is connected to one of the plans above.</div>
     {% endif %}
     <div class="account-sections">
+      {% if auth_user.subscription_plan == 'free' and auth_user.subscription_status == 'active' %}
+      <section class="account-section">
+        <h3>Support the App</h3>
+        <p class="account-help">This account already has free access. If you want to support development, you can make a one-time donation with any amount you choose.</p>
+        <form method="post" action="{{ url_for('main.account_donate_page') }}" class="account-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <label>Donation amount (USD)
+            <input name="donation_amount" type="number" min="1" step="1" value="5" required />
+          </label>
+          <div class="account-inline-actions">
+            <button type="submit" class="account-btn">Donate via Stripe</button>
+          </div>
+        </form>
+      </section>
+      {% else %}
       <section class="account-section">
         <h3>Plan</h3>
         {% if billing.partial_config %}
@@ -157,6 +172,7 @@
         </details>
         {% endif %}
       </section>
+      {% endif %}
       <section class="account-section">
         <h3>Username</h3>
         <p class="account-help">Usernames must be unique and use 3-32 lowercase letters, numbers, dots, dashes, or underscores.</p>

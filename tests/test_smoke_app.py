@@ -351,3 +351,101 @@ def test_admin_make_free_reports_persist_failure(monkeypatch, client):
         follow_redirects=False,
     )
     assert response.status_code in (301, 302, 303, 307, 308)
+
+
+def test_account_plan_free_user_does_not_start_checkout(monkeypatch, client):
+    auth_user = {
+        'user_id': 'user-free-3',
+        'is_admin': False,
+        'has_access': True,
+        'email': 'free3@example.com',
+        'username': 'free3',
+        'subscription_plan': 'free',
+        'subscription_status': 'active',
+        'stripe_subscription_id': '',
+    }
+    monkeypatch.setattr(routes, '_refresh_current_auth_user', lambda: auth_user)
+    monkeypatch.setattr(routes, '_current_auth_user', lambda: auth_user)
+    monkeypatch.setattr(routes, '_stripe_any_configured', lambda: True)
+
+    def _should_not_run(*args, **kwargs):
+        raise AssertionError('Stripe checkout should not run for active free access')
+
+    monkeypatch.setattr(routes, '_create_stripe_checkout_redirect', _should_not_run)
+
+    with client.session_transaction() as sess:
+        sess[routes._AUTH_SESSION_KEY] = auth_user
+        sess[routes._CSRF_SESSION_KEY] = 'csrf-ok'
+
+    response = client.post(
+        '/account/plan',
+        data={'plan': 'monthly', 'csrf_token': 'csrf-ok'},
+        follow_redirects=False,
+    )
+    assert response.status_code in (301, 302, 303, 307, 308)
+    assert '/account' in (response.headers.get('Location') or '')
+
+
+def test_account_page_shows_donation_for_active_free(monkeypatch, client):
+    auth_user = {
+        'user_id': 'user-free-4',
+        'is_admin': False,
+        'has_access': True,
+        'email': 'free4@example.com',
+        'username': 'free4',
+        'subscription_plan': 'free',
+        'subscription_status': 'active',
+        'plan_label': 'Free access',
+        'access_label': 'Free access',
+        'trial_expires_at': '2026-05-02T00:00:00Z',
+    }
+    monkeypatch.setattr(routes, '_refresh_current_auth_user', lambda: auth_user)
+    monkeypatch.setattr(routes, '_current_auth_user', lambda: auth_user)
+    monkeypatch.setattr(routes, '_stripe_billing_state', lambda _u: {'checkout_enabled': True, 'portal_enabled': False, 'has_customer': False, 'managed_by_stripe': False, 'partial_config': False, 'missing_config': []})
+
+    with client.session_transaction() as sess:
+        sess[routes._AUTH_SESSION_KEY] = auth_user
+
+    response = client.get('/account')
+    assert response.status_code == 200
+    assert b'Support the App' in response.data
+    assert b'Donate via Stripe' in response.data
+    assert b'<h3>Plan</h3>' not in response.data
+
+
+def test_account_donate_redirects_to_checkout(monkeypatch, client):
+    auth_user = {
+        'user_id': 'user-free-5',
+        'is_admin': False,
+        'has_access': True,
+        'email': 'free5@example.com',
+        'username': 'free5',
+        'subscription_plan': 'free',
+        'subscription_status': 'active',
+    }
+    monkeypatch.setattr(routes, '_refresh_current_auth_user', lambda: auth_user)
+    monkeypatch.setattr(routes, '_current_auth_user', lambda: auth_user)
+    monkeypatch.setattr(routes, '_stripe_portal_enabled', lambda: True)
+
+    class _CheckoutSessionApi:
+        @staticmethod
+        def create(**kwargs):
+            class _Session:
+                url = 'https://checkout.stripe.com/test-session'
+            return _Session()
+
+    class _CheckoutApi:
+        Session = _CheckoutSessionApi
+
+    class _StripeClient:
+        checkout = _CheckoutApi
+
+    monkeypatch.setattr(routes, '_stripe_client', lambda: _StripeClient())
+
+    with client.session_transaction() as sess:
+        sess[routes._AUTH_SESSION_KEY] = auth_user
+        sess[routes._CSRF_SESSION_KEY] = 'csrf-ok'
+
+    response = client.post('/account/donate', data={'donation_amount': '5', 'csrf_token': 'csrf-ok'}, follow_redirects=False)
+    assert response.status_code in (301, 302, 303, 307, 308)
+    assert 'checkout.stripe.com' in (response.headers.get('Location') or '')
