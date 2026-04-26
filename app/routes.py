@@ -868,7 +868,17 @@ def _ensure_user_account_row(auth_user: Dict[str, Any], existing_account: Option
         except Exception:
             current_app.logger.exception('Failed to backfill user_accounts row for auth_user_id=%s.', user_id)
             return existing_account
-    return saved or payload
+    if isinstance(saved, dict) and saved.get('auth_user_id'):
+        return saved
+    if _sb_get_user_account:
+        try:
+            fetched = _sb_get_user_account(user_id)
+        except Exception:
+            fetched = None
+        if isinstance(fetched, dict) and fetched.get('auth_user_id'):
+            return fetched
+    current_app.logger.error('Backfill upsert returned no persisted row for auth_user_id=%s.', user_id)
+    return None
 
 
 def _backfill_missing_user_accounts(auth_users: List[Dict[str, Any]], account_by_id: Dict[str, Dict[str, Any]]) -> None:
@@ -1159,6 +1169,29 @@ def admin_db_check():
             return jsonify({'ok': False, 'error': 'supabase_not_configured', 'hint': 'Set SUPABASE_URL and SUPABASE_SERVICE_KEY'}), 500
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@main_bp.route('/admin/auth-sync-diagnostics', methods=['GET'])
+def admin_auth_sync_diagnostics():
+    guard = _require_admin_api()
+    if guard is not None:
+        return guard
+    try:
+        auth_users = _sb_auth_admin_list_users() if _sb_auth_admin_list_users else []
+    except Exception:
+        auth_users = []
+    try:
+        account_rows = _sb_list_user_accounts() if _sb_list_user_accounts else []
+    except Exception:
+        account_rows = []
+    return jsonify({
+        'ok': True,
+        'supabase_url': str(os.getenv('SUPABASE_URL') or ''),
+        'auth_users_count': len(auth_users or []),
+        'user_accounts_count': len(account_rows or []),
+        'auth_sample_ids': [str((row or {}).get('id') or '') for row in (auth_users or [])[:5]],
+        'account_sample_ids': [str((row or {}).get('auth_user_id') or '') for row in (account_rows or [])[:5]],
+    })
 
 # Lightweight in-memory job tracker for admin runs
 _ADMIN_JOBS: Dict[str, Dict[str, Any]] = {}
@@ -2296,7 +2329,7 @@ def user_management_sync_page():
             'Sync complete. '
             f"scanned={results.get('scanned', 0)}, "
             f"saved={results.get('inserted_or_updated', 0)}, "
-            f"skipped={results.get('skipped', 0)}, "
+            f"skipped={results.get('skipped', 0)}",
             'success',
         )
     return _user_management_redirect()
@@ -2374,9 +2407,13 @@ def user_management_create_page():
         })
     saved_row = None
     if _sb_upsert_user_account:
-        saved_row = _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+        try:
+            saved_row = _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+        except Exception:
+            current_app.logger.exception('Failed to persist user_accounts row after admin create for user_id=%s.', created_user.get('id'))
+            saved_row = None
     if _sb_upsert_user_account and not saved_row:
-        flash('User was created in Supabase Auth, but user_accounts sync failed. Use Sync users now and check logs.', 'error')
+        flash('User was created in Supabase Auth, but user_accounts sync failed. Verify SUPABASE_URL/project and user_accounts write policy, then run Sync users now.', 'error')
         return _user_management_redirect()
     flash(f"User created for {email} with {'admin' if is_admin else 'member'} access.", 'success')
     return _user_management_redirect()
@@ -2400,9 +2437,13 @@ def user_management_free_page(user_id: str):
     auth_like = _auth_record_from_supabase_user(auth_row, _sb_get_user_account(user_id) if _sb_get_user_account else None)
     saved_row = None
     if _sb_upsert_user_account:
-        saved_row = _sb_upsert_user_account(_build_account_payload(auth_like, _subscription_update_for_plan('free', current_auth_user=auth_like)))
+        try:
+            saved_row = _sb_upsert_user_account(_build_account_payload(auth_like, _subscription_update_for_plan('free', current_auth_user=auth_like)))
+        except Exception:
+            current_app.logger.exception('Failed to persist free-access update for user_id=%s.', user_id)
+            saved_row = None
     if _sb_upsert_user_account and not saved_row:
-        flash('Could not persist free-access update in user_accounts. Use Sync users now and check logs.', 'error')
+        flash('Could not persist free-access update in user_accounts. Verify SUPABASE_URL/project and user_accounts write policy, then run Sync users now.', 'error')
         return _user_management_redirect()
     flash(f"{auth_like.get('email') or 'User'} now has free access.", 'success')
     return _user_management_redirect()
@@ -2431,9 +2472,13 @@ def user_management_cancel_free_page(user_id: str):
     updates['trial_expires_at'] = _isoformat_utc(datetime.now(timezone.utc))
     saved_row = None
     if _sb_upsert_user_account:
-        saved_row = _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+        try:
+            saved_row = _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+        except Exception:
+            current_app.logger.exception('Failed to persist cancel-free update for user_id=%s.', user_id)
+            saved_row = None
     if _sb_upsert_user_account and not saved_row:
-        flash('Could not persist cancel-free update in user_accounts. Use Sync users now and check logs.', 'error')
+        flash('Could not persist cancel-free update in user_accounts. Verify SUPABASE_URL/project and user_accounts write policy, then run Sync users now.', 'error')
         return _user_management_redirect()
     flash(f"{auth_like.get('email') or 'User'} free access has been canceled.", 'success')
     return _user_management_redirect()
