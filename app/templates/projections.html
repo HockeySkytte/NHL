@@ -701,12 +701,17 @@ function getTeamLogo(team){
 }
 
 function renderSeries(seriesItems){
-  if(!Array.isArray(seriesItems) || !seriesItems.length){
+  const resolved = (Array.isArray(seriesItems) ? seriesItems : []).filter(item=>{
+    const topAbbrev = String(item?.topSeedTeam?.abbrev || '').toUpperCase();
+    const bottomAbbrev = String(item?.bottomSeedTeam?.abbrev || '').toUpperCase();
+    return !!topAbbrev && !!bottomAbbrev && topAbbrev !== 'TBD' && topAbbrev !== 'TBA' && bottomAbbrev !== 'TBD' && bottomAbbrev !== 'TBA';
+  });
+  if(!resolved.length){
     seriesRoot.innerHTML = '<div class="placeholder-panel">No active playoff series are available from the NHL bracket feed.</div>';
     return;
   }
   const scoreKeys = ['4-0', '4-1', '4-2', '4-3'];
-  const cards = seriesItems.map(item=>{
+  const cards = resolved.map(item=>{
     const top = item.topSeedTeam || {};
     const bottom = item.bottomSeedTeam || {};
     const topLogo = top.darkLogo || top.logo || '';

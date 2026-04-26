@@ -278,10 +278,11 @@
   .gtend-tbl .val.neg{ color:#ff6a6a; }
   .gtend-body{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
   @media (max-width:980px){ .gtend-body{ grid-template-columns: 1fr; } }
-  .gtend-left{ position:relative; min-height:0; }
+  .gtend-left{ position:relative; min-height:0; min-width:0; }
+  .gtend-right{ min-width:0; }
   .gtend-left-inner{ position:absolute; inset:0; display:flex; flex-direction:column; gap:10px; overflow:hidden; }
-  .gtend-tbl-wrap{ flex:1; min-height:0; overflow:auto; border-radius:10px; border:1px solid #232a3a; }
-  .gtend-tbl{ width:100%; border-collapse:collapse; font-size:13px; }
+  .gtend-tbl-wrap{ flex:1; min-height:0; max-width:100%; overflow-x:auto; overflow-y:auto; border-radius:10px; border:1px solid #232a3a; -webkit-overflow-scrolling:touch; }
+  .gtend-tbl{ width:100%; min-width:520px; border-collapse:collapse; font-size:13px; }
   .gtend-tbl th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.8px; padding:8px 8px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
   .gtend-tbl td{ padding:7px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .gtend-tbl th.num, .gtend-tbl td.num{ text-align:right; }
@@ -301,7 +302,7 @@
   .gtend-type-btn.active{ background:var(--accent); color:#0b0f16; }
   .gtend-map-btn{ background:transparent; color:var(--text-dim); border:none; padding:8px 16px; font-size:12px; font-weight:750; cursor:pointer; letter-spacing:.3px; }
   .gtend-map-btn.active{ background:var(--accent); color:#0b0f16; }
-  .gtend-rink-wrap{ position:relative; width:100%; aspect-ratio:75/85; border-radius:12px; overflow:hidden; }
+  .gtend-rink-wrap{ position:relative; width:100%; max-width:100%; aspect-ratio:75/85; border-radius:12px; overflow:hidden; }
   .gtend-rink-wrap img{ position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none; }
   .gtend-rink-canvas{ position:absolute; inset:0; width:100%; height:100%; }
   .gtend-heat-svg{ position:absolute; inset:0; width:100%; height:100%; }
@@ -320,6 +321,10 @@
   .video-header .video-close:hover{ color:#fff; }
   .video-frame-wrap{ position:relative; width:100%; padding-top:56.25%; background:#000; }
   .video-frame-wrap iframe, .video-frame-wrap video, .video-frame-wrap video-js, .video-frame-wrap .video-js{ position:absolute; inset:0; width:100%; height:100%; border:none; }
+  .video-frame-nav{ position:absolute; top:50%; transform:translateY(-50%); z-index:3; border:1px solid #2a3142; background:rgba(8,12,20,0.74); color:#fff; border-radius:999px; width:38px; height:38px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px; font-weight:900; }
+  .video-frame-nav.prev{ left:10px; }
+  .video-frame-nav.next{ right:10px; }
+  .video-frame-nav:disabled{ opacity:0.35; cursor:default; }
   .video-controls{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid #232a3a; }
   .video-controls button{ background:rgba(255,255,255,0.08); color:#fff; border:1px solid #2a3142; border-radius:8px; padding:7px 16px; font-size:12px; font-weight:800; cursor:pointer; }
   .video-controls button:hover{ background:rgba(255,255,255,0.14); }
@@ -350,6 +355,8 @@
     .gtend-left{ position:static; }
     .gtend-left-inner{ position:static; overflow:visible; }
     .gtend-tbl-wrap{ max-height:40vh; overflow:auto; }
+    .gtend-map-toggle, .gtend-type-toggle{ width:100%; }
+    .gtend-map-btn, .gtend-type-btn{ flex:1 1 0; padding:8px 10px; }
 
     /* Table View: no sticky columns on mobile */
     .metrics-table td.rank,
@@ -529,8 +536,10 @@
       <button class="video-close" id="videoClose" type="button">&times;</button>
     </div>
     <div class="video-frame-wrap">
+      <button id="videoFsPrev" class="video-frame-nav prev" type="button" aria-label="Previous video">&#9664;</button>
       <video id="videoPlayer" controls autoplay
         style="position:absolute; inset:0; width:100%; height:100%; border:none; background:#000;"></video>
+      <button id="videoFsNext" class="video-frame-nav next" type="button" aria-label="Next video">&#9654;</button>
     </div>
     <div class="video-controls">
       <button id="videoPrev" type="button">&#9664; Prev</button>
@@ -4563,6 +4572,9 @@ const _vFrame   = document.getElementById('videoPlayer');
 const _vPrev    = document.getElementById('videoPrev');
 const _vPlay    = document.getElementById('videoPlay');
 const _vNext    = document.getElementById('videoNext');
+const _vFsPrev  = document.getElementById('videoFsPrev');
+const _vFsNext  = document.getElementById('videoFsNext');
+const _vFrameWrap = document.querySelector('.video-frame-wrap');
 const _vCounter = document.getElementById('videoCounter');
 const _vDesc    = document.getElementById('videoDesc');
 const _vClose   = document.getElementById('videoClose');
@@ -4604,12 +4616,20 @@ function _vShow(events, title){
   _vIdx = 0;
   _vTitle.textContent = title || 'Goal Highlights';
   _vOverlay.classList.add('open');
+  try{ if(_vFrame){ _vFrame.setAttribute('playsinline', ''); } }catch(_){/*noop*/}
   _vRender();
   document.addEventListener('keydown', _vKey);
+  try{
+    if('mediaSession' in navigator){
+      navigator.mediaSession.setActionHandler('previoustrack', ()=>{ if(_vIdx > 0){ _vIdx--; _vRender(); } });
+      navigator.mediaSession.setActionHandler('nexttrack', ()=>{ if(_vIdx < _vEvents.length - 1){ _vIdx++; _vRender(); } });
+    }
+  }catch(_){/*noop*/}
 }
 
 function _vHide(){
   _vOverlay.classList.remove('open');
+  try{ if(document.fullscreenElement === _vFrameWrap){ document.exitFullscreen(); } }catch(_){/*noop*/}
   if(_vFrame){ _vFrame.pause(); _vFrame.removeAttribute('src'); _vFrame.load(); }
   _vEvents = [];
   document.removeEventListener('keydown', _vKey);
@@ -4622,6 +4642,8 @@ async function _vRender(){
   _vDesc.textContent = _vLabel(e.highlightUrl);
   _vPrev.disabled = _vIdx <= 0;
   _vNext.disabled = _vIdx >= _vEvents.length - 1;
+  if(_vFsPrev) _vFsPrev.disabled = _vIdx <= 0;
+  if(_vFsNext) _vFsNext.disabled = _vIdx >= _vEvents.length - 1;
   if(_vFrame){
     _vFrame.pause();
     const mp4 = await _vGetMp4(e.highlightUrl);
@@ -4640,6 +4662,8 @@ _vOverlay.addEventListener('click', ev => { if(ev.target === _vOverlay) _vHide()
 _vPrev.addEventListener('click', () => { if(_vIdx > 0){ _vIdx--; _vRender(); } });
 _vNext.addEventListener('click', () => { if(_vIdx < _vEvents.length-1){ _vIdx++; _vRender(); } });
 _vPlay.addEventListener('click', () => { _vRender(); });
+_vFsPrev?.addEventListener('click', () => { if(_vIdx > 0){ _vIdx--; _vRender(); } });
+_vFsNext?.addEventListener('click', () => { if(_vIdx < _vEvents.length-1){ _vIdx++; _vRender(); } });
 // ── End Video Player ────────────────────────────────────────
 
 // Video button → open dialog
@@ -4947,9 +4971,9 @@ function renderGtendHeatMap(){
 
 function gtendHeatColor(t){
   if(t <= 0) return 'rgba(200,210,230,0.15)';
-  const r = Math.round(230 - 140*t);
-  const g = Math.round(200 - 140*t);
-  const b = Math.round(200 - 20*t);
+  const r = Math.round(200 - 140*t);
+  const g = Math.round(210 - 140*t);
+  const b = Math.round(250 - 20*t);
   const a = 0.2 + 0.6 * t;
   return `rgba(${r},${g},${b},${a})`;
 }

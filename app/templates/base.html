@@ -124,7 +124,7 @@
 
   @media (max-width: 980px){
     .app-shell{ grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-    aside{ border-right:none; border-bottom:1px solid #232a3a; padding:12px 10px 12px; position:sticky; top:0; z-index:60; }
+    aside{ border-right:none; border-bottom:1px solid #232a3a; padding:12px 10px 12px; position:static; top:auto; z-index:auto; }
     main{ padding:18px 12px 18px; }
     nav.tabs{ display:none; }
     .hdr-actions{ display:flex; }
@@ -465,20 +465,124 @@
       __urlTeam = null;
       updateSlicerSummaryFromFilters();
     }
+
+    const _seasonMetaMemCache = {};
+    let _seasonReqSeq = 0;
+    let _seasonAbort = null;
+
+    function _seasonCacheKey(team){
+      return `seasonMeta:${String(team||'').toUpperCase()}`;
+    }
+
+    function _normalizeSeasonMeta(meta){
+      if(!Array.isArray(meta)) return [];
+      const out = [];
+      for(const row of meta){
+        const season = Number.parseInt(String(row?.season ?? ''), 10);
+        if(!Number.isFinite(season)) continue;
+        const gameTypes = Array.isArray(row?.gameTypes) ? row.gameTypes.map(v=>String(v)) : [];
+        out.push({ season, gameTypes });
+      }
+      out.sort((a,b)=> b.season - a.season);
+      return out;
+    }
+
+    function _readSeasonMetaCache(team){
+      const t = String(team||'').toUpperCase();
+      if(!t) return [];
+      if(Array.isArray(_seasonMetaMemCache[t])) return _seasonMetaMemCache[t];
+      try{
+        const raw = localStorage.getItem(_seasonCacheKey(t));
+        if(!raw) return [];
+        const parsed = JSON.parse(raw);
+        const normalized = _normalizeSeasonMeta(parsed);
+        if(normalized.length) _seasonMetaMemCache[t] = normalized;
+        return normalized;
+      }catch(_){
+        return [];
+      }
+    }
+
+    function _writeSeasonMetaCache(team, meta){
+      const t = String(team||'').toUpperCase();
+      if(!t) return;
+      const normalized = _normalizeSeasonMeta(meta);
+      _seasonMetaMemCache[t] = normalized;
+      try{ localStorage.setItem(_seasonCacheKey(t), JSON.stringify(normalized)); }catch(_){/*noop*/}
+    }
+
+    function _renderSeasonOptions(meta){
+      const normalized = _normalizeSeasonMeta(meta);
+      window.__seasonMeta = normalized;
+      if(!normalized.length){
+        seasonSelect.innerHTML = '<option value="">No seasons</option>';
+        return;
+      }
+      seasonSelect.innerHTML = normalized.map(o=>`<option value="${o.season}">${o.season}</option>`).join('');
+      const saved = __urlSeason || localStorage.getItem('season');
+      if(saved && normalized.find(m=>String(m.season)===saved)) seasonSelect.value = saved;
+      else seasonSelect.value = String(normalized[0].season);
+      __urlSeason = null;
+    }
+
+    async function _fetchSeasonMeta(team, signal){
+      const tries = 3;
+      let lastErr = null;
+      for(let i=0;i<tries;i++){
+        try{
+          const r = await fetch(`/api/seasons/${encodeURIComponent(team)}`, { cache:'no-store', signal });
+          if(!r.ok) throw new Error(`HTTP ${r.status}`);
+          const js = await r.json();
+          return _normalizeSeasonMeta(js);
+        }catch(err){
+          if(signal?.aborted) throw err;
+          lastErr = err;
+          if(i < (tries - 1)){
+            await new Promise(resolve=> setTimeout(resolve, 150 * (i + 1)));
+          }
+        }
+      }
+      throw (lastErr || new Error('Failed to load seasons'));
+    }
+
     async function loadSeasons(){
       const team = teamSelect.value; if(!team) return;
-      seasonSelect.innerHTML = '<option>Loading...</option>';
-      try {
-        const r = await fetch(`/api/seasons/${team}`); const meta = await r.json();
-        window.__seasonMeta = meta;
-        seasonSelect.innerHTML = meta.map(o=>`<option value="${o.season}">${o.season}</option>`).join('');
-        const saved = __urlSeason || localStorage.getItem('season');
-        if(saved && meta.find(m=>String(m.season)===saved)) seasonSelect.value = saved; else if(meta.length) seasonSelect.value = meta[0].season;
-        __urlSeason = null;
+
+      const reqId = ++_seasonReqSeq;
+      try{ _seasonAbort && _seasonAbort.abort(); }catch(_){/*noop*/}
+      _seasonAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const signal = _seasonAbort ? _seasonAbort.signal : undefined;
+
+      const cached = _readSeasonMetaCache(team);
+      if(cached.length){
+        _renderSeasonOptions(cached);
         handleSeasonStateAvailability();
         syncUrlAndNav();
         updateSlicerSummaryFromFilters();
-      } catch(e){ seasonSelect.innerHTML='<option>Error</option>'; }
+      } else {
+        seasonSelect.innerHTML = '<option value="">Loading...</option>';
+      }
+
+      try {
+        const meta = await _fetchSeasonMeta(team, signal);
+        if(reqId !== _seasonReqSeq) return;
+        if(meta.length){
+          _writeSeasonMetaCache(team, meta);
+          _renderSeasonOptions(meta);
+        } else if(!cached.length){
+          seasonSelect.innerHTML = '<option value="">No seasons</option>';
+          window.__seasonMeta = [];
+        }
+        handleSeasonStateAvailability();
+        syncUrlAndNav();
+        updateSlicerSummaryFromFilters();
+      } catch(e){
+        if(reqId !== _seasonReqSeq) return;
+        if(!cached.length){
+          seasonSelect.innerHTML = '<option value="">Unavailable</option>';
+          window.__seasonMeta = [];
+        }
+      }
     }
     function handleSeasonStateAvailability(){
       if(!seasonStateSelect) return; const val = parseInt(seasonSelect.value,10); const meta = (window.__seasonMeta||[]).find(m=>m.season===val); const playoffs = meta && Array.isArray(meta.gameTypes) && meta.gameTypes.map(String).includes('3');
@@ -495,9 +599,10 @@
     if(seasonStateSelect) seasonStateSelect.addEventListener('change', ()=> triggerDataReload());
     if(includeHistoric) includeHistoric.addEventListener('change', ()=>{ populateTeams(); setTheme(); loadSeasons(); });
     // Init
-    // Restore collapsed state (mobile only)
+    // Restore collapsed state (mobile only; default to collapsed if never set)
     try{
-      const wantCollapsed = localStorage.getItem('globalFiltersCollapsed_v1') === '1';
+      const _stored = localStorage.getItem('globalFiltersCollapsed_v1');
+      const wantCollapsed = _stored === null ? true : _stored === '1';
       setFiltersCollapsed(isMobile() ? wantCollapsed : false);
     }catch(_){/*noop*/}
 

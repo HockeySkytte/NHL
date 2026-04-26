@@ -1520,6 +1520,7 @@ _SKATER_PROJECTION_COEFS = {
 }
 _SEASONSTATS_AGG_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[int, Dict[str, Any]], Dict[int, str]]] = {}
 _PLAYOFF_BRACKET_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_TEAM_SEASONS_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 
 # Goalies career aggregation helper cache: {(key...): (timestamp, by_pid_season, league_sa_ga)}
 _GOALIES_CAREER_MATRIX_CACHE: Dict[
@@ -4630,6 +4631,20 @@ def _playoff_team_payload_for_abbrev(abbrev: str, team_info_by_abbrev: Dict[str,
     return _playoff_team_payload(team_info)
 
 
+def _is_resolved_playoff_team(team_info: Dict[str, Any]) -> bool:
+    if not isinstance(team_info, dict):
+        return False
+    abbrev = str(team_info.get('abbrev') or '').strip().upper()
+    if not abbrev or abbrev in {'TBD', 'TBA'}:
+        return False
+    # NHL bracket placeholders usually lack a numeric team id.
+    try:
+        team_id = int(team_info.get('id')) if team_info.get('id') is not None else 0
+    except Exception:
+        team_id = 0
+    return team_id > 0
+
+
 def _playoff_probability_rows(prob_map: Dict[str, float],
                               team_info_by_abbrev: Dict[str, Dict[str, Any]],
                               limit: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -4717,13 +4732,25 @@ def _build_projected_playoff_series_node(item: Dict[str, Any],
                                          team_info_by_abbrev: Dict[str, Dict[str, Any]],
                                          lineups_all: Dict[str, Any],
                                          proj_map: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+    top_slot_probs = dict(top_slot_probs or {})
+    bottom_slot_probs = dict(bottom_slot_probs or {})
     winner_prob_map: Dict[str, float] = {}
     top_slot_series_win_prob = 0.0
     bottom_slot_series_win_prob = 0.0
     matchups: List[Dict[str, Any]] = []
 
-    for top_abbrev, top_appearance_prob in (top_slot_probs or {}).items():
-        for bottom_abbrev, bottom_appearance_prob in (bottom_slot_probs or {}).items():
+    # If only one slot is known so far, keep the series projected and carry that side forward at 100%.
+    if top_slot_probs and not bottom_slot_probs:
+        winner_prob_map = dict(top_slot_probs)
+        top_slot_series_win_prob = float(sum(top_slot_probs.values()))
+        bottom_slot_series_win_prob = 0.0
+    elif bottom_slot_probs and not top_slot_probs:
+        winner_prob_map = dict(bottom_slot_probs)
+        top_slot_series_win_prob = 0.0
+        bottom_slot_series_win_prob = float(sum(bottom_slot_probs.values()))
+
+    for top_abbrev, top_appearance_prob in top_slot_probs.items():
+        for bottom_abbrev, bottom_appearance_prob in bottom_slot_probs.items():
             matchup_prob = float(top_appearance_prob or 0.0) * float(bottom_appearance_prob or 0.0)
             if matchup_prob <= 0:
                 continue
@@ -4811,7 +4838,7 @@ def _build_playoff_projection_payload(bracket: Dict[str, Any],
             continue
         top_team = item.get('topSeedTeam') or {}
         bottom_team = item.get('bottomSeedTeam') or {}
-        has_actual_matchup = bool(top_team.get('abbrev')) and bool(bottom_team.get('abbrev'))
+        has_actual_matchup = _is_resolved_playoff_team(top_team) and _is_resolved_playoff_team(bottom_team)
         if has_actual_matchup:
             node = _build_actual_playoff_series_node(item, team_info_by_abbrev, lineups_all, proj_map)
             current_series.append(node)
@@ -10781,6 +10808,15 @@ def api_seasons(team_code: str):
     if not team:
         return jsonify([])
 
+    try:
+        ttl_s = max(60, int(os.getenv('SEASONS_CACHE_TTL_SECONDS', '3600') or '3600'))
+    except Exception:
+        ttl_s = 3600
+    cached = _TEAM_SEASONS_CACHE.get(team)
+    now = time.time()
+    if cached and (now - float(cached[0])) < float(ttl_s):
+        return jsonify(cached[1])
+
     def _season_state_to_game_type(v: Any) -> Optional[str]:
         raw = str(v or '').strip().lower()
         if raw in {'2', 'reg', 'regular', 'regularseason', 'regular_season'}:
@@ -10837,8 +10873,10 @@ def api_seasons(team_code: str):
             for season_i, game_types in season_map.items()
         ]
         out.sort(key=lambda x: x['season'], reverse=True)
+        _TEAM_SEASONS_CACHE[team] = (now, out)
         return jsonify(out)
 
+    _TEAM_SEASONS_CACHE[team] = (now, [])
     return jsonify([])
 
 

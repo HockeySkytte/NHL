@@ -90,6 +90,7 @@
 .shot-tooltip .meta { display:flex; flex-direction:column; gap:2px; font-size:12px; }
 .shot-tooltip .name { font-weight:700; font-size:13px; }
 .team-logo { width:34px; height:34px; object-fit:contain; filter:drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.table-scroll{ overflow:auto; max-width:100%; max-height:70vh; -webkit-overflow-scrolling:touch; }
 
 @media (max-width: 980px){
   .game-header{ margin-bottom:14px; }
@@ -334,7 +335,7 @@ async function renderPBP(){
   const header = cols.map(c=>`<th>${c}</th>`).join('');
   const body = (pbpData.plays||[]).map(pl=> `<tr>${cols.map(c=> `<td>${pl[c]!==undefined && pl[c]!==null ? pl[c] : ''}</td>`).join('')}</tr>`).join('');
   tabContent.innerHTML = `<div class="panel"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Play-by-Play</h3><button id="exportPbpBtn" class="btn-export">Export CSV</button></div>
-    <div style='overflow:auto; max-height:70vh;'>
+    <div class='table-scroll'>
     <table class='table' style='min-width:1400px;'>
       <thead><tr>${header}</tr></thead>
       <tbody>${body}</tbody>
@@ -1287,7 +1288,7 @@ function renderSkatersTable(wrap, rows){
     </tr>`;
   }).join('');
   wrap.innerHTML = `<div class="panel skaters-table"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Skaters</h3><button id="exportSkatersBtn" class="btn-export">Export CSV</button></div>
-    <div style='overflow:auto; max-height:70vh;'><table class='table' style='min-width:1400px;'>${htmlHead}<tbody>${htmlBody}</tbody></table></div></div>`;
+    <div class='table-scroll'><table class='table' style='min-width:1400px;'>${htmlHead}<tbody>${htmlBody}</tbody></table></div></div>`;
   // wire sort
   wrap.querySelectorAll('th[data-key]')?.forEach(thEl=>{
     thEl.addEventListener('click',()=>{
@@ -1940,7 +1941,7 @@ function renderGoaliesTable(wrap, rows){
     </tr>
   `).join('');
   wrap.innerHTML = `<div class="panel skaters-table"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Goalies</h3><button id="exportGoaliesBtn" class="btn-export">Export CSV</button></div>
-    <div style='overflow:auto; max-height:70vh;'><table class='table' style='min-width:1000px;'>${htmlHead}<tbody>${htmlBody}</tbody></table></div></div>`;
+    <div class='table-scroll'><table class='table' style='min-width:1000px;'>${htmlHead}<tbody>${htmlBody}</tbody></table></div></div>`;
   // wire sort
   wrap.querySelectorAll('th[data-key]')?.forEach(thEl=>{
     thEl.addEventListener('click',()=>{
