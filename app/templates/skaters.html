@@ -3731,7 +3731,8 @@ function renderRAPMUI(){
     }
 
     const season = String(seasonSelect?.value || '');
-    const scaleKey = `${season}|${opts.ratesTotals}|${opts.metric}`;
+    const pid = String(playerSelect?.value || '');
+    const scaleKey = `${season}|${opts.ratesTotals}|${opts.metric}|${pid}`;
     if(mode === 'value' || mode === 'pct'){
       if(__scaleKey !== scaleKey){ __scaleKey = scaleKey; __scaleCache = null; }
     }
@@ -3778,7 +3779,6 @@ function renderRAPMUI(){
     if(mode === 'value' || mode === 'pct'){
       if(!__scaleCache){
         chart.innerHTML = '<div class="skater-empty">Loading scale...</div>';
-        const pid = String(playerSelect?.value || '');
         const pidQ = pid ? `&playerId=${encodeURIComponent(pid)}` : '';
         fetch(`/api/rapm/scale?season=${encodeURIComponent(season)}&rates=${encodeURIComponent(opts.ratesTotals)}&metric=${encodeURIComponent(opts.metric)}${pidQ}`)
           .then(r=>r.json())
