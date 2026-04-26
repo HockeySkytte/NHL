@@ -20,6 +20,7 @@ Environment variables (set in .env / Render / Supabase dashboard):
 import os
 import math
 import functools
+import re
 
 import pandas as pd
 from supabase import create_client, Client
@@ -109,6 +110,18 @@ def _is_missing_table_error(exc: Exception, table: str) -> bool:
     )
 
 
+def _missing_column_name(exc: Exception, table: str) -> str | None:
+    raw = str(_to_plain(exc) or exc or '')
+    lowered = raw.lower()
+    if table.lower() not in lowered:
+        return None
+    # Typical Postgres error: column "subscription_source" of relation "user_accounts" does not exist
+    match = re.search(r'column\s+"([a-zA-Z0-9_]+)"\s+of\s+relation\s+"%s"\s+does\s+not\s+exist' % re.escape(table), raw, flags=re.IGNORECASE)
+    if match:
+        return str(match.group(1) or '').strip()
+    return None
+
+
 def auth_admin_create_user(email: str, password: str, *, user_metadata: dict | None = None) -> dict:
     client = create_auth_client(admin=True)
     response = client.auth.admin.create_user({
@@ -185,12 +198,20 @@ def upsert_user_account(record: dict) -> dict | None:
         raise ValueError('auth_user_id is required for user account upsert')
     payload = dict(record or {})
     client = get_client()
-    try:
-        client.table('user_accounts').upsert(payload, on_conflict='auth_user_id').execute()
-    except Exception as exc:
-        if _is_missing_table_error(exc, 'user_accounts'):
-            return None
-        raise
+    # Some deployed environments may lag migrations. If a column is missing,
+    # retry without that column so core account sync still succeeds.
+    for _ in range(10):
+        try:
+            client.table('user_accounts').upsert(payload, on_conflict='auth_user_id').execute()
+            break
+        except Exception as exc:
+            if _is_missing_table_error(exc, 'user_accounts'):
+                return None
+            missing_col = _missing_column_name(exc, 'user_accounts')
+            if missing_col and missing_col in payload:
+                payload.pop(missing_col, None)
+                continue
+            raise
     return get_user_account(auth_user_id)
 
 
