@@ -105,7 +105,6 @@ def _is_missing_table_error(exc: Exception, table: str) -> bool:
     table_name = table.lower()
     return table_name in raw and (
         'could not find the table' in raw
-        or 'schema cache' in raw
         or 'pgrst205' in raw
     )
 
@@ -117,6 +116,11 @@ def _missing_column_name(exc: Exception, table: str) -> str | None:
         return None
     # Typical Postgres error: column "subscription_source" of relation "user_accounts" does not exist
     match = re.search(r'column\s+"([a-zA-Z0-9_]+)"\s+of\s+relation\s+"%s"\s+does\s+not\s+exist' % re.escape(table), raw, flags=re.IGNORECASE)
+    if match:
+        return str(match.group(1) or '').strip()
+    # PostgREST schema cache variant, e.g.:
+    # Could not find the 'subscription_source' column of 'user_accounts' in the schema cache
+    match = re.search(r"could\s+not\s+find\s+the\s+'([a-zA-Z0-9_]+)'\s+column\s+of\s+'%s'\s+in\s+the\s+schema\s+cache" % re.escape(table), raw, flags=re.IGNORECASE)
     if match:
         return str(match.group(1) or '').strip()
     return None
