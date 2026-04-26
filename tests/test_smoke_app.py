@@ -258,3 +258,28 @@ def test_admin_cancel_free_changes_status(monkeypatch, client):
     assert writes
     assert writes[0].get('subscription_plan') == 'canceled'
     assert writes[0].get('subscription_status') == 'canceled'
+
+
+def test_backfill_retries_without_username_on_conflict(monkeypatch):
+    auth_user = {
+        'id': 'u-200',
+        'email': 'u200@example.com',
+        'created_at': '2026-04-25T00:00:00Z',
+        'user_metadata': {'username': 'duplicate_name'},
+        'app_metadata': {},
+    }
+    calls = []
+
+    def _upsert(payload):
+        calls.append(dict(payload))
+        if len(calls) == 1:
+            raise RuntimeError('duplicate key value violates unique constraint idx_user_accounts_username_lower_unique')
+        return payload
+
+    monkeypatch.setattr(routes, '_sb_upsert_user_account', _upsert)
+
+    out = routes._ensure_user_account_row(auth_user)
+    assert out is not None
+    assert len(calls) == 2
+    assert calls[0].get('username') == 'duplicate_name'
+    assert calls[1].get('username') is None

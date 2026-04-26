@@ -153,6 +153,7 @@
             </label>
             <button type="submit" class="user-btn">Reset password</button>
           </form>
+          {% if not (user.subscription_plan == 'free' and user.subscription_status == 'active') %}
           <details class="inline-confirm">
             <summary>Make free</summary>
             <form method="post" action="{{ url_for('main.user_management_free_page', user_id=user.user_id) }}">
@@ -165,6 +166,7 @@
               <button type="submit" class="user-btn">Confirm free access</button>
             </form>
           </details>
+          {% endif %}
           {% if user.subscription_plan == 'free' and user.subscription_status == 'active' %}
           <details class="inline-confirm">
             <summary>Cancel free</summary>

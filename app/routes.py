@@ -830,12 +830,44 @@ def _ensure_user_account_row(auth_user: Dict[str, Any], existing_account: Option
     if not user_id or not _sb_upsert_user_account:
         return existing_account
     auth_like = _auth_record_from_supabase_user(auth_user, existing_account)
-    payload = _build_account_payload(auth_like)
+    email = str(auth_like.get('email') or '').strip().lower()
+    if not email:
+        current_app.logger.warning('Skipping backfill for auth_user_id=%s because email is empty.', user_id)
+        return existing_account
+    username = _normalize_username(auth_like.get('username'))
+    if not _valid_username(username):
+        username = ''
+    now_iso = _isoformat_utc(datetime.now(timezone.utc))
+    payload = {
+        'auth_user_id': user_id,
+        'email': email,
+        'username': username or None,
+        'display_name': str(auth_like.get('display_name') or auth_like.get('username') or email).strip(),
+        'is_admin': bool(auth_like.get('is_admin')),
+        'subscription_status': str(auth_like.get('subscription_status') or '').strip().lower() or 'trialing',
+        'subscription_plan': str(auth_like.get('subscription_plan') or '').strip() or 'trial',
+        'billing_interval': str(auth_like.get('billing_interval') or '').strip().lower() or None,
+        'trial_started_at': auth_like.get('trial_started_at') or None,
+        'trial_expires_at': auth_like.get('trial_expires_at') or None,
+        'subscription_started_at': auth_like.get('subscription_started_at') or None,
+        'subscription_ends_at': auth_like.get('subscription_ends_at') or None,
+        'subscription_source': str(auth_like.get('subscription_source') or '').strip() or None,
+        'stripe_customer_id': str(auth_like.get('stripe_customer_id') or '').strip() or None,
+        'stripe_subscription_id': str(auth_like.get('stripe_subscription_id') or '').strip() or None,
+        'stripe_price_id': str(auth_like.get('stripe_price_id') or '').strip() or None,
+        'stripe_current_period_end': auth_like.get('stripe_current_period_end') or None,
+        'updated_at': now_iso,
+    }
     try:
         saved = _sb_upsert_user_account(payload)
     except Exception:
-        current_app.logger.exception('Failed to backfill user_accounts row for auth_user_id=%s.', user_id)
-        return existing_account
+        # Retry without username in case legacy auth metadata creates a uniqueness collision.
+        try:
+            payload['username'] = None
+            saved = _sb_upsert_user_account(payload)
+        except Exception:
+            current_app.logger.exception('Failed to backfill user_accounts row for auth_user_id=%s.', user_id)
+            return existing_account
     return saved or payload
 
 
