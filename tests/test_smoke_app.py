@@ -177,3 +177,84 @@ def test_account_plan_stripe_failure_is_handled(monkeypatch, client):
     )
     assert response.status_code in (301, 302, 303, 307, 308)
     assert '/account' in (response.headers.get('Location') or '')
+
+
+def test_user_management_rows_backfills_missing_account(monkeypatch):
+    auth_user = {
+        'id': 'u-100',
+        'email': 'u100@example.com',
+        'created_at': '2026-04-25T00:00:00Z',
+        'user_metadata': {'username': 'u100'},
+        'app_metadata': {},
+    }
+    writes = []
+
+    monkeypatch.setattr(routes, '_sb_auth_admin_list_users', lambda: [auth_user])
+    monkeypatch.setattr(routes, '_sb_list_user_accounts', lambda: [])
+
+    def _upsert(payload):
+        writes.append(payload)
+        return payload
+
+    monkeypatch.setattr(routes, '_sb_upsert_user_account', _upsert)
+
+    rows = routes._user_management_rows()
+    assert len(rows) == 1
+    assert rows[0].get('email') == 'u100@example.com'
+    assert writes
+    assert writes[0].get('auth_user_id') == 'u-100'
+
+
+def test_admin_cancel_free_changes_status(monkeypatch, client):
+    admin_user = {
+        'user_id': 'admin-1',
+        'is_admin': True,
+        'has_access': True,
+        'email': 'admin@example.com',
+    }
+    target_auth = {
+        'id': 'user-free-1',
+        'email': 'free@example.com',
+        'created_at': '2026-04-25T00:00:00Z',
+        'user_metadata': {'username': 'freeuser'},
+        'app_metadata': {},
+    }
+    existing_account = {
+        'auth_user_id': 'user-free-1',
+        'email': 'free@example.com',
+        'username': 'freeuser',
+        'display_name': 'freeuser',
+        'subscription_status': 'active',
+        'subscription_plan': 'free',
+        'billing_interval': None,
+        'trial_started_at': '2026-04-20T00:00:00Z',
+        'trial_expires_at': '2026-05-02T00:00:00Z',
+        'created_at': '2026-04-25T00:00:00Z',
+    }
+    writes = []
+
+    monkeypatch.setattr(routes, '_refresh_current_auth_user', lambda: admin_user)
+    monkeypatch.setattr(routes, '_current_auth_user', lambda: admin_user)
+    monkeypatch.setattr(routes, '_sb_auth_admin_get_user', lambda user_id: target_auth if user_id == 'user-free-1' else None)
+    monkeypatch.setattr(routes, '_sb_get_user_account', lambda user_id: existing_account if user_id == 'user-free-1' else None)
+    monkeypatch.setattr(routes, '_user_management_redirect', lambda: routes.redirect('/admin/users'))
+
+    def _upsert(payload):
+        writes.append(payload)
+        return payload
+
+    monkeypatch.setattr(routes, '_sb_upsert_user_account', _upsert)
+
+    with client.session_transaction() as sess:
+        sess[routes._AUTH_SESSION_KEY] = admin_user
+        sess[routes._CSRF_SESSION_KEY] = 'csrf-admin'
+
+    response = client.post(
+        '/admin/users/user-free-1/cancel-free',
+        data={'confirm_cancel_free': '1', 'csrf_token': 'csrf-admin'},
+        follow_redirects=False,
+    )
+    assert response.status_code in (301, 302, 303, 307, 308)
+    assert writes
+    assert writes[0].get('subscription_plan') == 'canceled'
+    assert writes[0].get('subscription_status') == 'canceled'

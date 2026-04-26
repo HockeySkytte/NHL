@@ -165,6 +165,20 @@
               <button type="submit" class="user-btn">Confirm free access</button>
             </form>
           </details>
+          {% if user.subscription_plan == 'free' and user.subscription_status == 'active' %}
+          <details class="inline-confirm">
+            <summary>Cancel free</summary>
+            <form method="post" action="{{ url_for('main.user_management_cancel_free_page', user_id=user.user_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+              <input type="hidden" name="filter_q" value="{{ filters.q }}" />
+              <input type="hidden" name="filter_access" value="{{ filters.access }}" />
+              <input type="hidden" name="filter_role" value="{{ filters.role }}" />
+              <input type="hidden" name="confirm_cancel_free" value="1" />
+              <p class="user-help">This removes free access and marks the account as inactive immediately.</p>
+              <button type="submit" class="user-btn">Confirm cancel free</button>
+            </form>
+          </details>
+          {% endif %}
           <details class="inline-confirm">
             <summary>Delete</summary>
             <form method="post" action="{{ url_for('main.user_management_delete_page', user_id=user.user_id) }}">

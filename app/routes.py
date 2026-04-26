@@ -516,6 +516,17 @@ def _stripe_billing_state(auth_user: Optional[Dict[str, Any]]) -> Dict[str, Any]
     }
 
 
+def _stripe_checkout_error_message(exc: Exception) -> str:
+    raw = str(exc or '').strip().lower()
+    if 'a similar object exists in test mode, but a live mode key was used' in raw:
+        return 'Stripe is using a live secret key with test-mode Price IDs. Update STRIPE_PRICE_MONTHLY_ID and STRIPE_PRICE_YEARLY_ID to live prices.'
+    if 'a similar object exists in live mode, but a test mode key was used' in raw:
+        return 'Stripe is using a test secret key with live-mode Price IDs. Use a matching key/price mode pair.'
+    if 'no such price' in raw:
+        return 'The configured Stripe Price ID was not found. Verify STRIPE_PRICE_MONTHLY_ID and STRIPE_PRICE_YEARLY_ID in Render.'
+    return 'Could not start Stripe checkout right now. Please try again in a moment.'
+
+
 def _create_stripe_checkout_redirect(auth_user: Dict[str, Any], plan_key: str) -> Any:
     missing = _stripe_missing_config(plan_key)
     if missing:
@@ -550,9 +561,9 @@ def _create_stripe_checkout_redirect(auth_user: Dict[str, Any], plan_key: str) -
         checkout_url = str(getattr(checkout_session, 'url', '') or '').strip()
         if not checkout_url:
             raise RuntimeError('Stripe checkout session did not include a redirect URL.')
-    except Exception:
+    except Exception as exc:
         current_app.logger.exception('Stripe checkout creation failed for auth_user_id=%s.', auth_user.get('user_id'))
-        flash('Could not start Stripe checkout right now. Please try again in a moment.', 'error')
+        flash(_stripe_checkout_error_message(exc), 'error')
         return redirect(url_for('main.account_page'))
     return redirect(checkout_url, code=303)
 
@@ -814,6 +825,32 @@ def _user_management_redirect() -> Any:
     return redirect(url_for('main.user_management_page', **query))
 
 
+def _ensure_user_account_row(auth_user: Dict[str, Any], existing_account: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    user_id = str((auth_user or {}).get('id') or '').strip()
+    if not user_id or not _sb_upsert_user_account:
+        return existing_account
+    auth_like = _auth_record_from_supabase_user(auth_user, existing_account)
+    payload = _build_account_payload(auth_like)
+    try:
+        saved = _sb_upsert_user_account(payload)
+    except Exception:
+        current_app.logger.exception('Failed to backfill user_accounts row for auth_user_id=%s.', user_id)
+        return existing_account
+    return saved or payload
+
+
+def _backfill_missing_user_accounts(auth_users: List[Dict[str, Any]], account_by_id: Dict[str, Dict[str, Any]]) -> None:
+    for auth_user in auth_users:
+        if not isinstance(auth_user, dict):
+            continue
+        user_id = str(auth_user.get('id') or '').strip()
+        if not user_id or user_id in account_by_id:
+            continue
+        created = _ensure_user_account_row(auth_user)
+        if isinstance(created, dict) and created.get('auth_user_id'):
+            account_by_id[user_id] = created
+
+
 def _user_management_rows(*, query: str = '', access_filter: str = 'all', role_filter: str = 'all') -> List[Dict[str, Any]]:
     auth_users = _sb_auth_admin_list_users() if _sb_auth_admin_list_users else []
     account_by_id = {
@@ -821,6 +858,7 @@ def _user_management_rows(*, query: str = '', access_filter: str = 'all', role_f
         for row in (_sb_list_user_accounts() if _sb_list_user_accounts else [])
         if row.get('auth_user_id')
     }
+    _backfill_missing_user_accounts(auth_users, account_by_id)
     rows: List[Dict[str, Any]] = []
     query_value = str(query or '').strip().lower()
     for auth_user in auth_users:
@@ -2257,6 +2295,33 @@ def user_management_free_page(user_id: str):
     if _sb_upsert_user_account:
         _sb_upsert_user_account(_build_account_payload(auth_like, _subscription_update_for_plan('free', current_auth_user=auth_like)))
     flash(f"{auth_like.get('email') or 'User'} now has free access.", 'success')
+    return _user_management_redirect()
+
+
+@main_bp.route('/admin/users/<user_id>/cancel-free', methods=['POST'])
+def user_management_cancel_free_page(user_id: str):
+    guard = _require_admin_page()
+    if guard is not None:
+        return guard
+    csrf_guard = _require_csrf_form()
+    if csrf_guard is not None:
+        return csrf_guard
+    auth_row = _sb_auth_admin_get_user(user_id) if _sb_auth_admin_get_user else None
+    if not auth_row:
+        flash('User not found.', 'error')
+        return _user_management_redirect()
+    if str(request.form.get('confirm_cancel_free') or '').strip() != '1':
+        flash('Confirm the cancel-free action to continue.', 'error')
+        return _user_management_redirect()
+    auth_like = _auth_record_from_supabase_user(auth_row, _sb_get_user_account(user_id) if _sb_get_user_account else None)
+    if str(auth_like.get('subscription_plan') or '').strip() != 'free':
+        flash('This user is not currently on free access.', 'info')
+        return _user_management_redirect()
+    updates = _subscription_update_for_plan('unsubscribe', current_auth_user=auth_like)
+    updates['trial_expires_at'] = _isoformat_utc(datetime.now(timezone.utc))
+    if _sb_upsert_user_account:
+        _sb_upsert_user_account(_build_account_payload(auth_like, updates))
+    flash(f"{auth_like.get('email') or 'User'} free access has been canceled.", 'success')
     return _user_management_redirect()
 
 
