@@ -106,12 +106,13 @@
   .lt-video-header .lt-video-close{ font-size:24px; background:none; border:none; color:#fff; cursor:pointer; }
   .lt-video-frame-wrap{ position:relative; width:100%; padding-top:56.25%; background:#000; }
   .lt-video-frame-wrap iframe, .lt-video-frame-wrap video{ position:absolute; inset:0; width:100%; height:100%; border:none; }
-  .lt-video-frame-nav{ position:absolute; top:50%; transform:translateY(-50%); z-index:3; border:1px solid #2a3142; background:rgba(8,12,20,0.74); color:#fff; border-radius:999px; width:38px; height:38px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px; font-weight:900; transition:opacity 0.35s; }
-  .lt-video-frame-nav.prev{ left:10px; }
-  .lt-video-frame-nav.next{ right:10px; }
+  .lt-video-frame-nav{ position:absolute; top:50%; transform:translateY(-50%); z-index:2147483646; border:1px solid rgba(255,255,255,0.24); background:rgba(8,12,20,0.82); color:#fff; border-radius:999px; width:38px; height:38px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px; font-weight:900; transition:opacity 0.35s; pointer-events:auto; box-shadow:0 8px 24px rgba(0,0,0,0.42); }
+  .lt-video-frame-nav.prev{ left:max(10px, env(safe-area-inset-left)); }
+  .lt-video-frame-nav.next{ right:max(10px, env(safe-area-inset-right)); }
   .lt-video-frame-nav:disabled{ opacity:0.35; cursor:default; }
   .lt-video-frame-wrap.fs-nav-hidden .lt-video-frame-nav{ opacity:0; pointer-events:none; }
-  .lt-video-frame-wrap:fullscreen, .lt-video-frame-wrap:-webkit-full-screen{ padding-top:0 !important; width:100% !important; height:100% !important; }
+  .lt-video-frame-wrap video::-webkit-media-controls-fullscreen-button{ display:none; }
+  .lt-video-frame-wrap:fullscreen, .lt-video-frame-wrap:-webkit-full-screen{ padding-top:0 !important; width:100% !important; height:100% !important; background:#000 !important; }
   :fullscreen .lt-video-frame-nav, :-webkit-full-screen .lt-video-frame-nav{ width:56px; height:56px; font-size:22px; }
   .lt-video-controls{ display:flex; align-items:center; gap:10px; padding:10px 14px; flex-wrap:wrap; }
   .lt-video-controls button{ font-size:13px; padding:5px 12px; border-radius:8px; border:1px solid #2a3142; background:transparent; color:#fff; cursor:pointer; }
@@ -252,7 +253,7 @@
       </div>
       <div class="lt-video-frame-wrap" id="ltVideoFrameWrap">
         <button id="ltVideoFsPrev" class="lt-video-frame-nav prev" type="button" aria-label="Previous video">&#9664;</button>
-        <video id="ltVideoPlayer" controls autoplay
+        <video id="ltVideoPlayer" controls controlsList="nofullscreen noremoteplayback" disablepictureinpicture autoplay
           style="position:absolute; inset:0; width:100%; height:100%; border:none; background:#000;"></video>
         <button id="ltVideoFsNext" class="lt-video-frame-nav next" type="button" aria-label="Next video">&#9654;</button>
       </div>
@@ -864,6 +865,9 @@ if(_ltVFsPrev) _ltVFsPrev.addEventListener('click', () => { if(_ltVIdx > 0){ _lt
 if(_ltVFsNext) _ltVFsNext.addEventListener('click', () => { if(_ltVIdx < _ltVEvents.length-1){ _ltVIdx++; _ltVRender(); } });
 // ── Fullscreen nav auto-hide ──────────────────────────────────
 let _ltVNavTimer = null;
+function _ltVPreferFullscreen(){
+  try{ return !!(window.matchMedia && window.matchMedia('(max-width: 980px)').matches); }catch(_){ return false; }
+}
 function _ltVNavShow(){
   if(!_ltVFrameWrap) return;
   _ltVFrameWrap.classList.remove('fs-nav-hidden');
@@ -874,7 +878,8 @@ function _ltVNavShow(){
 }
 function _ltVEnterWrapperFs(){
   if(!_ltVFrameWrap) return;
-  if(_ltVFrameWrap.requestFullscreen) _ltVFrameWrap.requestFullscreen().catch(()=>{});
+  if(document.fullscreenElement === _ltVFrameWrap || document.webkitFullscreenElement === _ltVFrameWrap) return;
+  if(_ltVFrameWrap.requestFullscreen) _ltVFrameWrap.requestFullscreen({ navigationUI:'hide' }).catch(()=>{});
   else if(_ltVFrameWrap.webkitRequestFullscreen) _ltVFrameWrap.webkitRequestFullscreen();
 }
 function _ltVExitFs(){
@@ -882,28 +887,32 @@ function _ltVExitFs(){
 }
 function _handleLtFsChange(){
   const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-  if(fsEl === _ltVFrame){ _ltVExitFs(); setTimeout(_ltVEnterWrapperFs, 100); }
+  if(fsEl === _ltVFrame){ _ltVExitFs(); }
   else if(fsEl === _ltVFrameWrap){ _ltVNavShow(); }
   else { clearTimeout(_ltVNavTimer); _ltVFrameWrap?.classList.remove('fs-nav-hidden'); }
 }
 document.addEventListener('fullscreenchange', _handleLtFsChange);
 document.addEventListener('webkitfullscreenchange', _handleLtFsChange);
-_ltVFrameWrap?.addEventListener('touchstart', _ltVNavShow, { passive: true });
-_ltVFrameWrap?.addEventListener('click', _ltVNavShow);
+function _ltVOnFrameInteract(){
+  _ltVNavShow();
+  if(!(document.fullscreenElement || document.webkitFullscreenElement) && _ltVPreferFullscreen()) _ltVEnterWrapperFs();
+}
+_ltVFrameWrap?.addEventListener('touchstart', _ltVOnFrameInteract, { passive: true });
+_ltVFrameWrap?.addEventListener('click', _ltVOnFrameInteract);
 window.addEventListener('orientationchange', ()=>{
   if(!_ltVOverlay?.classList.contains('open')) return;
   setTimeout(()=>{
-    const angle = screen.orientation?.angle ?? window.orientation ?? 0;
-    const isLandscape = Math.abs(Number(angle)) === 90;
     const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-    if(isLandscape && !inFs) _ltVEnterWrapperFs();
-    else if(!isLandscape && inFs) _ltVExitFs();
+    if(inFs) _ltVNavShow();
   }, 150);
 });
 
 document.getElementById('ltVideoBtn')?.addEventListener('click', () => {
   const evts = getLtVideoEvents();
-  if(evts.length) _ltVShow(evts, 'Goal Highlights');
+  if(evts.length){
+    _ltVShow(evts, 'Goal Highlights');
+    if(_ltVPreferFullscreen()) _ltVEnterWrapperFs();
+  }
 });
 
 function renderHeatKpis(){
