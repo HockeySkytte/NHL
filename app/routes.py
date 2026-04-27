@@ -51,9 +51,13 @@ try:
         auth_admin_list_users as _sb_auth_admin_list_users,
         auth_admin_update_user as _sb_auth_admin_update_user,
         auth_sign_in_with_password as _sb_auth_sign_in_with_password,
+        delete_card_builder_layout as _sb_delete_card_builder_layout,
         delete_user_account as _sb_delete_user_account,
+        get_card_builder_layout as _sb_get_card_builder_layout,
         get_user_account as _sb_get_user_account,
+        list_card_builder_layouts as _sb_list_card_builder_layouts,
         list_user_accounts as _sb_list_user_accounts,
+        upsert_card_builder_layout as _sb_upsert_card_builder_layout,
         upsert_user_account as _sb_upsert_user_account,
     )
     _SUPABASE_OK = True
@@ -66,9 +70,13 @@ except Exception:
     _sb_auth_admin_list_users = None  # type: ignore
     _sb_auth_admin_update_user = None  # type: ignore
     _sb_auth_sign_in_with_password = None  # type: ignore
+    _sb_delete_card_builder_layout = None  # type: ignore
     _sb_delete_user_account = None  # type: ignore
+    _sb_get_card_builder_layout = None  # type: ignore
     _sb_get_user_account = None  # type: ignore
+    _sb_list_card_builder_layouts = None  # type: ignore
     _sb_list_user_accounts = None  # type: ignore
+    _sb_upsert_card_builder_layout = None  # type: ignore
     _sb_upsert_user_account = None  # type: ignore
     _SUPABASE_OK = False
 
@@ -97,6 +105,7 @@ _AUTH_PREMIUM_PAGE_PREFIXES = (
 _AUTH_PREMIUM_API_PREFIXES = (
     '/api/projections/',
 )
+_CARD_BUILDER_CARD_TYPES = {'skater', 'goalie', 'team'}
 
 
 def _auth_enabled() -> bool:
@@ -1161,6 +1170,97 @@ def _require_account_page() -> Optional[Any]:
     if auth_user:
         return None
     return redirect(url_for('main.login_page', next=request.path))
+
+
+def _require_auth_api_user() -> Tuple[Optional[Dict[str, Any]], Optional[Any]]:
+    auth_user = _refresh_current_auth_user() or _current_auth_user()
+    if auth_user:
+        return auth_user, None
+    return None, (jsonify({'error': 'auth_required', 'loginUrl': url_for('main.login_page', next=_auth_login_target())}), 401)
+
+
+def _normalize_card_builder_type(value: Any) -> str:
+    raw = str(value or '').strip().lower()
+    if raw in _CARD_BUILDER_CARD_TYPES:
+        return raw
+    return 'skater'
+
+
+def _normalize_card_builder_layout_id(value: Any) -> str:
+    raw = str(value or '').strip()
+    if not raw:
+        return str(uuid.uuid4())
+    try:
+        return str(uuid.UUID(raw))
+    except Exception as exc:
+        raise ValueError('invalid_layout_id') from exc
+
+
+def _normalize_card_builder_name(value: Any, *, card_type: str) -> str:
+    raw = ' '.join(str(value or '').strip().split())
+    if not raw:
+        raw = f'{card_type.title()} card'
+    return raw[:80]
+
+
+def _normalize_card_builder_config(value: Any, *, card_type: str) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError('config must be an object')
+    try:
+        plain = json.loads(json.dumps(value))
+    except Exception as exc:
+        raise ValueError('config must be JSON serializable') from exc
+    if not isinstance(plain, dict):
+        raise ValueError('config must be an object')
+
+    raw_grid = plain.get('grid') if isinstance(plain.get('grid'), dict) else {}
+    plain['version'] = max(1, min(99, _safe_int(plain.get('version')) or 1))
+    plain['cardType'] = _normalize_card_builder_type(plain.get('cardType') or card_type)
+    plain['filters'] = plain.get('filters') if isinstance(plain.get('filters'), dict) else {}
+    plain['grid'] = {
+        'cols': max(8, min(48, _safe_int(raw_grid.get('cols')) or 24)),
+        'rows': max(5, min(32, _safe_int(raw_grid.get('rows')) or 13)),
+        'show': bool(raw_grid.get('show', True)),
+        'snap': bool(raw_grid.get('snap', True)),
+    }
+    blocks = plain.get('blocks') if isinstance(plain.get('blocks'), list) else []
+    plain['blocks'] = [block for block in blocks[:64] if isinstance(block, dict)]
+
+    selected_block_id = str(plain.get('selectedBlockId') or '').strip()
+    if selected_block_id:
+        plain['selectedBlockId'] = selected_block_id[:64]
+    else:
+        plain.pop('selectedBlockId', None)
+
+    starter_template = str(plain.get('starterTemplate') or '').strip()
+    if starter_template:
+        plain['starterTemplate'] = starter_template[:80]
+    else:
+        plain.pop('starterTemplate', None)
+
+    try:
+        payload_size = len(json.dumps(plain, separators=(',', ':')))
+    except Exception as exc:
+        raise ValueError('config must be JSON serializable') from exc
+    if payload_size > 200000:
+        raise ValueError('config is too large')
+
+    return plain
+
+
+def _card_builder_layout_response(row: Dict[str, Any]) -> Dict[str, Any]:
+    cfg = row.get('config_json')
+    if not isinstance(cfg, dict):
+        cfg = {}
+    card_type = _normalize_card_builder_type(row.get('card_type') or cfg.get('cardType'))
+    return {
+        'id': str(row.get('id') or '').strip(),
+        'name': _normalize_card_builder_name(row.get('name'), card_type=card_type),
+        'cardType': card_type,
+        'createdAt': _isoformat_utc(_parse_iso_datetime(row.get('created_at'))),
+        'updatedAt': _isoformat_utc(_parse_iso_datetime(row.get('updated_at'))),
+        'config': _normalize_card_builder_config(cfg, card_type=card_type),
+    }
 
 
 def _deny_premium_access(auth_user: Optional[Dict[str, Any]]) -> Any:
@@ -2230,6 +2330,71 @@ def account_page():
         billing=_stripe_billing_state(auth_user),
         billing_banner=billing_banner,
     )
+
+
+@main_bp.route('/api/card-builder/layouts', methods=['GET'])
+def api_card_builder_layouts():
+    auth_user, guard = _require_auth_api_user()
+    if guard is not None:
+        return guard
+    auth_user_id = str((auth_user or {}).get('user_id') or '').strip()
+    rows = _sb_list_card_builder_layouts(auth_user_id) if _sb_list_card_builder_layouts else []
+    layouts = [_card_builder_layout_response(row) for row in rows if isinstance(row, dict)]
+    return jsonify({'layouts': layouts, 'storageAvailable': bool(_sb_list_card_builder_layouts)})
+
+
+@main_bp.route('/api/card-builder/layouts', methods=['POST'])
+def api_card_builder_save_layout():
+    auth_user, guard = _require_auth_api_user()
+    if guard is not None:
+        return guard
+    if not _csrf_validate():
+        return jsonify({'error': 'invalid_csrf'}), 400
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({'error': 'invalid_payload'}), 400
+    if not _sb_upsert_card_builder_layout:
+        return jsonify({'error': 'storage_unavailable'}), 503
+
+    card_type = _normalize_card_builder_type(body.get('cardType'))
+    try:
+        layout_id = _normalize_card_builder_layout_id(body.get('id'))
+        name = _normalize_card_builder_name(body.get('name'), card_type=card_type)
+        config = _normalize_card_builder_config(body.get('config'), card_type=card_type)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    auth_user_id = str((auth_user or {}).get('user_id') or '').strip()
+    payload = {
+        'id': layout_id,
+        'auth_user_id': auth_user_id,
+        'name': name,
+        'card_type': card_type,
+        'config_json': config,
+        'updated_at': _isoformat_utc(datetime.now(timezone.utc)),
+    }
+    saved = _sb_upsert_card_builder_layout(payload)
+    if not isinstance(saved, dict):
+        return jsonify({'error': 'storage_unavailable'}), 503
+    return jsonify({'ok': True, 'layout': _card_builder_layout_response(saved)})
+
+
+@main_bp.route('/api/card-builder/layouts/<layout_id>', methods=['DELETE'])
+def api_card_builder_delete_layout(layout_id: str):
+    auth_user, guard = _require_auth_api_user()
+    if guard is not None:
+        return guard
+    if not _csrf_validate():
+        return jsonify({'error': 'invalid_csrf'}), 400
+    if not _sb_delete_card_builder_layout:
+        return jsonify({'error': 'storage_unavailable'}), 503
+    try:
+        layout_id_norm = _normalize_card_builder_layout_id(layout_id)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    auth_user_id = str((auth_user or {}).get('user_id') or '').strip()
+    _sb_delete_card_builder_layout(auth_user_id, layout_id_norm)
+    return jsonify({'ok': True, 'id': layout_id_norm})
 
 
 @main_bp.route('/account/plan', methods=['POST'])
@@ -3639,6 +3804,18 @@ def teams_page():
         'teams.html',
         teams=TEAM_ROWS,
         active_tab='Teams',
+        show_season_state=False,
+        show_include_historic=True,
+    )
+
+
+@main_bp.route('/card-builder')
+def card_builder_page():
+    """Grid-based 16:9 social card builder for skaters, goalies, and teams."""
+    return render_template(
+        'card_builder.html',
+        teams=TEAM_ROWS,
+        active_tab='Card Builder',
         show_season_state=False,
         show_include_historic=True,
     )
@@ -11182,6 +11359,7 @@ def api_diag_models():
 
 
 _TEAM_LOGO_PROXY_CACHE: Dict[str, Tuple[float, bytes]] = {}
+_PLAYER_HEADSHOT_PROXY_CACHE: Dict[str, Tuple[float, bytes]] = {}
 
 
 def _team_logo_source_url(team_abbrev: str) -> Optional[str]:
@@ -11225,6 +11403,19 @@ def _normalize_svg_dimensions(svg_text: str) -> str:
         return re.sub(r'<svg\b([^>]*)>', repl, svg_text, count=1, flags=re.IGNORECASE)
     except Exception:
         return svg_text
+
+
+def _player_headshot_source_urls(player_id: int, season: str, team_abbrev: str) -> List[str]:
+    pid_i = _safe_int(player_id)
+    if not pid_i or pid_i <= 0:
+        return []
+    urls: List[str] = []
+    season_s = str(season or '').strip()
+    team_s = str(team_abbrev or '').strip().upper()
+    if re.fullmatch(r'\d{8}', season_s) and re.fullmatch(r'[A-Z]{2,4}', team_s):
+        urls.append(f'https://assets.nhle.com/mugs/nhl/{season_s}/{team_s}/{int(pid_i)}.png')
+    urls.append(f'https://assets.nhle.com/mugs/nhl/latest/{int(pid_i)}.png')
+    return urls
 
 
 @main_bp.route('/api/team-logo/<team_abbrev>.svg')
@@ -11286,6 +11477,57 @@ def api_team_logo_svg(team_abbrev: str):
         return resp
     except Exception:
         return ('', 404)
+
+
+@main_bp.route('/api/player-headshot/<int:player_id>.png')
+def api_player_headshot_png(player_id: int):
+    """Proxy NHL player mug PNGs as same-origin for canvas/export reliability."""
+    pid_i = _safe_int(player_id)
+    if not pid_i or pid_i <= 0:
+        return ('', 404)
+
+    season = str(request.args.get('season') or '').strip()
+    team_abbrev = str(request.args.get('team') or '').strip().upper()
+    cache_key = f'{int(pid_i)}|{season}|{team_abbrev}'
+    ttl_s = 30 * 24 * 3600
+    try:
+        max_items = max(1, int(os.getenv('PLAYER_HEADSHOT_PROXY_CACHE_MAX_ITEMS', '256') or '256'))
+    except Exception:
+        max_items = 256
+
+    try:
+        _cache_prune_ttl_and_size(_PLAYER_HEADSHOT_PROXY_CACHE, ttl_s=ttl_s, max_items=max_items)
+        cached = _cache_get(_PLAYER_HEADSHOT_PROXY_CACHE, cache_key, int(ttl_s))
+        if cached:
+            resp = make_response(cached)
+            resp.headers['Content-Type'] = 'image/png'
+            resp.headers['Cache-Control'] = 'public, max-age=86400'
+            return resp
+    except Exception:
+        pass
+
+    for src in _player_headshot_source_urls(int(pid_i), season, team_abbrev):
+        try:
+            from urllib.parse import urlparse
+            pu = urlparse(src)
+            if pu.scheme not in ('http', 'https') or pu.netloc.lower() not in ('assets.nhle.com',):
+                continue
+            r = requests.get(src, timeout=10)
+            if r.status_code != 200 or not (r.content or b''):
+                continue
+            data = bytes(r.content)
+            try:
+                _cache_set_multi_bounded(_PLAYER_HEADSHOT_PROXY_CACHE, cache_key, data, ttl_s=ttl_s, max_items=max_items)
+            except Exception:
+                pass
+            resp = make_response(data)
+            resp.headers['Content-Type'] = 'image/png'
+            resp.headers['Cache-Control'] = 'public, max-age=86400'
+            return resp
+        except Exception:
+            continue
+
+    return ('', 404)
 
 
 # ── Supabase read helpers & column maps ──────────────────────────

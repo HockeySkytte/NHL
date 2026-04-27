@@ -243,6 +243,83 @@ def delete_user_account(auth_user_id: str) -> None:
         raise
 
 
+def list_card_builder_layouts(auth_user_id: str) -> list[dict]:
+    if not auth_user_id:
+        return []
+    client = get_client()
+    try:
+        response = (
+            client.table('card_builder_layouts')
+            .select('*')
+            .eq('auth_user_id', auth_user_id)
+            .order('updated_at', desc=True)
+            .execute()
+        )
+    except Exception as exc:
+        if _is_missing_table_error(exc, 'card_builder_layouts'):
+            return []
+        raise
+    rows = _to_plain(getattr(response, 'data', None)) or []
+    return rows if isinstance(rows, list) else []
+
+
+def get_card_builder_layout(auth_user_id: str, layout_id: str) -> dict | None:
+    if not auth_user_id or not layout_id:
+        return None
+    client = get_client()
+    try:
+        response = (
+            client.table('card_builder_layouts')
+            .select('*')
+            .eq('auth_user_id', auth_user_id)
+            .eq('id', layout_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        if _is_missing_table_error(exc, 'card_builder_layouts'):
+            return None
+        raise
+    rows = _to_plain(getattr(response, 'data', None)) or []
+    return rows[0] if rows else None
+
+
+def upsert_card_builder_layout(record: dict) -> dict | None:
+    layout_id = str((record or {}).get('id') or '').strip()
+    auth_user_id = str((record or {}).get('auth_user_id') or '').strip()
+    if not layout_id:
+        raise ValueError('id is required for card builder layout upsert')
+    if not auth_user_id:
+        raise ValueError('auth_user_id is required for card builder layout upsert')
+    payload = dict(record or {})
+    client = get_client()
+    try:
+        client.table('card_builder_layouts').upsert(payload, on_conflict='id').execute()
+    except Exception as exc:
+        if _is_missing_table_error(exc, 'card_builder_layouts'):
+            return None
+        raise
+    return get_card_builder_layout(auth_user_id, layout_id)
+
+
+def delete_card_builder_layout(auth_user_id: str, layout_id: str) -> None:
+    if not auth_user_id or not layout_id:
+        return
+    client = get_client()
+    try:
+        (
+            client.table('card_builder_layouts')
+            .delete()
+            .eq('auth_user_id', auth_user_id)
+            .eq('id', layout_id)
+            .execute()
+        )
+    except Exception as exc:
+        if _is_missing_table_error(exc, 'card_builder_layouts'):
+            return
+        raise
+
+
 # ── Pandas helpers over REST API ─────────────────────────────────
 
 def read_table(table: str, columns: str = "*", filters: dict | None = None,

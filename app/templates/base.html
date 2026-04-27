@@ -210,6 +210,7 @@
         </div>
         {% endif %}
       <div class="filters">
+        {% block filters_content %}
         {% if about_headlines is defined and about_headlines %}
         <div id="aboutHeadlineLinks" class="about-headline-links" aria-label="About section links">
           {% for item in about_headlines %}
@@ -244,6 +245,7 @@
         </div>
         {% endif %}
         {% endif %}
+        {% endblock %}
       </div>
       </div>
       {% endif %}

@@ -153,6 +153,7 @@
 
   .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
   .config-btn:hover{ background:color-mix(in srgb, var(--panel-alt) 70%, black); }
+  .panel-actions{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 
   .modal{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:2000; }
   .modal[hidden]{ display:none !important; }
@@ -174,6 +175,72 @@
   .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
   .btn:hover{ background:rgba(255,255,255,0.05); }
   .btn.primary{ outline:2px solid var(--accent); }
+  .visually-hidden{ position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  .teams-share-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; }
+  .teams-share-card{ width:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; text-align:left; min-height:132px; padding:14px; border-radius:12px; border:1px solid #2a3142; background:rgba(255,255,255,0.02); color:var(--value-text, var(--text)); cursor:pointer; }
+  .teams-share-card:hover{ background:rgba(255,255,255,0.05); }
+  .teams-share-card:disabled{ opacity:.55; cursor:not-allowed; }
+  .teams-share-card.logo-only{ align-items:center; text-align:center; }
+  .teams-share-card.logo-only .teams-share-name,
+  .teams-share-card.logo-only .teams-share-desc{ display:none; }
+  .teams-share-logo{ display:grid; place-items:center; width:54px; height:54px; color:currentColor; }
+  .teams-share-card.logo-only .teams-share-logo{ width:78px; height:78px; }
+  .teams-share-logo svg{ display:block; width:100%; height:100%; }
+  .teams-share-name{ font-size:15px; font-weight:850; letter-spacing:.2px; }
+  .teams-share-desc{ font-size:12px; line-height:1.45; color:var(--text-dim); }
+  .teams-share-status{ margin-top:14px; font-size:13px; color:var(--text-dim); }
+  .teams-share-status:empty{ display:none; }
+  .teams-share-status.err{ color:#ff9d9d; }
+  .teams-share-note{ margin-bottom:14px; line-height:1.55; color:var(--text-dim); font-size:13px; }
+
+  .teams-export-surface{ position:fixed; left:-10000px; top:0; width:1680px; padding:44px; box-sizing:border-box; background:radial-gradient(circle at top left, rgba(77,163,255,0.14), transparent 26%), linear-gradient(180deg, rgba(11,15,24,0.995), rgba(9,12,20,0.995)); z-index:-1; pointer-events:none; }
+  .teams-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
+  .teams-export-card--standard{ width:100%; max-width:none; }
+  .teams-export-card--table{ display:inline-grid; width:max-content; min-width:0; max-width:none; justify-items:stretch; }
+  .teams-export-top{ display:flex; gap:24px; align-items:center; }
+  .teams-export-logo{ width:170px; height:170px; border-radius:20px; object-fit:contain; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.12); padding:12px; }
+  .teams-export-title{ color:rgba(255,255,255,0.98); font-size:50px; line-height:1.04; font-weight:900; letter-spacing:-.02em; }
+  .teams-export-info{ margin-top:10px; display:flex; gap:16px; flex-wrap:wrap; color:rgba(255,255,255,0.86); font-size:16px; }
+  .teams-export-summary{ color:rgba(255,255,255,0.95); font-size:30px; font-style:italic; font-weight:800; letter-spacing:.2px; }
+  .teams-export-meta{ color:rgba(255,255,255,0.76); font-size:22px; font-weight:750; letter-spacing:.2px; }
+  .teams-export-watermark{ width:100%; text-align:right; color:rgba(255,255,255,0.80); font-size:30px; font-weight:700; letter-spacing:.2px; }
+  .teams-export-content{ width:100%; }
+  .teams-export-content .card-grid{ gap:28px; }
+  .teams-export-content .chart-block,
+  .teams-export-content .edge-card,
+  .teams-export-content .proj-subpanel{ padding:0; }
+  .teams-export-chart-grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .teams-export-chart-block{ display:grid; gap:12px; }
+  .teams-export-chart-block h3{ margin:0; font-size:22px; letter-spacing:.04em; text-transform:uppercase; color:rgba(255,255,255,0.96); font-weight:850; }
+  .teams-export-chart-img-wrap{ border-radius:22px; overflow:hidden; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); padding:16px; }
+  .teams-export-chart-img{ display:block; width:100%; height:auto; }
+  .teams-export-chart-canvas-shell{ position:relative; width:100%; height:520px; }
+  .teams-export-chart-canvas-shell--proj{ height:460px; }
+  .teams-export-chart-canvas{ display:block; width:100% !important; height:100% !important; }
+  .teams-export-table-grid{ display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start; }
+  .teams-export-table-wrap{ width:max-content; max-width:none; justify-self:start; overflow:hidden; border-radius:24px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); }
+  .teams-export-table-wrap .metrics-table,
+  .teams-export-table-wrap .proj-table{ width:auto; border-collapse:collapse; font-size:15px; table-layout:auto; }
+  .teams-export-table-wrap th{ background:rgba(15,21,34,0.98) !important; padding:11px 8px !important; text-align:center; font-size:11px !important; font-weight:850; text-transform:uppercase; letter-spacing:.45px; color:rgba(255,255,255,0.76); white-space:nowrap; position:static !important; left:auto !important; z-index:auto !important; }
+  .teams-export-table-wrap td{ padding:9px 8px !important; text-align:center; border-bottom:1px solid rgba(255,255,255,0.06); white-space:nowrap; }
+  .teams-export-table-wrap td.name,
+  .teams-export-table-wrap th.name{ text-align:left !important; }
+  .teams-export-table-wrap td.rank,
+  .teams-export-table-wrap th.rank{ text-align:center !important; }
+  .teams-export-table-wrap tbody tr:nth-child(even) td{ background:rgba(255,255,255,0.02); }
+  .teams-export-table-wrap td.name,
+  .teams-export-table-wrap th.name{ min-width:180px !important; }
+  /* Export surface: override all mobile media-query rules so PNGs always use desktop layout */
+  .teams-export-surface .card-grid{ grid-template-columns:1fr 1fr 1fr !important; }
+  .teams-export-surface .charts-grid{ grid-template-columns:1fr 1fr !important; }
+  .teams-export-surface .edge-grid{ grid-template-columns:1fr 1fr !important; }
+  .teams-export-surface .teams-export-table-grid{ grid-template-columns:1fr 1fr !important; }
+  .teams-export-surface .edge-zone-rink{ width:100% !important; max-width:none !important; aspect-ratio:auto !important; height:auto !important; margin:10px 0 2px !important; overflow:visible !important; border-radius:0 !important; }
+  .teams-export-surface .edge-zone-rink img{ position:static !important; left:auto !important; top:auto !important; width:100% !important; height:auto !important; transform:none !important; border-radius:14px !important; }
+  .teams-export-surface .edge-zone-kpi-row{ display:flex !important; flex-direction:row !important; justify-content:center !important; gap:18px !important; padding:0 22px !important; grid-template-rows:unset !important; }
+  .teams-export-surface .edge-zone-kpi{ flex:1 1 0 !important; max-width:none !important; width:auto !important; padding:10px !important; }
+  .teams-export-surface .edge-zone-value{ font-size:30px !important; }
+  .teams-export-surface .edge-zone-pill{ font-size:14px !important; padding:5px 12px !important; }
 
   @media (max-width: 980px){
     .team-wrap{ margin-left:0; }
@@ -184,14 +251,26 @@
     #teamImg{ order:2; width:150px; height:150px; }
     #teamInfo{ order:3; justify-content:center; gap:12px; font-size:14px; }
     .subtabs{ justify-content:center; flex-wrap:wrap; }
+    .teams-export-table-grid{ grid-template-columns:1fr; }
 
     /* Card header: action above filter context */
     #tabPanelCard .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
     #tabPanelCard .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
     #tabPanelCard .config-btn{ width:100%; }
 
-    /* Charts/Table: smaller context + (Table) buttons above context */
+    /* Charts: buttons above filter context */
+    #tabPanelCharts .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
     #tabPanelCharts .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelCharts .panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #tabPanelCharts .panel-actions .config-btn{ flex:1 1 120px; }
+    #tabPanelEdge .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
+    #tabPanelEdge .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelEdge .panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #tabPanelEdge .panel-actions .config-btn{ flex:1 1 120px; }
+    #tabPanelProjections .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
+    #tabPanelProjections .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelProjections .panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #tabPanelProjections .panel-actions .config-btn{ flex:1 1 120px; }
     #tabPanelTable .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
     #tabPanelTable .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
     #tabPanelTable .panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -240,6 +319,8 @@
         <div id="cardSlicerSummary" class="card-panel-meta"></div>
         <div class="panel-actions">
           <button id="btnReloadCard" class="config-btn" type="button">Reload</button>
+          <button id="btnExportTeamsCardPng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareTeamsCardPng" class="config-btn" type="button">Share</button>
         </div>
       </div>
       <div id="cardPanelInner" class="team-empty"></div>
@@ -248,6 +329,10 @@
     <div id="tabPanelCharts" class="panel" role="tabpanel" style="display:none;">
       <div class="card-panel-hd" style="padding-bottom: 8px;">
         <div id="chartsSlicerSummary" class="card-panel-meta"></div>
+        <div class="panel-actions">
+          <button id="btnExportTeamsChartsPng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareTeamsChartsPng" class="config-btn" type="button">Share</button>
+        </div>
       </div>
       <div id="chartsEmpty" class="team-empty" hidden></div>
 
@@ -289,10 +374,24 @@
     </div>
 
     <div id="tabPanelEdge" class="panel" role="tabpanel" style="display:none;">
+      <div class="card-panel-hd" style="padding-bottom: 8px;">
+        <div id="edgeSlicerSummary" class="card-panel-meta"></div>
+        <div class="panel-actions">
+          <button id="btnExportTeamsEdgePng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareTeamsEdgePng" class="config-btn" type="button">Share</button>
+        </div>
+      </div>
       <div id="edgePanelInner" class="team-empty"></div>
     </div>
 
     <div id="tabPanelProjections" class="panel" role="tabpanel" style="display:none;">
+      <div class="card-panel-hd" style="padding-bottom: 8px;">
+        <div id="projSlicerSummary" class="card-panel-meta"></div>
+        <div class="panel-actions">
+          <button id="btnExportTeamsProjPng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareTeamsProjPng" class="config-btn" type="button">Share</button>
+        </div>
+      </div>
       <div id="projPanelInner">
         <div class="proj-subtabs" role="tablist" aria-label="Team projections tabs">
           <button id="projTabTeam" class="proj-subtab-btn active" type="button" role="tab" aria-selected="true">Team</button>
@@ -325,6 +424,8 @@
         <div class="panel-actions">
           <button id="btnConfigureTable" class="config-btn" type="button">Configure Table</button>
           <button id="btnReloadTable" class="config-btn" type="button">Reload</button>
+          <button id="btnExportTeamsTablePng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareTeamsTablePng" class="config-btn" type="button">Share</button>
           <button id="btnExportTableCsv" class="config-btn" type="button">Export CSV</button>
         </div>
       </div>
@@ -337,6 +438,20 @@
       </div>
     </div>
     <div id="teamMsg" class="team-empty" style="margin-top:10px; display:none;"></div>
+  </div>
+</div>
+
+<div id="teamsShareModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="teamsShareTitle">
+    <div class="modal-hd">
+      <div id="teamsShareTitle" class="modal-title">Share</div>
+      <button id="btnCloseTeamsShare" class="btn" type="button">Close</button>
+    </div>
+    <div class="modal-bd">
+      <div class="teams-share-note">Image saved to clipboard - Remember to paste the image in the Post</div>
+      <div id="teamsShareGrid" class="teams-share-grid"></div>
+      <div id="teamsShareStatus" class="teams-share-status" aria-live="polite"></div>
+    </div>
   </div>
 </div>
 
@@ -366,6 +481,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 const TEAMS_STATE_KEY = 'nhlTeamsPageState_v1';
@@ -396,6 +512,8 @@ const edgePanelInner = document.getElementById('edgePanelInner');
 const cardPanelInner = document.getElementById('cardPanelInner');
 const cardSlicerSummary = document.getElementById('cardSlicerSummary');
 const chartsSlicerSummary = document.getElementById('chartsSlicerSummary');
+const edgeSlicerSummary = document.getElementById('edgeSlicerSummary');
+const projSlicerSummary = document.getElementById('projSlicerSummary');
 const tableSlicerSummary = document.getElementById('tableSlicerSummary');
 
 const cardScope = document.getElementById('cardScope');
@@ -405,6 +523,8 @@ const cardStrengthState = document.getElementById('cardStrengthState');
 const cardRates = document.getElementById('cardRates');
 
 const btnReloadCard = document.getElementById('btnReloadCard');
+const btnExportTeamsCardPng = document.getElementById('btnExportTeamsCardPng');
+const btnShareTeamsCardPng = document.getElementById('btnShareTeamsCardPng');
 
 const chartsEmpty = document.getElementById('chartsEmpty');
 const chartsGrid = document.getElementById('chartsGrid');
@@ -414,22 +534,37 @@ const scX = document.getElementById('scX');
 const scY = document.getElementById('scY');
 const pdChartEl = document.getElementById('pdChart');
 const scChartEl = document.getElementById('scChart');
+const btnExportTeamsChartsPng = document.getElementById('btnExportTeamsChartsPng');
+const btnShareTeamsChartsPng = document.getElementById('btnShareTeamsChartsPng');
+const btnExportTeamsEdgePng = document.getElementById('btnExportTeamsEdgePng');
+const btnShareTeamsEdgePng = document.getElementById('btnShareTeamsEdgePng');
 
 const projTabTeam = document.getElementById('projTabTeam');
 const projTabLeague = document.getElementById('projTabLeague');
+const projPanelInner = document.getElementById('projPanelInner');
 const projPanelTeam = document.getElementById('projPanelTeam');
 const projPanelLeague = document.getElementById('projPanelLeague');
 const projLeagueTable = document.getElementById('projLeagueTable');
 const projExportCsv = document.getElementById('projExportCsv');
 const projLeagueModeAll = document.getElementById('projLeagueModeAll');
 const projLeagueModeLineup = document.getElementById('projLeagueModeLineup');
+const btnExportTeamsProjPng = document.getElementById('btnExportTeamsProjPng');
+const btnShareTeamsProjPng = document.getElementById('btnShareTeamsProjPng');
 
 const btnConfigureTable = document.getElementById('btnConfigureTable');
 const btnReloadTable = document.getElementById('btnReloadTable');
+const btnExportTeamsTablePng = document.getElementById('btnExportTeamsTablePng');
+const btnShareTeamsTablePng = document.getElementById('btnShareTeamsTablePng');
 const btnExportTableCsv = document.getElementById('btnExportTableCsv');
 const tableLoading = document.getElementById('tableLoading');
 const tableError = document.getElementById('tableError');
 const teamsTable = document.getElementById('teamsTable');
+
+const teamsShareModal = document.getElementById('teamsShareModal');
+const teamsShareTitle = document.getElementById('teamsShareTitle');
+const teamsShareGrid = document.getElementById('teamsShareGrid');
+const teamsShareStatus = document.getElementById('teamsShareStatus');
+const btnCloseTeamsShare = document.getElementById('btnCloseTeamsShare');
 
 const tableConfigModal = document.getElementById('tableConfigModal');
 const btnCloseTableConfig = document.getElementById('btnCloseTableConfig');
@@ -461,6 +596,21 @@ let __edgeState = { shotPos: 'all', skatePos: 'all', distPos: 'all', distStrengt
 let __restoreActiveTab = null;
 let __restoreProjSubtab = null;
 let __restoreChartAxes = null;
+let __teamsShareKind = 'card';
+let __teamsShareAsset = null;
+let __teamsShareAssetKey = '';
+let __teamsSharePreparePromise = null;
+let __teamsShareBusy = false;
+const TEAMS_SHARE_PLATFORMS = [
+  { id: 'x', name: 'X', mode: 'composer', color: '#ffffff' },
+  { id: 'bluesky', name: 'Bluesky', mode: 'composer', color: '#2f89ff' },
+  { id: 'linkedin', name: 'LinkedIn', mode: 'composer', color: '#0a66c2' },
+  { id: 'facebook', name: 'Facebook', mode: 'composer', color: '#1877f2' },
+  { id: 'reddit', name: 'Reddit', mode: 'composer', color: '#ff5b0a' },
+  { id: 'whatsapp', name: 'WhatsApp', mode: 'composer', color: '#25d366' },
+  { id: 'telegram', name: 'Telegram', mode: 'composer', color: '#26a5e4' },
+  { id: 'more-apps', name: 'More Apps', description: 'Uses your device share sheet and can attach the PNG directly to installed apps.', mode: 'native', showText: true, color: '#ffffff' },
+];
 
 function teamLogoUrl(abbrev){
   const a = String(abbrev||'').toUpperCase();
@@ -482,6 +632,17 @@ function getTeamLogoImage(abbrev){
   img.src = url;
   __logoImgCache.set(a, img);
   return img;
+}
+
+async function __waitForTeamLogos(teamCodes){
+  const teams = Array.from(new Set((teamCodes || []).map(code => String(code || '').toUpperCase()).filter(Boolean)));
+  await Promise.all(teams.map(team => new Promise(resolve => {
+    const img = getTeamLogoImage(team);
+    if(!img || img.complete) return resolve();
+    const done = () => resolve();
+    img.addEventListener('load', done, { once:true });
+    img.addEventListener('error', done, { once:true });
+  })));
 }
 
 function fmt3(x){
@@ -619,6 +780,627 @@ function mixHex(a, b, t){
   return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bb.toString(16).padStart(2,'0')}`;
 }
 
+function escapeHtml(value){
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch] || ch));
+}
+
+function __teamsCurrentProjKind(){
+  return projTabLeague?.classList.contains('active') ? 'projections-league' : 'projections-team';
+}
+
+function __teamsPanelLabel(kind){
+  if(kind === 'card') return 'Card';
+  if(kind === 'charts') return 'Charts';
+  if(kind === 'edge') return 'Edge';
+  if(kind === 'projections-team') return 'Projections - Team';
+  if(kind === 'projections-league') return 'Projections - League';
+  if(kind === 'table') return 'Table View';
+  return 'Teams';
+}
+
+function __teamsExportTitle(kind){
+  if(kind === 'projections-league') return 'Projections';
+  if(kind === 'table'){
+    const text = String(tableSlicerSummary?.textContent || '').trim();
+    return text || 'Table View';
+  }
+  return '';
+}
+
+function __teamsShareTitleText(kind){
+  return `Share ${__teamsPanelLabel(kind)}`;
+}
+
+function __teamsSelectedTeamSlug(){
+  const raw = String(teamName?.textContent || teamSelect?.value || 'teams').trim().toLowerCase();
+  return raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'teams';
+}
+
+function __teamsShareText(kind){
+  const teamText = String(teamName?.textContent || 'NHL Teams').trim();
+  return `${teamText} ${__teamsPanelLabel(kind)}`;
+}
+
+function __teamsFileName(kind){
+  return `${__teamsSelectedTeamSlug()}-${String(kind||'teams').replace(/[^a-z0-9]+/gi, '-')}.png`;
+}
+
+function __teamsSummaryText(kind){
+  const el = kind === 'card' ? cardSlicerSummary
+    : kind === 'charts' ? chartsSlicerSummary
+    : kind === 'edge' ? edgeSlicerSummary
+    : kind === 'table' ? tableSlicerSummary
+    : projSlicerSummary;
+  const text = String(el?.textContent || '').trim();
+  if(kind === 'edge'){
+    const season = String(seasonSelect?.value || '').trim();
+    const seasonState = String(cardSeasonState?.value || 'regular');
+    const fmtSeason = /^\d{8}$/.test(season) ? `${season.slice(0,4)}/${season.slice(4,8)}` : (season || '—');
+    const stateLabel = seasonState === 'playoffs' ? 'Playoffs' : seasonState === 'all' ? 'All' : 'Regular';
+    return [fmtSeason, stateLabel].filter(Boolean).join(' - ');
+  }
+  if(kind === 'table') return '';
+  return text;
+}
+
+function __teamsMetaText(kind){
+  if(kind === 'projections-league'){
+    return __projLeagueMode === 'lineup' ? 'Current Lineup' : 'All Players';
+  }
+  if(kind === 'table') return 'Showing first 9 metrics';
+  return '';
+}
+
+function __teamsShouldIncludeTopClone(kind){
+  return kind !== 'projections-league' && kind !== 'table';
+}
+
+function __teamsSnapshotUrl(canvasEl){
+  try{
+    if(!canvasEl || !canvasEl.width || !canvasEl.height) return '';
+    return canvasEl.toDataURL('image/png');
+  }catch(_){
+    return '';
+  }
+}
+
+function __teamsExportStateKey(kind){
+  const base = [
+    kind,
+    String(teamSelect?.value || ''),
+    String(seasonSelect?.value || ''),
+    String(cardSeasonState?.value || ''),
+    String(cardStrengthState?.value || ''),
+    String(cardRates?.value || ''),
+    String(cardScope?.value || ''),
+    includeHistoric?.checked ? '1' : '0',
+  ].join('|');
+  if(kind === 'card') return `${base}|${cardPanelInner?.innerHTML || ''}`;
+  if(kind === 'charts') return `${base}|${pdX?.value || ''}|${pdY?.value || ''}|${scX?.value || ''}|${scY?.value || ''}`;
+  if(kind === 'edge') return `${base}|${edgePanelInner?.innerHTML || ''}`;
+  if(kind === 'projections-team') return base;
+  if(kind === 'projections-league') return `${base}|${__projLeagueMode || ''}|${projLeagueTable?.innerHTML || ''}`;
+  if(kind === 'table') return `${base}|${teamsTable?.innerHTML || ''}`;
+  return base;
+}
+
+function __teamsCloneNode(node){
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+  return clone;
+}
+
+function __teamsBuildTopClone(){
+  const wrap = document.createElement('div');
+  wrap.className = 'teams-export-top';
+
+  const logo = document.createElement('img');
+  logo.className = 'teams-export-logo';
+  logo.alt = String(teamName?.textContent || 'Team').trim() || 'Team';
+  logo.src = teamImg?.getAttribute('src') || teamLogoUrl(teamSelect?.value || '');
+
+  const body = document.createElement('div');
+  body.style.minWidth = '0';
+
+  const heading = document.createElement('div');
+  heading.textContent = String(teamName?.textContent || 'Teams').trim() || 'Teams';
+  heading.style.fontSize = '40px';
+  heading.style.fontWeight = '900';
+  heading.style.lineHeight = '1.04';
+  heading.style.letterSpacing = '-0.02em';
+  heading.style.color = 'rgba(255,255,255,0.98)';
+  body.appendChild(heading);
+
+  const info = document.createElement('div');
+  info.className = 'teams-export-info';
+  if(teamInfo){
+    Array.from(teamInfo.children).forEach(child => info.appendChild(__teamsCloneNode(child)));
+  }
+  body.appendChild(info);
+
+  wrap.appendChild(logo);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function __teamsBuildWatermark(){
+  const watermark = document.createElement('div');
+  watermark.className = 'teams-export-watermark';
+  watermark.textContent = 'Created on https://nhl.hockey-statistics.com/';
+  return watermark;
+}
+
+function __teamsBuildExportCard(kind, modifier='standard'){
+  const card = document.createElement('section');
+  card.className = `teams-export-card teams-export-card--${modifier}`;
+
+  const titleText = __teamsExportTitle(kind);
+  if(titleText){
+    const title = document.createElement('div');
+    title.className = 'teams-export-title';
+    title.textContent = titleText;
+    card.appendChild(title);
+  }
+
+  if(__teamsShouldIncludeTopClone(kind)) card.appendChild(__teamsBuildTopClone());
+
+  const summary = __teamsSummaryText(kind);
+  if(summary){
+    const summaryEl = document.createElement('div');
+    summaryEl.className = 'teams-export-summary';
+    summaryEl.textContent = summary;
+    card.appendChild(summaryEl);
+  }
+
+  const meta = __teamsMetaText(kind);
+  if(meta){
+    const metaEl = document.createElement('div');
+    metaEl.className = 'teams-export-meta';
+    metaEl.textContent = meta;
+    card.appendChild(metaEl);
+  }
+
+  return card;
+}
+
+function __teamsFilterTableColumns(table, keepColumnIndexes){
+  if(!(keepColumnIndexes instanceof Set) || !keepColumnIndexes.size) return;
+  table.querySelectorAll('tr').forEach(row => {
+    Array.from(row.children).forEach((cell, index) => {
+      if(!keepColumnIndexes.has(index)) cell.remove();
+    });
+  });
+}
+
+function __teamsBuildTableWrap(tableEl, options={}){
+  const wrap = document.createElement('div');
+  wrap.className = 'teams-export-table-wrap';
+  const table = __teamsCloneNode(tableEl);
+  if(Array.isArray(options.keepColumnIndexes) && options.keepColumnIndexes.length){
+    __teamsFilterTableColumns(table, new Set(options.keepColumnIndexes));
+  }
+  const tbody = table.tBodies?.[0] || null;
+  if(tbody && (Number.isFinite(options.rowStart) || Number.isFinite(options.rowEnd))){
+    const start = Math.max(0, Number(options.rowStart) || 0);
+    const end = Number.isFinite(options.rowEnd) ? Math.max(start, Number(options.rowEnd)) : tbody.rows.length;
+    Array.from(tbody.rows).forEach((row, index) => {
+      if(index < start || index >= end) row.remove();
+    });
+  }
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function __teamsBuildSplitTableGrid(tableEl, options={}){
+  const grid = document.createElement('div');
+  grid.className = 'teams-export-table-grid';
+  const splitAt = Math.max(1, Number(options.splitAt) || 16);
+  grid.appendChild(__teamsBuildTableWrap(tableEl, { ...options, rowStart: 0, rowEnd: splitAt }));
+  grid.appendChild(__teamsBuildTableWrap(tableEl, { ...options, rowStart: splitAt }));
+  return grid;
+}
+
+function __teamsReplaceSelectsForExport(root){
+  root.querySelectorAll('select').forEach(select => {
+    const replacement = document.createElement('div');
+    replacement.textContent = select.selectedOptions?.[0]?.textContent?.trim() || select.value || '';
+    replacement.style.padding = '8px 10px';
+    replacement.style.border = '1px solid rgba(255,255,255,0.16)';
+    replacement.style.borderRadius = '12px';
+    replacement.style.background = 'rgba(255,255,255,0.04)';
+    replacement.style.fontWeight = '800';
+    replacement.style.color = 'rgba(255,255,255,0.9)';
+    replacement.style.minWidth = '120px';
+    replacement.style.textAlign = 'center';
+    select.replaceWith(replacement);
+  });
+}
+
+function __teamsBuildChartBlock(titleText, imageSrc){
+  const block = document.createElement('section');
+  block.className = 'teams-export-chart-block';
+  const imageWrap = document.createElement('div');
+  imageWrap.className = 'teams-export-chart-img-wrap';
+  const image = document.createElement('img');
+  image.className = 'teams-export-chart-img';
+  image.alt = titleText || 'Chart';
+  image.src = imageSrc;
+  imageWrap.appendChild(image);
+  if(titleText){
+    const title = document.createElement('h3');
+    title.textContent = titleText;
+    block.appendChild(title);
+  }
+  block.appendChild(imageWrap);
+  return block;
+}
+
+function __teamsBuildChartCanvasBlock(titleText, canvasShellClass='teams-export-chart-canvas-shell'){
+  const block = document.createElement('section');
+  block.className = 'teams-export-chart-block';
+  if(titleText){
+    const title = document.createElement('h3');
+    title.textContent = titleText;
+    block.appendChild(title);
+  }
+
+  const imageWrap = document.createElement('div');
+  imageWrap.className = 'teams-export-chart-img-wrap';
+  const canvasShell = document.createElement('div');
+  canvasShell.className = canvasShellClass;
+  const canvas = document.createElement('canvas');
+  canvas.className = 'teams-export-chart-canvas';
+  canvasShell.appendChild(canvas);
+  imageWrap.appendChild(canvasShell);
+  block.appendChild(imageWrap);
+  return { block, canvas };
+}
+
+function __teamsRenderScatterExportChart(canvasEl, title, config){
+  const chart = makeScatterChart(canvasEl, title);
+  if(!chart) return null;
+  chart.options.animation = false;
+  chart.options.scales.x.title.text = String(config?.xLabel || 'X');
+  chart.options.scales.y.title.text = String(config?.yLabel || 'Y');
+  chart.options.scales.x.reverse = !!config?.xReverse;
+  chart.options.scales.y.reverse = !!config?.yReverse;
+  chart.data.datasets[0].data = Array.isArray(config?.points) ? config.points.map(point => ({ ...point })) : [];
+  chart.resize();
+  chart.update('none');
+  return chart;
+}
+
+async function __waitForImages(root){
+  const images = Array.from(root.querySelectorAll('img'));
+  await Promise.all(images.map(img => new Promise(resolve => {
+    if(img.complete && img.naturalWidth > 0) return resolve();
+    const done = () => resolve();
+    img.addEventListener('load', done, { once: true });
+    img.addEventListener('error', done, { once: true });
+  })));
+}
+
+async function __teamsWaitForCanvasSnapshot(canvasEl, syncFn){
+  for(let attempt = 0; attempt < 8; attempt += 1){
+    try{ if(typeof syncFn === 'function') syncFn(); }catch(_){/*noop*/}
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const src = __teamsSnapshotUrl(canvasEl);
+    if(src && src.length > 128) return src;
+  }
+  return '';
+}
+
+async function __renderDesktopExportCanvas(element){
+  if(typeof html2canvas !== 'function') throw new Error('PNG export is unavailable right now.');
+  return html2canvas(element, {
+    backgroundColor: '#0a0d14',
+    scale: 2,
+    useCORS: true,
+    logging: false,
+    windowWidth: 1680,
+    windowHeight: 1200,
+  });
+}
+
+async function __canvasToBlob(canvas){
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Unable to render the PNG.')), 'image/png');
+  });
+}
+
+function __downloadBlob(blob, fileName){
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function __buildTeamsCardExportSurface(){
+  await loadCardPanel();
+  if(!cardPanelInner?.querySelector('.card-grid')) throw new Error('Load the card view before exporting.');
+  const card = __teamsBuildExportCard('card');
+  const content = __teamsCloneNode(cardPanelInner);
+  content.classList.add('teams-export-content');
+  card.appendChild(content);
+  card.appendChild(__teamsBuildWatermark());
+  return card;
+}
+
+async function __buildTeamsChartsExportSurface(){
+  await renderCharts();
+  if(chartsEmpty && !chartsEmpty.hidden && String(chartsEmpty.textContent || '').trim()) throw new Error(String(chartsEmpty.textContent || '').trim());
+  const pdPoints = Array.isArray(__pdChart?.data?.datasets?.[0]?.data) ? __pdChart.data.datasets[0].data : [];
+  const scPoints = Array.isArray(__scChart?.data?.datasets?.[0]?.data) ? __scChart.data.datasets[0].data : [];
+  if(!pdPoints.length || !scPoints.length) throw new Error('Load the charts view before exporting.');
+
+  const card = __teamsBuildExportCard('charts');
+  const content = document.createElement('div');
+  content.className = 'teams-export-content teams-export-chart-grid';
+  const pdTitle = `Play Driving (${pdX?.selectedOptions?.[0]?.textContent || pdX?.value || 'X'} vs ${pdY?.selectedOptions?.[0]?.textContent || pdY?.value || 'Y'})`;
+  const scTitle = `Shooting / Goaltending (${scX?.selectedOptions?.[0]?.textContent || scX?.value || 'X'} vs ${scY?.selectedOptions?.[0]?.textContent || scY?.value || 'Y'})`;
+  const pdBlock = __teamsBuildChartCanvasBlock(pdTitle);
+  const scBlock = __teamsBuildChartCanvasBlock(scTitle);
+  content.appendChild(pdBlock.block);
+  content.appendChild(scBlock.block);
+  card.appendChild(content);
+  card.appendChild(__teamsBuildWatermark());
+  card.__teamsBeforeCapture = async ()=>{
+    await __waitForTeamLogos(pdPoints.map(point => point?.team).concat(scPoints.map(point => point?.team)));
+    const charts = [];
+    charts.push(__teamsRenderScatterExportChart(pdBlock.canvas, 'Play Driving', {
+      xLabel: pdX?.selectedOptions?.[0]?.textContent || pdX?.value || 'X',
+      yLabel: pdY?.selectedOptions?.[0]?.textContent || pdY?.value || 'Y',
+      xReverse: isAgainstMetric(String(pdX?.value || '')),
+      yReverse: isAgainstMetric(String(pdY?.value || '')),
+      points: pdPoints,
+    }));
+    charts.push(__teamsRenderScatterExportChart(scBlock.canvas, 'Shooting / Goaltending', {
+      xLabel: scX?.selectedOptions?.[0]?.textContent || scX?.value || 'X',
+      yLabel: scY?.selectedOptions?.[0]?.textContent || scY?.value || 'Y',
+      xReverse: isAgainstMetric(String(scX?.value || '')),
+      yReverse: isAgainstMetric(String(scY?.value || '')),
+      points: scPoints,
+    }));
+    card.__teamsCleanup = ()=>{
+      charts.forEach(chart => {
+        try{ chart?.destroy(); }catch(_){/*noop*/}
+      });
+    };
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  };
+  return card;
+}
+
+async function __buildTeamsEdgeExportSurface(){
+  await loadEdgePanel();
+  if(!edgePanelInner?.querySelector('.edge-grid')) throw new Error('Load the edge view before exporting.');
+  const card = __teamsBuildExportCard('edge');
+  const content = __teamsCloneNode(edgePanelInner);
+  content.classList.add('teams-export-content', 'teams-export-content--edge');
+  __teamsReplaceSelectsForExport(content);
+  card.appendChild(content);
+  card.appendChild(__teamsBuildWatermark());
+  return card;
+}
+
+async function __buildTeamsProjectionsExportSurface(kind){
+  await renderProjections();
+  const card = __teamsBuildExportCard(kind, kind === 'projections-league' ? 'table' : 'standard');
+  if(kind === 'projections-team'){
+    const _team = String(teamSelect?.value || '').trim();
+    const _leaguePlayers = await ensureProjLeaguePlayers();
+    if(!_team || !_leaguePlayers.length) throw new Error('Load the projections chart before exporting.');
+    const content = document.createElement('div');
+    content.className = 'teams-export-content';
+    const exportBlock = __teamsBuildChartCanvasBlock('', 'teams-export-chart-canvas-shell teams-export-chart-canvas-shell--proj');
+    content.appendChild(exportBlock.block);
+    card.appendChild(content);
+    card.__teamsBeforeCapture = async ()=>{
+      const chart = __createProjTeamStackChart(exportBlock.canvas, _team, _leaguePlayers, { animate:false });
+      if(!chart) throw new Error('Load the projections chart before exporting.');
+      card.__teamsCleanup = ()=>{
+        try{ chart.destroy(); }catch(_){/*noop*/}
+      };
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    };
+  }else{
+    if(!projLeagueTable?.querySelector('tr')) throw new Error('Load the league projections table before exporting.');
+    card.appendChild(__teamsBuildSplitTableGrid(projLeagueTable, { splitAt: 16 }));
+  }
+  card.appendChild(__teamsBuildWatermark());
+  return card;
+}
+
+async function __buildTeamsTableExportSurface(){
+  await loadTablePanel();
+  if(tableError && tableError.style.display !== 'none' && String(tableError.textContent || '').trim()) throw new Error(String(tableError.textContent || '').trim());
+  if(!teamsTable?.querySelector('tr')) throw new Error('Load the table view before exporting.');
+  const card = __teamsBuildExportCard('table', 'table');
+  card.appendChild(__teamsBuildSplitTableGrid(teamsTable, { splitAt: 16, keepColumnIndexes: [0,1,2,3,4,5,6,7,8,9,10] }));
+  card.appendChild(__teamsBuildWatermark());
+  return card;
+}
+
+async function __buildTeamsExportSurface(kind){
+  if(kind === 'card') return await __buildTeamsCardExportSurface();
+  if(kind === 'charts') return await __buildTeamsChartsExportSurface();
+  if(kind === 'edge') return await __buildTeamsEdgeExportSurface();
+  if(kind === 'projections-team' || kind === 'projections-league') return await __buildTeamsProjectionsExportSurface(kind);
+  if(kind === 'table') return await __buildTeamsTableExportSurface();
+  throw new Error('Unsupported export target.');
+}
+
+async function __buildTeamsPngBlob(kind){
+  const card = await __buildTeamsExportSurface(kind);
+  const surface = document.createElement('div');
+  surface.className = 'teams-export-surface';
+  surface.appendChild(card);
+  document.body.appendChild(surface);
+  try{
+    if(document.fonts && document.fonts.ready){
+      try{ await document.fonts.ready; }catch(_){/*noop*/}
+    }
+    await __waitForImages(surface);
+    if(typeof card.__teamsBeforeCapture === 'function') await card.__teamsBeforeCapture();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const canvas = await __renderDesktopExportCanvas(card);
+    return await __canvasToBlob(canvas);
+  }finally{
+    try{ if(typeof card.__teamsCleanup === 'function') card.__teamsCleanup(); }catch(_){/*noop*/}
+    surface.remove();
+  }
+}
+
+function __canCopyPngToClipboard(){
+  return !!(navigator?.clipboard?.write && window.ClipboardItem);
+}
+
+async function __copyPngToClipboard(blob){
+  if(!__canCopyPngToClipboard()) throw new Error('Clipboard image copy is not supported in this browser.');
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+}
+
+function __canNativeSharePng(){
+  return !!(navigator?.share && navigator?.canShare && window.File);
+}
+
+async function __sharePngViaNative(blob, fileName, text){
+  if(!__canNativeSharePng()) throw new Error('Native sharing is not supported on this device.');
+  const file = new File([blob], fileName, { type:'image/png' });
+  if(!navigator.canShare({ files:[file] })) throw new Error('Native file sharing is not available on this device.');
+  await navigator.share({ text, files:[file] });
+}
+
+function __teamsComposerUrl(platformId, text){
+  const shareUrl = window.location.href;
+  if(platformId === 'x') return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
+  if(platformId === 'bluesky') return `https://bsky.app/intent/compose?text=${encodeURIComponent(`${text} ${shareUrl}`)}`;
+  if(platformId === 'linkedin') return `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`;
+  if(platformId === 'facebook') return `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
+  if(platformId === 'reddit') return `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(text)}`;
+  if(platformId === 'whatsapp') return `https://wa.me/?text=${encodeURIComponent(`${text} ${shareUrl}`)}`;
+  if(platformId === 'telegram') return `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`;
+  return shareUrl;
+}
+
+function __teamsSetShareStatus(message, isError=false){
+  if(!teamsShareStatus) return;
+  teamsShareStatus.textContent = message || '';
+  teamsShareStatus.classList.toggle('err', !!isError && !!message);
+}
+
+function __teamsShareIconSvg(platformId){
+  if(platformId === 'more-apps') return '<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="10" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"></rect><rect x="36" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"></rect><rect x="10" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"></rect><rect x="36" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"></rect></svg>';
+  if(platformId === 'x') return '<svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" d="M12 12h11.6l11.2 15 13-15H52L37.5 28.7 54 52H42.4L30.8 36.4 17.2 52H12l15.8-18.2z"></path></svg>';
+  if(platformId === 'bluesky') return '<svg viewBox="0 0 64 57" aria-hidden="true"><path fill="currentColor" d="M13.2 3.7C18.9 7.9 25 16.4 32 25.9c7-9.5 13.1-18 18.8-22.2 4.1-3 10.7-5.3 10.7 2.3 0 1.5-.8 12.3-1.3 14.1-1.9 6.3-8.7 7.9-14.8 6.9 10.7 1.8 13.5 7.8 7.6 13.8-11.2 11.4-16.1-2.9-17.4-6.6-.2-.7-.3-1-.6-1-.3 0-.4.3-.6 1-1.3 3.7-6.2 18-17.4 6.6-5.9-6-3.1-12 7.6-13.8-6.1 1-12.9-.6-14.8-6.9C3.3 18.3 2.5 7.5 2.5 6c0-7.6 6.6-5.3 10.7-2.3z"></path></svg>';
+  if(platformId === 'linkedin') return '<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="48" height="48" rx="10" fill="currentColor"></rect><rect x="18" y="26" width="7" height="20" fill="#0f1522"></rect><circle cx="21.5" cy="19.5" r="4" fill="#0f1522"></circle><path fill="#0f1522" d="M31 26h6.4v2.8h.1c1-1.8 3.5-3.8 7.2-3.8 7.7 0 9.1 5.1 9.1 11.7V46h-7V37.8c0-3.9-.1-8.9-5.4-8.9-5.4 0-6.2 4.2-6.2 8.6V46h-7z"></path></svg>';
+  if(platformId === 'facebook') return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"></circle><path fill="#0f1522" d="M35.6 52V34.5h5.9l.9-6.8h-6.8v-4.3c0-2 1-3.8 4.3-3.8H43v-5.8c-1-.1-2.9-.3-5.6-.3-5.5 0-9.2 3.3-9.2 9.5v4.7h-6.2v6.8h6.2V52z"></path></svg>';
+  if(platformId === 'reddit') return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"></circle><circle cx="24" cy="33" r="3.2" fill="#0f1522"></circle><circle cx="40" cy="33" r="3.2" fill="#0f1522"></circle><path d="M24 41c2.2 2 4.9 3 8 3s5.8-1 8-3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"></path><path d="M25 24l3.8-8.2 9.8 2.1" stroke="#0f1522" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"></path><circle cx="42.8" cy="19.6" r="3.6" fill="#0f1522"></circle><path d="M19 28.5c-2.7 0-5 2.2-5 5 0 1.9 1 3.5 2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"></path><path d="M45 28.5c2.7 0 5 2.2 5 5 0 1.9-1 3.5-2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"></path></svg>';
+  if(platformId === 'whatsapp') return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"></circle><path fill="#0f1522" d="M32 19c-7.3 0-13.2 5.7-13.2 12.8 0 2.7.8 5.2 2.4 7.3l-1.8 6.2 6.4-1.7c2 1.3 4.2 2 6.6 2 7.3 0 13.2-5.7 13.2-12.8S39.3 19 32 19zm7.8 17.3c-.3.9-1.8 1.6-2.6 1.7-.7.1-1.6.2-5.2-1.3-4.6-1.9-7.5-6.5-7.7-6.8-.2-.3-1.9-2.5-1.9-4.8 0-2.2 1.2-3.3 1.6-3.8.4-.4.9-.5 1.2-.5h.9c.3 0 .8-.1 1.2.9.4 1 .4 3.2.1 3.5-.2.4-.4.6-.8 1-.4.4-.8.7-.4 1.4.4.7 1.8 2.9 3.8 4.7 2.6 2.3 4.6 3 5.3 3.3.5.2.9.2 1.3-.2.4-.5 1.5-1.7 2-2.3.4-.5.9-.5 1.4-.3.5.2 3.2 1.5 3.7 1.8.5.3.9.5 1 .8.1.3.1 1.5-.2 2.4z"></path></svg>';
+  if(platformId === 'telegram') return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"></circle><path fill="#0f1522" d="M46.7 20.4 19.8 30.8c-1.8.7-1.8 1.7-.3 2.1l6.9 2.2 2.7 8.7c.3.9.2 1.3 1.1 1.3.7 0 1-.3 1.4-.7l3.4-3.3 7.2 5.3c1.3.7 2.3.3 2.6-1.3l4.6-21.7c.5-1.9-.7-2.8-2.7-2zM28 34.6l14.7-9.3c.7-.4 1.4-.2.9.3L31.3 36.7l-.5 5.6z"></path></svg>';
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"></circle></svg>';
+}
+
+function __renderTeamsShareOptions(){
+  if(!teamsShareGrid) return;
+  const nativeAvailable = __canNativeSharePng();
+  const clipboardAvailable = __canCopyPngToClipboard();
+  teamsShareGrid.innerHTML = TEAMS_SHARE_PLATFORMS.map(platform => {
+    const disabled = __teamsShareBusy || (platform.mode === 'native' ? !nativeAvailable : !clipboardAvailable);
+    const showText = !!platform.showText;
+    return `
+      <button class="teams-share-card${showText ? '' : ' logo-only'}" type="button" data-platform="${platform.id}" aria-label="${platform.name}"${disabled ? ' disabled' : ''}>
+        <span class="teams-share-logo" style="color:${platform.color || '#ffffff'};" aria-hidden="true">${__teamsShareIconSvg(platform.id)}</span>
+        <span class="teams-share-name">${platform.name}</span>
+        ${showText ? `<span class="teams-share-desc">${escapeHtml(platform.description || '')}</span>` : `<span class="visually-hidden">${platform.name}</span>`}
+      </button>
+    `;
+  }).join('');
+}
+
+function __setTeamsShareBusy(isBusy){
+  __teamsShareBusy = !!isBusy;
+  __renderTeamsShareOptions();
+}
+
+async function __prepareTeamsShareAsset(kind){
+  const assetKind = kind || __teamsShareKind || 'card';
+  const stateKey = __teamsExportStateKey(assetKind);
+  if(__teamsShareAsset && __teamsShareAssetKey === stateKey) return __teamsShareAsset;
+  if(__teamsSharePreparePromise && __teamsShareAssetKey === stateKey) return await __teamsSharePreparePromise;
+
+  __teamsShareKind = assetKind;
+  __teamsShareAssetKey = stateKey;
+  __teamsSharePreparePromise = (async () => {
+    const blob = await __buildTeamsPngBlob(assetKind);
+    const asset = {
+      kind: assetKind,
+      blob,
+      fileName: __teamsFileName(assetKind),
+      text: __teamsShareText(assetKind),
+    };
+    __teamsShareAsset = asset;
+    return asset;
+  })();
+
+  try{
+    return await __teamsSharePreparePromise;
+  }finally{
+    __teamsSharePreparePromise = null;
+  }
+}
+
+async function openTeamsShareModal(kind){
+  const assetKind = kind || __teamsCurrentProjKind();
+  __teamsShareKind = assetKind;
+  if(teamsShareTitle) teamsShareTitle.textContent = __teamsShareTitleText(assetKind);
+  if(teamsShareModal) teamsShareModal.hidden = false;
+  __teamsSetShareStatus('');
+  __renderTeamsShareOptions();
+  try{
+    const asset = await __prepareTeamsShareAsset(assetKind);
+    if(__canCopyPngToClipboard()) await __copyPngToClipboard(asset.blob);
+  }catch(err){
+    __teamsSetShareStatus(err?.message || 'Unable to prepare the image.', true);
+  }
+}
+
+function closeTeamsShareModal(){
+  if(teamsShareModal) teamsShareModal.hidden = true;
+  __teamsSetShareStatus('');
+}
+
+async function shareTeamsPng(kind){
+  await openTeamsShareModal(kind);
+}
+
+async function __handleTeamsSharePlatform(platformId){
+  const asset = await __prepareTeamsShareAsset(__teamsShareKind);
+  if(platformId === 'more-apps'){
+    await __sharePngViaNative(asset.blob, asset.fileName, asset.text);
+    return;
+  }
+  if(__canCopyPngToClipboard()) await __copyPngToClipboard(asset.blob);
+  window.open(__teamsComposerUrl(platformId, asset.text), '_blank', 'noopener,noreferrer');
+}
+
+async function exportTeamsPng(kind){
+  const asset = await __prepareTeamsShareAsset(kind);
+  __downloadBlob(asset.blob, asset.fileName);
+}
+
+async function __runTeamsAction(action){
+  try{
+    await action();
+  }catch(err){
+    window.alert(err?.message || 'Unable to complete that action.');
+  }
+}
+
 function setMsg(text, isError=false){
   if(!teamMsg) return;
   teamMsg.textContent = text || '';
@@ -676,6 +1458,8 @@ function updateSlicerSummaries(){
   const text = [fmtSeason, stateLabel, strengthState, rates, scope].filter(Boolean).join(' - ');
   if(cardSlicerSummary) cardSlicerSummary.textContent = text;
   if(chartsSlicerSummary) chartsSlicerSummary.textContent = text;
+  if(edgeSlicerSummary) edgeSlicerSummary.textContent = text;
+  if(projSlicerSummary) projSlicerSummary.textContent = text;
   if(tableSlicerSummary) tableSlicerSummary.textContent = text;
   updateHeader();
 }
@@ -1582,10 +2366,11 @@ function buildTeamAggsFromLeague(leaguePlayers, mode='all'){
   return out;
 }
 
-function renderProjTeamStack(teamAbbrev, leaguePlayers){
-  const ctx = document.getElementById('projTeamStack')?.getContext('2d');
-  if(!ctx || typeof Chart === 'undefined') return;
+function __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, options={}){
+  const ctx = canvasEl?.getContext('2d');
+  if(!ctx || typeof Chart === 'undefined') return null;
   const ab = String(teamAbbrev||'').toUpperCase();
+  const animate = options.animate !== false;
 
   const list = (leaguePlayers||[])
     .filter(p=>String(p.team||'').toUpperCase() === ab)
@@ -1608,11 +2393,11 @@ function renderProjTeamStack(teamAbbrev, leaguePlayers){
     borderWidth: 1,
   }];
 
-  if(__projTeamChart){ try{ __projTeamChart.destroy(); }catch(_){/*noop*/} __projTeamChart=null; }
-  __projTeamChart = new Chart(ctx, {
+  return new Chart(ctx, {
     type: 'bar',
     data: { labels, datasets },
     options: {
+      animation: animate,
       responsive: true,
       maintainAspectRatio: false,
       indexAxis: 'y',
@@ -1639,6 +2424,12 @@ function renderProjTeamStack(teamAbbrev, leaguePlayers){
       }
     }
   });
+}
+
+function renderProjTeamStack(teamAbbrev, leaguePlayers){
+  const canvasEl = document.getElementById('projTeamStack');
+  if(__projTeamChart){ try{ __projTeamChart.destroy(); }catch(_){/*noop*/} __projTeamChart=null; }
+  __projTeamChart = __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, { animate:true });
 }
 
 function exportRowsToCsv(filename, rows){
@@ -1697,13 +2488,8 @@ function renderLeagueTable(teamAgg){
     const isTeam = ab && String(p.team||'').toUpperCase() === ab;
     return `<tr style="${isTeam?'background:rgba(77,163,255,0.10);':''}">` + cols.map(c=>{
       if(c.key === 'teamName'){
-        const logo = teamLogoUrl(p.team);
         const name = String(p.teamName||p.team||'');
-        const cell = `<div style="display:flex; align-items:center; gap:10px;">
-          <img src="${logo}" alt="${String(p.team||'')}" style="width:40px; height:40px; object-fit:contain;" />
-          <span>${name}</span>
-        </div>`;
-        return `<td class="name">${cell}</td>`;
+        return `<td class="name">${name}</td>`;
       }
       const v = p?.[c.key];
       const txt = (c.key==='rank' || c.key==='players') ? String(Number(v)||0) : (Number.isFinite(Number(v)) ? fmt3(v) : (v==null?'':String(v)));
@@ -2005,6 +2791,36 @@ async function loadTablePanel(){
 try{
   btnReloadCard?.addEventListener('click', ()=>{ __scatterCache.clear(); __chartsLastKey=''; loadCardPanel(); });
   btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
+  btnExportTeamsCardPng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>exportTeamsPng('card')); });
+  btnShareTeamsCardPng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>shareTeamsPng('card')); });
+  btnExportTeamsChartsPng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>exportTeamsPng('charts')); });
+  btnShareTeamsChartsPng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>shareTeamsPng('charts')); });
+  btnExportTeamsEdgePng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>exportTeamsPng('edge')); });
+  btnShareTeamsEdgePng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>shareTeamsPng('edge')); });
+  btnExportTeamsProjPng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>exportTeamsPng(__teamsCurrentProjKind())); });
+  btnShareTeamsProjPng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>shareTeamsPng(__teamsCurrentProjKind())); });
+  btnExportTeamsTablePng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>exportTeamsPng('table')); });
+  btnShareTeamsTablePng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>shareTeamsPng('table')); });
+  btnCloseTeamsShare?.addEventListener('click', closeTeamsShareModal);
+  teamsShareModal?.addEventListener('click', (event)=>{ if(event.target === teamsShareModal) closeTeamsShareModal(); });
+  teamsShareGrid?.addEventListener('click', (event)=>{
+    const button = event.target.closest('button[data-platform]');
+    if(!button || __teamsShareBusy) return;
+    const platformId = button.getAttribute('data-platform');
+    if(!platformId) return;
+    void __runTeamsAction(async ()=>{
+      __setTeamsShareBusy(true);
+      __teamsSetShareStatus('');
+      try{
+        await __handleTeamsSharePlatform(platformId);
+      }finally{
+        __setTeamsShareBusy(false);
+      }
+    });
+  });
+  document.addEventListener('keydown', (event)=>{
+    if(event.key === 'Escape' && teamsShareModal && !teamsShareModal.hidden) closeTeamsShareModal();
+  });
 }catch(_){/*noop*/}
 
 try{

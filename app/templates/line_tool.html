@@ -59,6 +59,7 @@
   .subtab-btn.active{ outline:2px solid var(--accent); }
   .panel{ margin-top:14px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:16px 16px 12px; min-width:0; }
   .card-panel-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:2px 2px 10px; }
+  .card-panel-actions{ display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
   .card-panel-meta{ color:rgba(255,255,255,0.95); font-size:18px; font-style:italic; font-weight:800; letter-spacing:.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   /* ── Heat Map ── */
@@ -139,21 +140,95 @@
   .lt-wowy-table th .sort-arrow{ font-size:9px; margin-left:2px; opacity:0.5; }
   .lt-wowy-table th.sort-active .sort-arrow{ opacity:1; color:#5b9bd5; }
   .lt-wowy-export-bar{ display:flex; justify-content:flex-end; margin-bottom:6px; }
+  .lt-wowy-export-bar{ gap:8px; flex-wrap:wrap; }
 
   /* ── Lines / Pairs ── */
   .lt-lines-controls{ display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; }
   .lt-lines-controls label{ font-size:12px; color:var(--text-dim); font-weight:700; display:flex; flex-direction:column; gap:4px; }
   .lt-lines-controls input[type=number]{ font-size:13px; padding:6px 8px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
-  .lt-wowy-export-bar button{ font-size:13px; padding:6px 14px; border-radius:8px; border:1px solid #2a3142; background:transparent; color:var(--text-dim); cursor:pointer; }
-  .lt-wowy-export-bar button:hover{ color:var(--text); border-color:#5b9bd5; }
+  .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .config-btn:hover{ background:color-mix(in srgb, var(--panel-alt) 70%, black); }
+
+  .modal{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:2000; }
+  .modal[hidden]{ display:none !important; }
+  .modal-card{ width:min(1460px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:#0f1522; border:1px solid #2a3142; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.6); }
+  .modal-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid #232a3a; }
+  .modal-title{ font-weight:900; letter-spacing:.2px; }
+  .modal-bd{ padding:14px 16px; }
+  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .btn:hover{ background:rgba(255,255,255,0.05); }
+  .visually-hidden{ position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  .lt-share-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; }
+  .lt-share-card{ width:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; text-align:left; min-height:132px; padding:14px; border-radius:12px; border:1px solid #2a3142; background:rgba(255,255,255,0.02); color:var(--value-text, var(--text)); cursor:pointer; }
+  .lt-share-card:hover{ background:rgba(255,255,255,0.05); }
+  .lt-share-card:disabled{ opacity:.55; cursor:not-allowed; }
+  .lt-share-card.logo-only{ align-items:center; text-align:center; }
+  .lt-share-card.logo-only .lt-share-name,
+  .lt-share-card.logo-only .lt-share-desc{ display:none; }
+  .lt-share-logo{ display:grid; place-items:center; width:54px; height:54px; color:currentColor; }
+  .lt-share-card.logo-only .lt-share-logo{ width:78px; height:78px; }
+  .lt-share-logo svg{ display:block; width:100%; height:100%; }
+  .lt-share-name{ font-size:15px; font-weight:850; letter-spacing:.2px; }
+  .lt-share-desc{ font-size:12px; line-height:1.45; color:var(--text-dim); }
+  .lt-share-status{ margin-top:14px; font-size:13px; color:var(--text-dim); }
+  .lt-share-status:empty{ display:none; }
+  .lt-share-status.err{ color:#ff9d9d; }
+  .lt-share-note{ margin-bottom:14px; line-height:1.55; color:var(--text-dim); font-size:13px; }
+
+  .lt-export-surface{ position:fixed; left:-10000px; top:0; width:2400px; padding:44px; background:radial-gradient(circle at top left, rgba(77,163,255,0.14), transparent 26%), linear-gradient(180deg, rgba(11,15,24,0.995), rgba(9,12,20,0.995)); z-index:-1; pointer-events:none; }
+  .lt-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
+  .lt-export-card--heat{ width:1680px; }
+  .lt-export-card--table{ display:inline-grid; width:max-content; min-width:0; max-width:none; justify-items:stretch; }
+  .lt-export-title{ color:rgba(255,255,255,0.98); font-size:48px; line-height:1.06; font-weight:900; letter-spacing:-.02em; }
+  .lt-export-summary{ color:rgba(255,255,255,0.95); font-size:30px; font-style:italic; font-weight:800; letter-spacing:.2px; }
+  .lt-export-meta{ color:rgba(255,255,255,0.76); font-size:22px; font-weight:750; letter-spacing:.2px; }
+  .lt-export-watermark{ text-align:right; color:rgba(255,255,255,0.80); font-size:30px; font-weight:700; letter-spacing:.2px; }
+  .lt-export-formation{ display:grid; gap:16px; justify-items:center; }
+  .lt-export-formation-row{ display:flex; justify-content:center; gap:18px; }
+  .lt-export-player{ display:grid; justify-items:center; gap:8px; min-width:180px; }
+  .lt-export-headshot{ width:118px; height:118px; border-radius:50%; border:3px solid #2b3648; object-fit:cover; background:#1a2236; }
+  .lt-export-player-name{ font-size:22px; font-weight:850; text-align:center; }
+  .lt-export-player-sub{ color:var(--text-dim); font-size:14px; font-weight:750; text-transform:uppercase; letter-spacing:.08em; }
+  .lt-export-card .lt-kpis{ width:100%; justify-content:center; gap:18px; margin:0; flex-wrap:nowrap; }
+  .lt-export-card .lt-kpi{ flex:1 1 0; padding:18px 16px; min-width:0; border-radius:16px; }
+  .lt-export-card .kpi-label{ font-size:12px; }
+  .lt-export-card .kpi-value{ font-size:32px; }
+  .lt-export-card .lt-heatmap-grid{ grid-template-columns:minmax(0, 0.92fr) 320px minmax(0, 0.92fr) !important; grid-template-rows:auto !important; gap:28px; align-items:stretch; }
+  .lt-export-card .lt-hm-title{ font-size:20px; font-weight:850; margin-bottom:10px; color:rgba(255,255,255,0.94); }
+  .lt-export-card .lt-hm-kpis{ display:grid !important; grid-template-columns:1fr !important; grid-template-rows:repeat(6, minmax(0, 1fr)) !important; order:0 !important; width:auto !important; min-width:320px !important; max-width:320px !important; gap:16px !important; flex-direction:unset !important; flex-wrap:unset !important; height:100%; align-self:stretch; }
+  .lt-export-card .lt-hm-kpi-group{ padding:18px 18px !important; border-radius:12px !important; height:100%; display:flex !important; flex-direction:column !important; justify-content:center; }
+  .lt-export-card .lt-hm-kpi-group .grp-title{ font-size:18px !important; margin-bottom:6px !important; }
+  .lt-export-card .lt-hm-kpi-group .grp-row{ gap:6px !important; }
+  .lt-export-card .lt-hm-kpi-group .grp-cell{ min-width:74px !important; }
+  .lt-export-card .lt-hm-kpi-group .grp-cell .cl{ font-size:12px !important; }
+  .lt-export-card .lt-hm-kpi-group .grp-cell .cv{ font-size:26px !important; }
+  .lt-export-card .lt-hm-kpi-group .grp-cell .cv.pct{ padding:2px 6px !important; }
+  .lt-export-card .lt-hm-rink{ width:100% !important; max-width:none !important; justify-self:stretch; align-self:stretch; aspect-ratio:75/85 !important; }
+  .lt-export-card .lt-zone-label{ font-size:3.2px; }
+  .lt-export-table-wrap{ width:max-content; max-width:none; justify-self:start; overflow:hidden; border-radius:24px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); }
+  .lt-export-card .lt-wowy-table-wrap{ overflow:visible; max-height:none; }
+  .lt-export-card .lt-wowy-table{ width:auto; border-collapse:collapse; font-size:14px; font-variant-numeric:tabular-nums; table-layout:auto; }
+  .lt-export-card .lt-wowy-table th{ background:rgba(15,21,34,0.98); padding:9px 6px; text-align:center; font-size:11px; font-weight:850; text-transform:uppercase; letter-spacing:.45px; color:rgba(255,255,255,0.76); white-space:nowrap; position:static; }
+  .lt-export-card .lt-wowy-table td{ padding:7px 6px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.06); white-space:nowrap; }
+  .lt-export-card .lt-wowy-table .wowy-player-cell{ text-align:left !important; min-width:52px; }
+  .lt-export-card .lt-wowy-table tbody tr:nth-child(even) td{ background:rgba(255,255,255,0.02); }
 
   @media (max-width:900px){
     .lt-heatmap-grid{ grid-template-columns:1fr; }
     /* KPIs first, then zones stacked — use grid for reliable multi-column */
-    .lt-hm-kpis{ order:-1; display:grid; grid-template-columns:repeat(2, 1fr); width:100%; max-width:none; min-width:0; gap:8px; flex-direction:unset; flex-wrap:unset; }
-    .lt-hm-kpi-group{ min-width:0; }
+    .lt-hm-kpis{ order:-1; display:grid; grid-template-columns:repeat(2, 1fr); width:100%; max-width:none; min-width:0; gap:6px; flex-direction:unset; flex-wrap:unset; }
+    .lt-hm-kpi-group{ min-width:0; padding:8px 8px; border-radius:10px; }
+    .lt-hm-kpi-group .grp-title{ font-size:11px; margin-bottom:5px; }
+    .lt-hm-kpi-group .grp-row{ gap:4px; }
+    .lt-hm-kpi-group .grp-cell{ min-width:0; }
+    .lt-hm-kpi-group .grp-cell .cl{ font-size:8px; }
+    .lt-hm-kpi-group .grp-cell .cv{ font-size:14px; }
+    .lt-hm-kpi-group .grp-cell .cv.pct{ padding:2px 4px; }
     .lt-player-slot{ width:140px; }
     /* Filter context: allow wrapping */
+    #ltPanelHeat .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
+    #ltPanelHeat .card-panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #ltPanelHeat .card-panel-actions button{ flex:1 1 120px; }
     .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
   }
   @media (max-width:900px) and (orientation:landscape){
@@ -206,6 +281,10 @@
   <div id="ltPanelHeat" class="panel" role="tabpanel">
     <div class="card-panel-hd">
       <div id="ltSlicerSummary" class="card-panel-meta"></div>
+      <div class="card-panel-actions">
+        <button id="btnExportLtHeatPng" class="config-btn" type="button">Export PNG</button>
+        <button id="btnShareLtHeatPng" class="config-btn" type="button">Share</button>
+      </div>
     </div>
     <div class="lt-hm-controls">
       <label><span>Metric</span><select id="ltHmMetric">
@@ -320,9 +399,24 @@
     <div id="ltDefEmpty" class="lt-empty">Loading defense pair combinations…</div>
   </div>
 </section>
+
+<div id="ltShareModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ltShareTitle">
+    <div class="modal-hd">
+      <div id="ltShareTitle" class="modal-title">Share</div>
+      <button id="btnCloseLtShare" class="btn" type="button">Close</button>
+    </div>
+    <div class="modal-bd">
+      <div class="lt-share-note">Image saved to clipboard - Remember to paste the image in the Post</div>
+      <div id="ltShareGrid" class="lt-share-grid"></div>
+      <div id="ltShareStatus" class="lt-share-status" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 (function(){
 const DEFAULT_IMG = 'https://assets.nhle.com/mugs/nhl/default-skater.png';
@@ -372,6 +466,13 @@ const ltFwdScopeTeam = document.getElementById('ltFwdScopeTeam');
 const ltFwdScopeLeague = document.getElementById('ltFwdScopeLeague');
 const ltDefScopeTeam = document.getElementById('ltDefScopeTeam');
 const ltDefScopeLeague = document.getElementById('ltDefScopeLeague');
+const btnExportLtHeatPng = document.getElementById('btnExportLtHeatPng');
+const btnShareLtHeatPng = document.getElementById('btnShareLtHeatPng');
+const ltShareModal = document.getElementById('ltShareModal');
+const ltShareTitle = document.getElementById('ltShareTitle');
+const ltShareGrid = document.getElementById('ltShareGrid');
+const ltShareStatus = document.getElementById('ltShareStatus');
+const btnCloseLtShare = document.getElementById('btnCloseLtShare');
 
 const SLOT_IDS = [0,1,2,3,4];
 const playerSelects = SLOT_IDS.map(i => document.getElementById(`ltPlayer${i}`));
@@ -396,7 +497,22 @@ let __defSortCol = -1;
 let __defSortAsc = true;
 let __fwdScope = 'team';
 let __defScope = 'team';
+let __ltShareKind = 'heat';
+let __ltShareAsset = null;
+let __ltShareAssetKey = '';
+let __ltSharePreparePromise = null;
+let __ltShareBusy = false;
 const LT_STORAGE_KEY = 'lt_selections';
+const LT_SHARE_PLATFORMS = [
+  { id: 'x', name: 'X', description: 'Open X with share text.', mode: 'composer', color: '#ffffff' },
+  { id: 'bluesky', name: 'Bluesky', description: 'Open Bluesky with share text.', mode: 'composer', color: '#1f86ff' },
+  { id: 'linkedin', name: 'LinkedIn', description: 'Open LinkedIn with share text.', mode: 'composer', color: '#0a66c2' },
+  { id: 'facebook', name: 'Facebook', description: 'Open Facebook sharer.', mode: 'composer', color: '#1877f2' },
+  { id: 'reddit', name: 'Reddit', description: 'Open Reddit submit.', mode: 'composer', color: '#ff5b16' },
+  { id: 'whatsapp', name: 'WhatsApp', description: 'Open WhatsApp with share text.', mode: 'composer', color: '#25d366' },
+  { id: 'telegram', name: 'Telegram', description: 'Open Telegram with share text.', mode: 'composer', color: '#26a5e4' },
+  { id: 'more-apps', name: 'More Apps', description: 'Uses your device share sheet and can attach the PNG directly to installed apps.', mode: 'native', showText: true, color: '#ffffff' },
+];
 
 function debouncedFetch(){
   clearTimeout(__fetchTimer);
@@ -494,7 +610,7 @@ function headshotUrl(pid){
   const season = String(seasonSelect?.value||'').trim();
   const team = String(teamSelect?.value||'').trim().toUpperCase();
   if(!season || !team) return DEFAULT_IMG;
-  return `https://assets.nhle.com/mugs/nhl/${season}/${team}/${pid}.png`;
+  return `/api/player-headshot/${encodeURIComponent(pid)}.png?season=${encodeURIComponent(season)}&team=${encodeURIComponent(team)}`;
 }
 
 function updateHeadshots(){
@@ -506,6 +622,494 @@ function updateHeadshots(){
       img.onerror = function(){ this.src = DEFAULT_IMG; };
     }
   }
+}
+
+function __linePanelTitle(kind){
+  if(kind === 'heat') return 'Heat Map';
+  if(kind === 'wowy') return 'WOWY';
+  if(kind === 'fwd') return 'Forward Lines';
+  return 'Defense Pairs';
+}
+
+function __lineExportTitle(kind){
+  return `NHL Line Tool - ${__linePanelTitle(kind)}`;
+}
+
+function __lineBaseSummary(){
+  return String(ltSlicerSummary?.textContent || '').trim();
+}
+
+function __lineHeatMeta(){
+  const metricLabel = ltHmMetric?.selectedOptions?.[0]?.textContent || 'Fenwick';
+  const compareLabel = ltHmCompare?.selectedOptions?.[0]?.textContent || 'Raw Value';
+  const zoneState = __selectedZones.size ? `Selected zones ${Array.from(__selectedZones).sort().join(', ')}` : 'All zones';
+  return `${metricLabel} · ${compareLabel} · ${zoneState}`;
+}
+
+function __lineWowyMeta(){
+  const comboCount = Array.isArray(__wowyData?.combos) ? __wowyData.combos.length : 0;
+  return `All selected-player combinations${comboCount ? ` · ${comboCount} rows` : ''}`;
+}
+
+function __lineLinesMeta(type){
+  const minToi = type === 'fwd' ? (ltFwdMinToi?.value || '10') : (ltDefMinToi?.value || '10');
+  const scope = type === 'fwd' ? __fwdScope : __defScope;
+  return `${scope === 'league' ? 'League scope' : 'Team scope'} · Min TOI ${minToi} · Top 20 rows`;
+}
+
+function __lineFilename(kind){
+  const team = String(teamSelect?.value || 'team').trim().toLowerCase() || 'team';
+  const season = String(seasonSelect?.value || 'season').trim() || 'season';
+  return `line-tool-${kind}-${team}-${season}.png`;
+}
+
+function __lineShareText(kind){
+  const team = String(teamSelect?.value || '').trim().toUpperCase();
+  const season = String(seasonSelect?.value || '').trim();
+  const title = __linePanelTitle(kind);
+  return `${title} for ${team || 'selected team'} ${season || ''}`.trim();
+}
+
+function __lineSelectedPlayers(){
+  return playerSelects
+    .map(sel => String(sel?.value || '').trim())
+    .filter(Boolean)
+    .map(pid => {
+      const info = __players.find(player => String(player.id) === pid) || {};
+      return {
+        id: pid,
+        name: info.name || `#${pid}`,
+        position: info.position || '',
+        headshot: headshotUrl(pid),
+      };
+    });
+}
+
+function __lineShareStateKey(kind){
+  const players = __lineSelectedPlayers().map(player => player.id).join(',');
+  const base = [kind, teamSelect?.value || '', seasonSelect?.value || '', players, __lineBaseSummary()].join('|');
+  if(kind === 'heat') return `${base}|${__lineHeatMeta()}|${ltKpis?.innerHTML || ''}|${ltHeatContent?.innerHTML || ''}`;
+  if(kind === 'wowy') return `${base}|${__lineWowyMeta()}|${ltWowyTableWrap?.innerHTML || ''}`;
+  const wrap = kind === 'fwd' ? ltFwdTableWrap : ltDefTableWrap;
+  return `${base}|${__lineLinesMeta(kind)}|${wrap?.innerHTML || ''}`;
+}
+
+function __canvasToBlob(canvas){
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('PNG export failed.')), 'image/png');
+  });
+}
+
+function __downloadBlob(blob, fileName){
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function __canCopyPngToClipboard(){
+  return !!(window.isSecureContext && window.ClipboardItem && navigator.clipboard?.write);
+}
+
+async function __copyPngBlobToClipboard(blob){
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+}
+
+function __canNativeSharePng(){
+  return !!(window.isSecureContext && navigator.share && window.File);
+}
+
+async function __sharePngViaNative(blob, fileName, title, text){
+  const file = new File([blob], fileName, { type: 'image/png' });
+  await navigator.share({ files: [file], title, text });
+}
+
+function __socialShareUrl(platformId, shareText){
+  const encodedText = encodeURIComponent(shareText);
+  if(platformId === 'x') return `https://twitter.com/intent/tweet?text=${encodedText}`;
+  if(platformId === 'bluesky') return `https://bsky.app/intent/compose?text=${encodedText}`;
+  if(platformId === 'linkedin') return `https://www.linkedin.com/feed/?shareActive=true&text=${encodedText}`;
+  if(platformId === 'facebook') return `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent('https://www.nhl.com/')}&quote=${encodedText}`;
+  if(platformId === 'reddit') return `https://www.reddit.com/submit?title=${encodedText}`;
+  if(platformId === 'whatsapp') return `https://wa.me/?text=${encodedText}`;
+  if(platformId === 'telegram') return `https://t.me/share/url?text=${encodedText}`;
+  return '';
+}
+
+function __ltSetShareStatus(message, isError){
+  if(!ltShareStatus) return;
+  ltShareStatus.textContent = message || '';
+  ltShareStatus.classList.toggle('err', !!isError);
+}
+
+function __setLtShareBusy(busy){
+  __ltShareBusy = !!busy;
+  __renderLtShareOptions();
+}
+
+function __shootShareIconSvg(platformId){
+  if(platformId === 'more-apps') return '<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="10" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"></rect><rect x="36" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"></rect><rect x="10" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"></rect><rect x="36" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"></rect></svg>';
+  if(platformId === 'x') return '<svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" d="M12 12h11.6l11.2 15 13-15H52L37.5 28.7 54 52H42.4L30.8 36.4 17.2 52H12l15.8-18.2z"></path></svg>';
+  if(platformId === 'bluesky') return '<svg viewBox="0 0 64 57" aria-hidden="true"><path fill="currentColor" d="M13.2 3.7C18.9 7.9 25 16.4 32 25.9c7-9.5 13.1-18 18.8-22.2 4.1-3 10.7-5.3 10.7 2.3 0 1.5-.8 12.3-1.3 14.1-1.9 6.3-8.7 7.9-14.8 6.9 10.7 1.8 13.5 7.8 7.6 13.8-11.2 11.4-16.1-2.9-17.4-6.6-.2-.7-.3-1-.6-1-.3 0-.4.3-.6 1-1.3 3.7-6.2 18-17.4 6.6-5.9-6-3.1-12 7.6-13.8-6.1 1-12.9-.6-14.8-6.9C3.3 18.3 2.5 7.5 2.5 6c0-7.6 6.6-5.3 10.7-2.3z"></path></svg>';
+  if(platformId === 'linkedin') return '<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="48" height="48" rx="10" fill="currentColor"></rect><rect x="18" y="26" width="7" height="20" fill="#0f1522"></rect><circle cx="21.5" cy="19.5" r="4" fill="#0f1522"></circle><path fill="#0f1522" d="M31 26h6.4v2.8h.1c1-1.8 3.5-3.8 7.2-3.8 7.7 0 9.1 5.1 9.1 11.7V46h-7V37.8c0-3.9-.1-8.9-5.4-8.9-5.4 0-6.2 4.2-6.2 8.6V46h-7z"></path></svg>';
+  if(platformId === 'facebook') return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"></circle><path fill="#0f1522" d="M35.6 52V34.5h5.9l.9-6.8h-6.8v-4.3c0-2 1-3.8 4.3-3.8H43v-5.8c-1-.1-2.9-.3-5.6-.3-5.5 0-9.2 3.3-9.2 9.5v4.7h-6.2v6.8h6.2V52z"></path></svg>';
+  if(platformId === 'reddit') return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"></circle><circle cx="24" cy="33" r="3.2" fill="#0f1522"></circle><circle cx="40" cy="33" r="3.2" fill="#0f1522"></circle><path d="M24 41c2.2 2 4.9 3 8 3s5.8-1 8-3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"></path><path d="M25 24l3.8-8.2 9.8 2.1" stroke="#0f1522" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"></path><circle cx="42.8" cy="19.6" r="3.6" fill="#0f1522"></circle><path d="M19 28.5c-2.7 0-5 2.2-5 5 0 1.9 1 3.5 2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"></path><path d="M45 28.5c2.7 0 5 2.2 5 5 0 1.9-1 3.5-2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"></path></svg>';
+  if(platformId === 'whatsapp') return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"></circle><path fill="#0f1522" d="M32 19c-7.3 0-13.2 5.7-13.2 12.8 0 2.7.8 5.2 2.4 7.3l-1.8 6.2 6.4-1.7c2 1.3 4.2 2 6.6 2 7.3 0 13.2-5.7 13.2-12.8S39.3 19 32 19zm7.8 17.3c-.3.9-1.8 1.6-2.6 1.7-.7.1-1.6.2-5.2-1.3-4.6-1.9-7.5-6.5-7.7-6.8-.2-.3-1.9-2.5-1.9-4.8 0-2.2 1.2-3.3 1.6-3.8.4-.4.9-.5 1.2-.5h.9c.3 0 .8-.1 1.2.9.4 1 .4 3.2.1 3.5-.2.4-.4.6-.8 1-.4.4-.8.7-.4 1.4.4.7 1.8 2.9 3.8 4.7 2.6 2.3 4.6 3 5.3 3.3.5.2.9.2 1.3-.2.4-.5 1.5-1.7 2-2.3.4-.5.9-.5 1.4-.3.5.2 3.2 1.5 3.7 1.8.5.3.9.5 1 .8.1.3.1 1.5-.2 2.4z"></path></svg>';
+  if(platformId === 'telegram') return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"></circle><path fill="#0f1522" d="M46.7 20.4 19.8 30.8c-1.8.7-1.8 1.7-.3 2.1l6.9 2.2 2.7 8.7c.3.9.2 1.3 1.1 1.3.7 0 1-.3 1.4-.7l3.4-3.3 7.2 5.3c1.3.7 2.3.3 2.6-1.3l4.6-21.7c.5-1.9-.7-2.8-2.7-2zM28 34.6l14.7-9.3c.7-.4 1.4-.2.9.3L31.3 36.7l-.5 5.6z"></path></svg>';
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"></circle></svg>';
+}
+
+function __renderLtShareOptions(){
+  if(!ltShareGrid) return;
+  const nativeAvailable = __canNativeSharePng();
+  const clipboardAvailable = __canCopyPngToClipboard();
+  ltShareGrid.innerHTML = LT_SHARE_PLATFORMS.map(platform => {
+    const disabled = __ltShareBusy || (platform.mode === 'native' ? !nativeAvailable : !clipboardAvailable);
+    const showText = !!platform.showText;
+    return `
+      <button class="lt-share-card${showText ? '' : ' logo-only'}" type="button" data-platform="${platform.id}" aria-label="${platform.name}"${disabled ? ' disabled' : ''}>
+        <span class="lt-share-logo" style="color:${platform.color || '#ffffff'};" aria-hidden="true">${__shootShareIconSvg(platform.id)}</span>
+        <span class="lt-share-name">${platform.name}</span>
+        ${showText ? `<span class="lt-share-desc">${platform.description || ''}</span>` : `<span class="visually-hidden">${platform.name}</span>`}
+      </button>
+    `;
+  }).join('');
+}
+
+async function __waitForImages(root){
+  const images = Array.from(root.querySelectorAll('img'));
+  await Promise.all(images.map(img => new Promise(resolve => {
+    if(img.complete && img.naturalWidth > 0) return resolve();
+    const done = () => resolve();
+    img.addEventListener('load', done, { once: true });
+    img.addEventListener('error', done, { once: true });
+  })));
+}
+
+async function __renderDesktopExportCanvas(element){
+  if(typeof html2canvas !== 'function') throw new Error('PNG export is unavailable right now.');
+  const surface = document.createElement('div');
+  surface.className = 'lt-export-surface';
+  surface.appendChild(element);
+  document.body.appendChild(surface);
+  try{
+    await __waitForImages(surface);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return await html2canvas(element, {
+      backgroundColor: '#0a0d14',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      width: Math.ceil(element.getBoundingClientRect().width),
+      height: Math.ceil(element.getBoundingClientRect().height),
+      windowWidth: 1920,
+      windowHeight: 2200,
+      scrollX: 0,
+      scrollY: 0,
+    });
+  }finally{
+    surface.remove();
+  }
+}
+
+function __buildExportFormation(){
+  const players = __lineSelectedPlayers();
+  if(!players.length) return null;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'lt-export-formation';
+  const rows = [players.slice(0, 3), players.slice(3, 5)].filter(row => row.length);
+  for(const rowPlayers of rows){
+    const row = document.createElement('div');
+    row.className = 'lt-export-formation-row';
+    for(const player of rowPlayers){
+      const card = document.createElement('div');
+      card.className = 'lt-export-player';
+      card.innerHTML = `
+        <img class="lt-export-headshot" src="${player.headshot}" alt="${player.name}">
+        <div class="lt-export-player-name">${player.name}</div>
+        <div class="lt-export-player-sub">${player.position || 'Player'}</div>
+      `;
+      card.querySelector('img')?.addEventListener('error', event => {
+        event.currentTarget.src = DEFAULT_IMG;
+      }, { once: true });
+      row.appendChild(card);
+    }
+    wrapper.appendChild(row);
+  }
+  return wrapper;
+}
+
+function __cloneNodeWithoutId(node){
+  const clone = node.cloneNode(true);
+  if(clone.id) clone.removeAttribute('id');
+  clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+  return clone;
+}
+
+function __buildExportTable(tableWrap, options = {}){
+  const table = tableWrap?.querySelector('table');
+  if(!table) return null;
+  const clone = __cloneNodeWithoutId(table);
+  const omitHeaders = new Set((options.omitHeaders || []).map(value => String(value || '').trim().toUpperCase()));
+  if(omitHeaders.size){
+    const headCells = Array.from(clone.querySelectorAll('thead th'));
+    const removeIndexes = [];
+    headCells.forEach((th, index) => {
+      const text = String(th.textContent || '').replace(/[▲▼]/g, '').trim().toUpperCase();
+      if(omitHeaders.has(text)) removeIndexes.push(index);
+    });
+    removeIndexes.sort((a, b) => b - a).forEach(index => {
+      clone.querySelectorAll('tr').forEach(row => {
+        row.children[index]?.remove();
+      });
+    });
+  }
+  const maxRows = Number.isFinite(options.maxRows) ? Math.max(0, options.maxRows) : 20;
+  const rows = Array.from(clone.querySelectorAll('tbody tr'));
+  rows.slice(maxRows).forEach(row => row.remove());
+  return clone;
+}
+
+function __buildExportCard(title, summary, meta){
+  const card = document.createElement('section');
+  card.className = 'lt-export-card';
+  const titleEl = document.createElement('div');
+  titleEl.className = 'lt-export-title';
+  titleEl.textContent = title;
+  card.appendChild(titleEl);
+  if(summary){
+    const summaryEl = document.createElement('div');
+    summaryEl.className = 'lt-export-summary';
+    summaryEl.textContent = summary;
+    card.appendChild(summaryEl);
+  }
+  if(meta){
+    const metaEl = document.createElement('div');
+    metaEl.className = 'lt-export-meta';
+    metaEl.textContent = meta;
+    card.appendChild(metaEl);
+  }
+  const formation = __buildExportFormation();
+  if(formation) card.appendChild(formation);
+  return card;
+}
+
+function __buildLineToolWatermark(){
+  const watermark = document.createElement('div');
+  watermark.className = 'lt-export-watermark';
+  watermark.textContent = 'Created on https://nhl.hockey-statistics.com/';
+  return watermark;
+}
+
+function __buildHeatExportSurface(){
+  if(!__data || !__data.gp || !ltHeatContent || ltHeatContent.style.display === 'none') throw new Error('Load heat map data before exporting.');
+  const card = __buildExportCard(__lineExportTitle('heat'), __lineBaseSummary(), __lineHeatMeta());
+  card.classList.add('lt-export-card--heat');
+  if(ltKpis?.children?.length) card.appendChild(__cloneNodeWithoutId(ltKpis));
+  card.appendChild(__buildHeatExportGrid());
+  card.appendChild(__buildLineToolWatermark());
+  return card;
+}
+
+function __buildWowyAllCombosExportTable(){
+  const wowy = __wowyData;
+  const players = Array.isArray(wowy?.players) ? wowy.players : [];
+  const combos = Array.isArray(wowy?.combos) ? wowy.combos.slice() : [];
+  if(!players.length || !combos.length) return null;
+  combos.sort((a, b) => (Number(b?.toi) || 0) - (Number(a?.toi) || 0));
+  const rates = String(ltRates?.value || 'Totals');
+  const headers = [...players.map(player => player.name.split(' ').pop()), 'GP', 'TOI', 'CF', 'CA', 'CF%', 'GF', 'GA', 'GF%', 'xGF', 'xGA', 'xGF%', 'Sh%', 'Sv%', 'PDO'];
+
+  function rv(value, combo){
+    const gp = combo.gp || 1;
+    const toi60 = Math.max(combo.toi || 0, 0.001) / 60;
+    if(rates === 'Per60') return (Number(value || 0) / toi60).toFixed(2);
+    if(rates === 'PerGame') return (Number(value || 0) / gp).toFixed(2);
+    return value;
+  }
+
+  function rvX(value, combo){
+    const gp = combo.gp || 1;
+    const toi60 = Math.max(combo.toi || 0, 0.001) / 60;
+    if(rates === 'Per60') return (Number(value || 0) / toi60).toFixed(2);
+    if(rates === 'PerGame') return (Number(value || 0) / gp).toFixed(2);
+    return typeof value === 'number' && !Number.isInteger(value) ? value.toFixed(2) : value;
+  }
+
+  function pctCls(value, threshold){
+    const numericValue = Number(value);
+    if(!Number.isFinite(numericValue)) return '';
+    return numericValue > threshold ? 'wowy-with' : numericValue < threshold ? 'wowy-without' : '';
+  }
+
+  const table = document.createElement('table');
+  table.className = 'lt-wowy-table';
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  headers.forEach((header, index) => {
+    const th = document.createElement('th');
+    if(index < players.length) th.className = 'wowy-player-cell';
+    th.textContent = header;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  combos.forEach(combo => {
+    const tr = document.createElement('tr');
+    players.forEach((player, index) => {
+      const td = document.createElement('td');
+      const onIce = !!combo.mask?.[index];
+      td.className = `wowy-player-cell ${onIce ? 'wowy-with' : 'wowy-without'}`;
+      td.textContent = onIce ? player.name.split(' ').pop() : `w/o ${player.name.split(' ').pop()}`;
+      tr.appendChild(td);
+    });
+    const values = [
+      { value: combo.gp },
+      { value: fmtToi(combo.toi) },
+      { value: rv(combo.cf, combo) },
+      { value: rv(combo.ca, combo) },
+      { value: combo.cfPct, cls: pctCls(combo.cfPct, 50) },
+      { value: rv(combo.gf, combo) },
+      { value: rv(combo.ga, combo) },
+      { value: combo.gfPct, cls: pctCls(combo.gfPct, 50) },
+      { value: rvX(combo.xgf, combo) },
+      { value: rvX(combo.xga, combo) },
+      { value: combo.xgfPct, cls: pctCls(combo.xgfPct, 50) },
+      { value: combo.shPct },
+      { value: combo.svPct },
+      { value: combo.pdo, cls: pctCls(combo.pdo, 100) },
+    ];
+    values.forEach(entry => {
+      const td = document.createElement('td');
+      if(entry.cls) td.className = entry.cls;
+      td.textContent = entry.value;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  return table;
+}
+
+function __buildWowyExportSurface(){
+  if(!__wowyData?.combos?.length) throw new Error('Load WOWY data before exporting.');
+  const card = __buildExportCard(__lineExportTitle('wowy'), __lineBaseSummary(), __lineWowyMeta());
+  card.classList.add('lt-export-card--table');
+  const table = __buildWowyAllCombosExportTable();
+  if(!table) throw new Error('WOWY export is unavailable right now.');
+  const wrap = document.createElement('div');
+  wrap.className = 'lt-export-table-wrap';
+  wrap.appendChild(table);
+  card.appendChild(wrap);
+  card.appendChild(__buildLineToolWatermark());
+  return card;
+}
+
+function __buildLinesExportSurface(type){
+  const wrapSource = type === 'fwd' ? ltFwdTableWrap : ltDefTableWrap;
+  const title = type === 'fwd' ? 'Forward Lines' : 'Defense Pairs';
+  if(!wrapSource?.querySelector('table')) throw new Error(`Load ${title.toLowerCase()} data before exporting.`);
+  const card = __buildExportCard(__lineExportTitle(type), __lineBaseSummary(), __lineLinesMeta(type));
+  card.classList.add('lt-export-card--table');
+  const table = __buildExportTable(wrapSource, { omitHeaders: ['FF', 'FA', 'FF%', 'SF', 'SA', 'SF%'], maxRows: 20 });
+  if(!table) throw new Error(`${title} export is unavailable right now.`);
+  const wrap = document.createElement('div');
+  wrap.className = 'lt-export-table-wrap';
+  wrap.appendChild(table);
+  card.appendChild(wrap);
+  card.appendChild(__buildLineToolWatermark());
+  return card;
+}
+
+async function __buildLineToolPngBlob(kind){
+  let surface;
+  if(kind === 'heat') surface = __buildHeatExportSurface();
+  else if(kind === 'wowy') surface = __buildWowyExportSurface();
+  else surface = __buildLinesExportSurface(kind);
+  const canvas = await __renderDesktopExportCanvas(surface);
+  return __canvasToBlob(canvas);
+}
+
+async function __prepareLineToolShareAsset(kind){
+  const stateKey = __lineShareStateKey(kind);
+  if(__ltShareAsset && __ltShareAsset.kind === kind && __ltShareAssetKey === stateKey) return __ltShareAsset;
+  if(__ltSharePreparePromise && __ltShareAssetKey === stateKey) return __ltSharePreparePromise;
+  __ltShareAssetKey = stateKey;
+  __ltSharePreparePromise = (async () => {
+    const blob = await __buildLineToolPngBlob(kind);
+    const asset = {
+      kind,
+      blob,
+      title: __linePanelTitle(kind),
+      fileName: __lineFilename(kind),
+      shareText: __lineShareText(kind),
+    };
+    __ltShareAsset = asset;
+    return asset;
+  })();
+  try{
+    return await __ltSharePreparePromise;
+  }finally{
+    __ltSharePreparePromise = null;
+  }
+}
+
+function openShareModal(kind){
+  __ltShareKind = kind;
+  __ltShareAsset = null;
+  __ltShareAssetKey = '';
+  if(ltShareTitle) ltShareTitle.textContent = `Share ${__linePanelTitle(kind)}`;
+  __setLtShareBusy(true);
+  __ltSetShareStatus('');
+  if(ltShareModal) ltShareModal.hidden = false;
+  __prepareLineToolShareAsset(kind)
+    .then(async asset => {
+      if(__canCopyPngToClipboard()){
+        try{
+          await __copyPngBlobToClipboard(asset.blob);
+        }catch(_){/* noop */}
+      }
+      __setLtShareBusy(false);
+    })
+    .catch(error => {
+      __setLtShareBusy(false);
+      __ltSetShareStatus(error?.message || 'Unable to prepare the PNG.', true);
+    });
+}
+
+function closeShareModal(){
+  if(ltShareModal) ltShareModal.hidden = true;
+  __ltSetShareStatus('');
+}
+
+async function shareLineToolPng(platformId){
+  try{
+    const platform = LT_SHARE_PLATFORMS.find(item => item.id === platformId);
+    if(!platform) return;
+    const asset = await __prepareLineToolShareAsset(__ltShareKind);
+    if(platform.mode === 'native'){
+      if(!__canNativeSharePng()) throw new Error('Native sharing is unavailable in this browser.');
+      await __sharePngViaNative(asset.blob, asset.fileName, asset.title, asset.shareText);
+      __ltSetShareStatus('');
+      return;
+    }
+    if(!__canCopyPngToClipboard()) throw new Error('This browser cannot copy PNG images directly. Use Export PNG instead.');
+    await __copyPngBlobToClipboard(asset.blob);
+    const url = __socialShareUrl(platformId, asset.shareText);
+    if(!url) throw new Error('That share option is unavailable right now.');
+    window.open(url, '_blank', 'noopener,noreferrer');
+    __ltSetShareStatus('');
+  }catch(error){
+    __ltSetShareStatus(error?.message || 'Unable to share this PNG.', true);
+  }
+}
+
+async function exportLineToolPng(kind){
+  const blob = await __buildLineToolPngBlob(kind);
+  __downloadBlob(blob, __lineFilename(kind));
 }
 
 // ── Load GeoJSON zones ───────────────────────────────────────
@@ -636,6 +1240,46 @@ function _zoneMetric(detail, zoneId, metric){
   return 0;
 }
 
+function __getHeatRenderPayload(){
+  const d = __data;
+  const hasData = d && d.gp > 0;
+  if(!hasData || !__geoJson) return null;
+
+  const metric = ltHmMetric?.value || 'fenwick';
+  const compare = ltHmCompare?.value || 'value';
+  const playerToi = d.toi || 0;
+  const ozVals = {}, dzVals = {};
+  for(const z of Object.keys(d.ozDetail || {})) ozVals[z] = _zoneMetric(d.ozDetail, z, metric);
+  for(const z of Object.keys(d.dzDetail || {})) dzVals[z] = _zoneMetric(d.dzDetail, z, metric);
+
+  let ozAvg = null, dzAvg = null, avgToi = 0;
+  if(compare === 'team'){
+    ozAvg = {}; dzAvg = {};
+    for(const z of Object.keys(d.teamOzDetail || {})) ozAvg[z] = _zoneMetric(d.teamOzDetail, z, metric);
+    for(const z of Object.keys(d.teamDzDetail || {})) dzAvg[z] = _zoneMetric(d.teamDzDetail, z, metric);
+    avgToi = d.teamToi || 0;
+  } else if(compare === 'league'){
+    ozAvg = {}; dzAvg = {};
+    const ld = d.leagueZoneDetail || {};
+    for(const z of Object.keys(ld)) ozAvg[z] = _zoneMetric(ld, z, metric);
+    for(const z of Object.keys(ld)) dzAvg['D' + z.slice(1)] = _zoneMetric(ld, z, metric);
+    avgToi = d.leagueToi || 0;
+  }
+
+  return {
+    metric,
+    compare,
+    playerToi,
+    avgToi,
+    ozVals,
+    dzVals,
+    ozAvg,
+    dzAvg,
+    ozFeatures: (__geoJson.features || []).filter(f => (f.id || '').startsWith('O')),
+    dzFeatures: (__geoJson.features || []).filter(f => (f.id || '').startsWith('D')),
+  };
+}
+
 function renderZoneSvg(svg, features, zoneVals, opts){
   if(!svg) return;
   svg.innerHTML = '';
@@ -712,41 +1356,26 @@ function renderHeatMap(){
     ltHeatEmpty.style.display = hasData ? 'none' : '';
     ltHeatEmpty.textContent = 'Select at least one player to view the heat map.';
   }
-  if(!hasData || !__geoJson) return;
+  const payload = __getHeatRenderPayload();
+  if(!payload) return;
 
-  const metric = ltHmMetric?.value || 'fenwick';
-  const compare = ltHmCompare?.value || 'value';
-  const playerToi = d.toi || 0;
+  renderZoneSvg(ltOzSvg, payload.ozFeatures, payload.ozVals, {
+    metric: payload.metric,
+    compare: payload.compare,
+    playerToi: payload.playerToi,
+    avgVals: payload.ozAvg,
+    avgToi: payload.avgToi,
+    isDz: false,
+  });
 
-  // Build zone value maps from detail
-  const ozVals = {}, dzVals = {};
-  for(const z of Object.keys(d.ozDetail || {})) ozVals[z] = _zoneMetric(d.ozDetail, z, metric);
-  for(const z of Object.keys(d.dzDetail || {})) dzVals[z] = _zoneMetric(d.dzDetail, z, metric);
-
-  // Average data (for comparison modes)
-  let ozAvg = null, dzAvg = null, avgToi = 0;
-  if(compare === 'team'){
-    ozAvg = {}; dzAvg = {};
-    for(const z of Object.keys(d.teamOzDetail || {})) ozAvg[z] = _zoneMetric(d.teamOzDetail, z, metric);
-    for(const z of Object.keys(d.teamDzDetail || {})) dzAvg[z] = _zoneMetric(d.teamDzDetail, z, metric);
-    avgToi = d.teamToi || 0;
-  } else if(compare === 'league'){
-    ozAvg = {}; dzAvg = {};
-    const ld = d.leagueZoneDetail || {};
-    // League OZ: use league zone counts directly (O-prefix)
-    for(const z of Object.keys(ld)) ozAvg[z] = _zoneMetric(ld, z, metric);
-    // League DZ: mapped from O-prefix (symmetry: league DZ D01 rate = league OZ O01 rate)
-    for(const z of Object.keys(ld)) dzAvg['D' + z.slice(1)] = _zoneMetric(ld, z, metric);
-    avgToi = d.leagueToi || 0;
-  }
-
-  const opts = {metric, compare, playerToi, avgVals: ozAvg, avgToi, isDz: false};
-  const ozFeatures = (__geoJson.features||[]).filter(f => (f.id||'').startsWith('O'));
-  renderZoneSvg(ltOzSvg, ozFeatures, ozVals, opts);
-
-  const dzOpts = {metric, compare, playerToi, avgVals: dzAvg, avgToi, isDz: true};
-  const dzFeatures = (__geoJson.features||[]).filter(f => (f.id||'').startsWith('D'));
-  renderZoneSvg(ltDzSvg, dzFeatures, dzVals, dzOpts);
+  renderZoneSvg(ltDzSvg, payload.dzFeatures, payload.dzVals, {
+    metric: payload.metric,
+    compare: payload.compare,
+    playerToi: payload.playerToi,
+    avgVals: payload.dzAvg,
+    avgToi: payload.avgToi,
+    isDz: true,
+  });
 
   // Center KPI panel
   renderHeatKpis();
@@ -944,7 +1573,7 @@ function renderHeatKpis(){
     {title:'Goals', items:[
       {l:'GA', v:rv(d.ga)}, {l:'GF%', v:d.gfPct.toFixed(1), cls:pctCls(d.gfPct,50)}, {l:'GF', v:rv(d.gf)}
     ]},
-    {title:'Shooting / Goaltending', items:[
+    {title:'PDO', items:[
       {l:'SV%', v:d.svPct.toFixed(1)}, {l:'PDO', v:d.pdo.toFixed(1), cls:pctCls(d.pdo,100)}, {l:'SH%', v:d.shPct.toFixed(1)}
     ]},
   ];
@@ -962,6 +1591,54 @@ function renderHeatKpis(){
       </div>
     </div>
   `).join('');
+}
+
+function __buildHeatExportZone(title, viewBox, rinkTransform, features, zoneVals, opts){
+  const section = document.createElement('div');
+  const titleEl = document.createElement('div');
+  titleEl.className = 'lt-hm-title';
+  titleEl.textContent = title;
+  const rink = document.createElement('div');
+  rink.className = 'lt-hm-rink';
+  const img = document.createElement('img');
+  img.src = '/static/hockey-rink-half.png';
+  img.alt = 'Rink';
+  if(rinkTransform) img.style.transform = rinkTransform;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', viewBox);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  renderZoneSvg(svg, features, zoneVals, opts);
+  rink.appendChild(img);
+  rink.appendChild(svg);
+  section.appendChild(titleEl);
+  section.appendChild(rink);
+  return section;
+}
+
+function __buildHeatExportGrid(){
+  // Re-render the live SVGs from current data so polygons are fresh
+  const payload = __getHeatRenderPayload();
+  if(!payload) throw new Error('Load heat map data before exporting.');
+  renderZoneSvg(ltDzSvg, payload.dzFeatures, payload.dzVals, {
+    metric: payload.metric, compare: payload.compare, playerToi: payload.playerToi,
+    avgVals: payload.dzAvg, avgToi: payload.avgToi, isDz: true,
+  });
+  renderZoneSvg(ltOzSvg, payload.ozFeatures, payload.ozVals, {
+    metric: payload.metric, compare: payload.compare, playerToi: payload.playerToi,
+    avgVals: payload.ozAvg, avgToi: payload.avgToi, isDz: false,
+  });
+  renderHeatKpis();
+
+  // Clone the live containers which already have the correct SVG viewBox + rink image + rendered polygons.
+  // The export card CSS (with !important overrides) ensures desktop layout inside the export surface.
+  const grid = document.createElement('div');
+  grid.className = 'lt-heatmap-grid';
+  const dzSection = ltDzSvg.closest('div.lt-hm-rink')?.parentElement;
+  const ozSection = ltOzSvg.closest('div.lt-hm-rink')?.parentElement;
+  if(dzSection) grid.appendChild(__cloneNodeWithoutId(dzSection));
+  grid.appendChild(__cloneNodeWithoutId(ltHeatKpis));
+  if(ozSection) grid.appendChild(__cloneNodeWithoutId(ozSection));
+  return grid;
 }
 
 // ── Zone Selection ───────────────────────────────────────────
@@ -1189,7 +1866,14 @@ function renderWowy(){
   }
 
   // Render export bar (above the scrollable table wrap)
-  if(ltWowyExportBar){ ltWowyExportBar.style.display = ''; ltWowyExportBar.innerHTML = '<button id="ltWowyExport" type="button">Export CSV</button>'; }
+  if(ltWowyExportBar){
+    ltWowyExportBar.style.display = '';
+    ltWowyExportBar.innerHTML = [
+      '<button class="config-btn ltWowyExportPng" type="button">Export PNG</button>',
+      '<button class="config-btn ltWowySharePng" type="button">Share</button>',
+      '<button id="ltWowyExport" class="config-btn" type="button">Export CSV</button>'
+    ].join('');
+  }
 
   // Build header
   let html = '<table class="lt-wowy-table"><thead><tr>';
@@ -1238,6 +1922,16 @@ function renderWowy(){
     const a = document.createElement('a');
     a.href = url; a.download = 'wowy_export.csv'; a.click();
     URL.revokeObjectURL(url);
+  });
+  ltWowyExportBar?.querySelector('.ltWowyExportPng')?.addEventListener('click', async () => {
+    try{
+      await exportLineToolPng('wowy');
+    }catch(error){
+      alert(error?.message || 'Unable to export WOWY PNG.');
+    }
+  });
+  ltWowyExportBar?.querySelector('.ltWowySharePng')?.addEventListener('click', () => {
+    openShareModal('wowy');
   });
 }
 
@@ -1388,7 +2082,14 @@ function renderLines(type){
   }
 
   // Export bar (above the table)
-  if(exportBar){ exportBar.style.display = ''; exportBar.innerHTML = '<button class="ltLinesExport" type="button">Export CSV</button>'; }
+  if(exportBar){
+    exportBar.style.display = '';
+    exportBar.innerHTML = [
+      '<button class="config-btn ltLinesExportPng" type="button">Export PNG</button>',
+      '<button class="config-btn ltLinesSharePng" type="button">Share</button>',
+      '<button class="config-btn ltLinesExport" type="button">Export CSV</button>'
+    ].join('');
+  }
 
   // Header
   let html = '<table class="lt-wowy-table"><thead><tr>';
@@ -1447,6 +2148,16 @@ function renderLines(type){
     a.href = URL.createObjectURL(blob);
     a.download = `${type}_lines.csv`;
     a.click();
+  });
+  exportBar?.querySelector('.ltLinesExportPng')?.addEventListener('click', async () => {
+    try{
+      await exportLineToolPng(type);
+    }catch(error){
+      alert(error?.message || 'Unable to export PNG.');
+    }
+  });
+  exportBar?.querySelector('.ltLinesSharePng')?.addEventListener('click', () => {
+    openShareModal(type);
   });
 }
 
@@ -1557,6 +2268,28 @@ ltXgModel?.addEventListener('change', () => {
 });
 ltHmMetric?.addEventListener('change', () => { renderHeatMap(); saveSelections(); });
 ltHmCompare?.addEventListener('change', () => { renderHeatMap(); saveSelections(); });
+btnExportLtHeatPng?.addEventListener('click', async () => {
+  try{
+    await exportLineToolPng('heat');
+  }catch(error){
+    alert(error?.message || 'Unable to export heat map PNG.');
+  }
+});
+btnShareLtHeatPng?.addEventListener('click', () => {
+  openShareModal('heat');
+});
+btnCloseLtShare?.addEventListener('click', closeShareModal);
+ltShareModal?.addEventListener('click', event => {
+  if(event.target === ltShareModal) closeShareModal();
+});
+document.addEventListener('keydown', event => {
+  if(event.key === 'Escape' && !ltShareModal?.hidden) closeShareModal();
+});
+ltShareGrid?.addEventListener('click', event => {
+  const button = event.target.closest('[data-platform]');
+  if(!button) return;
+  shareLineToolPng(button.dataset.platform);
+});
 
 // ── Persist / restore selections ─────────────────────────────
 function saveSelections(){

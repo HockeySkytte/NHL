@@ -311,6 +311,84 @@
   .gtend-zone-label{ font-size:2.2px; fill:rgba(0,0,0,0.7); font-weight:900; text-anchor:middle; dominant-baseline:central; pointer-events:none; }
   .gtend-heat-svg polygon.zone-selected, .gtend-heat-svg path.zone-selected{ stroke:#fff; stroke-width:0.8; }
 
+  .shoot-share-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; }
+  .shoot-share-card{ width:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; text-align:left; min-height:132px; padding:14px; border-radius:12px; border:1px solid #2a3142; background:rgba(255,255,255,0.02); color:var(--value-text, var(--text)); cursor:pointer; }
+  .shoot-share-card:hover{ background:rgba(255,255,255,0.05); }
+  .shoot-share-card:disabled{ opacity:.55; cursor:not-allowed; }
+  .shoot-share-card.logo-only{ align-items:center; text-align:center; }
+  .shoot-share-card.logo-only .shoot-share-name,
+  .shoot-share-card.logo-only .shoot-share-desc{ display:none; }
+  .shoot-share-logo{ display:grid; place-items:center; width:54px; height:54px; color:currentColor; }
+  .shoot-share-card.logo-only .shoot-share-logo{ width:78px; height:78px; }
+  .shoot-share-logo svg{ display:block; width:100%; height:100%; }
+  .shoot-share-name{ font-size:15px; font-weight:850; letter-spacing:.2px; }
+  .shoot-share-desc{ font-size:12px; line-height:1.45; color:var(--text-dim); }
+  .shoot-share-status{ margin-top:14px; font-size:13px; color:var(--text-dim); }
+  .shoot-share-status:empty{ display:none; }
+  .shoot-share-status.err{ color:#ff9d9d; }
+  .shoot-share-note{ margin-bottom:14px; line-height:1.55; }
+
+  .card-export-surface, .charts-export-surface, .table-export-surface, .gtend-export-surface{ position:fixed; left:-10000px; top:0; width:1680px; padding:44px; background:radial-gradient(circle at top left, rgba(77,163,255,0.14), transparent 26%), linear-gradient(180deg, rgba(11,15,24,0.995), rgba(9,12,20,0.995)); z-index:-1; pointer-events:none; }
+  .card-export-card, .charts-export-card, .table-export-card, .gtend-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
+  .card-export-card .skater-top, .charts-export-card .skater-top, .gtend-export-card .skater-top{ margin:0; }
+  .card-export-card .skater-img, .charts-export-card .skater-img, .gtend-export-card .skater-img{ width:194px; height:194px; }
+  .card-export-card .skater-name, .charts-export-card .skater-name, .gtend-export-card .skater-name{ font-size:58px; }
+  .card-export-card .skater-sub, .charts-export-card .skater-sub, .gtend-export-card .skater-sub{ font-size:25px; gap:26px; }
+  .card-export-card .k, .charts-export-card .k, .gtend-export-card .k{ font-size:16px; }
+  .card-export-card .v, .charts-export-card .v, .gtend-export-card .v{ font-size:25px; }
+  .card-export-summary, .charts-export-summary, .gtend-export-summary{ color:rgba(255,255,255,0.95); font-size:36px; font-style:italic; font-weight:800; letter-spacing:.2px; }
+  .card-export-content{ width:100%; }
+  .card-export-card .card-grid{ grid-template-columns:1fr 1fr 1fr !important; gap:28px; align-items:start; }
+  .card-export-card .card-col h3{ margin:0 0 14px; font-size:26px; letter-spacing:.7px; }
+  .card-export-card .card-slot{ margin-bottom:18px; }
+  .card-export-card .metric{ padding:4px 0 12px; margin-bottom:12px; }
+  .card-export-card .metric-head{ gap:16px; }
+  .card-export-card .metric-name{ font-size:18px; }
+  .card-export-card .metric-val{ font-size:28px; }
+  .card-export-card .metric-bar{ height:12px; margin-top:9px; }
+  .card-export-card .goalie-trend{ margin-top:8px; }
+  .card-export-card .goalie-trend-hd{ align-items:flex-start; gap:10px; }
+  .card-export-card .goalie-trend-hd h3{ font-size:28px; }
+  .card-export-card .goalie-trend-export-meta{ color:var(--text-dim); font-size:18px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+  .card-export-card .goalie-trend-wrap{ height:380px; }
+  .card-export-card .goalie-trend-export-img{ display:block; width:100%; height:100%; object-fit:contain; }
+  .card-export-watermark, .charts-export-watermark, .table-export-watermark, .gtend-export-watermark{ text-align:right; color:rgba(255,255,255,0.80); font-size:30px; font-weight:700; letter-spacing:.2px; }
+  .charts-export-content{ width:100%; display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
+  .charts-export-block, .gtend-export-block{ display:grid; gap:14px; padding:18px; border-radius:20px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); }
+  .charts-export-block h3, .gtend-export-block h3{ margin:0; font-size:28px; letter-spacing:.7px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .charts-export-img-wrap, .gtend-export-img-wrap{ border-radius:18px; overflow:hidden; background:rgba(0,0,0,0.16); border:1px solid rgba(255,255,255,0.06); }
+  .charts-export-img, .gtend-export-img{ display:block; width:100%; height:auto; }
+  .table-export-title{ font-size:48px; line-height:1.06; font-weight:900; letter-spacing:-.02em; color:rgba(255,255,255,0.98); }
+  .table-export-meta{ color:rgba(255,255,255,0.76); font-size:22px; font-weight:750; letter-spacing:.2px; }
+  .table-export-table-wrap{ overflow:hidden; border-radius:24px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); }
+  .table-export-table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+  .table-export-table th{ background:rgba(15,21,34,0.98); color:rgba(255,255,255,0.76); text-transform:uppercase; letter-spacing:.8px; font-size:14px; font-weight:850; padding:14px 10px; border-bottom:1px solid rgba(255,255,255,0.08); text-align:center; }
+  .table-export-table td{ padding:14px 10px; border-bottom:1px solid rgba(255,255,255,0.06); color:rgba(255,255,255,0.92); font-size:18px; text-align:center; white-space:nowrap; }
+  .table-export-table th.name, .table-export-table td.name, .table-export-table th.team, .table-export-table td.team{ text-align:left; }
+  .table-export-table tbody tr:nth-child(even){ background:rgba(255,255,255,0.02); }
+  .table-export-team-cell{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .table-export-team-cell img{ width:24px; height:24px; object-fit:contain; flex:0 0 auto; }
+  .gtend-export-kpis{ display:grid; grid-template-columns:repeat(7, 1fr); gap:14px; }
+  .gtend-export-kpis .gtend-kpi{ min-height:0; padding:15px 12px; }
+  .gtend-export-kpis .lbl{ font-size:18px; }
+  .gtend-export-kpis .val{ font-size:31px; }
+  .gtend-export-body{ display:grid; grid-template-columns:minmax(0, 0.42fr) minmax(0, 0.58fr); width:100%; gap:14px; align-items:start; }
+  .gtend-export-left,
+  .gtend-export-right{ min-width:0; border:none; background:transparent; box-shadow:none; }
+  .gtend-export-left{ padding:0; }
+  .gtend-export-right{ display:grid; gap:10px; padding:0; justify-self:stretch; width:100%; }
+  .gtend-export-left .gtend-tbl-wrap{ overflow-x:hidden; overflow-y:auto; max-height:none; }
+  .gtend-export-left .gtend-tbl{ min-width:0; width:100%; font-size:20px; }
+  .gtend-export-left .gtend-tbl th{ font-size:18px; padding:12px 10px; }
+  .gtend-export-left .gtend-tbl td{ font-size:20px; padding:11px 10px; line-height:1.42; }
+  .gtend-export-left .gtend-tbl .val{ font-size:20px; }
+  .gtend-export-map-title{ font-size:24px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); }
+  .gtend-export-right .gtend-rink-wrap{ max-width:none; margin:0; aspect-ratio:75 / 85; }
+  .gtend-export-right .gtend-video-btn, .gtend-export-right .gtend-video-list, .gtend-export-right .gtend-map-toggle, .gtend-export-right .gtend-type-toggle{ display:none !important; }
+  .gtend-export-shot-svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .gtend-export-shot-svg .shot{ fill:rgba(59,130,246,0.82); }
+  .gtend-export-shot-svg .goal{ fill:#22c55e; }
+
   /* Video player dialog */
   .video-overlay{ display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.75); align-items:center; justify-content:center; }
   .video-overlay.open{ display:flex; }
@@ -351,9 +429,18 @@
     .subtabs{ justify-content:center; flex-wrap:wrap; }
 
     /* Filter context sizing + layout (match Skaters/Teams) */
+    #tabPanelCard .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
     #tabPanelCard .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelCard .card-panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #tabPanelCard .card-panel-actions .config-btn{ flex:1 1 120px; }
+    #tabPanelCharts .charts-toolbar{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
     #tabPanelCharts .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelCharts .charts-panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #tabPanelCharts .charts-panel-actions .config-btn{ flex:1 1 120px; }
+    #tabPanelGoaltending .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
     #tabPanelGoaltending .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
+    #tabPanelGoaltending .goalie-panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #tabPanelGoaltending .goalie-panel-actions .config-btn{ flex:1 1 120px; }
     #tabPanelTable .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
     #tabPanelTable .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
     #tabPanelTable .panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -401,6 +488,10 @@
     <div id="tabPanelCard" class="panel" role="tabpanel">
       <div class="card-panel-hd">
         <div id="cardSlicerSummary" class="card-panel-meta"></div>
+        <div class="card-panel-actions">
+          <button id="btnExportCardPng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareCardPng" class="config-btn" type="button">Share</button>
+        </div>
       </div>
       <div id="cardPanelInner" class="skater-empty">Select a goalie to view Card.</div>
     </div>
@@ -410,6 +501,8 @@
         <div id="tableSlicerSummary" class="card-panel-meta"></div>
         <div class="panel-actions">
           <button id="btnReloadTable" class="config-btn" type="button">Reload</button>
+          <button id="btnExportTablePng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareTablePng" class="config-btn" type="button">Share</button>
           <button id="btnExportTableCsv" class="config-btn" type="button">Export CSV</button>
         </div>
       </div>
@@ -430,6 +523,10 @@
             <button id="chartsHlPlayer" type="button" class="seg-btn" aria-pressed="false">Highlight Player</button>
             <button id="chartsHlTeam" type="button" class="seg-btn active" aria-pressed="true">Highlight Team</button>
           </div>
+        </div>
+        <div class="charts-panel-actions">
+          <button id="btnExportChartsPng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareChartsPng" class="config-btn" type="button">Share</button>
         </div>
       </div>
 
@@ -473,7 +570,13 @@
     </div>
 
     <div id="tabPanelGoaltending" class="panel" role="tabpanel" style="display:none;">
-      <div id="gtendSlicerSummary" class="card-panel-meta" style="margin-bottom:10px;"></div>
+      <div class="card-panel-hd" style="padding-bottom: 8px;">
+        <div id="gtendSlicerSummary" class="card-panel-meta"></div>
+        <div class="goalie-panel-actions">
+          <button id="btnExportGoaltendingPng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareGoaltendingPng" class="config-btn" type="button">Share</button>
+        </div>
+      </div>
       <div id="gtendEmpty" class="skater-empty">Select a team and season to view goaltending data.</div>
       <div id="gtendContent" style="display:none;">
         <div class="gtend-kpis">
@@ -555,6 +658,20 @@
       <button id="videoNext" type="button">Next &#9654;</button>
       <span class="video-counter" id="videoCounter"></span>
       <span class="video-desc" id="videoDesc"></span>
+    </div>
+  </div>
+</div>
+
+<div id="shootShareModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="shootShareTitle">
+    <div class="modal-hd">
+      <div id="shootShareTitle" class="modal-title">Share</div>
+      <button id="btnCloseShootShare" class="btn" type="button">Close</button>
+    </div>
+    <div class="modal-bd">
+      <div class="cc-help shoot-share-note">Image saved to clipboard - Remember to paste the image in the Post</div>
+      <div id="shootShareGrid" class="shoot-share-grid"></div>
+      <div id="shootShareStatus" class="shoot-share-status" aria-live="polite"></div>
     </div>
   </div>
 </div>
@@ -665,10 +782,23 @@ const projExportCsv = document.getElementById('projExportCsv');
 const tableSlicerSummary = document.getElementById('tableSlicerSummary');
 const btnConfigureTable = document.getElementById('btnConfigureTable');
 const btnReloadTable = document.getElementById('btnReloadTable');
+const btnExportCardPng = document.getElementById('btnExportCardPng');
+const btnShareCardPng = document.getElementById('btnShareCardPng');
+const btnExportChartsPng = document.getElementById('btnExportChartsPng');
+const btnShareChartsPng = document.getElementById('btnShareChartsPng');
+const btnExportGoaltendingPng = document.getElementById('btnExportGoaltendingPng');
+const btnShareGoaltendingPng = document.getElementById('btnShareGoaltendingPng');
+const btnExportTablePng = document.getElementById('btnExportTablePng');
+const btnShareTablePng = document.getElementById('btnShareTablePng');
 const btnExportTableCsv = document.getElementById('btnExportTableCsv');
 const tableLoading = document.getElementById('tableLoading');
 const tableError = document.getElementById('tableError');
 const skatersTable = document.getElementById('goaliesTable');
+const shootShareModal = document.getElementById('shootShareModal');
+const btnCloseShootShare = document.getElementById('btnCloseShootShare');
+const shootShareGrid = document.getElementById('shootShareGrid');
+const shootShareStatus = document.getElementById('shootShareStatus');
+const shootShareTitle = document.getElementById('shootShareTitle');
 
 const tableConfigModal = document.getElementById('tableConfigModal');
 const btnCloseTableConfig = document.getElementById('btnCloseTableConfig');
@@ -704,6 +834,11 @@ let __scatterCache = new Map();
 let __logoImgCache = new Map();
 let __chartsLastKey = '';
 let __playerMugCache = new Map();
+let __shootShareKind = '';
+let __shootShareBusy = false;
+let __shootShareAsset = null;
+let __shootShareAssetKey = '';
+let __shootSharePreparePromise = null;
 
 let __goalieTrendChart = null;
 let __goalieTrendKey = '';
@@ -1568,8 +1703,8 @@ function setHeadshot(team, season, playerId){
     setDefaultHeadshot();
     return;
   }
-  const primary = `https://assets.nhle.com/mugs/nhl/${s}/${t}/${pid}.png`;
-  const fallback = `https://assets.nhle.com/mugs/nhl/latest/${pid}.png`;
+  const primary = `/api/player-headshot/${encodeURIComponent(pid)}.png?season=${encodeURIComponent(s)}&team=${encodeURIComponent(t)}`;
+  const fallback = `/api/player-headshot/${encodeURIComponent(pid)}.png`;
   skaterImg.onerror = () => {
     if(skaterImg.dataset.fallbackDone === '1') return;
     skaterImg.dataset.fallbackDone = '1';
@@ -2083,6 +2218,714 @@ function downloadTextFile(filename, text, mime='application/json'){
       try{ a.remove(); }catch(_){/*noop*/}
     }, 250);
   }catch(_){ /* ignore */ }
+}
+
+const SHOOT_SHARE_PLATFORMS = [
+  {
+    id: 'x',
+    name: 'X',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
+    color: '#ffffff',
+  },
+  {
+    id: 'bluesky',
+    name: 'Bluesky',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://bsky.app/intent/compose?text=${encodeURIComponent(text)}`,
+    color: '#1185fe',
+  },
+  {
+    id: 'linkedin',
+    name: 'LinkedIn',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(text)}`,
+    color: '#0a66c2',
+  },
+  {
+    id: 'facebook',
+    name: 'Facebook',
+    mode: 'composer',
+    buildUrl: () => 'https://www.facebook.com/',
+    color: '#1877f2',
+  },
+  {
+    id: 'reddit',
+    name: 'Reddit',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://www.reddit.com/submit?title=${encodeURIComponent(text.slice(0, 300))}`,
+    color: '#ff4500',
+  },
+  {
+    id: 'whatsapp',
+    name: 'WhatsApp',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://wa.me/?text=${encodeURIComponent(text)}`,
+    color: '#25d366',
+  },
+  {
+    id: 'telegram',
+    name: 'Telegram',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://t.me/share/url?text=${encodeURIComponent(text)}`,
+    color: '#26a5e4',
+  },
+  {
+    id: 'more-apps',
+    name: 'More Apps',
+    description: 'Uses your device share sheet and can attach the PNG directly to installed apps.',
+    mode: 'native',
+    showText: true,
+    color: '#ffffff',
+  },
+];
+
+function __goalieExportDelay(ms){
+  return new Promise((resolve)=> setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+async function __goalieExportWaitFrames(count = 2){
+  const total = Math.max(1, Number(count) || 1);
+  for(let i = 0; i < total; i += 1){
+    await new Promise((resolve)=> requestAnimationFrame(()=> resolve()));
+  }
+}
+
+async function __goalieWaitForImages(root){
+  const imgs = Array.from(root?.querySelectorAll?.('img') || []).filter((img)=> !img.complete);
+  if(!imgs.length) return;
+  await Promise.allSettled(imgs.map((img)=> new Promise((resolve)=>{
+    img.addEventListener('load', resolve, { once:true });
+    img.addEventListener('error', resolve, { once:true });
+  })));
+}
+
+async function __renderDesktopExportCanvas(element){
+  if(typeof window.html2canvas !== 'function') throw new Error('PNG export is unavailable right now.');
+  await __goalieWaitForImages(element);
+  await __goalieExportWaitFrames(2);
+  return window.html2canvas(element, {
+    backgroundColor: '#0b0f16',
+    scale: 2,
+    useCORS: true,
+    logging: false,
+    windowWidth: 1600,
+    windowHeight: 1200,
+  });
+}
+
+function __canvasToBlob(canvas){
+  return new Promise((resolve, reject)=>{
+    try{
+      canvas.toBlob((blob)=>{
+        if(blob) resolve(blob);
+        else reject(new Error('Could not create the PNG export.'));
+      }, 'image/png');
+    }catch(error){
+      reject(error);
+    }
+  });
+}
+
+function __downloadBlob(fileName, blob){
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{
+    try{ URL.revokeObjectURL(href); }catch(_){/*noop*/}
+    try{ a.remove(); }catch(_){/*noop*/}
+  }, 250);
+}
+
+function __canCopyPngToClipboard(){
+  return !!(window.isSecureContext && navigator.clipboard?.write && typeof window.ClipboardItem !== 'undefined');
+}
+
+async function __copyPngBlobToClipboard(blob){
+  if(!__canCopyPngToClipboard()) throw new Error('This browser cannot copy PNG images directly. Use Export PNG instead.');
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+}
+
+function __canNativeSharePng(){
+  return !!(window.isSecureContext && typeof navigator.share === 'function' && typeof window.File !== 'undefined');
+}
+
+async function __sharePngViaNative(asset){
+  if(!__canNativeSharePng()){
+    throw new Error('Native sharing is not available in this browser.');
+  }
+  const shareFile = new File([asset.blob], asset.fileName, { type: 'image/png' });
+  if(typeof navigator.canShare === 'function' && !navigator.canShare({ files: [shareFile] })){
+    throw new Error('This browser cannot share PNG files directly.');
+  }
+  await navigator.share({
+    files: [shareFile],
+    title: asset.fileName.replace(/\.png$/i, ''),
+    text: asset.text,
+  });
+}
+
+function __setShootShareBusy(busy){
+  __shootShareBusy = !!busy;
+  __renderShootShareOptions();
+}
+
+function __setShootShareStatus(text, isError = false){
+  if(!shootShareStatus) return;
+  shootShareStatus.textContent = String(text || '');
+  shootShareStatus.classList.toggle('err', !!isError && !!text);
+}
+
+function __shootShareIconSvg(platformId){
+  switch(platformId){
+    case 'more-apps':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="10" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"/><rect x="36" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"/><rect x="10" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"/><rect x="36" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"/></svg>`;
+    case 'x':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" d="M12 12h11.6l11.2 15 13-15H52L37.5 28.7 54 52H42.4L30.8 36.4 17.2 52H12l15.8-18.2z"/></svg>`;
+    case 'bluesky':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" d="M15.5 17.5c5.6 4.2 11.6 12.8 16.5 22.2 4.9-9.4 10.9-18 16.5-22.2 4.1-3.1 10.5-5.5 10.5 2.2 0 1.5-.8 12.5-1.3 14.3-1.8 6.4-8.1 8-13.8 7.1 10.1 1.7 12.7 7.4 7.1 13.1-10.7 10.8-15.4-2.7-16.6-6.2-.2-.6-.3-.8-.4-.8s-.2.2-.4.8c-1.2 3.5-5.9 17-16.6 6.2-5.5-5.6-2.9-11.4 7.1-13.1-5.8.9-12-0.7-13.8-7.1-.5-1.8-1.3-12.8-1.3-14.3 0-7.8 6.4-5.4 10.5-2.2z"/></svg>`;
+    case 'linkedin':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="48" height="48" rx="10" fill="currentColor"/><rect x="18" y="26" width="7" height="20" fill="#0f1522"/><circle cx="21.5" cy="19.5" r="4" fill="#0f1522"/><path fill="#0f1522" d="M31 26h6.4v2.8h.1c1-1.8 3.5-3.8 7.2-3.8 7.7 0 9.1 5.1 9.1 11.7V46h-7V37.8c0-3.9-.1-8.9-5.4-8.9-5.4 0-6.2 4.2-6.2 8.6V46h-7z"/></svg>`;
+    case 'facebook':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><path fill="#0f1522" d="M35.6 52V34.5h5.9l.9-6.8h-6.8v-4.3c0-2 1-3.8 4.3-3.8H43v-5.8c-1-.1-2.9-.3-5.6-.3-5.5 0-9.2 3.3-9.2 9.5v4.7h-6.2v6.8h6.2V52z"/></svg>`;
+    case 'reddit':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><circle cx="24" cy="33" r="3.2" fill="#0f1522"/><circle cx="40" cy="33" r="3.2" fill="#0f1522"/><path d="M24 41c2.2 2 4.9 3 8 3s5.8-1 8-3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M25 24l3.8-8.2 9.8 2.1" stroke="#0f1522" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="42.8" cy="19.6" r="3.6" fill="#0f1522"/><path d="M19 28.5c-2.7 0-5 2.2-5 5 0 1.9 1 3.5 2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M45 28.5c2.7 0 5 2.2 5 5 0 1.9-1 3.5-2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"/></svg>`;
+    case 'whatsapp':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><path fill="#0f1522" d="M32 19c-7.3 0-13.2 5.7-13.2 12.8 0 2.7.8 5.2 2.4 7.3l-1.8 6.2 6.4-1.7c2 1.3 4.2 2 6.6 2 7.3 0 13.2-5.7 13.2-12.8S39.3 19 32 19zm7.8 17.3c-.3.9-1.8 1.6-2.6 1.7-.7.1-1.6.2-5.2-1.3-4.6-1.9-7.5-6.5-7.7-6.8-.2-.3-1.9-2.5-1.9-4.8 0-2.2 1.2-3.3 1.6-3.8.4-.4.9-.5 1.2-.5h.9c.3 0 .8-.1 1.2.9.4 1 .4 3.2.1 3.5-.2.4-.4.6-.8 1-.4.4-.8.7-.4 1.4.4.7 1.8 2.9 3.8 4.7 2.6 2.3 4.6 3 5.3 3.3.5.2.9.2 1.3-.2.4-.5 1.5-1.7 2-2.3.4-.5.9-.5 1.4-.3.5.2 3.2 1.5 3.7 1.8.5.3.9.5 1 .8.1.3.1 1.5-.2 2.4z"/></svg>`;
+    case 'telegram':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><path fill="#0f1522" d="M46.7 20.4 19.8 30.8c-1.8.7-1.8 1.7-.3 2.1l6.9 2.2 2.7 8.7c.3.9.2 1.3 1.1 1.3.7 0 1-.3 1.4-.7l3.4-3.3 7.2 5.3c1.3.7 2.3.3 2.6-1.3l4.6-21.7c.5-1.9-.7-2.8-2.7-2zM28 34.6l14.7-9.3c.7-.4 1.4-.2.9.3L31.3 36.7l-.5 5.6z"/></svg>`;
+    default:
+      return '';
+  }
+}
+
+function __shareModalTitle(kind){
+  switch(String(kind || '')){
+    case 'card': return 'Share Card';
+    case 'charts': return 'Share Charts';
+    case 'table': return 'Share Table View';
+    case 'goaltending': return 'Share Goaltending';
+    default: return 'Share';
+  }
+}
+
+function __goalieExportSlug(){
+  const parts = [playerSelect?.selectedOptions?.[0]?.textContent, teamSelect?.value, seasonSelect?.value]
+    .map((value)=> String(value || '').trim())
+    .filter(Boolean);
+  const raw = parts.join('-').toLowerCase();
+  return raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'goalies';
+}
+
+function __goalieExportFileName(kind){
+  return `nhl-goalies-${String(kind || 'share')}-${__goalieExportSlug()}.png`;
+}
+
+function __buildGoalieShareText(kind){
+  const name = String(skaterName?.textContent || playerSelect?.selectedOptions?.[0]?.textContent || 'Goalie').trim();
+  let summary = '';
+  if(kind === 'card') summary = String(cardSlicerSummary?.textContent || '').trim();
+  else if(kind === 'charts') summary = String(chartsSlicerSummary?.textContent || '').trim();
+  else if(kind === 'table') summary = String(tableSlicerSummary?.textContent || '').trim();
+  else if(kind === 'goaltending') summary = String(gtendSlicerSummary?.textContent || '').trim();
+  const label = __shareModalTitle(kind).replace(/^Share\s+/, '');
+  return [name, label, summary].filter(Boolean).join(' - ');
+}
+
+function __shootShareStateKey(){
+  const base = [__shootShareKind, teamSelect?.value, seasonSelect?.value, playerSelect?.value, cardSeasonState?.value, cardStrengthState?.value, cardRates?.value, cardXgModel?.value, pdX?.value, pdY?.value, scX?.value, scY?.value, __chartsHighlightMode, __gtendMapMode, __gtendShotType, __gtendActiveShooter, __gtendActiveZone].join('|');
+  if(__shootShareKind === 'table'){
+    const cfg = ensureTableConfig();
+    return `${base}|${JSON.stringify(cfg)}|${String(__tableLastKey || '')}`;
+  }
+  return base;
+}
+
+function __closeShootShareModal(){
+  if(shootShareModal) shootShareModal.hidden = true;
+}
+
+function __renderShootShareOptions(){
+  if(!shootShareGrid) return;
+  shootShareGrid.innerHTML = SHOOT_SHARE_PLATFORMS.map((platform)=>{
+    const disabled = __shootShareBusy || (platform.mode === 'native' ? !__canNativeSharePng() : !__canCopyPngToClipboard());
+    const showText = !!platform.showText;
+    const icon = __shootShareIconSvg(platform.id);
+    return `<button type="button" class="shoot-share-card${showText ? '' : ' logo-only'}" data-platform="${platform.id}" aria-label="${platform.name}"${disabled ? ' disabled' : ''}><span class="shoot-share-logo" style="color:${platform.color || '#ffffff'};">${icon}</span><span class="shoot-share-name">${platform.name}</span>${showText ? `<span class="shoot-share-desc">${platform.description || ''}</span>` : `<span class="visually-hidden">${platform.name}</span>`}</button>`;
+  }).join('');
+}
+
+async function openShareModal(kind){
+  __shootShareKind = String(kind || '');
+  __shootShareAsset = null;
+  __shootShareAssetKey = '';
+  if(shootShareTitle) shootShareTitle.textContent = __shareModalTitle(__shootShareKind);
+  __setShootShareBusy(true);
+  __setShootShareStatus('');
+  if(shootShareModal) shootShareModal.hidden = false;
+  void __prepareCurrentShareClipboard();
+}
+
+async function shareShootingPng(platformId){
+  const platform = SHOOT_SHARE_PLATFORMS.find((item)=> item.id === platformId);
+  if(!platform) return;
+  let popup = null;
+  try{
+    const asset = await __prepareCurrentShareAsset();
+    if(platform.mode === 'composer'){
+      popup = window.open('about:blank', '_blank');
+      if(!popup){
+        throw new Error('Allow pop-ups for this site to open the selected platform.');
+      }
+      try{
+        popup.document.write('<title>Preparing share...</title><body style="margin:0;display:grid;place-items:center;min-height:100vh;background:#0f1522;color:#f5f7fa;font:600 16px system-ui,sans-serif;">Preparing share...</body>');
+        popup.document.close();
+      }catch(_){/*noop*/}
+    }
+    if(platform.mode === 'native'){
+      await __sharePngViaNative(asset);
+      __closeShootShareModal();
+      return;
+    }
+    const shareUrl = platform.buildUrl(asset);
+    if(popup) popup.location.replace(shareUrl);
+    __closeShootShareModal();
+  }catch(error){
+    if(error?.name === 'AbortError') return;
+    try{ popup?.close(); }catch(_){/*noop*/}
+    __setShootShareStatus(error?.message || 'Could not complete the share action.', true);
+  }
+}
+
+function __chartSnapshotUrl(canvasEl){
+  try{ return canvasEl?.toDataURL('image/png') || ''; }catch(_){ return ''; }
+}
+
+function __buildTopExportClone(){
+  const top = document.querySelector('.skater-top');
+  if(!top) return null;
+  const clone = top.cloneNode(true);
+  const headshot = clone.querySelector('.skater-img');
+  if(headshot){
+    const pid = String(playerSelect?.value || '').trim();
+    const season = String(seasonSelect?.value || '').trim();
+    const team = String(teamSelect?.value || '').trim();
+    const fallbackSrc = String(skaterImg?.getAttribute('src') || skaterImg?.src || DEFAULT_SKATER_IMG);
+    headshot.src = pid
+      ? `/api/player-headshot/${encodeURIComponent(pid)}.png?season=${encodeURIComponent(season)}&team=${encodeURIComponent(team)}`
+      : fallbackSrc;
+  }
+  return clone;
+}
+
+function __goalieTrendSnapshotUrl(){
+  try{ __goalieTrendChart?.update('none'); }catch(_){/*noop*/}
+  return __chartSnapshotUrl(document.getElementById('goalieTrendChart'));
+}
+
+function __goalieTrendExportLabel(){
+  const st = _loadGoaliesTrendState();
+  const metric = st?.metric === 'GSAx' ? 'GSAx' : 'GSAA';
+  const mode = st?.mode === 'total' ? 'Cumulative' : 'By Season';
+  return `${metric} - ${mode}`;
+}
+
+function __buildCardExportSurface(){
+  const surface = document.createElement('div');
+  surface.className = 'card-export-surface';
+  const card = document.createElement('div');
+  card.className = 'card-export-card';
+  surface.appendChild(card);
+  const topClone = __buildTopExportClone();
+  if(topClone) card.appendChild(topClone);
+  const summary = document.createElement('div');
+  summary.className = 'card-export-summary';
+  summary.textContent = String(cardSlicerSummary?.textContent || '').trim();
+  card.appendChild(summary);
+  const content = cardPanelInner?.cloneNode(true) || document.createElement('div');
+  content.className = 'card-export-content';
+  const trendImgSrc = __goalieTrendSnapshotUrl();
+  const trendControls = content.querySelector('.goalie-trend-controls');
+  if(trendControls){
+    const meta = document.createElement('div');
+    meta.className = 'goalie-trend-export-meta';
+    meta.textContent = __goalieTrendExportLabel();
+    trendControls.replaceWith(meta);
+  }
+  const trendCanvas = content.querySelector('#goalieTrendChart');
+  if(trendCanvas && trendImgSrc){
+    const img = document.createElement('img');
+    img.className = 'goalie-trend-export-img';
+    img.alt = 'Season trend chart';
+    img.src = trendImgSrc;
+    trendCanvas.replaceWith(img);
+  }
+  card.appendChild(content);
+  const watermark = document.createElement('div');
+  watermark.className = 'card-export-watermark';
+  watermark.textContent = 'Created on https://nhl.hockey-statistics.com/';
+  card.appendChild(watermark);
+  return surface;
+}
+
+async function __buildCardPngBlob(){
+  updateCardSlicerSummary();
+  if(!String(playerSelect?.value || '').trim()) throw new Error('Select a goalie before exporting the card.');
+  await loadCardPanel();
+  if(!cardPanelInner?.querySelector('.card-grid')) throw new Error('No card data is loaded for export.');
+  try{ __goalieTrendChart?.update('none'); }catch(_){/*noop*/}
+  await __goalieExportDelay(90);
+  const surface = __buildCardExportSurface();
+  document.body.appendChild(surface);
+  try{
+    if(document.fonts?.ready) await document.fonts.ready;
+    await __goalieWaitForImages(surface);
+    await __goalieExportWaitFrames(1);
+    const canvas = await __renderDesktopExportCanvas(surface.firstElementChild || surface);
+    return await __canvasToBlob(canvas);
+  }finally{
+    surface.remove();
+  }
+}
+
+function __buildChartsExportSurface(){
+  const surface = document.createElement('div');
+  surface.className = 'charts-export-surface';
+  const card = document.createElement('div');
+  card.className = 'charts-export-card';
+  surface.appendChild(card);
+  const topClone = __buildTopExportClone();
+  if(topClone) card.appendChild(topClone);
+  const summary = document.createElement('div');
+  summary.className = 'charts-export-summary';
+  const highlightText = __chartsHighlightMode === 'player' ? 'Highlight Player' : 'Highlight Team';
+  summary.textContent = [String(chartsSlicerSummary?.textContent || '').trim(), highlightText].filter(Boolean).join(' • ');
+  card.appendChild(summary);
+  const content = document.createElement('div');
+  content.className = 'charts-export-content';
+  const blocks = [
+    { title:String(chartBlockWorkload?.querySelector('h3')?.textContent || 'Workload').trim(), src: __chartSnapshotUrl(pdChartEl) },
+    { title:String(chartBlockGoaltending?.querySelector('h3')?.textContent || 'Performance').trim(), src: __chartSnapshotUrl(scChartEl) },
+  ];
+  blocks.forEach((block)=>{
+    const section = document.createElement('section');
+    section.className = 'charts-export-block';
+    section.innerHTML = `<h3>${escapeHtml(block.title)}</h3><div class="charts-export-img-wrap"><img class="charts-export-img" alt="${escapeHtml(block.title)} chart" src="${escapeHtml(block.src)}"></div>`;
+    content.appendChild(section);
+  });
+  card.appendChild(content);
+  const watermark = document.createElement('div');
+  watermark.className = 'charts-export-watermark';
+  watermark.textContent = 'Created on https://nhl.hockey-statistics.com/';
+  card.appendChild(watermark);
+  return surface;
+}
+
+async function __buildChartsPngBlob(){
+  if(!String(seasonSelect?.value || '').trim()) throw new Error('Select a season before exporting charts.');
+  await renderCharts();
+  try{ __pdChart?.update('none'); }catch(_){/*noop*/}
+  try{ __scChart?.update('none'); }catch(_){/*noop*/}
+  await __goalieExportDelay(120);
+  const pdSrc = __chartSnapshotUrl(pdChartEl);
+  const scSrc = __chartSnapshotUrl(scChartEl);
+  if(!pdSrc || !scSrc) throw new Error('Charts are not ready for export yet.');
+  const surface = __buildChartsExportSurface();
+  document.body.appendChild(surface);
+  try{
+    if(document.fonts?.ready) await document.fonts.ready;
+    await __goalieWaitForImages(surface);
+    await __goalieExportWaitFrames(1);
+    const canvas = await __renderDesktopExportCanvas(surface.firstElementChild || surface);
+    return await __canvasToBlob(canvas);
+  }finally{
+    surface.remove();
+  }
+}
+
+function __getSortedGoalieTableRows(cfg){
+  const sortId = String(cfg?.sortMetricId || 'Results|GSAA');
+  const dir = String(cfg?.sortDir || 'desc') === 'asc' ? 'asc' : 'desc';
+  const rows = Array.isArray(__tableRows) ? __tableRows.slice() : [];
+  rows.sort((a, b)=>{
+    const av = Number(a?.metrics?.[sortId]);
+    const bv = Number(b?.metrics?.[sortId]);
+    const aOk = Number.isFinite(av);
+    const bOk = Number.isFinite(bv);
+    if(aOk && bOk && av !== bv) return dir === 'asc' ? av - bv : bv - av;
+    if(aOk !== bOk) return aOk ? -1 : 1;
+    return String(a?.name || '').localeCompare(String(b?.name || ''));
+  });
+  return rows;
+}
+
+function __getGoalieTableExportMetricIds(cfg, limit = 5){
+  const metricIds = Array.isArray(cfg?.metricIds) ? cfg.metricIds.map(String).filter(Boolean) : [];
+  return metricIds.slice(0, Math.max(1, Number(limit) || 5));
+}
+
+function __buildTableExportSurface(){
+  const defs = __cardDefs || { metrics: [] };
+  const cfg0 = ensureTableConfig();
+  const allMetricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map((metric)=> String(metric?.id || '')).filter(Boolean);
+  const cfg = { ...cfg0, metricIds: allMetricIds };
+  const rows = __getSortedGoalieTableRows(cfg).slice(0, 20);
+  const metricIds = __getGoalieTableExportMetricIds(cfg, 5);
+  const byId = {};
+  (Array.isArray(defs?.metrics) ? defs.metrics : []).forEach((metric)=>{
+    const id = String(metric?.id || '');
+    if(id) byId[id] = metric;
+  });
+  const surface = document.createElement('div');
+  surface.className = 'table-export-surface';
+  const card = document.createElement('div');
+  card.className = 'table-export-card';
+  surface.appendChild(card);
+
+  const title = document.createElement('div');
+  title.className = 'table-export-title';
+  title.textContent = String(tableSlicerSummary?.textContent || cardSlicerSummary?.textContent || '').trim() || 'Goalies Table';
+  card.appendChild(title);
+
+  const meta = document.createElement('div');
+  meta.className = 'table-export-meta';
+  meta.textContent = 'Top 20 goalies • first 5 selected metrics';
+  card.appendChild(meta);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'table-export-table-wrap';
+  const table = document.createElement('table');
+  table.className = 'table-export-table';
+  const head = [`<tr><th style="width:78px;">Rank</th><th class="name" style="width:250px;">Name</th><th class="team" style="width:120px;">Team</th><th style="width:78px;">Pos</th>${metricIds.map((id)=> {
+    const def = byId[id];
+    return `<th>${escapeHtml(String(metricLabel(id) || def?.name || id))}</th>`;
+  }).join('')}</tr>`].join('');
+  const body = rows.map((row, index)=>{
+    const team = String(row?.team || '').trim().toUpperCase();
+    const logo = team ? `<img src="${escapeHtml(teamLogoUrl(team))}" alt="${escapeHtml(team)} logo">` : '';
+    const teamCell = `<div class="table-export-team-cell">${logo}<span>${escapeHtml(team || '—')}</span></div>`;
+    return `<tr><td>${index + 1}</td><td class="name">${escapeHtml(String(row?.name || row?.playerId || '—'))}</td><td class="team">${teamCell}</td><td>${escapeHtml(String(row?.pos || '—'))}</td>${metricIds.map((id)=> `<td>${escapeHtml(__fmtTableValue(id, row?.metrics?.[id]) || '—')}</td>`).join('')}</tr>`;
+  }).join('');
+  table.innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
+  wrap.appendChild(table);
+  card.appendChild(wrap);
+
+  const watermark = document.createElement('div');
+  watermark.className = 'table-export-watermark';
+  watermark.textContent = 'Created on https://nhl.hockey-statistics.com/';
+  card.appendChild(watermark);
+  return surface;
+}
+
+async function __buildTablePngBlob(){
+  await ensureCardDefs();
+  await loadTablePanel();
+  if(!Array.isArray(__tableRows) || !__tableRows.length) throw new Error('No table data is loaded for export.');
+  const surface = __buildTableExportSurface();
+  document.body.appendChild(surface);
+  try{
+    if(document.fonts?.ready) await document.fonts.ready;
+    await __goalieWaitForImages(surface);
+    await __goalieExportWaitFrames(1);
+    const canvas = await __renderDesktopExportCanvas(surface.firstElementChild || surface);
+    return await __canvasToBlob(canvas);
+  }finally{
+    surface.remove();
+  }
+}
+
+function __buildGoaltendingExportMap(){
+  const wrap = document.createElement('div');
+  wrap.className = 'gtend-rink-wrap';
+  const rink = document.createElement('img');
+  rink.src = '/static/hockey-rink-half.png';
+  rink.alt = 'Rink';
+  wrap.appendChild(rink);
+  if(__gtendMapMode === 'heat'){
+    const svg = gtendHeatSvg ? gtendHeatSvg.cloneNode(true) : null;
+    if(svg){
+      svg.style.display = '';
+      wrap.appendChild(svg);
+    }
+  }else{
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'gtend-export-shot-svg');
+    svg.setAttribute('viewBox', '25 -42.5 75 85');
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.setAttribute('aria-label', 'Shot map overlay');
+    const evts = getFilteredGtendEvents();
+    for(const e of evts){
+      const x = Number(e?.x);
+      const y = Number(e?.y);
+      if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const cy = -y;
+      if(e?.goal === 1){
+        const s = 1.15;
+        const tri = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        tri.setAttribute('class', 'goal');
+        tri.setAttribute('points', `${x},${cy - s} ${x - s},${cy + s*0.72} ${x + s},${cy + s*0.72}`);
+        svg.appendChild(tri);
+      }else{
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('class', 'shot');
+        dot.setAttribute('cx', String(x));
+        dot.setAttribute('cy', String(cy));
+        dot.setAttribute('r', '0.72');
+        svg.appendChild(dot);
+      }
+    }
+    wrap.appendChild(svg);
+  }
+  return wrap;
+}
+
+function __syncGoaltendingExportHeights(surface){
+  if(!surface) return;
+  const tableWrap = surface.querySelector('.gtend-export-left .gtend-tbl-wrap');
+  const mapWrap = surface.querySelector('.gtend-export-right .gtend-rink-wrap');
+  if(!tableWrap || !mapWrap) return;
+  const mapHeight = Math.round(mapWrap.getBoundingClientRect().height || 0);
+  if(mapHeight > 0){
+    tableWrap.style.height = `${mapHeight}px`;
+  }
+}
+
+function __buildGoaltendingExportSurface(){
+  const surface = document.createElement('div');
+  surface.className = 'gtend-export-surface';
+  const card = document.createElement('div');
+  card.className = 'gtend-export-card';
+  surface.appendChild(card);
+  const topClone = __buildTopExportClone();
+  if(topClone) card.appendChild(topClone);
+  const summary = document.createElement('div');
+  summary.className = 'gtend-export-summary';
+  summary.textContent = String(gtendSlicerSummary?.textContent || '').trim();
+  card.appendChild(summary);
+  const kpis = gtendContent?.querySelector('.gtend-kpis');
+  if(kpis){
+    const kpiClone = kpis.cloneNode(true);
+    kpiClone.classList.add('gtend-export-kpis');
+    card.appendChild(kpiClone);
+  }
+  const body = document.createElement('div');
+  body.className = 'gtend-export-body';
+  const left = document.createElement('div');
+  left.className = 'gtend-export-left';
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'gtend-tbl-wrap';
+  const tableClone = document.getElementById('gtendShooterTable')?.cloneNode(true);
+  if(tableClone) tableWrap.appendChild(tableClone);
+  left.appendChild(tableWrap);
+  body.appendChild(left);
+  const right = document.createElement('div');
+  right.className = 'gtend-export-right';
+  const title = document.createElement('div');
+  title.className = 'gtend-export-map-title';
+  const mapLabel = __gtendMapMode === 'heat' ? 'Heat Map' : 'Shot Map';
+  const typeLabelMap = { all: 'All Events', miss: 'Missed', shot: 'On Net', goal: 'Goals' };
+  title.textContent = [mapLabel, typeLabelMap[__gtendShotType] || 'All Events'].join(' • ');
+  right.appendChild(title);
+  const mapWrap = document.createElement('div');
+  mapWrap.className = 'gtend-export-block';
+  mapWrap.appendChild(__buildGoaltendingExportMap());
+  right.appendChild(mapWrap);
+  body.appendChild(right);
+  card.appendChild(body);
+  const watermark = document.createElement('div');
+  watermark.className = 'gtend-export-watermark';
+  watermark.textContent = 'Created on https://nhl.hockey-statistics.com/';
+  card.appendChild(watermark);
+  return surface;
+}
+
+async function __buildGoaltendingPngBlob(){
+  if(!String(teamSelect?.value || '').trim() || !String(seasonSelect?.value || '').trim()) throw new Error('Select a team and season before exporting goaltending.');
+  await loadGoaltendingPanel();
+  await __goalieExportDelay(120);
+  if(!gtendContent || gtendContent.style.display === 'none') throw new Error('No goaltending data is loaded for export.');
+  const surface = __buildGoaltendingExportSurface();
+  document.body.appendChild(surface);
+  try{
+    if(document.fonts?.ready) await document.fonts.ready;
+    await __goalieWaitForImages(surface);
+    await __goalieExportWaitFrames(1);
+    __syncGoaltendingExportHeights(surface);
+    await __goalieExportWaitFrames(1);
+    const canvas = await __renderDesktopExportCanvas(surface.firstElementChild || surface);
+    return await __canvasToBlob(canvas);
+  }finally{
+    surface.remove();
+  }
+}
+
+async function __prepareCurrentShareAsset(){
+  const key = __shootShareStateKey();
+  if(__shootShareAsset && __shootShareAssetKey === key) return __shootShareAsset;
+  if(__shootSharePreparePromise && __shootShareAssetKey === key) return __shootSharePreparePromise;
+  __shootShareAssetKey = key;
+  __shootSharePreparePromise = (async ()=>{
+    let blob = null;
+    if(__shootShareKind === 'card') blob = await __buildCardPngBlob();
+    else if(__shootShareKind === 'charts') blob = await __buildChartsPngBlob();
+    else if(__shootShareKind === 'table') blob = await __buildTablePngBlob();
+    else if(__shootShareKind === 'goaltending') blob = await __buildGoaltendingPngBlob();
+    else throw new Error('Unsupported share view.');
+    const asset = {
+      blob,
+      fileName: __goalieExportFileName(__shootShareKind),
+      text: __buildGoalieShareText(__shootShareKind),
+      url: 'https://nhl.hockey-statistics.com/goalies',
+    };
+    __shootShareAsset = asset;
+    return asset;
+  })().catch((error)=>{
+    __shootShareAsset = null;
+    __shootShareAssetKey = '';
+    throw error;
+  }).finally(()=>{
+    __shootSharePreparePromise = null;
+  });
+  return __shootSharePreparePromise;
+}
+
+async function __prepareCurrentShareClipboard(){
+  try{
+    const asset = await __prepareCurrentShareAsset();
+    if(__canCopyPngToClipboard()){
+      await __copyPngBlobToClipboard(asset.blob);
+    }
+    __setShootShareBusy(false);
+    __setShootShareStatus('');
+    return asset;
+  }catch(error){
+    __setShootShareBusy(false);
+    __setShootShareStatus(error?.message || 'Could not prepare the PNG for sharing.', true);
+    throw error;
+  }
+}
+
+async function exportCardPng(){
+  const blob = await __buildCardPngBlob();
+  __downloadBlob(__goalieExportFileName('card'), blob);
+}
+
+async function exportChartsPng(){
+  const blob = await __buildChartsPngBlob();
+  __downloadBlob(__goalieExportFileName('charts'), blob);
+}
+
+async function exportTablePng(){
+  const blob = await __buildTablePngBlob();
+  __downloadBlob(__goalieExportFileName('table'), blob);
+}
+
+async function exportGoaltendingPng(){
+  const blob = await __buildGoaltendingPngBlob();
+  __downloadBlob(__goalieExportFileName('goaltending'), blob);
 }
 
 function normalizeCardConfig(defs, cfg){
@@ -5116,10 +5959,26 @@ seasonSelect?.addEventListener('change', __maybeReloadGoaltending);
 
 btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
 btnConfigureTable?.addEventListener('click', async ()=>{ await showTableConfig(); });
+btnExportCardPng?.addEventListener('click', async ()=>{ await exportCardPng(); });
+btnShareCardPng?.addEventListener('click', async ()=>{ await openShareModal('card'); });
+btnExportChartsPng?.addEventListener('click', async ()=>{ await exportChartsPng(); });
+btnShareChartsPng?.addEventListener('click', async ()=>{ await openShareModal('charts'); });
+btnExportGoaltendingPng?.addEventListener('click', async ()=>{ await exportGoaltendingPng(); });
+btnShareGoaltendingPng?.addEventListener('click', async ()=>{ await openShareModal('goaltending'); });
+btnExportTablePng?.addEventListener('click', async ()=>{ await exportTablePng(); });
+btnShareTablePng?.addEventListener('click', async ()=>{ await openShareModal('table'); });
 btnExportTableCsv?.addEventListener('click', async ()=>{ await exportTableCsv(); });
 btnCloseTableConfig?.addEventListener('click', ()=> closeTableConfig());
 tableConfigModal?.addEventListener('click', (e)=>{ if(e?.target === tableConfigModal) closeTableConfig(); });
 document.addEventListener('keydown', (e)=>{ if(e?.key === 'Escape' && tableConfigModal && !tableConfigModal.hidden) closeTableConfig(); });
+btnCloseShootShare?.addEventListener('click', ()=> __closeShootShareModal());
+shootShareModal?.addEventListener('click', (e)=>{ if(e?.target === shootShareModal) __closeShootShareModal(); });
+shootShareGrid?.addEventListener('click', async (e)=>{
+  const button = e?.target?.closest?.('[data-platform]');
+  if(!button || button.disabled) return;
+  await shareShootingPng(button.dataset.platform || '');
+});
+document.addEventListener('keydown', (e)=>{ if(e?.key === 'Escape' && shootShareModal && !shootShareModal.hidden) __closeShootShareModal(); });
 
 cardSeasonState?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
 cardMinGp?.addEventListener('change', ()=> { updateCardSlicerSummary(); saveSkatersState(); });
@@ -5255,4 +6114,5 @@ initSkatersPage();
 // Re-draw shot map on resize / orientation change so markers fit the new container size
 window.addEventListener('resize', ()=> { if(typeof renderGtendVisuals === 'function') renderGtendVisuals(); });
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 {% endblock %}

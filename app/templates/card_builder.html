@@ -1,0 +1,344 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+  .cb-sidebar-tabs{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+  .cb-sidebar-tab{ background:rgba(255,255,255,0.02); border:1px solid #2a3142; color:var(--text); padding:10px 12px; border-radius:12px; font-size:12px; font-weight:800; letter-spacing:.8px; text-transform:uppercase; cursor:pointer; }
+  .cb-sidebar-tab.active{ outline:2px solid var(--accent); background:rgba(255,255,255,0.05); }
+  .cb-sidebar-pane[hidden]{ display:none !important; }
+  .cb-help-text{ margin:0; color:var(--text-dim); font-size:12px; line-height:1.5; }
+  .cb-pane-group{ display:grid; gap:10px; padding:12px; border:1px solid #2a3142; border-radius:14px; background:rgba(255,255,255,0.02); min-width:0; }
+  .cb-pane-title{ font-size:12px; font-weight:900; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); }
+  .cb-add-grid{ display:grid; grid-template-columns:1fr; gap:8px; }
+  .cb-add-btn, .cb-mini-btn, .cb-primary-btn{ appearance:none; border:1px solid #2a3142; border-radius:10px; padding:10px 12px; font:inherit; color:var(--text); background:rgba(255,255,255,0.03); cursor:pointer; }
+  .cb-add-btn{ text-align:left; font-size:13px; font-weight:750; }
+  .cb-add-btn span{ display:block; margin-top:4px; color:var(--text-dim); font-size:11px; font-weight:600; }
+  .cb-mini-btn, .cb-primary-btn{ font-size:13px; font-weight:750; }
+  .cb-primary-btn{ outline:2px solid var(--accent); background:rgba(255,255,255,0.05); }
+  .cb-add-btn:hover, .cb-mini-btn:hover, .cb-primary-btn:hover{ border-color:rgba(77,163,255,0.45); }
+  .cb-multi{ min-height:120px; background-image:none; padding-right:12px; width:100%; max-width:100%; box-sizing:border-box; }
+  .cb-inspector-empty{ color:var(--text-dim); font-size:13px; line-height:1.5; }
+  .cb-inspector{ display:grid; gap:12px; min-width:0; }
+  .cb-inspector-row{ display:grid; gap:8px; min-width:0; }
+  .cb-inline-grid{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+  .cb-quad-grid{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; }
+  .cb-inspector textarea{ min-height:92px; resize:vertical; background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; border-radius:10px; padding:10px 12px; font:inherit; width:100%; max-width:100%; box-sizing:border-box; }
+  .cb-chip-grid{ display:grid; grid-template-columns:1fr; gap:8px; }
+  .cb-check-row{ display:grid; grid-template-columns:18px minmax(0, 1fr); align-items:start; gap:10px; padding:10px 12px; border:1px solid #2a3142; border-radius:12px; background:rgba(255,255,255,0.02); min-width:0; cursor:pointer; }
+  .cb-check-label{ min-width:0; font-size:13px; font-weight:750; color:var(--text); line-height:1.35; white-space:normal; overflow-wrap:anywhere; }
+  .cb-check-input{ appearance:none; width:18px !important; height:18px !important; min-width:18px; margin:0; border-radius:6px; border:1px solid rgba(255,255,255,0.28); background:rgba(255,255,255,0.04); box-shadow:inset 0 0 0 1px rgba(0,0,0,0.12); }
+  .cb-check-input:checked{ background:var(--accent); border-color:var(--accent); box-shadow:inset 0 0 0 3px rgba(11,15,22,0.92); }
+  .cb-check-input:focus-visible{ outline:2px solid rgba(77,163,255,0.34); outline-offset:2px; }
+  .cb-toggle-row{ display:grid; gap:8px; }
+  .cb-range-row{ display:grid; gap:6px; }
+  .cb-range-note{ font-size:11px; color:var(--text-dim); }
+  .cb-saved-list{ display:grid; gap:8px; }
+  .cb-saved-item{ display:grid; gap:8px; padding:10px 12px; border:1px solid #2a3142; border-radius:12px; background:rgba(255,255,255,0.02); }
+  .cb-saved-name{ font-size:13px; font-weight:800; color:var(--text); }
+  .cb-saved-meta{ font-size:11px; color:var(--text-dim); }
+  .cb-saved-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+
+  .cb-sidebar-pane,
+  .cb-sidebar-tabs,
+  .cb-toolbar-group,
+  .cb-saved-item,
+  .cb-inline-grid > label,
+  .cb-quad-grid > label{ min-width:0; }
+  .cb-sidebar-pane select,
+  .cb-sidebar-pane input,
+  .cb-inspector select,
+  .cb-inspector input,
+  .cb-toolbar input{ width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
+
+  .cb-wrap{ display:grid; gap:16px; }
+  .cb-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; }
+  .cb-toolbar-group{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
+  .cb-toolbar-group input{ min-width:220px; }
+  .cb-grid-readout{ font-size:12px; color:var(--text-dim); font-weight:800; letter-spacing:.8px; text-transform:uppercase; }
+  .cb-status{ min-height:18px; color:var(--text-dim); font-size:12px; font-weight:700; }
+  .cb-status.error{ color:#ffb4b4; }
+  .cb-board-shell{ padding:18px; }
+  .cb-board-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
+  .cb-board-title{ margin:0; font-size:20px; font-weight:850; letter-spacing:.2px; }
+  .cb-board-copy{ margin:4px 0 0; color:var(--text-dim); font-size:13px; line-height:1.45; max-width:720px; }
+  .cb-canvas-viewport{ width:100%; overflow:auto; padding-bottom:4px; }
+  .cb-canvas{ --cb-cols:24; --cb-rows:13; position:relative; width:min(100%, 1240px); aspect-ratio:16 / 9; min-height:320px; border-radius:22px; overflow:hidden; background:
+      radial-gradient(circle at top left, rgba(77,163,255,0.16), transparent 30%),
+      radial-gradient(circle at bottom right, rgba(255,255,255,0.08), transparent 22%),
+      linear-gradient(160deg, rgba(17,22,35,0.98), rgba(8,10,18,0.98));
+      border:1px solid rgba(255,255,255,0.08);
+      box-shadow:0 24px 60px rgba(0,0,0,0.34);
+  }
+  .cb-canvas::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.10) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.10) 1px, transparent 1px);
+    background-size:calc(100% / var(--cb-cols)) calc(100% / var(--cb-rows));
+    pointer-events:none;
+    opacity:.55;
+  }
+  .cb-canvas.grid-hidden::before{ display:none; }
+  .cb-canvas.exporting .cb-block-shell{ box-shadow:none; }
+  .cb-canvas.exporting .cb-block-shell.selected .cb-block{ outline:none !important; }
+  .cb-canvas.exporting .cb-block-shell .cb-block-tools,
+  .cb-canvas.exporting .cb-block-shell .cb-resize-handle,
+  .cb-canvas.exporting .cb-block-shell .cb-block-badge{ display:none !important; }
+  .cb-canvas-blocks{ position:absolute; inset:0; }
+  .cb-block-shell{ --cb-font-scale:1; position:absolute; padding:8px; box-sizing:border-box; }
+  .cb-block-shell.selected .cb-block{ outline:2px solid var(--accent); outline-offset:2px; }
+  .cb-block{ width:100%; height:100%; display:grid; grid-template-rows:auto 1fr; border-radius:18px; overflow:hidden; background:linear-gradient(180deg, rgba(24,30,46,0.95), rgba(11,14,24,0.96)); border:1px solid rgba(255,255,255,0.08); }
+  .cb-block.no-title{ grid-template-rows:1fr; }
+  .cb-block-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px 10px; cursor:grab; background:linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01)); }
+  .cb-block-head:active{ cursor:grabbing; }
+  .cb-block-title{ font-size:calc(12px * var(--cb-font-scale, 1)); font-weight:900; letter-spacing:.9px; text-transform:uppercase; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cb-block-sub{ font-size:calc(11px * var(--cb-font-scale, 1)); color:var(--text-dim); white-space:nowrap; }
+  .cb-block-body{ min-height:0; padding:12px 14px 14px; display:grid; align-content:start; gap:12px; overflow:hidden; }
+  .cb-block.no-title .cb-block-body{ padding-top:14px; }
+  .cb-block-body.drag-handle{ cursor:grab; }
+  .cb-block-body.drag-handle:active{ cursor:grabbing; }
+  .cb-block-badge{ position:absolute; top:10px; right:10px; z-index:2; padding:4px 8px; border-radius:999px; background:rgba(9,12,19,0.88); border:1px solid rgba(255,255,255,0.10); color:var(--text-dim); font-size:10px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; }
+  .cb-block-tools{ position:absolute; right:10px; top:10px; display:flex; gap:6px; z-index:3; opacity:0; transition:opacity .14s ease; }
+  .cb-block-shell.selected .cb-block-tools{ opacity:1; }
+  .cb-block-tool{ width:28px; height:28px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(9,12,19,0.88); color:var(--text); font-size:14px; font-weight:900; cursor:pointer; }
+  .cb-resize-handle{ position:absolute; right:10px; bottom:10px; width:18px; height:18px; border-radius:6px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); cursor:nwse-resize; }
+  .cb-watermark{ position:absolute; right:18px; bottom:14px; font-size:calc(11px * var(--cb-font-scale, 1)); letter-spacing:.5px; color:rgba(255,255,255,0.72); font-weight:700; z-index:1; pointer-events:none; }
+
+  .cb-header-card{ display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:center; min-height:0; }
+  .cb-avatar{ width:88px; height:88px; border-radius:18px; object-fit:cover; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); }
+  .cb-team-logo{ width:78px; height:78px; border-radius:16px; object-fit:contain; background:rgba(255,255,255,0.03); padding:10px; box-sizing:border-box; }
+  .cb-header-meta{ display:grid; gap:6px; min-width:0; }
+  .cb-header-name{ font-size:calc(28px * var(--cb-font-scale, 1)); font-weight:900; letter-spacing:.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cb-header-sub{ font-size:calc(13px * var(--cb-font-scale, 1)); color:var(--text-dim); display:flex; flex-wrap:wrap; gap:8px 12px; }
+  .cb-header-pill{ display:inline-flex; align-items:center; gap:6px; }
+  .cb-header-pill strong{ color:var(--text); font-size:calc(12px * var(--cb-font-scale, 1)); text-transform:uppercase; letter-spacing:.8px; }
+
+  .cb-metric-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:10px; }
+  .cb-metric-card{ display:grid; gap:8px; padding:12px; border-radius:14px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); min-width:0; }
+  .cb-metric-name{ font-size:calc(11px * var(--cb-font-scale, 1)); color:var(--text-dim); font-weight:900; letter-spacing:.8px; text-transform:uppercase; }
+  .cb-metric-value{ font-size:calc(24px * var(--cb-font-scale, 1)); font-weight:900; letter-spacing:.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cb-meter{ height:8px; border-radius:999px; background:rgba(255,255,255,0.08); overflow:hidden; }
+  .cb-meter-fill{ height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg, rgba(77,163,255,0.72), rgba(255,255,255,0.94)); }
+  .cb-meter-label{ font-size:calc(11px * var(--cb-font-scale, 1)); color:var(--text-dim); }
+
+  .cb-text-copy{ font-size:calc(15px * var(--cb-font-scale, 1)); line-height:1.6; color:var(--text); white-space:pre-wrap; overflow-wrap:anywhere; }
+  .cb-table{ width:100%; border-collapse:collapse; font-size:calc(13px * var(--cb-font-scale, 1)); table-layout:fixed; }
+  .cb-table th{ text-align:left; color:var(--text-dim); font-size:calc(11px * var(--cb-font-scale, 1)); letter-spacing:.8px; text-transform:uppercase; font-weight:900; padding:0 0 8px; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .cb-table td{ padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cb-table th.num, .cb-table td.num{ text-align:right; padding-left:10px; }
+  .cb-rank{ color:var(--text-dim); font-weight:800; }
+  .cb-bar-list{ display:grid; gap:10px; align-content:start; }
+  .cb-bar-row{ display:grid; gap:6px; }
+  .cb-bar-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:calc(12px * var(--cb-font-scale, 1)); }
+  .cb-bar-name{ font-weight:800; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cb-bar-value{ color:var(--text-dim); font-weight:700; }
+  .cb-bar-track{ height:12px; border-radius:999px; background:rgba(255,255,255,0.08); overflow:hidden; }
+  .cb-bar-fill{ height:100%; border-radius:999px; background:linear-gradient(90deg, rgba(77,163,255,0.22), rgba(77,163,255,0.96)); }
+  .cb-empty-state{ display:grid; place-items:center; min-height:100%; color:var(--text-dim); font-size:calc(13px * var(--cb-font-scale, 1)); text-align:center; }
+
+  .cb-rink-shell{ display:grid; gap:10px; align-content:start; min-height:0; }
+  .cb-rink-wrap{ position:relative; width:100%; aspect-ratio:75 / 85; border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.03); }
+  .cb-rink-img{ position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none; }
+  .cb-rink-overlay{ position:absolute; inset:0; width:100%; height:100%; }
+  .cb-shot-marker.shot{ fill:rgba(77,163,255,0.82); }
+  .cb-shot-marker.miss{ fill:rgba(34,197,94,0.9); }
+  .cb-shot-marker.goal{ fill:rgba(239,68,68,0.96); stroke:rgba(255,255,255,0.72); stroke-width:0.45; }
+  .cb-shot-marker.goal-against{ fill:rgba(239,68,68,0.96); stroke:rgba(255,255,255,0.72); stroke-width:0.45; }
+  .cb-zone-polygon{ stroke:rgba(0,0,0,0.14); stroke-width:0.3; }
+  .cb-zone-count{ font-size:2.2px; fill:rgba(0,0,0,0.72); font-weight:900; text-anchor:middle; dominant-baseline:central; }
+  .cb-map-caption{ font-size:calc(11px * var(--cb-font-scale, 1)); color:var(--text-dim); }
+
+  .cb-modal[hidden]{ display:none !important; }
+  .cb-modal{ position:fixed; inset:0; z-index:120; display:grid; place-items:center; padding:20px; background:rgba(2,4,8,0.72); backdrop-filter:blur(14px); }
+  .cb-modal-card{ width:min(960px, 100%); display:grid; gap:16px; padding:22px; border-radius:22px; background:linear-gradient(180deg, rgba(18,24,38,0.98), rgba(10,13,22,0.98)); border:1px solid rgba(255,255,255,0.10); box-shadow:0 28px 70px rgba(0,0,0,0.42); }
+  .cb-modal-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+  .cb-modal-title{ font-size:24px; font-weight:900; margin:0; }
+  .cb-modal-copy{ margin:6px 0 0; color:var(--text-dim); font-size:14px; line-height:1.55; }
+  .cb-template-grid{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .cb-template-card{ display:grid; gap:10px; padding:16px; border-radius:18px; border:1px solid #2a3142; background:rgba(255,255,255,0.03); }
+  .cb-template-kicker{ font-size:11px; color:var(--text-dim); font-weight:900; letter-spacing:1px; text-transform:uppercase; }
+  .cb-template-title{ font-size:18px; font-weight:850; }
+  .cb-template-copy{ color:var(--text-dim); font-size:13px; line-height:1.5; }
+  .cb-template-meta{ font-size:12px; color:var(--text-dim); }
+  .cb-template-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+
+  @media (max-width: 1100px){
+    .cb-template-grid{ grid-template-columns:1fr; }
+  }
+  @media (max-width: 760px){
+    .cb-add-grid, .cb-chip-grid, .cb-inline-grid, .cb-quad-grid{ grid-template-columns:1fr; }
+    .cb-toolbar{ align-items:flex-start; flex-direction:column; }
+    .cb-toolbar-group input{ min-width:0; width:100%; }
+    .cb-board-shell{ padding:14px; }
+    .cb-header-card{ grid-template-columns:1fr; justify-items:start; }
+    .cb-avatar, .cb-team-logo{ width:72px; height:72px; }
+  }
+</style>
+{% endblock %}
+
+{% block filters_content %}
+<div class="cb-sidebar-tabs" role="tablist" aria-label="Card builder sidebar">
+  <button id="cbTabFilters" class="cb-sidebar-tab active" type="button" data-pane="filters" aria-selected="true">Filters</button>
+  <button id="cbTabContent" class="cb-sidebar-tab" type="button" data-pane="content" aria-selected="false">Content</button>
+</div>
+
+<div id="cbSidebarFilters" class="cb-sidebar-pane">
+  <label>Card Type
+    <select id="cardTypeSelect">
+      <option value="skater" selected>Skater</option>
+      <option value="goalie">Goalie</option>
+      <option value="team">Team</option>
+    </select>
+  </label>
+  <label>Team
+    <select id="teamSelect"></select>
+  </label>
+  <label>Season
+    <select id="seasonSelect"></select>
+  </label>
+  <label id="cbEntityWrap"><span id="cbEntityLabel">Player</span>
+    <select id="playerSelect"></select>
+  </label>
+  <label id="cbSeasonStateWrap">Season State
+    <select id="builderSeasonState">
+      <option value="regular" selected>Regular</option>
+      <option value="playoffs">Playoffs</option>
+      <option value="all">All</option>
+    </select>
+  </label>
+  <label id="cbStrengthStateWrap">Strength State
+    <select id="builderStrengthState">
+      <option value="5v5" selected>5v5</option>
+      <option value="PP">PP</option>
+      <option value="SH">SH</option>
+      <option value="Other">Other</option>
+      <option value="all">All</option>
+    </select>
+  </label>
+  <label id="cbRatesWrap">Totals / Rates
+    <select id="builderRates">
+      <option value="Totals" selected>Totals</option>
+      <option value="Per60">Per 60</option>
+      <option value="PerGame">Per Game</option>
+    </select>
+  </label>
+  <label id="cbXgModelWrap">xG Model
+    <select id="builderXgModel">
+      <option value="xG_S">xG_S (Shots)</option>
+      <option value="xG_F" selected>xG_F (Fenwick)</option>
+      <option value="xG_F2">xG_F2 (Fenwick)</option>
+    </select>
+  </label>
+  <label id="cbScopeWrap">Scope
+    <select id="builderScope">
+      <option value="season" selected>Season</option>
+      <option value="career">Career</option>
+    </select>
+  </label>
+  <label id="cbMinGpWrap">Min GP
+    <input id="builderMinGp" type="number" min="0" step="1" value="0" />
+  </label>
+  <label id="cbMinToiWrap">Min TOI
+    <input id="builderMinToi" type="number" min="0" step="1" value="0" />
+  </label>
+  <label class="checkbox-row" id="cbHistoricWrap"><input type="checkbox" id="includeHistoric" /> <span>Include Historic Teams</span></label>
+  <p class="cb-help-text">Blocks can inherit these filters or exclude specific ones in the Content tab.</p>
+</div>
+
+<div id="cbSidebarContent" class="cb-sidebar-pane" hidden>
+  <div class="cb-pane-group">
+    <div class="cb-pane-title">Add Content</div>
+    <div class="cb-add-grid">
+      <button class="cb-add-btn" type="button" data-block-type="header">Header<span>Identity block with headshot or logo.</span></button>
+      <button class="cb-add-btn" type="button" data-block-type="stats">Stats<span>Metric tiles with percentile bars.</span></button>
+      <button class="cb-add-btn" type="button" data-block-type="table">Table<span>Top rows driven by a chosen metric.</span></button>
+      <button class="cb-add-btn" type="button" data-block-type="bar_chart">Bar Chart<span>Top list as horizontal share bars.</span></button>
+      <button class="cb-add-btn" type="button" data-block-type="shot_map">Shot Map<span>Plot shot locations for the current filters.</span></button>
+      <button class="cb-add-btn" type="button" data-block-type="heat_map">Heat Map<span>Show zone pressure for the current filters.</span></button>
+      <button class="cb-add-btn" type="button" data-block-type="text">Text<span>Custom notes or narrative copy.</span></button>
+    </div>
+  </div>
+
+  <div class="cb-pane-group">
+    <div class="cb-pane-title">Selected Block</div>
+    <div id="cbInspector" class="cb-inspector-empty">Select a block on the canvas to edit its size, placement, metrics, and excluded filters.</div>
+  </div>
+
+  <div class="cb-pane-group">
+    <div class="cb-pane-title">Saved Cards</div>
+    <div id="cbSavedLayouts" class="cb-saved-list">
+      <div class="cb-help-text">Loading saved cards…</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+
+<div class="cb-wrap">
+  <div class="cb-toolbar content-gradient-panel">
+    <div class="cb-toolbar-group">
+      <input id="cbLayoutName" type="text" value="Skater card" maxlength="80" placeholder="Card name" />
+      <button id="cbNewCardBtn" class="cb-mini-btn" type="button">New Card</button>
+      <button id="cbSaveDraftBtn" class="cb-mini-btn" type="button">Save Draft</button>
+      <button id="cbSaveAccountBtn" class="cb-primary-btn" type="button">{% if auth_user %}Save To Account{% else %}Login To Save{% endif %}</button>
+      <button id="cbExportBtn" class="cb-mini-btn" type="button">Export PNG</button>
+    </div>
+    <div class="cb-toolbar-group">
+      <button id="cbGridToggleBtn" class="cb-mini-btn" type="button">Hide Grid</button>
+      <button id="cbGridLessBtn" class="cb-mini-btn" type="button">- Grid</button>
+      <div id="cbGridReadout" class="cb-grid-readout">24 × 13</div>
+      <button id="cbGridMoreBtn" class="cb-mini-btn" type="button">+ Grid</button>
+    </div>
+  </div>
+
+  <div class="cb-status" id="cbStatus"></div>
+
+  <section class="cb-board-shell content-gradient-panel">
+    <div class="cb-board-head">
+      <div>
+        <h2 class="cb-board-title">Design Your Card</h2>
+        <p class="cb-board-copy">Build a share-ready 16:9 card with movable blocks, starter templates, metric tiles, league leaderboards, and export-ready attribution.</p>
+      </div>
+      <div id="cbSelectionMeta" class="cb-grid-readout">No block selected</div>
+    </div>
+
+    <div class="cb-canvas-viewport">
+      <div id="cbCanvas" class="cb-canvas" aria-label="Card builder canvas">
+        <div id="cbCanvasBlocks" class="cb-canvas-blocks"></div>
+        <div class="cb-watermark">Build using nhl.hockey-statistics.com/card-builder</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="cbStarterModal" class="cb-modal" hidden>
+  <div class="cb-modal-card">
+    <div class="cb-modal-head">
+      <div>
+        <h3 class="cb-modal-title">Start A New Card</h3>
+        <p class="cb-modal-copy">Pick a starter template, then fine-tune the layout, remove filters from leaderboard blocks, and save the configuration locally or to your account.</p>
+      </div>
+      <button id="cbCloseStarterModal" class="cb-mini-btn" type="button">Close</button>
+    </div>
+
+    <div id="cbStarterTemplateGrid" class="cb-template-grid"></div>
+  </div>
+</div>
+
+<script>
+window.CARD_BUILDER_BOOT = {
+  authUser: {{ (auth_user or {})|tojson|safe }},
+  csrfToken: {{ csrf_token|tojson|safe }},
+  loginUrl: {{ url_for('main.login_page', next='/card-builder')|tojson|safe }},
+  layoutsUrl: {{ url_for('main.api_card_builder_layouts')|tojson|safe }},
+  saveLayoutUrl: {{ url_for('main.api_card_builder_save_layout')|tojson|safe }},
+  deleteLayoutUrlTemplate: {{ url_for('main.api_card_builder_delete_layout', layout_id='__LAYOUT_ID__')|tojson|safe }}
+};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="{{ url_for('static', filename='card_builder.js') }}"></script>
+{% endblock %}
