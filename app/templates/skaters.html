@@ -377,6 +377,42 @@
   .card-export-card .skater-sub{ font-size:25px; gap:26px; }
   .card-export-card .k{ font-size:16px; }
   .card-export-card .v{ font-size:25px; }
+  .card-export-card .skater-export-hero,
+  .charts-export-card .skater-export-hero,
+  .edge-export-card .skater-export-hero,
+  .rapm-export-card .skater-export-hero,
+  .proj-player-export-card .skater-export-hero,
+  .shoot-export-card .skater-export-hero{ display:block; margin:-36px -36px 0; padding:10px 36px 18px; border:none; border-radius:32px 32px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, var(--skater-export-team-color-soft, rgba(77,163,255,0.28)), rgba(11,15,24,0.18) 36%, var(--skater-export-team-color-dark, rgb(24,31,45)) 100%); box-shadow:none; }
+  .card-export-card .skater-export-hero-inner,
+  .charts-export-card .skater-export-hero-inner,
+  .edge-export-card .skater-export-hero-inner,
+  .rapm-export-card .skater-export-hero-inner,
+  .proj-player-export-card .skater-export-hero-inner,
+  .shoot-export-card .skater-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:28px; }
+  .card-export-card .skater-export-hero .skater-top,
+  .charts-export-card .skater-export-hero .skater-top,
+  .edge-export-card .skater-export-hero .skater-top,
+  .rapm-export-card .skater-export-hero .skater-top,
+  .proj-player-export-card .skater-export-hero .skater-top,
+  .shoot-export-card .skater-export-hero .skater-top{ min-width:0; gap:28px; margin:0; }
+  .card-export-card .skater-export-hero .skater-img,
+  .charts-export-card .skater-export-hero .skater-img,
+  .edge-export-card .skater-export-hero .skater-img,
+  .rapm-export-card .skater-export-hero .skater-img,
+  .proj-player-export-card .skater-export-hero .skater-img,
+  .shoot-export-card .skater-export-hero .skater-img{ background:transparent; border:none; box-shadow:none; }
+  .card-export-card .skater-export-team-logo-wrap,
+  .charts-export-card .skater-export-team-logo-wrap,
+  .edge-export-card .skater-export-team-logo-wrap,
+  .rapm-export-card .skater-export-team-logo-wrap,
+  .proj-player-export-card .skater-export-team-logo-wrap,
+  .shoot-export-card .skater-export-team-logo-wrap{ display:flex; align-items:center; justify-content:flex-end; justify-self:end; min-width:180px; flex:0 0 auto; }
+  .card-export-card .skater-export-team-logo,
+  .charts-export-card .skater-export-team-logo,
+  .edge-export-card .skater-export-team-logo,
+  .rapm-export-card .skater-export-team-logo,
+  .proj-player-export-card .skater-export-team-logo,
+  .shoot-export-card .skater-export-team-logo{ display:block; width:auto; height:132px; object-fit:contain; filter:drop-shadow(0 10px 20px rgba(0,0,0,0.16)); opacity:0.96; }
   .card-export-summary{ color:rgba(255,255,255,0.95); font-size:36px; font-style:italic; font-weight:800; letter-spacing:.2px; }
   .card-export-content{ width:100%; }
   .card-export-card .card-grid{ grid-template-columns:1fr 1fr 1fr !important; gap:28px; align-items:start; }
@@ -474,7 +510,9 @@
   .proj-player-export-watermark{ text-align:right; color:rgba(255,255,255,0.80); font-size:30px; font-weight:700; letter-spacing:.2px; }
   .proj-team-export-surface{ position:fixed; left:-10000px; top:0; width:1680px; padding:44px; background:radial-gradient(circle at top left, rgba(77,163,255,0.14), transparent 26%), linear-gradient(180deg, rgba(11,15,24,0.995), rgba(9,12,20,0.995)); z-index:-1; pointer-events:none; }
   .proj-team-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
+  .proj-team-export-hero{ display:block; margin:-36px -36px 0; padding:10px 36px 18px; border:none; border-radius:32px 32px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, var(--skater-export-team-color-soft, rgba(77,163,255,0.28)), rgba(11,15,24,0.18) 36%, var(--skater-export-team-color-dark, rgb(24,31,45)) 100%); box-shadow:none; }
   .proj-team-export-top{ display:flex; align-items:center; gap:22px; }
+  .proj-team-export-main{ display:flex; align-items:center; gap:22px; min-width:0; }
   .proj-team-export-logo{ display:block; width:auto; height:124px; max-width:170px; }
   .proj-team-export-heading{ display:grid; gap:8px; }
   .proj-team-export-title{ font-size:60px; line-height:1.02; font-weight:900; letter-spacing:-.02em; color:rgba(255,255,255,0.98); }
@@ -487,6 +525,8 @@
   .proj-team-export-watermark{ text-align:right; color:rgba(255,255,255,0.80); font-size:30px; font-weight:700; letter-spacing:.2px; }
   .proj-league-export-surface{ position:fixed; left:-10000px; top:0; width:1680px; padding:44px; background:radial-gradient(circle at top left, rgba(77,163,255,0.14), transparent 26%), linear-gradient(180deg, rgba(11,15,24,0.995), rgba(9,12,20,0.995)); z-index:-1; pointer-events:none; }
   .proj-league-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
+  .table-export-card .table-export-header-hero,
+  .proj-league-export-card .proj-league-export-header-hero{ display:grid; gap:8px; margin:-34px -34px 0; padding:14px 34px 18px; border:none; border-radius:30px 30px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, rgba(77,163,255,0.28), rgba(11,15,24,0.18) 36%, rgba(11,15,24,0.02) 100%); }
   .proj-league-export-title{ font-size:56px; line-height:1.02; font-weight:900; letter-spacing:-.02em; color:rgba(255,255,255,0.98); }
   .proj-league-export-table-wrap{ overflow:hidden; border-radius:24px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); }
   .proj-league-export-table{ width:100%; border-collapse:collapse; table-layout:fixed; }
@@ -3264,12 +3304,14 @@ async function __buildTableExportSurface(){
   const heading = document.createElement('div');
   heading.className = 'table-export-title';
   heading.textContent = title;
-  card.appendChild(heading);
-
   const meta = document.createElement('div');
   meta.className = 'table-export-meta';
   meta.textContent = summary;
-  card.appendChild(meta);
+  const headerHero = document.createElement('div');
+  headerHero.className = 'table-export-header-hero';
+  headerHero.appendChild(heading);
+  headerHero.appendChild(meta);
+  card.appendChild(headerHero);
 
   const tableWrap = document.createElement('div');
   tableWrap.className = 'table-export-table-wrap';
@@ -5893,7 +5935,10 @@ function __buildCardExportSurface(){
   surface.appendChild(card);
 
   const top = document.querySelector('.skater-top');
-  if(top) card.appendChild(top.cloneNode(true));
+  if(top){
+    const hero = __buildSkaterExportHero(top.cloneNode(true));
+    if(hero) card.appendChild(hero);
+  }
 
   const summary = document.createElement('div');
   summary.className = 'card-export-summary';
@@ -5986,6 +6031,86 @@ function __chartSnapshotUrl(canvasEl){
   }
 }
 
+async function __snapshotChartImageForExport(chart, canvasEl, width=1120, height=540){
+  if(chart && canvasEl){
+    try{ chart.resize(width, height); }catch(_){/*noop*/}
+    try{ chart.stop?.(); }catch(_){/*noop*/}
+    try{ chart.update('none'); }catch(_){/*noop*/}
+    await __shootExportWaitFrames(2);
+    await __shootExportDelay(80);
+    try{ chart.update('none'); }catch(_){/*noop*/}
+    await __shootExportWaitFrames(1);
+  }
+  return __chartSnapshotUrl(canvasEl);
+}
+
+function __clampByte(value){
+  return Math.max(0, Math.min(255, Number(value) || 0));
+}
+
+function __skaterHexToRgb(hex){
+  const raw = String(hex || '').trim().replace(/^#/, '');
+  if(!raw) return null;
+  const norm = raw.length === 3 ? raw.split('').map((ch)=> ch + ch).join('') : raw;
+  if(norm.length !== 6) return null;
+  const r = parseInt(norm.slice(0, 2), 16);
+  const g = parseInt(norm.slice(2, 4), 16);
+  const b = parseInt(norm.slice(4, 6), 16);
+  if(!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return null;
+  return { r, g, b };
+}
+
+function __skaterDarkenHex(hex, amount){
+  const rgb = __skaterHexToRgb(hex);
+  if(!rgb) return '#18202f';
+  const scale = Math.max(0, Math.min(1, 1 - Math.max(0, Number(amount) || 0)));
+  const r = __clampByte(rgb.r * scale);
+  const g = __clampByte(rgb.g * scale);
+  const b = __clampByte(rgb.b * scale);
+  return `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
+}
+
+function __skaterRgba(hex, alpha){
+  const rgb = __skaterHexToRgb(hex);
+  if(!rgb) return `rgba(77,163,255,${Number.isFinite(alpha) ? alpha : 0.28})`;
+  const a = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 0.28;
+  return `rgba(${rgb.r},${rgb.g},${rgb.b},${a})`;
+}
+
+function __selectedSkaterExportTeam(){
+  const teamAbbrev = String(teamSelect?.value || '').trim().toUpperCase();
+  const teamObj = teams.find((team)=> String(team?.Team || '').trim().toUpperCase() === teamAbbrev) || null;
+  const teamColor = String(teamObj?.Color || '').trim() || '#4da3ff';
+  return { teamAbbrev, teamColor };
+}
+
+function __buildSkaterExportHero(topClone){
+  if(!topClone) return null;
+  const { teamAbbrev, teamColor } = __selectedSkaterExportTeam();
+  const hero = document.createElement('div');
+  hero.className = 'skater-export-hero';
+  hero.style.setProperty('--skater-export-team-color-soft', __skaterRgba(teamColor, 0.30));
+  hero.style.setProperty('--skater-export-team-color-dark', __skaterDarkenHex(teamColor, 0.52));
+
+  const inner = document.createElement('div');
+  inner.className = 'skater-export-hero-inner';
+  inner.appendChild(topClone);
+
+  if(teamAbbrev){
+    const logoWrap = document.createElement('div');
+    logoWrap.className = 'skater-export-team-logo-wrap';
+    const logo = document.createElement('img');
+    logo.className = 'skater-export-team-logo';
+    logo.src = teamLogoUrl(teamAbbrev);
+    logo.alt = `${teamAbbrev} logo`;
+    logoWrap.appendChild(logo);
+    inner.appendChild(logoWrap);
+  }
+
+  hero.appendChild(inner);
+  return hero;
+}
+
 function __projectionCanvasFrameSize(canvasEl){
   const frame = canvasEl?.closest?.('.proj-chart-frame');
   const width = Math.round(frame?.clientWidth || canvasEl?.clientWidth || 0);
@@ -6025,7 +6150,10 @@ function __buildChartsExportSurface(){
   surface.appendChild(card);
 
   const top = document.querySelector('.skater-top');
-  if(top) card.appendChild(top.cloneNode(true));
+  if(top){
+    const hero = __buildSkaterExportHero(top.cloneNode(true));
+    if(hero) card.appendChild(hero);
+  }
 
   const summary = document.createElement('div');
   summary.className = 'charts-export-summary';
@@ -6039,11 +6167,11 @@ function __buildChartsExportSurface(){
   const charts = [
     {
       title: String(chartBlockPlayDriving?.querySelector('h3')?.textContent || 'Play Driving').trim(),
-      image: __chartSnapshotUrl(pdChartEl),
+      image: String(pdChartEl?.dataset?.exportSrc || __chartSnapshotUrl(pdChartEl) || ''),
     },
     {
       title: String(chartBlockShooting?.querySelector('h3')?.textContent || 'Shooting and Context').trim(),
-      image: __chartSnapshotUrl(scChartEl),
+      image: String(scChartEl?.dataset?.exportSrc || __chartSnapshotUrl(scChartEl) || ''),
     },
   ];
 
@@ -6070,8 +6198,10 @@ async function __buildChartsPngBlob(){
   await renderCharts();
   if(chartsGrid?.style.display === 'none' || chartsEmpty?.hidden === false && !chartsGrid?.querySelector('canvas')) throw new Error('No chart data is loaded for export.');
 
-  try{ __pdChart?.update('none'); }catch(_){/*noop*/}
-  try{ __scChart?.update('none'); }catch(_){/*noop*/}
+  const pdSrc = await __snapshotChartImageForExport(__pdChart, pdChartEl, 1080, 640);
+  const scSrc = await __snapshotChartImageForExport(__scChart, scChartEl, 1080, 640);
+  if(pdChartEl) pdChartEl.dataset.exportSrc = pdSrc;
+  if(scChartEl) scChartEl.dataset.exportSrc = scSrc;
 
   const surface = __buildChartsExportSurface();
   document.body.appendChild(surface);
@@ -6085,6 +6215,8 @@ async function __buildChartsPngBlob(){
     const canvas = await __renderDesktopExportCanvas(surface.firstElementChild);
     return await __canvasToBlob(canvas);
   }finally{
+    try{ if(pdChartEl) delete pdChartEl.dataset.exportSrc; }catch(_){/*noop*/}
+    try{ if(scChartEl) delete scChartEl.dataset.exportSrc; }catch(_){/*noop*/}
     surface.remove();
   }
 }
@@ -6098,7 +6230,10 @@ function __buildEdgeExportSurface(){
   surface.appendChild(card);
 
   const top = document.querySelector('.skater-top');
-  if(top) card.appendChild(top.cloneNode(true));
+  if(top){
+    const hero = __buildSkaterExportHero(top.cloneNode(true));
+    if(hero) card.appendChild(hero);
+  }
 
   const summary = document.createElement('div');
   summary.className = 'edge-export-summary';
@@ -6247,7 +6382,10 @@ function __buildRAPMExportSurface(){
   surface.appendChild(card);
 
   const top = document.querySelector('.skater-top');
-  if(top) card.appendChild(top.cloneNode(true));
+  if(top){
+    const hero = __buildSkaterExportHero(top.cloneNode(true));
+    if(hero) card.appendChild(hero);
+  }
 
   const summary = document.createElement('div');
   summary.className = 'rapm-export-summary';
@@ -6358,7 +6496,10 @@ function __buildProjPlayerExportSurface(imageUrl){
   surface.appendChild(card);
 
   const top = document.querySelector('.skater-top');
-  if(top) card.appendChild(top.cloneNode(true));
+  if(top){
+    const hero = __buildSkaterExportHero(top.cloneNode(true));
+    if(hero) card.appendChild(hero);
+  }
 
   const summary = document.createElement('div');
   summary.className = 'proj-player-export-summary';
@@ -6389,7 +6530,7 @@ async function __buildProjPlayerPngBlob(){
   await loadProjectionsPanel();
   await __stabilizeProjectionChart(__projPlayerTrendChart, projPlayerTrend);
   if(projPlayerEmpty?.hidden === false) throw new Error(String(projPlayerEmpty?.textContent || '').trim() || 'No player projection history is loaded for export.');
-  const imageUrl = __chartSnapshotUrl(projPlayerTrend);
+  const imageUrl = await __snapshotChartImageForExport(__projPlayerTrendChart, projPlayerTrend, 1300, 500);
   if(!imageUrl) throw new Error('No player projection chart is loaded for export.');
 
   const surface = __buildProjPlayerExportSurface(imageUrl);
@@ -6462,14 +6603,23 @@ function __buildProjTeamExportSurface(imageUrl){
   card.className = 'proj-team-export-card';
   surface.appendChild(card);
 
+  const teamObj = teams.find((team)=> String(team?.Team || '').trim().toUpperCase() === teamAbbrev) || null;
+  const teamColor = String(teamObj?.Color || '').trim() || '#4da3ff';
+  const hero = document.createElement('div');
+  hero.className = 'proj-team-export-hero';
+  hero.style.setProperty('--skater-export-team-color-soft', __skaterRgba(teamColor, 0.30));
+  hero.style.setProperty('--skater-export-team-color-dark', __skaterDarkenHex(teamColor, 0.52));
+
   const top = document.createElement('div');
   top.className = 'proj-team-export-top';
+  const main = document.createElement('div');
+  main.className = 'proj-team-export-main';
   if(teamAbbrev){
     const logo = document.createElement('img');
     logo.className = 'proj-team-export-logo';
     logo.src = teamLogoUrl(teamAbbrev);
     logo.alt = `${teamName || teamAbbrev} logo`;
-    top.appendChild(logo);
+    main.appendChild(logo);
   }
   const heading = document.createElement('div');
   heading.className = 'proj-team-export-heading';
@@ -6483,8 +6633,10 @@ function __buildProjTeamExportSurface(imageUrl){
     summary.textContent = season;
     heading.appendChild(summary);
   }
-  top.appendChild(heading);
-  card.appendChild(top);
+  main.appendChild(heading);
+  top.appendChild(main);
+  hero.appendChild(top);
+  card.appendChild(hero);
 
   const content = document.createElement('div');
   content.className = 'proj-team-export-content';
@@ -6520,7 +6672,7 @@ async function __buildProjTeamPngBlob(){
   renderTeamStackFromLeague(teamAbbrev, league, teamColor);
   await __stabilizeProjectionChart(__projTeamChart, projTeamStack);
   if(projTeamEmpty?.hidden === false) throw new Error(String(projTeamEmpty?.textContent || '').trim() || 'No team projections are loaded for export.');
-  const imageUrl = __chartSnapshotUrl(projTeamStack);
+  const imageUrl = await __snapshotChartImageForExport(__projTeamChart, projTeamStack, 1300, 580);
   if(!imageUrl) throw new Error('No team projection chart is loaded for export.');
 
   const surface = __buildProjTeamExportSurface(imageUrl);
@@ -6594,7 +6746,10 @@ function __buildProjLeagueExportSurface(){
   const title = document.createElement('div');
   title.className = 'proj-league-export-title';
   title.textContent = 'Projections';
-  card.appendChild(title);
+  const headerHero = document.createElement('div');
+  headerHero.className = 'proj-league-export-header-hero';
+  headerHero.appendChild(title);
+  card.appendChild(headerHero);
 
   const tableWrap = document.createElement('div');
   tableWrap.className = 'proj-league-export-table-wrap';
@@ -6868,7 +7023,8 @@ function __buildShootingExportSurface(){
     topClone.querySelectorAll('.v').forEach((node)=>{
       node.style.fontSize = '25px';
     });
-    card.appendChild(topClone);
+    const hero = __buildSkaterExportHero(topClone);
+    if(hero) card.appendChild(hero);
   }
 
   const summary = document.createElement('div');

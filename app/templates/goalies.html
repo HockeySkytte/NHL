@@ -331,6 +331,37 @@
   .card-export-surface, .charts-export-surface, .table-export-surface, .gtend-export-surface{ position:fixed; left:-10000px; top:0; width:1680px; padding:44px; background:radial-gradient(circle at top left, rgba(77,163,255,0.14), transparent 26%), linear-gradient(180deg, rgba(11,15,24,0.995), rgba(9,12,20,0.995)); z-index:-1; pointer-events:none; }
   .card-export-card, .charts-export-card, .table-export-card, .gtend-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
   .card-export-card .skater-top, .charts-export-card .skater-top, .gtend-export-card .skater-top{ margin:0; }
+  .card-export-card .card-export-hero,
+  .charts-export-card .card-export-hero,
+  .gtend-export-card .card-export-hero{ display:block; margin:-36px -36px 0; padding:10px 36px 18px; border:none; border-radius:32px 32px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, var(--card-export-team-color-soft, rgba(77,163,255,0.28)), rgba(11,15,24,0.18) 36%, var(--card-export-team-color-dark, rgb(24,31,45)) 100%); box-shadow:none; }
+  .card-export-card .card-export-hero-inner,
+  .charts-export-card .card-export-hero-inner,
+  .gtend-export-card .card-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:28px; }
+  .card-export-card .card-export-hero .skater-top,
+  .charts-export-card .card-export-hero .skater-top,
+  .gtend-export-card .card-export-hero .skater-top{ gap:28px; min-width:0; }
+  .card-export-card .card-export-hero .skater-img,
+  .charts-export-card .card-export-hero .skater-img,
+  .gtend-export-card .card-export-hero .skater-img{ background:transparent; border:none; box-shadow:none; }
+  .card-export-card .card-export-hero .skater-name,
+  .charts-export-card .card-export-hero .skater-name,
+  .gtend-export-card .card-export-hero .skater-name{ text-shadow:0 10px 26px rgba(0,0,0,0.18); }
+  .card-export-card .card-export-hero .skater-sub,
+  .charts-export-card .card-export-hero .skater-sub,
+  .gtend-export-card .card-export-hero .skater-sub{ color:rgba(255,255,255,0.86); }
+  .card-export-card .card-export-hero .k,
+  .charts-export-card .card-export-hero .k,
+  .gtend-export-card .card-export-hero .k{ color:rgba(255,255,255,0.66); }
+  .card-export-card .card-export-hero .v,
+  .charts-export-card .card-export-hero .v,
+  .gtend-export-card .card-export-hero .v{ color:rgba(255,255,255,0.97); }
+  .card-export-card .card-export-team-logo-wrap,
+  .charts-export-card .card-export-team-logo-wrap,
+  .gtend-export-card .card-export-team-logo-wrap{ display:flex; align-items:center; justify-content:flex-end; justify-self:end; min-width:180px; flex:0 0 auto; margin-right:-10px; transform:translateY(4px); }
+  .card-export-card .card-export-team-logo,
+  .charts-export-card .card-export-team-logo,
+  .gtend-export-card .card-export-team-logo{ display:block; width:auto; height:auto; max-width:none; max-height:none; object-fit:contain; filter:drop-shadow(0 12px 22px rgba(0,0,0,0.16)); opacity:0.98; }
+  .table-export-card .table-export-header-hero{ display:grid; gap:8px; margin:-34px -34px 0; padding:14px 34px 18px; border:none; border-radius:30px 30px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, rgba(77,163,255,0.28), rgba(11,15,24,0.18) 36%, rgba(11,15,24,0.02) 100%); }
   .card-export-card .skater-img, .charts-export-card .skater-img, .gtend-export-card .skater-img{ width:194px; height:194px; }
   .card-export-card .skater-name, .charts-export-card .skater-name, .gtend-export-card .skater-name{ font-size:58px; }
   .card-export-card .skater-sub, .charts-export-card .skater-sub, .gtend-export-card .skater-sub{ font-size:25px; gap:26px; }
@@ -382,6 +413,8 @@
   .gtend-export-left .gtend-tbl th{ font-size:18px; padding:12px 10px; }
   .gtend-export-left .gtend-tbl td{ font-size:20px; padding:11px 10px; line-height:1.42; }
   .gtend-export-left .gtend-tbl .val{ font-size:20px; }
+  .gtend-export-left .gtend-tbl th:last-child{ font-size:20px; }
+  .gtend-export-left .gtend-tbl td:last-child .val{ font-size:28px !important; font-weight:900; }
   .gtend-export-map-title{ font-size:24px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); }
   .gtend-export-right .gtend-rink-wrap{ max-width:none; margin:0; aspect-ratio:75 / 85; }
   .gtend-export-right .gtend-video-btn, .gtend-export-right .gtend-video-list, .gtend-export-right .gtend-map-toggle, .gtend-export-right .gtend-type-toggle{ display:none !important; }
@@ -842,8 +875,24 @@ let __shootSharePreparePromise = null;
 
 let __goalieTrendChart = null;
 let __goalieTrendKey = '';
+let __goalieTrendSeriesBase = null;
 let __goalieTrendSeries = null;
+let __goalieTrendCurrentPoint = null;
 const GOALIES_TREND_STATE_KEY = 'nhlGoaliesTrendState_v2';
+const GOALIE_TABLE_EXPORT_METRIC_IDS = [
+  'Workload|xGA',
+  'Workload|GA',
+  'Save Percentage|Sv% or FSv%',
+  'Results|GSAA',
+  'Results|GSAx',
+];
+const GOALIE_TABLE_EXPORT_METRIC_LABELS = {
+  'Workload|xGA': 'xGA',
+  'Workload|GA': 'GA',
+  'Save Percentage|Sv% or FSv%': 'Sv%',
+  'Results|GSAA': 'GSAA',
+  'Results|GSAx': 'GSAx',
+};
 
 const teams = JSON.parse(document.getElementById('teams-data').textContent);
 
@@ -899,6 +948,20 @@ function getPlayerMugImage(season, team, playerId){
   img.src = primary || fallback;
   __playerMugCache.set(pid, img);
   return img;
+}
+
+async function __ensureGoalieTrendLogosLoaded(series){
+  const teamsNeeded = Array.from(new Set((Array.isArray(series) ? series : [])
+    .map((row)=> String(row?.team || '').trim().toUpperCase())
+    .filter(Boolean)));
+  if(!teamsNeeded.length) return;
+  const imgs = teamsNeeded.map((team)=> getTeamLogoImage(team)).filter(Boolean);
+  if(!imgs.length) return;
+  await Promise.allSettled(imgs.map((img)=> new Promise((resolve)=>{
+    if(img.complete && ((img.naturalWidth || 0) > 0 || (img.width || 0) > 0)) return resolve();
+    img.addEventListener('load', resolve, { once:true });
+    img.addEventListener('error', resolve, { once:true });
+  })));
 }
 
 // Draw team logos on the goalie trend chart points.
@@ -2504,6 +2567,19 @@ function __chartSnapshotUrl(canvasEl){
   try{ return canvasEl?.toDataURL('image/png') || ''; }catch(_){ return ''; }
 }
 
+async function __snapshotGoalieChartImageForExport(chart, canvasEl, width=1080, height=620){
+  if(chart && canvasEl){
+    try{ chart.resize(width, height); }catch(_){/*noop*/}
+    try{ chart.stop?.(); }catch(_){/*noop*/}
+    try{ chart.update('none'); }catch(_){/*noop*/}
+    await __goalieExportWaitFrames(2);
+    await __goalieExportDelay(80);
+    try{ chart.update('none'); }catch(_){/*noop*/}
+    await __goalieExportWaitFrames(1);
+  }
+  return __chartSnapshotUrl(canvasEl);
+}
+
 function __buildTopExportClone(){
   const top = document.querySelector('.skater-top');
   if(!top) return null;
@@ -2521,9 +2597,243 @@ function __buildTopExportClone(){
   return clone;
 }
 
+function __applyCardExportTeamLogoSize(logoEl, naturalWidth, naturalHeight){
+  if(!logoEl) return;
+  const nw = Number(naturalWidth || 0);
+  const nh = Number(naturalHeight || 0);
+  if(!(nw > 0) || !(nh > 0)) return;
+  const maxWidth = 240;
+  const maxHeight = 176;
+  const scale = Math.min(maxWidth / nw, maxHeight / nh);
+  const width = Math.max(1, Math.round(nw * scale));
+  const height = Math.max(1, Math.round(nh * scale));
+  logoEl.style.width = `${width}px`;
+  logoEl.style.height = `${height}px`;
+}
+
+function __buildCardExportHero(topClone){
+  if(!topClone) return null;
+  const teamColor = _getSelectedTeamColor() || '#4da3ff';
+  const team = String(teamSelect?.value || '').trim().toUpperCase();
+  const hero = document.createElement('div');
+  hero.className = 'card-export-hero';
+  hero.style.setProperty('--card-export-team-color', teamColor);
+  hero.style.setProperty('--card-export-team-color-soft', _rgbaFromHex(teamColor, 0.30));
+  hero.style.setProperty('--card-export-team-color-dark', _darkenHex(teamColor, 0.46));
+  const inner = document.createElement('div');
+  inner.className = 'card-export-hero-inner';
+  inner.appendChild(topClone);
+  if(team){
+    const logoWrap = document.createElement('div');
+    logoWrap.className = 'card-export-team-logo-wrap';
+    const logo = document.createElement('img');
+    logo.className = 'card-export-team-logo';
+    logo.alt = `${team} logo`;
+    const cachedLogo = getTeamLogoImage(team);
+    logo.addEventListener('load', ()=>{
+      __applyCardExportTeamLogoSize(logo, logo.naturalWidth, logo.naturalHeight);
+    }, { once:true });
+    if(cachedLogo?.complete && cachedLogo.naturalWidth > 0 && cachedLogo.naturalHeight > 0){
+      __applyCardExportTeamLogoSize(logo, cachedLogo.naturalWidth, cachedLogo.naturalHeight);
+    }
+    logo.src = teamLogoUrl(team);
+    logoWrap.appendChild(logo);
+    inner.appendChild(logoWrap);
+  }
+  hero.appendChild(inner);
+  return hero;
+}
+
 function __goalieTrendSnapshotUrl(){
   try{ __goalieTrendChart?.update('none'); }catch(_){/*noop*/}
   return __chartSnapshotUrl(document.getElementById('goalieTrendChart'));
+}
+
+function __goalieCardMetricNumber(metrics, metricId){
+  const raw = Number(metrics?.[metricId]?.value);
+  return Number.isFinite(raw) ? raw : null;
+}
+
+function __goalieTrendMetricTotal(metrics, metricId){
+  const value = __goalieCardMetricNumber(metrics, metricId);
+  if(!Number.isFinite(value)) return null;
+  const ratesVal = String(cardRates?.value || 'Totals');
+  if(ratesVal === 'Per60'){
+    const toi = __goalieCardMetricNumber(metrics, 'Ice Time|TOI');
+    if(Number.isFinite(toi) && toi > 0) return value * toi / 60;
+  }
+  if(ratesVal === 'PerGame'){
+    const gp = __goalieCardMetricNumber(metrics, 'Ice Time|GP');
+    if(Number.isFinite(gp) && gp > 0) return value * gp;
+  }
+  return value;
+}
+
+function __buildGoalieTrendCurrentPoint(data){
+  const season = Number(seasonSelect?.value || '');
+  if(!Number.isFinite(season) || season <= 0) return null;
+  const metrics = data?.metrics || {};
+  const gsaa = __goalieTrendMetricTotal(metrics, 'Results|GSAA');
+  const gsax = __goalieTrendMetricTotal(metrics, 'Results|GSAx');
+  if(!Number.isFinite(gsaa) && !Number.isFinite(gsax)) return null;
+  return {
+    season,
+    team: String(teamSelect?.value || '').trim().toUpperCase(),
+    GSAA: Number.isFinite(gsaa) ? gsaa : null,
+    GSAx: Number.isFinite(gsax) ? gsax : null,
+  };
+}
+
+function __mergeGoalieTrendSeries(series, currentPoint){
+  const rows = Array.isArray(series)
+    ? series.map((row)=>({
+        season: Number(row?.season),
+        team: String(row?.team || '').trim().toUpperCase(),
+        GSAA: Number(row?.GSAA),
+        GSAx: Number(row?.GSAx),
+      })).filter((row)=> Number.isFinite(row.season))
+    : [];
+  if(!currentPoint || !Number.isFinite(Number(currentPoint.season))) return rows.sort((a,b)=> a.season - b.season);
+  const season = Number(currentPoint.season);
+  const idx = rows.findIndex((row)=> Number(row.season) === season);
+  const existing = idx >= 0 ? rows[idx] : null;
+  const next = {
+    season,
+    team: String(currentPoint.team || existing?.team || '').trim().toUpperCase(),
+    GSAA: Number.isFinite(Number(currentPoint.GSAA)) ? Number(currentPoint.GSAA) : Number(existing?.GSAA || 0),
+    GSAx: Number.isFinite(Number(currentPoint.GSAx)) ? Number(currentPoint.GSAx) : Number(existing?.GSAx || 0),
+  };
+  if(idx >= 0) rows[idx] = next;
+  else rows.push(next);
+  return rows.sort((a,b)=> a.season - b.season);
+}
+
+function __goalieTrendChartPayload(series, st){
+  const metricKey = (st.metric === 'GSAx') ? 'GSAx' : 'GSAA';
+  const labels = series.map((row)=> _seasonLabel(row.season));
+  const base = series.map((row)=> Number(row?.[metricKey]));
+
+  const y = [];
+  if(st.mode === 'total'){
+    let acc = 0;
+    for(const value of base){
+      const vv = Number.isFinite(value) ? Number(value) : 0;
+      acc += vv;
+      y.push(acc);
+    }
+  }else{
+    for(const value of base) y.push(Number.isFinite(value) ? Number(value) : 0);
+  }
+
+  const yTitle = `${metricKey}${st.mode === 'total' ? ' (Total)' : ' (Season)'} `;
+  return {
+    data: {
+      labels,
+      datasets: [
+        {
+          label: metricKey,
+          data: y,
+          borderColor: '#d1d5db',
+          segment: {
+            borderColor: (ctx) => {
+              const y0 = ctx.p0.parsed.y, y1 = ctx.p1.parsed.y;
+              if(y0 >= 0 && y1 >= 0) return 'rgba(96,165,250,0.92)';
+              if(y0 <= 0 && y1 <= 0) return 'rgba(248,113,113,0.92)';
+              return '#d1d5db';
+            },
+          },
+          fill: {
+            target: 'origin',
+            above: 'rgba(59,130,246,0.18)',
+            below: 'rgba(239,68,68,0.18)',
+          },
+          pointRadius: 10,
+          pointHoverRadius: 14,
+          tension: 0.25,
+          borderWidth: 2.5,
+          pointBorderWidth: 0,
+          pointBorderColor: 'rgba(0,0,0,0)',
+          pointBackgroundColor: 'rgba(0,0,0,0)',
+          pointStyle: 'circle',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        goalieTrendLogos: { outerR: 14, innerR: 12.6, pad: 0.35, zoom: 1.08 },
+        goalieTrendZeroLine: { color: 'rgba(209,213,219,0.55)', lineWidth: 2 },
+        tooltip: {
+          callbacks: {
+            label: (ctx)=>{
+              const v = Number(ctx?.parsed?.y);
+              if(!Number.isFinite(v)) return '';
+              const s = v > 0 ? '+' : '';
+              let teamTxt = '';
+              try{
+                const idx = Number(ctx?.dataIndex);
+                const team = String(series?.[idx]?.team || '').trim().toUpperCase();
+                if(team) teamTxt = ` (${team})`;
+              }catch(_){/*noop*/}
+              return `${metricKey}${teamTxt}: ${s}${v.toFixed(2)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Season', color: 'rgba(255,255,255,0.78)', font: { weight: '700' } },
+          ticks: { color: 'rgba(255,255,255,0.75)' },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+        },
+        y: {
+          title: { display: true, text: yTitle.trim(), color: 'rgba(255,255,255,0.78)', font: { weight: '700' } },
+          ticks: { color: 'rgba(255,255,255,0.75)' },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+        },
+      },
+    },
+  };
+}
+
+function __createGoalieTrendChart(canvas, series, st){
+  const payload = __goalieTrendChartPayload(series, st);
+  const chart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: payload.data,
+    options: payload.options,
+    plugins: [__goalieTrendZeroLinePlugin, __goalieTrendLogoPlugin],
+  });
+  try{ chart.$goalieTrendSeries = series; }catch(_){/*noop*/}
+  return chart;
+}
+
+async function __renderGoalieTrendExportChart(surface){
+  const canvas = surface?.querySelector?.('.card-export-content #goalieTrendChart');
+  if(!canvas) return null;
+  const st = _loadGoaliesTrendState();
+  const series = __mergeGoalieTrendSeries(__goalieTrendSeriesBase || __goalieTrendSeries || [], __goalieTrendCurrentPoint);
+  if(!series.length) return null;
+  await __ensureGoalieTrendLogosLoaded(series);
+  await __goalieExportWaitFrames(2);
+  const width = Math.max(1, Math.round(canvas.clientWidth || 1200));
+  const height = Math.max(1, Math.round(canvas.clientHeight || 380));
+  canvas.width = width;
+  canvas.height = height;
+  const chart = __createGoalieTrendChart(canvas, series, st);
+  try{ chart.resize(width, height); }catch(_){/*noop*/}
+  try{ chart.update('none'); }catch(_){/*noop*/}
+  await __goalieExportWaitFrames(3);
+  await __goalieExportDelay(90);
+  try{ chart.update('none'); }catch(_){/*noop*/}
+  await __goalieExportWaitFrames(2);
+  return ()=>{
+    try{ chart.destroy(); }catch(_){/*noop*/}
+  };
 }
 
 function __goalieTrendExportLabel(){
@@ -2540,7 +2850,8 @@ function __buildCardExportSurface(){
   card.className = 'card-export-card';
   surface.appendChild(card);
   const topClone = __buildTopExportClone();
-  if(topClone) card.appendChild(topClone);
+  const hero = __buildCardExportHero(topClone);
+  if(hero) card.appendChild(hero);
   const summary = document.createElement('div');
   summary.className = 'card-export-summary';
   summary.textContent = String(cardSlicerSummary?.textContent || '').trim();
@@ -2554,14 +2865,6 @@ function __buildCardExportSurface(){
     meta.className = 'goalie-trend-export-meta';
     meta.textContent = __goalieTrendExportLabel();
     trendControls.replaceWith(meta);
-  }
-  const trendCanvas = content.querySelector('#goalieTrendChart');
-  if(trendCanvas && trendImgSrc){
-    const img = document.createElement('img');
-    img.className = 'goalie-trend-export-img';
-    img.alt = 'Season trend chart';
-    img.src = trendImgSrc;
-    trendCanvas.replaceWith(img);
   }
   card.appendChild(content);
   const watermark = document.createElement('div');
@@ -2577,16 +2880,20 @@ async function __buildCardPngBlob(){
   await loadCardPanel();
   if(!cardPanelInner?.querySelector('.card-grid')) throw new Error('No card data is loaded for export.');
   try{ __goalieTrendChart?.update('none'); }catch(_){/*noop*/}
-  await __goalieExportDelay(90);
   const surface = __buildCardExportSurface();
   document.body.appendChild(surface);
+  let cleanupTrendChart = null;
   try{
     if(document.fonts?.ready) await document.fonts.ready;
     await __goalieWaitForImages(surface);
-    await __goalieExportWaitFrames(1);
+    await __goalieExportWaitFrames(2);
+    cleanupTrendChart = await __renderGoalieTrendExportChart(surface);
+    await __goalieWaitForImages(surface);
+    await __goalieExportWaitFrames(2);
     const canvas = await __renderDesktopExportCanvas(surface.firstElementChild || surface);
     return await __canvasToBlob(canvas);
   }finally{
+    try{ cleanupTrendChart?.(); }catch(_){/*noop*/}
     surface.remove();
   }
 }
@@ -2598,7 +2905,8 @@ function __buildChartsExportSurface(){
   card.className = 'charts-export-card';
   surface.appendChild(card);
   const topClone = __buildTopExportClone();
-  if(topClone) card.appendChild(topClone);
+  const hero = __buildCardExportHero(topClone);
+  if(hero) card.appendChild(hero);
   const summary = document.createElement('div');
   summary.className = 'charts-export-summary';
   const highlightText = __chartsHighlightMode === 'player' ? 'Highlight Player' : 'Highlight Team';
@@ -2607,8 +2915,8 @@ function __buildChartsExportSurface(){
   const content = document.createElement('div');
   content.className = 'charts-export-content';
   const blocks = [
-    { title:String(chartBlockWorkload?.querySelector('h3')?.textContent || 'Workload').trim(), src: __chartSnapshotUrl(pdChartEl) },
-    { title:String(chartBlockGoaltending?.querySelector('h3')?.textContent || 'Performance').trim(), src: __chartSnapshotUrl(scChartEl) },
+    { title:String(chartBlockWorkload?.querySelector('h3')?.textContent || 'Workload').trim(), src: String(pdChartEl?.dataset?.exportSrc || __chartSnapshotUrl(pdChartEl) || '') },
+    { title:String(chartBlockGoaltending?.querySelector('h3')?.textContent || 'Performance').trim(), src: String(scChartEl?.dataset?.exportSrc || __chartSnapshotUrl(scChartEl) || '') },
   ];
   blocks.forEach((block)=>{
     const section = document.createElement('section');
@@ -2627,11 +2935,10 @@ function __buildChartsExportSurface(){
 async function __buildChartsPngBlob(){
   if(!String(seasonSelect?.value || '').trim()) throw new Error('Select a season before exporting charts.');
   await renderCharts();
-  try{ __pdChart?.update('none'); }catch(_){/*noop*/}
-  try{ __scChart?.update('none'); }catch(_){/*noop*/}
-  await __goalieExportDelay(120);
-  const pdSrc = __chartSnapshotUrl(pdChartEl);
-  const scSrc = __chartSnapshotUrl(scChartEl);
+  const pdSrc = await __snapshotGoalieChartImageForExport(__pdChart, pdChartEl, 1080, 640);
+  const scSrc = await __snapshotGoalieChartImageForExport(__scChart, scChartEl, 1080, 640);
+  if(pdChartEl) pdChartEl.dataset.exportSrc = pdSrc;
+  if(scChartEl) scChartEl.dataset.exportSrc = scSrc;
   if(!pdSrc || !scSrc) throw new Error('Charts are not ready for export yet.');
   const surface = __buildChartsExportSurface();
   document.body.appendChild(surface);
@@ -2642,6 +2949,8 @@ async function __buildChartsPngBlob(){
     const canvas = await __renderDesktopExportCanvas(surface.firstElementChild || surface);
     return await __canvasToBlob(canvas);
   }finally{
+    try{ if(pdChartEl) delete pdChartEl.dataset.exportSrc; }catch(_){/*noop*/}
+    try{ if(scChartEl) delete scChartEl.dataset.exportSrc; }catch(_){/*noop*/}
     surface.remove();
   }
 }
@@ -2662,18 +2971,16 @@ function __getSortedGoalieTableRows(cfg){
   return rows;
 }
 
-function __getGoalieTableExportMetricIds(cfg, limit = 5){
-  const metricIds = Array.isArray(cfg?.metricIds) ? cfg.metricIds.map(String).filter(Boolean) : [];
-  return metricIds.slice(0, Math.max(1, Number(limit) || 5));
+function __getGoalieTableExportMetricIds(defs){
+  const available = new Set((Array.isArray(defs?.metrics) ? defs.metrics : []).map((metric)=> String(metric?.id || '')).filter(Boolean));
+  return GOALIE_TABLE_EXPORT_METRIC_IDS.filter((id)=> available.has(id));
 }
 
 function __buildTableExportSurface(){
   const defs = __cardDefs || { metrics: [] };
-  const cfg0 = ensureTableConfig();
-  const allMetricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map((metric)=> String(metric?.id || '')).filter(Boolean);
-  const cfg = { ...cfg0, metricIds: allMetricIds };
+  const cfg = ensureTableConfig();
   const rows = __getSortedGoalieTableRows(cfg).slice(0, 20);
-  const metricIds = __getGoalieTableExportMetricIds(cfg, 5);
+  const metricIds = __getGoalieTableExportMetricIds(defs);
   const byId = {};
   (Array.isArray(defs?.metrics) ? defs.metrics : []).forEach((metric)=>{
     const id = String(metric?.id || '');
@@ -2688,12 +2995,14 @@ function __buildTableExportSurface(){
   const title = document.createElement('div');
   title.className = 'table-export-title';
   title.textContent = String(tableSlicerSummary?.textContent || cardSlicerSummary?.textContent || '').trim() || 'Goalies Table';
-  card.appendChild(title);
-
   const meta = document.createElement('div');
   meta.className = 'table-export-meta';
-  meta.textContent = 'Top 20 goalies • first 5 selected metrics';
-  card.appendChild(meta);
+  meta.textContent = 'Top 20 goalies • xGA • GA • Sv% • GSAA • GSAx';
+  const headerHero = document.createElement('div');
+  headerHero.className = 'table-export-header-hero';
+  headerHero.appendChild(title);
+  headerHero.appendChild(meta);
+  card.appendChild(headerHero);
 
   const wrap = document.createElement('div');
   wrap.className = 'table-export-table-wrap';
@@ -2701,7 +3010,8 @@ function __buildTableExportSurface(){
   table.className = 'table-export-table';
   const head = [`<tr><th style="width:78px;">Rank</th><th class="name" style="width:250px;">Name</th><th class="team" style="width:120px;">Team</th><th style="width:78px;">Pos</th>${metricIds.map((id)=> {
     const def = byId[id];
-    return `<th>${escapeHtml(String(metricLabel(id) || def?.name || id))}</th>`;
+    const label = GOALIE_TABLE_EXPORT_METRIC_LABELS[id] || metricLabel(id) || def?.name || id;
+    return `<th>${escapeHtml(String(label))}</th>`;
   }).join('')}</tr>`].join('');
   const body = rows.map((row, index)=>{
     const team = String(row?.team || '').trim().toUpperCase();
@@ -2800,7 +3110,8 @@ function __buildGoaltendingExportSurface(){
   card.className = 'gtend-export-card';
   surface.appendChild(card);
   const topClone = __buildTopExportClone();
-  if(topClone) card.appendChild(topClone);
+  const hero = __buildCardExportHero(topClone);
+  if(hero) card.appendChild(hero);
   const summary = document.createElement('div');
   summary.className = 'gtend-export-summary';
   summary.textContent = String(gtendSlicerSummary?.textContent || '').trim();
@@ -3289,8 +3600,9 @@ function _applyTrendControlUI(st){
 
 async function _ensureGoalieTrendSeries(playerId, seasonState, strengthState, xgModel){
   const key = JSON.stringify({ playerId:String(playerId||''), seasonState:String(seasonState||''), strengthState:String(strengthState||''), xgModel:String(xgModel||'') });
-  if(__goalieTrendSeries && __goalieTrendKey === key) return __goalieTrendSeries;
+  if(__goalieTrendSeriesBase && __goalieTrendKey === key) return __goalieTrendSeriesBase;
   __goalieTrendKey = key;
+  __goalieTrendSeriesBase = null;
   __goalieTrendSeries = null;
 
   const url = `/api/goalies/series?playerId=${encodeURIComponent(String(playerId))}`
@@ -3312,7 +3624,7 @@ async function _ensureGoalieTrendSeries(playerId, seasonState, strengthState, xg
     }))
     .filter(x=>Number.isFinite(x.season))
     .sort((a,b)=>a.season-b.season);
-  __goalieTrendSeries = cleaned;
+  __goalieTrendSeriesBase = cleaned;
   return cleaned;
 }
 
@@ -3327,103 +3639,13 @@ function _renderGoalieTrendChart(series, st){
   }
   const empty = document.getElementById('goalieTrendEmpty');
   if(empty) empty.hidden = true;
-
-  const metricKey = (st.metric === 'GSAx') ? 'GSAx' : 'GSAA';
-  const labels = series.map(r=>_seasonLabel(r.season));
-  const base = series.map(r=> Number(r?.[metricKey]));
-
-  const y = [];
-  if(st.mode === 'total'){
-    let acc = 0;
-    for(const v of base){
-      const vv = Number.isFinite(v) ? Number(v) : 0;
-      acc += vv;
-      y.push(acc);
-    }
-  }else{
-    for(const v of base) y.push(Number.isFinite(v) ? Number(v) : 0);
-  }
-
-  const yTitle = `${metricKey}${st.mode === 'total' ? ' (Total)' : ' (Season)'} `;
-
-  const data = {
-    labels,
-    datasets: [
-      {
-        label: metricKey,
-        data: y,
-        borderColor: '#d1d5db',
-        segment: {
-          borderColor: ctx => {
-            const y0 = ctx.p0.parsed.y, y1 = ctx.p1.parsed.y;
-            if(y0 >= 0 && y1 >= 0) return 'rgba(96,165,250,0.92)';
-            if(y0 <= 0 && y1 <= 0) return 'rgba(248,113,113,0.92)';
-            return '#d1d5db';
-          },
-        },
-        fill: {
-          target: 'origin',
-          above: 'rgba(59,130,246,0.18)',
-          below: 'rgba(239,68,68,0.18)',
-        },
-        // Points are drawn by a custom plugin using team logos.
-        // Keep a small hit radius for hover/tooltip.
-        pointRadius: 10,
-        pointHoverRadius: 14,
-        tension: 0.25,
-        borderWidth: 2.5,
-        pointBorderWidth: 0,
-        pointBorderColor: 'rgba(0,0,0,0)',
-        pointBackgroundColor: 'rgba(0,0,0,0)',
-        pointStyle: 'circle',
-      },
-    ],
-  };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: { display: false },
-      goalieTrendLogos: { outerR: 14, innerR: 12.6, pad: 0.35, zoom: 1.08 },
-      goalieTrendZeroLine: { color: 'rgba(209,213,219,0.55)', lineWidth: 2 },
-      tooltip: {
-        callbacks: {
-          label: (ctx)=>{
-            const v = Number(ctx?.parsed?.y);
-            if(!Number.isFinite(v)) return '';
-            const s = v > 0 ? '+' : '';
-            let teamTxt = '';
-            try{
-              const idx = Number(ctx?.dataIndex);
-              const team = String(series?.[idx]?.team || '').trim().toUpperCase();
-              if(team) teamTxt = ` (${team})`;
-            }catch(_){/*noop*/}
-            return `${metricKey}${teamTxt}: ${s}${v.toFixed(2)}`;
-          },
-        },
-      },
-    },
-    scales: {
-      x: {
-        title: { display: true, text: 'Season', color: 'rgba(255,255,255,0.78)', font: { weight: '700' } },
-        ticks: { color: 'rgba(255,255,255,0.75)' },
-        grid: { color: 'rgba(255,255,255,0.06)' },
-      },
-      y: {
-        title: { display: true, text: yTitle.trim(), color: 'rgba(255,255,255,0.78)', font: { weight: '700' } },
-        ticks: { color: 'rgba(255,255,255,0.75)' },
-        grid: { color: 'rgba(255,255,255,0.06)' },
-      },
-    },
-  };
+  const payload = __goalieTrendChartPayload(series, st);
 
   try{
     if(__goalieTrendChart){
       try{ __goalieTrendChart.$goalieTrendSeries = series; }catch(_){/*noop*/}
-      __goalieTrendChart.data = data;
-      __goalieTrendChart.options = options;
+      __goalieTrendChart.data = payload.data;
+      __goalieTrendChart.options = payload.options;
       __goalieTrendChart.update('none');
       return;
     }
@@ -3432,13 +3654,7 @@ function _renderGoalieTrendChart(series, st){
     __goalieTrendChart = null;
   }
 
-  __goalieTrendChart = new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data,
-    options,
-    plugins: [__goalieTrendZeroLinePlugin, __goalieTrendLogoPlugin],
-  });
-  try{ __goalieTrendChart.$goalieTrendSeries = series; }catch(_){/*noop*/}
+  __goalieTrendChart = __createGoalieTrendChart(canvas, series, st);
 }
 
 function displayMetricLabel(def, labels){
@@ -3659,7 +3875,10 @@ async function loadCardPanel(){
     // Load + render the season trend chart (career timeline).
     try{
       const st = _loadGoaliesTrendState();
-      const series = await _ensureGoalieTrendSeries(playerId, seasonState, strengthState, xgModel);
+      __goalieTrendCurrentPoint = __buildGoalieTrendCurrentPoint(data);
+      const seriesBase = await _ensureGoalieTrendSeries(playerId, seasonState, strengthState, xgModel);
+      const series = __mergeGoalieTrendSeries(seriesBase, __goalieTrendCurrentPoint);
+      __goalieTrendSeries = series;
       _applyTrendControlUI(st);
       _renderGoalieTrendChart(series, st);
     }catch(_){/*noop*/}

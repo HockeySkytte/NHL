@@ -62,6 +62,56 @@
 .report-subtabs button { background:none; border:none; padding:10px 10px; font-weight:700; color:var(--text-dim); cursor:pointer; position:relative; }
 .report-subtabs button.active { color:var(--text); }
 .report-subtabs button.active::after { content:""; position:absolute; left:8px; right:8px; bottom:-1px; height:3px; background:var(--accent); border-radius:3px; }
+.report-view-shell { display:flex; flex-direction:column; gap:12px; }
+.report-view-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.report-view-meta { display:flex; flex-direction:column; gap:6px; min-width:min(100%, 720px); }
+.report-view-title { margin:0; font-size:18px; }
+.report-view-context { margin:0; font-size:12px; line-height:1.45; color:var(--text-dim); }
+.report-view-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.report-share-status { min-height:18px; font-size:12px; color:var(--text-dim); }
+.report-share-status.err { color:#ffb3b3; }
+.modal{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:2000; }
+.modal[hidden]{ display:none !important; }
+.modal-card{ width:min(1100px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:#0f1522; border:1px solid #2a3142; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.6); }
+.modal-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid #232a3a; }
+.modal-title{ font-weight:900; letter-spacing:.2px; }
+.modal-bd{ padding:14px 16px; }
+.shoot-share-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; }
+.shoot-share-card{ width:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; text-align:left; min-height:132px; padding:14px; border-radius:12px; border:1px solid #2a3142; background:rgba(255,255,255,0.02); color:var(--value-text, var(--text)); cursor:pointer; }
+.shoot-share-card:hover{ background:rgba(255,255,255,0.05); }
+.shoot-share-card:disabled{ opacity:.55; cursor:not-allowed; }
+.shoot-share-card.logo-only{ align-items:center; text-align:center; }
+.shoot-share-card.logo-only .shoot-share-name,
+.shoot-share-card.logo-only .shoot-share-desc{ display:none; }
+.shoot-share-logo{ display:grid; place-items:center; width:54px; height:54px; color:currentColor; }
+.shoot-share-card.logo-only .shoot-share-logo{ width:78px; height:78px; }
+.shoot-share-logo svg{ display:block; width:100%; height:100%; }
+.shoot-share-name{ font-size:15px; font-weight:850; letter-spacing:.2px; }
+.shoot-share-desc{ font-size:12px; line-height:1.45; color:var(--text-dim); }
+.shoot-share-status{ margin-top:14px; font-size:13px; color:var(--text-dim); }
+.shoot-share-status:empty{ display:none; }
+.shoot-share-status.err{ color:#ff9d9d; }
+.shoot-share-note{ margin-bottom:14px; line-height:1.55; }
+.report-view-panel { padding:18px 20px 22px; }
+.report-export-surface { position:fixed; left:-10000px; top:0; width:1680px; padding:44px; background:radial-gradient(circle at top left, rgba(77,163,255,0.14), transparent 26%), linear-gradient(180deg, rgba(11,15,24,0.995), rgba(9,12,20,0.995)); z-index:-1; pointer-events:none; }
+.report-export-card { width:1680px; position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
+.report-export-header { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:14px; }
+.report-export-eyebrow { font-size:14px; letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,0.54); font-weight:800; }
+.report-export-header h2 { margin:8px 0 6px; font-size:48px; line-height:1.06; font-weight:900; letter-spacing:-.02em; }
+.report-export-view-label { font-size:24px; color:rgba(255,255,255,0.96); font-weight:800; }
+.report-export-context { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:6px; }
+.report-export-pill { display:inline-flex; align-items:center; padding:10px 14px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); font-size:16px; line-height:1.35; color:rgba(255,255,255,0.94); }
+.report-export-watermark { margin-top:10px; font-size:30px; color:rgba(255,255,255,0.80); text-align:right; font-weight:700; letter-spacing:.2px; }
+.report-export-surface .report-view-panel { padding:32px 32px 30px; border-radius:24px; border:1px solid rgba(255,255,255,0.08); background:rgba(24,29,45,0.52); box-shadow:none; }
+.report-export-surface .report-rink-row { grid-template-columns:1fr 320px 1fr; }
+.report-export-surface .zone-wrap { max-width:none; }
+.report-export-surface .xgmap-wrap { aspect-ratio:16/6; }
+.report-export-surface .legend { margin-top:22px; }
+.report-export-surface .zone h4 { font-size:18px; }
+.report-export-surface .kpi-card { border-radius:18px; padding:14px 16px; }
+.report-export-surface .kpi-card h5 { font-size:18px; }
+.report-export-surface .kpi .lbl { font-size:12px; }
+.report-export-surface .kpi .val { font-size:28px; }
 /* Rink layout */
 .report-rink-row { display:grid; grid-template-columns:1fr 260px 1fr; gap:14px; margin-top:10px; align-items:stretch; }
 .report-rink-row > .zone, .report-rink-row > .kpi-stack { height:100%; }
@@ -72,15 +122,15 @@
 @media (max-width: 1100px){ .report-rink-row { grid-template-columns:1fr; } }
 .xgmap-wrap{ max-width:none; margin:0; aspect-ratio:16/6; background:transparent; border:1px solid #222c3a; }
   .kpi-stack{ display:flex; flex-direction:column; height:100%; background:transparent; border:none; border-radius:0; padding:0; }
-  .kpi-card { background:rgba(0,0,0,.12); border:none; border-radius:12px; padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
+  .kpi-card { background:rgba(8,14,24,.62); border:1px solid rgba(255,255,255,.08); border-radius:18px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; box-shadow:0 10px 24px rgba(0,0,0,.18); }
   .kpi-card h5{ margin:0; font-size:12px; font-weight:800; text-align:center; color:var(--text); }
   .kpi-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
-  .kpi { background:transparent; border:none; border-radius:0; padding:0; text-align:center; }
-  .kpi.middle{ background:transparent; color:var(--text); border:none; }
+  .kpi { background:transparent; border:none; border-radius:12px; padding:6px 4px; text-align:center; }
+  .kpi.middle{ background:transparent; color:#111111; border:none; }
   .kpi .lbl{ font-size:9px; color:var(--text-dim); letter-spacing:.07em; text-transform:uppercase; font-weight:800; }
-  .kpi.middle .lbl{ color:var(--text-dim); }
+  .kpi.middle .lbl{ color:#1b2635; }
   .kpi .val{ font-size:16px; font-weight:900; font-variant-numeric:tabular-nums; }
-  .kpi.middle .val{ color:#5b9bd5; }
+  .kpi.middle .val{ color:#111111; }
 .legend { background:transparent; border:none; padding:0; display:flex; flex-wrap:nowrap; align-items:center; justify-content:center; gap:14px; margin-top:30px; }
 .legend-row{ display:flex; gap:8px; align-items:center; font-size:12px; color:var(--text); }
 .legend-row canvas{ width:28px; height:28px; background:transparent; }
@@ -109,6 +159,8 @@
   .report-subtabs{ gap:4px; }
   .report-subtabs button{ flex:1 1 0; min-width:0; padding:8px 6px; font-size:12px; line-height:1.1; text-align:center; white-space:normal; }
   .report-subtabs button.active::after{ left:4px; right:4px; height:2px; }
+  .report-view-toolbar{ flex-direction:column; align-items:stretch; }
+  .report-view-actions{ justify-content:flex-start; }
 
   /* Shot/Heat Map: KPIs first on mobile */
   .report-rink-row{ display:flex; flex-direction:column; }
@@ -146,13 +198,32 @@
   <button data-tab="shifts">Shifts</button>
 </div>
 <div id="tabContent"></div>
+<div id="reportShareModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="reportShareTitle">
+    <div class="modal-hd">
+      <div id="reportShareTitle" class="modal-title">Share Charts</div>
+      <button id="btnCloseReportShare" class="btn-export" type="button">Close</button>
+    </div>
+    <div class="modal-bd">
+      <div class="shoot-share-note">Image saved to clipboard - Remember to paste the image in the Post</div>
+      <div id="reportShareGrid" class="shoot-share-grid"></div>
+      <div id="reportShareModalStatus" class="shoot-share-status" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
 <script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
 {% endblock %}
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 const GAME_ID = "{{ game_id }}";
 const tabContent = document.getElementById('tabContent');
 const tabs = document.querySelectorAll('.game-tabs button');
+const reportShareModal = document.getElementById('reportShareModal');
+const btnCloseReportShare = document.getElementById('btnCloseReportShare');
+const reportShareGrid = document.getElementById('reportShareGrid');
+const reportShareTitle = document.getElementById('reportShareTitle');
+const reportShareModalStatus = document.getElementById('reportShareModalStatus');
 let boxscoreData, pbpData, shiftsData; let headerInitialized=false;
 
 // --- Persist Report tab view and slicer selections per game ---
@@ -642,6 +713,512 @@ async function fetchJson(url){
   try { const r= await fetch(url); return await r.json(); } catch(e){ return {}; }
 }
 
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const REPORT_EXPORTABLE_VIEWS = new Set(['shot-map','heat-map','xg-map']);
+const REPORT_SHARE_PLATFORMS = [
+  {
+    id: 'x',
+    name: 'X',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
+    color: '#ffffff',
+  },
+  {
+    id: 'bluesky',
+    name: 'Bluesky',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://bsky.app/intent/compose?text=${encodeURIComponent(text)}`,
+    color: '#1185fe',
+  },
+  {
+    id: 'linkedin',
+    name: 'LinkedIn',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(text)}`,
+    color: '#0a66c2',
+  },
+  {
+    id: 'facebook',
+    name: 'Facebook',
+    mode: 'composer',
+    buildUrl: () => 'https://www.facebook.com/',
+    color: '#1877f2',
+  },
+  {
+    id: 'reddit',
+    name: 'Reddit',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://www.reddit.com/submit?title=${encodeURIComponent(text.slice(0, 300))}`,
+    color: '#ff4500',
+  },
+  {
+    id: 'whatsapp',
+    name: 'WhatsApp',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://wa.me/?text=${encodeURIComponent(text)}`,
+    color: '#25d366',
+  },
+  {
+    id: 'telegram',
+    name: 'Telegram',
+    mode: 'composer',
+    buildUrl: ({ text }) => `https://t.me/share/url?text=${encodeURIComponent(text)}`,
+    color: '#26a5e4',
+  },
+  {
+    id: 'more-apps',
+    name: 'More Apps',
+    description: 'Uses your device share sheet and can attach the PNG directly to installed apps.',
+    mode: 'native',
+    showText: true,
+    color: '#ffffff',
+  },
+];
+let __reportShareBusy = false;
+let __reportShareView = 'shot-map';
+let __reportShareAsset = null;
+let __reportShareAssetKey = '';
+let __reportSharePreparePromise = null;
+
+function getActiveReportView(){
+  return document.querySelector('.report-subtabs .subtab-btn.active')?.dataset.view || REPORT_STATE.view || 'shot-map';
+}
+
+function getReportViewLabel(view){
+  if(view==='shot-map') return 'Shot Map';
+  if(view==='heat-map') return 'Heat Map';
+  if(view==='xg-map') return 'xG Map';
+  if(view==='skaters') return 'Skaters';
+  if(view==='goalies') return 'Goalies';
+  if(view==='video') return 'Video';
+  return 'Report';
+}
+
+function buildReportShareStateKey(view){
+  return JSON.stringify({
+    view: String(view || ''),
+    title: String(document.getElementById('gameTitle')?.textContent || '').trim(),
+    context: getReportFilterContextText(),
+    team: String(document.getElementById('slicerTeam')?.value || ''),
+    player: JSON.stringify(Array.from(document.getElementById('slicerPlayer')?.selectedOptions || []).map((option)=> option.value)),
+    period: JSON.stringify(Array.from(document.getElementById('slicerPeriod')?.selectedOptions || []).map((option)=> option.value)),
+    event: JSON.stringify(Array.from(document.getElementById('slicerEvent')?.selectedOptions || []).map((option)=> option.value)),
+    strength: JSON.stringify(Array.from(document.getElementById('slicerStrength')?.selectedOptions || []).map((option)=> option.value)),
+    onIce: JSON.stringify(Array.from(document.getElementById('slicerOnIce')?.selectedOptions || []).map((option)=> option.value)),
+    xg: String(document.getElementById('slicerXg')?.value || ''),
+    zone: String(typeof SELECTED_ZONE_BASE !== 'undefined' && SELECTED_ZONE_BASE ? SELECTED_ZONE_BASE : ''),
+  });
+}
+
+function getReportSelectedTexts(id){
+  const el = document.getElementById(id);
+  if(!el) return [];
+  return Array.from(el.selectedOptions || [])
+    .map((option)=> String(option.textContent || option.label || option.value || '').trim())
+    .filter(Boolean);
+}
+
+function summarizeReportSelection(id){
+  const values = getReportSelectedTexts(id);
+  if(!values.length) return 'All';
+  if(values.length <= 4) return values.join(', ');
+  return `${values.slice(0, 4).join(', ')} +${values.length - 4} more`;
+}
+
+function getReportFilterContextItems(){
+  const items = [
+    ['Team', summarizeReportSelection('slicerTeam')],
+    ['Player', summarizeReportSelection('slicerPlayer')],
+    ['Period', summarizeReportSelection('slicerPeriod')],
+    ['Event', summarizeReportSelection('slicerEvent')],
+    ['Strength', summarizeReportSelection('slicerStrength')],
+    ['xG Model', summarizeReportSelection('slicerXg')],
+    ['On-Ice', summarizeReportSelection('slicerOnIce')],
+  ];
+  if(SELECTED_ZONE_BASE) items.push(['Zone', SELECTED_ZONE_BASE]);
+  return items;
+}
+
+function getReportFilterContextText(){
+  return getReportFilterContextItems().map(([label, value])=> `${label}: ${value}`).join(' | ');
+}
+
+function buildReportActionBar(view){
+  return `
+    <div class="report-view-toolbar">
+      <div class="report-view-meta">
+        <h3 class="report-view-title">${escapeHtml(getReportViewLabel(view))}</h3>
+        <p class="report-view-context">${escapeHtml(getReportFilterContextText())}</p>
+        <div id="reportShareStatus" class="report-share-status" aria-live="polite"></div>
+      </div>
+      <div class="report-view-actions">
+        <button id="btnReportExportPng" class="btn-export" type="button">Export PNG</button>
+        <button id="btnReportSharePng" class="btn-export" type="button">Share</button>
+      </div>
+    </div>`;
+}
+
+function setReportShareStatus(message, isError=false){
+  const el = document.getElementById('reportShareStatus');
+  if(!el) return;
+  el.textContent = String(message || '');
+  el.classList.toggle('err', !!message && !!isError);
+}
+
+function setReportActionBusy(isBusy){
+  const exportBtn = document.getElementById('btnReportExportPng');
+  const shareBtn = document.getElementById('btnReportSharePng');
+  if(exportBtn) exportBtn.disabled = !!isBusy;
+  if(shareBtn) shareBtn.disabled = !!isBusy;
+}
+
+function buildReportExportFileName(view){
+  return `nhl-game-${GAME_ID}-${String(view || 'report').replace(/[^a-z0-9]+/gi, '-')}.png`;
+}
+
+function buildReportShareText(view){
+  const title = String(document.getElementById('gameTitle')?.textContent || 'NHL Game Report').trim();
+  const meta = getReportFilterContextText();
+  return [title, getReportViewLabel(view), meta].filter(Boolean).join(' - ');
+}
+
+async function waitForReportImages(root){
+  const images = Array.from(root.querySelectorAll('img'));
+  await Promise.all(images.map((img)=> new Promise((resolve)=>{
+    if(img.complete && img.naturalWidth > 0) return resolve();
+    const done = ()=> resolve();
+    img.addEventListener('load', done, { once:true });
+    img.addEventListener('error', done, { once:true });
+  })));
+}
+
+async function waitForReportFrames(count=2){
+  for(let index = 0; index < count; index += 1){
+    await new Promise((resolve)=> requestAnimationFrame(()=> resolve()));
+  }
+}
+
+function getScopedElement(root, id){
+  return root?.querySelector ? root.querySelector(`#${id}`) : document.getElementById(id);
+}
+
+function buildReportExportSurface(view){
+  const target = document.querySelector('#reportView .report-export-target');
+  if(!target) throw new Error('Load a report map before exporting.');
+  const surface = document.createElement('div');
+  surface.className = 'report-export-surface';
+
+  const card = document.createElement('div');
+  card.className = 'report-export-card';
+
+  const header = document.createElement('div');
+  header.className = 'report-export-header';
+  header.innerHTML = `
+    <div>
+      <div class="report-export-eyebrow">Game Report</div>
+      <h2>${escapeHtml(String(document.getElementById('gameTitle')?.textContent || 'NHL Game Report').trim())}</h2>
+      <div class="report-export-view-label">${escapeHtml(getReportViewLabel(view))}</div>
+    </div>`;
+
+  const context = document.createElement('div');
+  context.className = 'report-export-context';
+  context.innerHTML = getReportFilterContextItems()
+    .map(([label, value])=> `<span class="report-export-pill"><strong>${escapeHtml(label)}:</strong>&nbsp;${escapeHtml(value)}</span>`)
+    .join('');
+
+  const content = target.cloneNode(true);
+  const watermark = document.createElement('div');
+  watermark.className = 'report-export-watermark';
+  watermark.textContent = 'Created on https://nhl.hockey-statistics.com/';
+
+  card.appendChild(header);
+  card.appendChild(context);
+  card.appendChild(content);
+  card.appendChild(watermark);
+  surface.appendChild(card);
+  document.body.appendChild(surface);
+  return { surface, card, content };
+}
+
+async function hydrateReportExportSurface(view, root){
+  if(!root) return;
+  await waitForReportFrames(2);
+  if(view === 'shot-map'){
+    await drawRinkBases(root);
+    drawShotMapPoints(filterBySelectedZoneIfAny(filterPbpForMaps()), root, false);
+    drawLegendIcons(root);
+    return;
+  }
+  if(view === 'heat-map'){
+    await drawRinkBases(root);
+    await drawHeatMap(filterPbpForMaps(), root);
+    return;
+  }
+  if(view === 'xg-map'){
+    const canvas = getScopedElement(root, 'xgMapCanvas');
+    if(!canvas) return;
+    const ctx = setupCanvas(canvas);
+    const plays = filterPbpForKpis();
+    const team = getSelectedTeam();
+    const opp = getOpponentTeam(team);
+    const series = buildXgDiffSeries(plays);
+    drawXgMapArea(ctx, series, team, opp, plays);
+  }
+}
+
+async function renderReportExportCanvas(element){
+  if(typeof window.html2canvas !== 'function') throw new Error('PNG export is unavailable right now.');
+  if(document.fonts && document.fonts.ready){
+    try{ await document.fonts.ready; }catch(_){ }
+  }
+  await waitForReportImages(element);
+  await waitForReportFrames(2);
+  return await window.html2canvas(element, {
+    backgroundColor: '#08101b',
+    scale: 2,
+    useCORS: true,
+    logging: false,
+    windowWidth: 1800,
+    windowHeight: 1600,
+    scrollX: 0,
+    scrollY: 0,
+  });
+}
+
+function canvasToPngBlob(canvas){
+  return new Promise((resolve, reject)=>{
+    try{
+      canvas.toBlob((blob)=>{
+        if(blob) resolve(blob);
+        else reject(new Error('Could not build the PNG export.'));
+      }, 'image/png');
+    }catch(error){
+      reject(error);
+    }
+  });
+}
+
+function downloadReportBlob(fileName, blob){
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(()=>{
+    try{ URL.revokeObjectURL(href); }catch(_){ }
+    try{ link.remove(); }catch(_){ }
+  }, 250);
+}
+
+async function buildReportPngBlob(view){
+  const { surface, card, content } = buildReportExportSurface(view);
+  try{
+    await hydrateReportExportSurface(view, content);
+    const canvas = await renderReportExportCanvas(card);
+    return await canvasToPngBlob(canvas);
+  }finally{
+    surface.remove();
+  }
+}
+
+function canShareReportPng(){
+  return !!(window.isSecureContext && typeof navigator.share === 'function' && typeof window.File !== 'undefined');
+}
+
+function canCopyReportPng(){
+  return !!(window.isSecureContext && navigator.clipboard?.write && typeof window.ClipboardItem !== 'undefined');
+}
+
+async function copyReportPngToClipboard(blob, text){
+  if(!canCopyReportPng()) throw new Error('Clipboard PNG copy is not available in this browser.');
+  const item = {
+    'image/png': blob,
+    'text/plain': new Blob([text], { type:'text/plain' }),
+  };
+  await navigator.clipboard.write([new ClipboardItem(item)]);
+}
+
+function setReportShareModalStatus(message, isError = false){
+  if(!reportShareModalStatus) return;
+  reportShareModalStatus.textContent = String(message || '');
+  reportShareModalStatus.classList.toggle('err', !!isError && !!message);
+}
+
+function closeReportShareModal(){
+  if(reportShareModal) reportShareModal.hidden = true;
+}
+
+function reportShareIconSvg(platformId){
+  switch(platformId){
+    case 'more-apps':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="10" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"/><rect x="36" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"/><rect x="10" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"/><rect x="36" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"/></svg>`;
+    case 'x':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" d="M12 12h11.6l11.2 15 13-15H52L37.5 28.7 54 52H42.4L30.8 36.4 17.2 52H12l15.8-18.2z"/></svg>`;
+    case 'bluesky':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" d="M15.5 17.5c5.6 4.2 11.6 12.8 16.5 22.2 4.9-9.4 10.9-18 16.5-22.2 4.1-3.1 10.5-5.5 10.5 2.2 0 1.5-.8 12.5-1.3 14.3-1.8 6.4-8.1 8-13.8 7.1 10.1 1.7 12.7 7.4 7.1 13.1-10.7 10.8-15.4-2.7-16.6-6.2-.2-.6-.3-.8-.4-.8s-.2.2-.4.8c-1.2 3.5-5.9 17-16.6 6.2-5.5-5.6-2.9-11.4 7.1-13.1-5.8.9-12-0.7-13.8-7.1-.5-1.8-1.3-12.8-1.3-14.3 0-7.8 6.4-5.4 10.5-2.2z"/></svg>`;
+    case 'linkedin':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="48" height="48" rx="10" fill="currentColor"/><rect x="18" y="26" width="7" height="20" fill="#0f1522"/><circle cx="21.5" cy="19.5" r="4" fill="#0f1522"/><path fill="#0f1522" d="M31 26h6.4v2.8h.1c1-1.8 3.5-3.8 7.2-3.8 7.7 0 9.1 5.1 9.1 11.7V46h-7V37.8c0-3.9-.1-8.9-5.4-8.9-5.4 0-6.2 4.2-6.2 8.6V46h-7z"/></svg>`;
+    case 'facebook':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><path fill="#0f1522" d="M35.6 52V34.5h5.9l.9-6.8h-6.8v-4.3c0-2 1-3.8 4.3-3.8H43v-5.8c-1-.1-2.9-.3-5.6-.3-5.5 0-9.2 3.3-9.2 9.5v4.7h-6.2v6.8h6.2V52z"/></svg>`;
+    case 'reddit':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><circle cx="24" cy="33" r="3.2" fill="#0f1522"/><circle cx="40" cy="33" r="3.2" fill="#0f1522"/><path d="M24 41c2.2 2 4.9 3 8 3s5.8-1 8-3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M25 24l3.8-8.2 9.8 2.1" stroke="#0f1522" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="42.8" cy="19.6" r="3.6" fill="#0f1522"/><path d="M19 28.5c-2.7 0-5 2.2-5 5 0 1.9 1 3.5 2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M45 28.5c2.7 0 5 2.2 5 5 0 1.9-1 3.5-2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"/></svg>`;
+    case 'whatsapp':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><path fill="#0f1522" d="M32 19c-7.3 0-13.2 5.7-13.2 12.8 0 2.7.8 5.2 2.4 7.3l-1.8 6.2 6.4-1.7c2 1.3 4.2 2 6.6 2 7.3 0 13.2-5.7 13.2-12.8S39.3 19 32 19zm7.8 17.3c-.3.9-1.8 1.6-2.6 1.7-.7.1-1.6.2-5.2-1.3-4.6-1.9-7.5-6.5-7.7-6.8-.2-.3-1.9-2.5-1.9-4.8 0-2.2 1.2-3.3 1.6-3.8.4-.4.9-.5 1.2-.5h.9c.3 0 .8-.1 1.2.9.4 1 .4 3.2.1 3.5-.2.4-.4.6-.8 1-.4.4-.8.7-.4 1.4.4.7 1.8 2.9 3.8 4.7 2.6 2.3 4.6 3 5.3 3.3.5.2.9.2 1.3-.2.4-.5 1.5-1.7 2-2.3.4-.5.9-.5 1.4-.3.5.2 3.2 1.5 3.7 1.8.5.3.9.5 1 .8.1.3.1 1.5-.2 2.4z"/></svg>`;
+    case 'telegram':
+      return `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><path fill="#0f1522" d="M46.7 20.4 19.8 30.8c-1.8.7-1.8 1.7-.3 2.1l6.9 2.2 2.7 8.7c.3.9.2 1.3 1.1 1.3.7 0 1-.3 1.4-.7l3.4-3.3 7.2 5.3c1.3.7 2.3.3 2.6-1.3l4.6-21.7c.5-1.9-.7-2.8-2.7-2zM28 34.6l14.7-9.3c.7-.4 1.4-.2.9.3L31.3 36.7l-.5 5.6z"/></svg>`;
+    default:
+      return '';
+  }
+}
+
+function renderReportShareOptions(){
+  if(!reportShareGrid) return;
+  reportShareGrid.innerHTML = REPORT_SHARE_PLATFORMS.map((platform)=>{
+    const disabled = __reportShareBusy || (platform.mode === 'native' ? !canShareReportPng() : !canCopyReportPng());
+    const showText = !!platform.showText;
+    const icon = reportShareIconSvg(platform.id);
+    return `<button type="button" class="shoot-share-card${showText ? '' : ' logo-only'}" data-platform="${platform.id}" aria-label="${platform.name}"${disabled ? ' disabled' : ''}><span class="shoot-share-logo" style="color:${platform.color || '#ffffff'};">${icon}</span><span class="shoot-share-name">${platform.name}</span>${showText ? `<span class="shoot-share-desc">${platform.description || ''}</span>` : `<span class="visually-hidden">${platform.name}</span>`}</button>`;
+  }).join('');
+}
+
+function setReportShareBusy(isBusy){
+  __reportShareBusy = !!isBusy;
+  renderReportShareOptions();
+}
+
+async function prepareCurrentReportShareAsset(view){
+  const key = buildReportShareStateKey(view);
+  if(__reportShareAsset && __reportShareAssetKey === key) return __reportShareAsset;
+  if(__reportSharePreparePromise && __reportShareAssetKey === key) return __reportSharePreparePromise;
+  __reportShareAssetKey = key;
+  __reportSharePreparePromise = (async ()=>{
+    const blob = await buildReportPngBlob(view);
+    const asset = {
+      blob,
+      fileName: buildReportExportFileName(view),
+      text: buildReportShareText(view),
+      url: window.location.href,
+    };
+    __reportShareAsset = asset;
+    return asset;
+  })().catch((error)=>{
+    __reportShareAsset = null;
+    __reportShareAssetKey = '';
+    throw error;
+  }).finally(()=>{
+    __reportSharePreparePromise = null;
+  });
+  return __reportSharePreparePromise;
+}
+
+async function prepareCurrentReportShareClipboard(view){
+  try{
+    const asset = await prepareCurrentReportShareAsset(view);
+    if(canCopyReportPng()) await copyReportPngToClipboard(asset.blob, asset.text);
+    setReportShareBusy(false);
+    setReportShareModalStatus('');
+    return asset;
+  }catch(error){
+    setReportShareBusy(false);
+    setReportShareModalStatus(error?.message || 'Could not prepare the PNG for sharing.', true);
+    throw error;
+  }
+}
+
+async function shareReportPngToPlatform(platformId){
+  const platform = REPORT_SHARE_PLATFORMS.find((item)=> item.id === platformId);
+  if(!platform) return;
+  let popup = null;
+  try{
+    const asset = await prepareCurrentReportShareAsset(__reportShareView);
+    if(platform.mode === 'composer'){
+      popup = window.open('about:blank', '_blank');
+      if(!popup) throw new Error('Allow pop-ups for this site to open the selected platform.');
+      try{
+        popup.document.write('<title>Preparing share...</title><body style="margin:0;display:grid;place-items:center;min-height:100vh;background:#0f1522;color:#f5f7fa;font:600 16px system-ui,sans-serif;">Preparing share...</body>');
+        popup.document.close();
+      }catch(_){ }
+    }
+    if(platform.mode === 'native'){
+      const file = new File([asset.blob], asset.fileName, { type:'image/png' });
+      if(typeof navigator.canShare === 'function' && !navigator.canShare({ files:[file] })) throw new Error('This browser cannot share PNG files directly.');
+      await navigator.share({ files:[file], title: asset.fileName.replace(/\.png$/i, ''), text: asset.text });
+      closeReportShareModal();
+      return;
+    }
+    const shareUrl = platform.buildUrl(asset);
+    if(popup) popup.location.replace(shareUrl);
+    closeReportShareModal();
+  }catch(error){
+    if(error?.name === 'AbortError') return;
+    try{ popup?.close(); }catch(_){ }
+    setReportShareModalStatus(error?.message || 'Could not complete the share action.', true);
+  }
+}
+
+async function openReportShareModal(view){
+  __reportShareView = String(view || getActiveReportView() || 'shot-map');
+  __reportShareAsset = null;
+  __reportShareAssetKey = '';
+  if(reportShareTitle) reportShareTitle.textContent = 'Share Charts';
+  setReportShareBusy(true);
+  setReportShareModalStatus('');
+  if(reportShareModal) reportShareModal.hidden = false;
+  void prepareCurrentReportShareClipboard(__reportShareView);
+}
+
+async function exportCurrentReportPng(view){
+  const blob = await buildReportPngBlob(view);
+  downloadReportBlob(buildReportExportFileName(view), blob);
+}
+
+function wireReportExportActions(view){
+  if(!REPORT_EXPORTABLE_VIEWS.has(view)) return;
+  const exportBtn = document.getElementById('btnReportExportPng');
+  const shareBtn = document.getElementById('btnReportSharePng');
+  if(exportBtn){
+    exportBtn.addEventListener('click', async ()=>{
+      setReportActionBusy(true);
+      setReportShareStatus('');
+      try{
+        await exportCurrentReportPng(view);
+        setReportShareStatus('PNG exported.');
+      }catch(error){
+        setReportShareStatus(error?.message || 'Could not export PNG.', true);
+      }finally{
+        setReportActionBusy(false);
+      }
+    });
+  }
+  if(shareBtn){
+    shareBtn.addEventListener('click', async ()=>{
+      setReportActionBusy(true);
+      setReportShareStatus('');
+      try{
+        await openReportShareModal(view);
+      }catch(error){
+        if(error?.name === 'AbortError'){
+          setReportShareStatus('');
+        }else{
+          setReportShareStatus(error?.message || 'Could not share PNG.', true);
+        }
+      }finally{
+        setReportActionBusy(false);
+      }
+    });
+  }
+}
+
 // ------- Report helpers (client-side filtering of current game's PBP) ---------
 function buildTeamPerspectiveOptions(){
   const home = boxscoreData?.homeTeam?.abbrev || 'HOME';
@@ -933,170 +1510,179 @@ function renderReportView(view){
   const corsiUniverse = filterPbpForCorsi();
   if(view==='shot-map'){
     wrap.innerHTML = `
-      <div class="report-rink-row">
-        <div class="zone zone-def">
-          <h4>Defensive Zone</h4>
-          <div class="zone-wrap">
-            <canvas id="defBase"></canvas>
-            <canvas id="defShots"></canvas>
-          </div>
-        </div>
-        <div class="kpi-stack report-kpis">
-          <div style="display:flex; flex-direction:column; justify-content:space-between; gap:14px; flex:1;">
-            <div class="kpi-card">
-              <h5>Corsi</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">CA</div><div class="val" id="k_ca">—</div></div>
-                <div class="kpi middle"><div class="lbl">CF%</div><div class="val" id="k_cfp">—</div></div>
-                <div class="kpi"><div class="lbl">CF</div><div class="val" id="k_cf">—</div></div>
+      <div class="report-view-shell">
+        ${buildReportActionBar('shot-map')}
+        <div class="report-export-target">
+          <div class="panel report-view-panel">
+            <div class="report-rink-row">
+              <div class="zone zone-def">
+                <h4>Defensive Zone</h4>
+                <div class="zone-wrap">
+                  <canvas id="defBase"></canvas>
+                  <canvas id="defShots"></canvas>
+                </div>
+              </div>
+              <div class="kpi-stack report-kpis">
+                <div style="display:flex; flex-direction:column; justify-content:space-between; gap:14px; flex:1;">
+                  <div class="kpi-card">
+                    <h5>Corsi</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">CA</div><div class="val" id="k_ca">—</div></div>
+                      <div class="kpi middle"><div class="lbl">CF%</div><div class="val" id="k_cfp">—</div></div>
+                      <div class="kpi"><div class="lbl">CF</div><div class="val" id="k_cf">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>Fenwick</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">FA</div><div class="val" id="k_fa">—</div></div>
+                      <div class="kpi middle"><div class="lbl">FF%</div><div class="val" id="k_ffp">—</div></div>
+                      <div class="kpi"><div class="lbl">FF</div><div class="val" id="k_ff">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>Shots</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">SA</div><div class="val" id="k_sa">—</div></div>
+                      <div class="kpi middle"><div class="lbl">SF%</div><div class="val" id="k_sfp">—</div></div>
+                      <div class="kpi"><div class="lbl">SF</div><div class="val" id="k_sf">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>xG</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">XGA</div><div class="val" id="k_xga">—</div></div>
+                      <div class="kpi middle"><div class="lbl">XGF%</div><div class="val" id="k_xgfp">—</div></div>
+                      <div class="kpi"><div class="lbl">XGF</div><div class="val" id="k_xgf">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>Goals</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">GA</div><div class="val" id="k_ga">—</div></div>
+                      <div class="kpi middle"><div class="lbl">GF%</div><div class="val" id="k_gfp">—</div></div>
+                      <div class="kpi"><div class="lbl">GF</div><div class="val" id="k_gf">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>Shooting / Goaltending</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">SV%</div><div class="val" id="k_svp">—</div></div>
+                      <div class="kpi middle"><div class="lbl">PDO</div><div class="val" id="k_pdo">—</div></div>
+                      <div class="kpi"><div class="lbl">SH%</div><div class="val" id="k_shp">—</div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="zone zone-off">
+                <h4>Offensive Zone</h4>
+                <div class="zone-wrap">
+                  <canvas id="offBase"></canvas>
+                  <canvas id="offShots"></canvas>
+                </div>
               </div>
             </div>
-            <div class="kpi-card">
-              <h5>Fenwick</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">FA</div><div class="val" id="k_fa">—</div></div>
-                <div class="kpi middle"><div class="lbl">FF%</div><div class="val" id="k_ffp">—</div></div>
-                <div class="kpi"><div class="lbl">FF</div><div class="val" id="k_ff">—</div></div>
-              </div>
+            <div class="legend">
+              <div class="legend-row"><canvas data-legend="shot"></canvas> <span>Shot</span></div>
+              <div class="legend-row"><canvas data-legend="goal"></canvas> <span>Goal</span></div>
+              <div class="legend-row"><canvas data-legend="miss"></canvas> <span>Miss</span></div>
             </div>
-            <div class="kpi-card">
-              <h5>Shots</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">SA</div><div class="val" id="k_sa">—</div></div>
-                <div class="kpi middle"><div class="lbl">SF%</div><div class="val" id="k_sfp">—</div></div>
-                <div class="kpi"><div class="lbl">SF</div><div class="val" id="k_sf">—</div></div>
-              </div>
-            </div>
-            <div class="kpi-card">
-              <h5>xG</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">XGA</div><div class="val" id="k_xga">—</div></div>
-                <div class="kpi middle"><div class="lbl">XGF%</div><div class="val" id="k_xgfp">—</div></div>
-                <div class="kpi"><div class="lbl">XGF</div><div class="val" id="k_xgf">—</div></div>
-              </div>
-            </div>
-            <div class="kpi-card">
-              <h5>Goals</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">GA</div><div class="val" id="k_ga">—</div></div>
-                <div class="kpi middle"><div class="lbl">GF%</div><div class="val" id="k_gfp">—</div></div>
-                <div class="kpi"><div class="lbl">GF</div><div class="val" id="k_gf">—</div></div>
-              </div>
-            </div>
-            <div class="kpi-card">
-              <h5>Shooting / Goaltending</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">SV%</div><div class="val" id="k_svp">—</div></div>
-                <div class="kpi middle"><div class="lbl">PDO</div><div class="val" id="k_pdo">—</div></div>
-                <div class="kpi"><div class="lbl">SH%</div><div class="val" id="k_shp">—</div></div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="zone zone-off">
-          <h4>Offensive Zone</h4>
-          <div class="zone-wrap">
-            <canvas id="offBase"></canvas>
-            <canvas id="offShots"></canvas>
           </div>
         </div>
       </div>`;
-    // append a single-row legend below the entire row
-    const rowLegend = document.createElement('div');
-    rowLegend.className = 'legend';
-    rowLegend.innerHTML = `
-      <div class="legend-row"><canvas data-legend="shot"></canvas> <span>Shot</span></div>
-      <div class="legend-row"><canvas data-legend="goal"></canvas> <span>Goal</span></div>
-      <div class="legend-row"><canvas data-legend="miss"></canvas> <span>Miss</span></div>
-    `;
-    document.getElementById('reportView').appendChild(rowLegend);
-  drawRinkBases();
-  drawShotMapPoints(filterBySelectedZoneIfAny(mapPlays));
-  updateKpiStrip(filterBySelectedZoneIfAny(kpiPlays), filterBySelectedZoneIfAny(corsiUniverse));
+    drawRinkBases();
+    drawShotMapPoints(filterBySelectedZoneIfAny(mapPlays));
+    updateKpiStrip(filterBySelectedZoneIfAny(kpiPlays), filterBySelectedZoneIfAny(corsiUniverse));
     drawLegendIcons();
     wireZoneClicksForView('shot-map');
+    wireReportExportActions('shot-map');
     try{ saveReportState(); }catch(_){ }
   } else if(view==='heat-map'){
     wrap.innerHTML = `
-      <div class="report-rink-row">
-        <div class="zone zone-def">
-          <h4>Defensive Zone</h4>
-          <div class="zone-wrap">
-            <canvas id="defBase"></canvas>
-            <canvas id="defHeat"></canvas>
-          </div>
-        </div>
-  <div class="kpi-stack report-kpis">
-    <div style="display:flex; flex-direction:column; justify-content:space-between; gap:14px; flex:1;">
-            <div class="kpi-card">
-              <h5>Corsi</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">CA</div><div class="val" id="k_ca">—</div></div>
-                <div class="kpi middle"><div class="lbl">CF%</div><div class="val" id="k_cfp">—</div></div>
-                <div class="kpi"><div class="lbl">CF</div><div class="val" id="k_cf">—</div></div>
+      <div class="report-view-shell">
+        ${buildReportActionBar('heat-map')}
+        <div class="report-export-target">
+          <div class="panel report-view-panel">
+            <div class="report-rink-row">
+              <div class="zone zone-def">
+                <h4>Defensive Zone</h4>
+                <div class="zone-wrap">
+                  <canvas id="defBase"></canvas>
+                  <canvas id="defHeat"></canvas>
+                </div>
+              </div>
+              <div class="kpi-stack report-kpis">
+                <div style="display:flex; flex-direction:column; justify-content:space-between; gap:14px; flex:1;">
+                  <div class="kpi-card">
+                    <h5>Corsi</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">CA</div><div class="val" id="k_ca">—</div></div>
+                      <div class="kpi middle"><div class="lbl">CF%</div><div class="val" id="k_cfp">—</div></div>
+                      <div class="kpi"><div class="lbl">CF</div><div class="val" id="k_cf">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>Fenwick</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">FA</div><div class="val" id="k_fa">—</div></div>
+                      <div class="kpi middle"><div class="lbl">FF%</div><div class="val" id="k_ffp">—</div></div>
+                      <div class="kpi"><div class="lbl">FF</div><div class="val" id="k_ff">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>Shots</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">SA</div><div class="val" id="k_sa">—</div></div>
+                      <div class="kpi middle"><div class="lbl">SF%</div><div class="val" id="k_sfp">—</div></div>
+                      <div class="kpi"><div class="lbl">SF</div><div class="val" id="k_sf">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>xG</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">XGA</div><div class="val" id="k_xga">—</div></div>
+                      <div class="kpi middle"><div class="lbl">XGF%</div><div class="val" id="k_xgfp">—</div></div>
+                      <div class="kpi"><div class="lbl">XGF</div><div class="val" id="k_xgf">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>Goals</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">GA</div><div class="val" id="k_ga">—</div></div>
+                      <div class="kpi middle"><div class="lbl">GF%</div><div class="val" id="k_gfp">—</div></div>
+                      <div class="kpi"><div class="lbl">GF</div><div class="val" id="k_gf">—</div></div>
+                    </div>
+                  </div>
+                  <div class="kpi-card">
+                    <h5>Shooting / Goaltending</h5>
+                    <div class="kpi-grid">
+                      <div class="kpi"><div class="lbl">SV%</div><div class="val" id="k_svp">—</div></div>
+                      <div class="kpi middle"><div class="lbl">PDO</div><div class="val" id="k_pdo">—</div></div>
+                      <div class="kpi"><div class="lbl">SH%</div><div class="val" id="k_shp">—</div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="zone zone-off">
+                <h4>Offensive Zone</h4>
+                <div class="zone-wrap">
+                  <canvas id="offBase"></canvas>
+                  <canvas id="offHeat"></canvas>
+                </div>
               </div>
             </div>
-            <div class="kpi-card">
-              <h5>Fenwick</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">FA</div><div class="val" id="k_fa">—</div></div>
-                <div class="kpi middle"><div class="lbl">FF%</div><div class="val" id="k_ffp">—</div></div>
-                <div class="kpi"><div class="lbl">FF</div><div class="val" id="k_ff">—</div></div>
-              </div>
+            <div class="legend">
+              <div class="legend-row"><span style="display:inline-block;width:240px;height:14px;border-radius:999px;background:linear-gradient(90deg,#d8ecff,#2f7cff);box-shadow:0 0 0 1px rgba(255,255,255,0.25) inset;"></span></div>
             </div>
-            <div class="kpi-card">
-              <h5>Shots</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">SA</div><div class="val" id="k_sa">—</div></div>
-                <div class="kpi middle"><div class="lbl">SF%</div><div class="val" id="k_sfp">—</div></div>
-                <div class="kpi"><div class="lbl">SF</div><div class="val" id="k_sf">—</div></div>
-              </div>
-            </div>
-            <div class="kpi-card">
-              <h5>xG</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">XGA</div><div class="val" id="k_xga">—</div></div>
-                <div class="kpi middle"><div class="lbl">XGF%</div><div class="val" id="k_xgfp">—</div></div>
-                <div class="kpi"><div class="lbl">XGF</div><div class="val" id="k_xgf">—</div></div>
-              </div>
-            </div>
-            <div class="kpi-card">
-              <h5>Goals</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">GA</div><div class="val" id="k_ga">—</div></div>
-                <div class="kpi middle"><div class="lbl">GF%</div><div class="val" id="k_gfp">—</div></div>
-                <div class="kpi"><div class="lbl">GF</div><div class="val" id="k_gf">—</div></div>
-              </div>
-            </div>
-            <div class="kpi-card">
-              <h5>Shooting / Goaltending</h5>
-              <div class="kpi-grid">
-                <div class="kpi"><div class="lbl">SV%</div><div class="val" id="k_svp">—</div></div>
-                <div class="kpi middle"><div class="lbl">PDO</div><div class="val" id="k_pdo">—</div></div>
-                <div class="kpi"><div class="lbl">SH%</div><div class="val" id="k_shp">—</div></div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="zone zone-off">
-          <h4>Offensive Zone</h4>
-          <div class="zone-wrap">
-            <canvas id="offBase"></canvas>
-            <canvas id="offHeat"></canvas>
           </div>
         </div>
       </div>`;
-    // append a single-row heat legend below the entire row
-  const heatLegend = document.createElement('div');
-  heatLegend.className = 'legend';
-  // rounded pill with no label, centered under the row
-  heatLegend.innerHTML = `<div class="legend-row"><span style="display:inline-block;width:240px;height:14px;border-radius:999px;background:linear-gradient(90deg,#ffdede,#ff3d3d);box-shadow:0 0 0 1px rgba(255,255,255,0.25) inset;"></span></div>`;
-  document.getElementById('reportView').appendChild(heatLegend);
-  drawRinkBases();
-  // Do not filter the heat maps by selected zone; only KPIs should filter. Selected zone will still be highlighted.
-  drawHeatMap(mapPlays);
-  updateKpiStrip(filterBySelectedZoneIfAny(kpiPlays), filterBySelectedZoneIfAny(corsiUniverse));
+    drawRinkBases();
+    // Do not filter the heat maps by selected zone; only KPIs should filter. Selected zone will still be highlighted.
+    drawHeatMap(mapPlays);
+    updateKpiStrip(filterBySelectedZoneIfAny(kpiPlays), filterBySelectedZoneIfAny(corsiUniverse));
     wireZoneClicksForView('heat-map');
+    wireReportExportActions('heat-map');
     try{ saveReportState(); }catch(_){ }
   } else if(view==='xg-map'){
     const kpiPlays = filterPbpForKpis();
@@ -1316,11 +1902,11 @@ function loadRink(){
   _rinkImgPromise = new Promise(res=>{ const img=new Image(); img.onload=()=>res(img); img.src=RINK_SRC; });
   return _rinkImgPromise;
 }
-function setupCanvas(c){ c.width=c.clientWidth; c.height=c.clientHeight; return c.getContext('2d'); }
-async function drawRinkBases(){
+function setupCanvas(c){ c.width = Math.max(1, Math.round(c.clientWidth || c.width || 0)); c.height = Math.max(1, Math.round(c.clientHeight || c.height || 0)); return c.getContext('2d'); }
+async function drawRinkBases(root=document){
   const img = await loadRink();
-  const defBase = document.getElementById('defBase');
-  const offBase = document.getElementById('offBase');
+  const defBase = getScopedElement(root, 'defBase');
+  const offBase = getScopedElement(root, 'offBase');
   if(!defBase || !offBase) return;
   const dc = setupCanvas(defBase); const oc = setupCanvas(offBase);
   dc.clearRect(0,0,defBase.width,defBase.height); oc.clearRect(0,0,offBase.width,offBase.height);
@@ -1367,10 +1953,10 @@ function drawMarker(ctx, type, x, y, color, size=6){
   }
   ctx.restore();
 }
-function drawShotMapPoints(plays){
+function drawShotMapPoints(plays, root=document, wireTooltip=true){
   const team = getSelectedTeam();
-  const defC = document.getElementById('defShots');
-  const offC = document.getElementById('offShots');
+  const defC = getScopedElement(root, 'defShots');
+  const offC = getScopedElement(root, 'offShots');
   if(!defC || !offC) return;
   const dctx = setupCanvas(defC); const octx = setupCanvas(offC);
   dctx.clearRect(0,0,defC.width,defC.height); octx.clearRect(0,0,offC.width,offC.height);
@@ -1394,7 +1980,7 @@ function drawShotMapPoints(plays){
     // index for hover (store screen coords and source data)
     hoverIdx.push({ ctxId: isFor? 'offShots':'defShots', x:px, y:py, pl, isFor });
   });
-  wireShotTooltip(hoverIdx);
+  if(wireTooltip) wireShotTooltip(hoverIdx);
 }
 function drawHeat(ctx, points){
   ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height);
@@ -1403,8 +1989,8 @@ function drawHeat(ctx, points){
     const r = Math.max(12, Math.floor(ctx.canvas.width*0.025));
     const grad = ctx.createRadialGradient(x,y,1, x,y,r);
     const a = Math.min(0.20 + 0.15*(weight||1), 0.6);
-    grad.addColorStop(0, `rgba(255,80,80,${a})`);
-    grad.addColorStop(1, 'rgba(255,80,80,0)');
+    grad.addColorStop(0, `rgba(76,168,255,${a})`);
+    grad.addColorStop(1, 'rgba(76,168,255,0)');
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
   });
@@ -1447,10 +2033,10 @@ function wireShotTooltip(index){
     c.onmouseleave = ()=> hideShotTooltip();
   });
 }
-async function drawHeatMap(plays){
+async function drawHeatMap(plays, root=document){
   const team = getSelectedTeam();
-  const defHeat = document.getElementById('defHeat');
-  const offHeat = document.getElementById('offHeat');
+  const defHeat = getScopedElement(root, 'defHeat');
+  const offHeat = getScopedElement(root, 'offHeat');
   if(!defHeat || !offHeat) return;
   const dctx = setupCanvas(defHeat); const octx = setupCanvas(offHeat);
   // Zone-based heat using BoxID for team attempts and BoxID_rev for opponent attempts
@@ -1488,7 +2074,7 @@ function projectPoint(x,y,isOffensive){
   const zx = isOffensive ? (x-25)/75 : (x+100)/75; const zy=(42.5-y)/85; return [zx,zy];
 }
 function zonePath(ctx, feature, isOffensive){ const coords=feature.geometry.coordinates[0]; ctx.beginPath(); let started=false; for(const [x,y] of coords){ const inHalf=isOffensive? x>=25 : x<=-25; if(!inHalf) continue; const [px,py]=projectPoint(x,y,isOffensive); const cx=px*ctx.canvas.width; const cy=py*ctx.canvas.height; if(!started){ ctx.moveTo(cx,cy); started=true; } else ctx.lineTo(cx,cy);} ctx.closePath(); }
-function scaleColor(val,minVal,maxVal, dim=false){ if(maxVal<=minVal) return dim? 'rgba(130,130,130,0.15)':'rgba(255,210,210,0.45)'; const t=Math.max(0,Math.min(1,(val-minVal)/(maxVal-minVal))); const r=255; const g=Math.round(210*(1-t)+40*t); const b=Math.round(210*(1-t)+60*t); let a=0.35+0.45*t; if(dim) a*=0.35; return `rgba(${r},${g},${b},${a})`; }
+function scaleColor(val,minVal,maxVal, dim=false){ if(maxVal<=minVal) return dim? 'rgba(130,130,130,0.15)':'rgba(190,225,255,0.45)'; const t=Math.max(0,Math.min(1,(val-minVal)/(maxVal-minVal))); const r=Math.round(216*(1-t)+47*t); const g=Math.round(235*(1-t)+124*t); const b=Math.round(255*(1-t)+255*t); let a=0.32+0.46*t; if(dim) a*=0.35; return `rgba(${r},${g},${b},${a})`; }
 async function drawZonesHeat(ctx, prefix, totals, minOverride=null, maxOverride=null){
   await ensureZones();
   ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height);
@@ -1574,9 +2160,9 @@ function applyGradientToKpi(id, colorer){
   const valEl=document.getElementById(id); if(!valEl) return;
   const card=valEl.closest('.kpi'); if(!card) return;
   const raw=parseFloat((valEl.textContent||'').replace('%',''));
-  const {bg,fg}=colorer(isNaN(raw)? null : raw);
-  card.style.background=bg; card.style.color=fg;
-  const lbl=card.querySelector('.lbl'); if(lbl) lbl.style.color = (fg==='#ffffff') ? 'rgba(255,255,255,0.9)' : '#23324d';
+  const {bg}=colorer(isNaN(raw)? null : raw);
+  card.style.background=bg; card.style.color='#111111';
+  const lbl=card.querySelector('.lbl'); if(lbl) lbl.style.color = '#1b2635';
 }
 function applyKpiGradients(){
   applyGradientToKpi('k_cfp', pctToColor);
@@ -1671,13 +2257,15 @@ function renderTeamsPage(wrap, plays){
   const team = getSelectedTeam(); const opp = getOpponentTeam(team);
   const series = buildXgDiffSeries(plays);
   wrap.innerHTML = `
-    <div class="panel">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
-        <h3 style='margin:0;font-size:18px;'>xG Map</h3>
-      </div>
-      <div>
-        <div class="zone-wrap xgmap-wrap">
-          <canvas id="xgMapCanvas"></canvas>
+    <div class="report-view-shell">
+      ${buildReportActionBar('xg-map')}
+      <div class="report-export-target">
+        <div class="panel report-view-panel">
+          <div>
+            <div class="zone-wrap xgmap-wrap">
+              <canvas id="xgMapCanvas"></canvas>
+            </div>
+          </div>
         </div>
       </div>
     </div>`;
@@ -1685,6 +2273,7 @@ function renderTeamsPage(wrap, plays){
   const ctx = canvas.getContext('2d'); canvas.width=canvas.clientWidth; canvas.height=canvas.clientHeight;
   drawXgMapArea(ctx, series, team, opp, plays);
   setupXgMapResizeObserver(canvas.parentElement, ctx, series, team, opp, plays);
+  wireReportExportActions('xg-map');
   // Tooltip interaction
   const tip = ensureShotTooltip(); // reuse tooltip shell
   const pad = {l:48,r:18,t:18,b:48};
@@ -1794,6 +2383,8 @@ function drawXgMapArea(ctx, series, team, opp, plays){
     const teamLogo = (boxscoreData?.homeTeam?.abbrev===team? boxscoreData?.homeTeam?.darkLogo||boxscoreData?.homeTeam?.logo : boxscoreData?.awayTeam?.darkLogo||boxscoreData?.awayTeam?.logo) || '';
     const oppLogo = (boxscoreData?.homeTeam?.abbrev===opp? boxscoreData?.homeTeam?.darkLogo||boxscoreData?.homeTeam?.logo : boxscoreData?.awayTeam?.darkLogo||boxscoreData?.awayTeam?.logo) || '';
     const tImg = teamLogo? new Image(): null; const oImg = oppLogo? new Image(): null;
+    if(tImg) tImg.crossOrigin = 'anonymous';
+    if(oImg) oImg.crossOrigin = 'anonymous';
     const goals = (plays||[]).filter(pl=> pl.Goal===1);
     const drawOnce=()=>{
       // map goals to (t,y)
@@ -1972,9 +2563,10 @@ function renderGoaliesTable(wrap, rows){
   });
 }
 
-function drawLegendIcons(){
+function drawLegendIcons(root=document){
   const color = '#ffffff';
-  document.querySelectorAll('canvas[data-legend]').forEach(c=>{
+  const canvases = root?.querySelectorAll ? root.querySelectorAll('canvas[data-legend]') : document.querySelectorAll('canvas[data-legend]');
+  canvases.forEach(c=>{
     // ensure canvas backing size matches CSS size for crisp icons
     c.width = c.clientWidth; c.height = c.clientHeight;
     const ctx=c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height);
@@ -1985,6 +2577,17 @@ function drawLegendIcons(){
     if(c.dataset.legend==='miss'){ drawMarker(ctx,'Miss',cx,cy,color,size); }
   });
 }
+
+btnCloseReportShare?.addEventListener('click', ()=> closeReportShareModal());
+reportShareModal?.addEventListener('click', (event)=>{ if(event?.target === reportShareModal) closeReportShareModal(); });
+reportShareGrid?.addEventListener('click', async (event)=>{
+  const button = event?.target?.closest?.('[data-platform]');
+  if(!button || button.disabled) return;
+  await shareReportPngToPlatform(button.dataset.platform || '');
+});
+document.addEventListener('keydown', (event)=>{
+  if(event?.key === 'Escape' && reportShareModal && !reportShareModal.hidden) closeReportShareModal();
+});
 
 // Initial
 showTab('report');

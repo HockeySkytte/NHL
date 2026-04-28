@@ -179,6 +179,9 @@
   .lt-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
   .lt-export-card--heat{ width:1680px; }
   .lt-export-card--table{ display:inline-grid; width:max-content; min-width:0; max-width:none; justify-items:stretch; }
+  .lt-export-header-hero{ display:grid; gap:8px; margin:-34px -34px 0; padding:14px 34px 18px; border:none; border-radius:30px 30px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, var(--lt-export-team-color-soft, rgba(77,163,255,0.28)), rgba(11,15,24,0.18) 36%, var(--lt-export-team-color-dark, rgba(11,15,24,0.02)) 100%); }
+  .lt-export-header-hero-top{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:18px; }
+  .lt-export-team-logo{ display:block; width:auto; height:122px; object-fit:contain; filter:drop-shadow(0 8px 18px rgba(0,0,0,0.18)); opacity:0.97; }
   .lt-export-title{ color:rgba(255,255,255,0.98); font-size:48px; line-height:1.06; font-weight:900; letter-spacing:-.02em; }
   .lt-export-summary{ color:rgba(255,255,255,0.95); font-size:30px; font-style:italic; font-weight:800; letter-spacing:.2px; }
   .lt-export-meta{ color:rgba(255,255,255,0.76); font-size:22px; font-weight:750; letter-spacing:.2px; }
@@ -207,10 +210,10 @@
   .lt-export-card .lt-zone-label{ font-size:3.2px; }
   .lt-export-table-wrap{ width:max-content; max-width:none; justify-self:start; overflow:hidden; border-radius:24px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); }
   .lt-export-card .lt-wowy-table-wrap{ overflow:visible; max-height:none; }
-  .lt-export-card .lt-wowy-table{ width:auto; border-collapse:collapse; font-size:14px; font-variant-numeric:tabular-nums; table-layout:auto; }
-  .lt-export-card .lt-wowy-table th{ background:rgba(15,21,34,0.98); padding:9px 6px; text-align:center; font-size:11px; font-weight:850; text-transform:uppercase; letter-spacing:.45px; color:rgba(255,255,255,0.76); white-space:nowrap; position:static; }
-  .lt-export-card .lt-wowy-table td{ padding:7px 6px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.06); white-space:nowrap; }
-  .lt-export-card .lt-wowy-table .wowy-player-cell{ text-align:left !important; min-width:52px; }
+  .lt-export-card .lt-wowy-table{ width:auto; border-collapse:collapse; font-size:18px; font-variant-numeric:tabular-nums; table-layout:auto; }
+  .lt-export-card .lt-wowy-table th{ background:rgba(15,21,34,0.98); padding:12px 10px; text-align:center; font-size:15px; font-weight:850; text-transform:uppercase; letter-spacing:.45px; color:rgba(255,255,255,0.76); white-space:nowrap; position:static; }
+  .lt-export-card .lt-wowy-table td{ padding:10px 10px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.06); white-space:nowrap; }
+  .lt-export-card .lt-wowy-table .wowy-player-cell{ text-align:left !important; min-width:90px; }
   .lt-export-card .lt-wowy-table tbody tr:nth-child(even) td{ background:rgba(255,255,255,0.02); }
 
   @media (max-width:900px){
@@ -420,6 +423,9 @@
 <script>
 (function(){
 const DEFAULT_IMG = 'https://assets.nhle.com/mugs/nhl/default-skater.png';
+const __lineTeams = (()=>{
+  try{ return JSON.parse(document.getElementById('teams-data')?.textContent || '[]'); }catch(_){ return []; }
+})();
 const teamSelect = document.getElementById('teamSelect');
 const seasonSelect = document.getElementById('seasonSelect');
 const ltSeasonState = document.getElementById('ltSeasonState');
@@ -663,6 +669,75 @@ function __lineFilename(kind){
   return `line-tool-${kind}-${team}-${season}.png`;
 }
 
+function __lineTeamLogoUrl(abbrev){
+  const a = String(abbrev || '').trim().toUpperCase();
+  // Use same-origin SVG proxy so html2canvas can render team logos reliably.
+  return a ? `/api/team-logo/${encodeURIComponent(a)}.svg` : '';
+}
+
+function __lineActiveTeamAbbrev(){
+  const fromSelect = String(teamSelect?.value || '').trim().toUpperCase();
+  if(fromSelect) return fromSelect;
+  const selected = __lineSelectedPlayers();
+  for(const player of selected){
+    const team = String(
+      player?.team
+      || player?.teamAbbrev
+      || player?.team_abbrev
+      || player?.currentTeam
+      || player?.currentTeamAbbrev
+      || ''
+    ).trim().toUpperCase();
+    if(team) return team;
+    try{
+      const head = String(player?.headshot || '');
+      if(head){
+        const q = new URL(head, window.location.origin).searchParams;
+        const fromHead = String(q.get('team') || '').trim().toUpperCase();
+        if(fromHead) return fromHead;
+      }
+    }catch(_){/*noop*/}
+  }
+  const fromPlayers = String(__players?.[0]?.team || __players?.[0]?.teamAbbrev || '').trim().toUpperCase();
+  if(fromPlayers) return fromPlayers;
+  const selectedLabel = String(teamSelect?.selectedOptions?.[0]?.textContent || '').trim();
+  if(selectedLabel){
+    const match = __lineTeams.find((item)=> String(item?.Name || '').trim().toLowerCase() === selectedLabel.toLowerCase()) || null;
+    const fromName = String(match?.Team || '').trim().toUpperCase();
+    if(fromName) return fromName;
+  }
+  try{
+    const q = new URLSearchParams(window.location.search || '');
+    const fromQuery = String(q.get('team') || '').trim().toUpperCase();
+    if(fromQuery) return fromQuery;
+  }catch(_){/*noop*/}
+  const renderedHeads = Array.from(document.querySelectorAll('.lt-headshot'));
+  for(const head of renderedHeads){
+    try{
+      const src = String(head?.getAttribute('src') || head?.src || '');
+      if(!src) continue;
+      const q = new URL(src, window.location.origin).searchParams;
+      const fromHead = String(q.get('team') || '').trim().toUpperCase();
+      if(fromHead) return fromHead;
+    }catch(_){/*noop*/}
+  }
+  return '';
+}
+
+function __lineMixHex(a, b, t){
+  function p(h){ h = String(h || '').replace('#', ''); if(h.length === 3) h = h.split('').map(c => c + c).join(''); return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]; }
+  function c(v){ return Math.max(0, Math.min(255, Math.round(v))); }
+  const A = p(a), B = p(b);
+  const r = c(A[0] + (B[0] - A[0]) * t), g = c(A[1] + (B[1] - A[1]) * t), bb = c(A[2] + (B[2] - A[2]) * t);
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bb.toString(16).padStart(2,'0')}`;
+}
+
+function __lineSelectedTeamColor(){
+  const ab = String(teamSelect?.value || '').trim().toUpperCase();
+  const row = __lineTeams.find((item)=> String(item?.Team || '').trim().toUpperCase() === ab) || null;
+  return String(row?.Color || '#4da3ff').trim() || '#4da3ff';
+}
+
 function __lineShareText(kind){
   const team = String(teamSelect?.value || '').trim().toUpperCase();
   const season = String(seasonSelect?.value || '').trim();
@@ -680,6 +755,7 @@ function __lineSelectedPlayers(){
         id: pid,
         name: info.name || `#${pid}`,
         position: info.position || '',
+        team: info.team || info.Team || info.teamAbbrev || info.currentTeamAbbrev || '',
         headshot: headshotUrl(pid),
       };
     });
@@ -875,22 +951,47 @@ function __buildExportTable(tableWrap, options = {}){
 function __buildExportCard(title, summary, meta){
   const card = document.createElement('section');
   card.className = 'lt-export-card';
+
+  const headerHero = document.createElement('div');
+  headerHero.className = 'lt-export-header-hero';
+  const teamColor = __lineSelectedTeamColor();
+  headerHero.style.setProperty('--lt-export-team-color-soft', `${__lineMixHex('#ffffff', teamColor, 0.65)}55`);
+  headerHero.style.setProperty('--lt-export-team-color-dark', __lineMixHex(teamColor, '#0b0f18', 0.58));
+
+  const heroTop = document.createElement('div');
+  heroTop.className = 'lt-export-header-hero-top';
+
+  const left = document.createElement('div');
+
   const titleEl = document.createElement('div');
   titleEl.className = 'lt-export-title';
   titleEl.textContent = title;
-  card.appendChild(titleEl);
+  left.appendChild(titleEl);
   if(summary){
     const summaryEl = document.createElement('div');
     summaryEl.className = 'lt-export-summary';
     summaryEl.textContent = summary;
-    card.appendChild(summaryEl);
+    left.appendChild(summaryEl);
   }
   if(meta){
     const metaEl = document.createElement('div');
     metaEl.className = 'lt-export-meta';
     metaEl.textContent = meta;
-    card.appendChild(metaEl);
+    left.appendChild(metaEl);
   }
+  heroTop.appendChild(left);
+
+  const teamAbbrev = __lineActiveTeamAbbrev();
+  if(teamAbbrev){
+    const logo = document.createElement('img');
+    logo.className = 'lt-export-team-logo';
+    logo.src = __lineTeamLogoUrl(teamAbbrev);
+    logo.alt = `${teamAbbrev} logo`;
+    heroTop.appendChild(logo);
+  }
+  headerHero.appendChild(heroTop);
+  card.appendChild(headerHero);
+
   const formation = __buildExportFormation();
   if(formation) card.appendChild(formation);
   return card;

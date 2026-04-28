@@ -197,8 +197,11 @@
   .teams-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
   .teams-export-card--standard{ width:100%; max-width:none; }
   .teams-export-card--table{ display:inline-grid; width:max-content; min-width:0; max-width:none; justify-items:stretch; }
+  .teams-export-hero{ display:block; margin:-36px -36px 0; padding:12px 36px 18px; border:none; border-radius:32px 32px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, var(--teams-export-team-color-soft, rgba(77,163,255,0.28)), rgba(11,15,24,0.18) 36%, var(--teams-export-team-color-dark, rgb(24,31,45)) 100%); box-shadow:none; }
+  .teams-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr); align-items:center; }
+  .teams-export-title-hero{ display:grid; gap:8px; margin:-34px -34px 0; padding:14px 34px 18px; border:none; border-radius:30px 30px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, rgba(77,163,255,0.28), rgba(11,15,24,0.18) 36%, rgba(11,15,24,0.02) 100%); }
   .teams-export-top{ display:flex; gap:24px; align-items:center; }
-  .teams-export-logo{ width:170px; height:170px; border-radius:20px; object-fit:contain; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.12); padding:12px; }
+  .teams-export-logo{ display:block; width:auto; height:148px; max-width:220px; object-fit:contain; background:transparent; border:none; border-radius:0; padding:0; }
   .teams-export-title{ color:rgba(255,255,255,0.98); font-size:50px; line-height:1.04; font-weight:900; letter-spacing:-.02em; }
   .teams-export-info{ margin-top:10px; display:flex; gap:16px; flex-wrap:wrap; color:rgba(255,255,255,0.86); font-size:16px; }
   .teams-export-summary{ color:rgba(255,255,255,0.95); font-size:30px; font-style:italic; font-weight:800; letter-spacing:.2px; }
@@ -215,7 +218,7 @@
   .teams-export-chart-img-wrap{ border-radius:22px; overflow:hidden; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); padding:16px; }
   .teams-export-chart-img{ display:block; width:100%; height:auto; }
   .teams-export-chart-canvas-shell{ position:relative; width:100%; height:520px; }
-  .teams-export-chart-canvas-shell--proj{ height:460px; }
+  .teams-export-chart-canvas-shell--proj{ height:560px; }
   .teams-export-chart-canvas{ display:block; width:100% !important; height:100% !important; }
   .teams-export-table-grid{ display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start; }
   .teams-export-table-wrap{ width:max-content; max-width:none; justify-self:start; overflow:hidden; border-radius:24px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); }
@@ -832,6 +835,7 @@ function __teamsSummaryText(kind){
     : kind === 'table' ? tableSlicerSummary
     : projSlicerSummary;
   const text = String(el?.textContent || '').trim();
+  if(kind === 'projections-team') return '';
   if(kind === 'edge'){
     const season = String(seasonSelect?.value || '').trim();
     const seasonState = String(cardSeasonState?.value || 'regular');
@@ -920,6 +924,7 @@ function __teamsBuildTopClone(){
 
   wrap.appendChild(logo);
   wrap.appendChild(body);
+
   return wrap;
 }
 
@@ -934,22 +939,44 @@ function __teamsBuildExportCard(kind, modifier='standard'){
   const card = document.createElement('section');
   card.className = `teams-export-card teams-export-card--${modifier}`;
 
+  const includeTopClone = __teamsShouldIncludeTopClone(kind);
+  let titleHero = null;
+  const teamObj = teams.find(item => String(item?.Team || '').trim().toUpperCase() === String(teamSelect?.value || '').trim().toUpperCase()) || null;
+  const teamColor = String(teamObj?.Color || '').trim() || themeAccent();
+  card.style.setProperty('--teams-export-team-color-soft', `${mixHex('#ffffff', teamColor, 0.65)}55`);
+  card.style.setProperty('--teams-export-team-color-dark', mixHex(teamColor, '#0b0f18', 0.58));
+
   const titleText = __teamsExportTitle(kind);
   if(titleText){
     const title = document.createElement('div');
     title.className = 'teams-export-title';
     title.textContent = titleText;
-    card.appendChild(title);
+    if(includeTopClone){
+      card.appendChild(title);
+    }else{
+      titleHero = document.createElement('div');
+      titleHero.className = 'teams-export-title-hero';
+      titleHero.appendChild(title);
+      card.appendChild(titleHero);
+    }
   }
 
-  if(__teamsShouldIncludeTopClone(kind)) card.appendChild(__teamsBuildTopClone());
+  if(includeTopClone){
+    const hero = document.createElement('div');
+    hero.className = 'teams-export-hero';
+    const heroInner = document.createElement('div');
+    heroInner.className = 'teams-export-hero-inner';
+    heroInner.appendChild(__teamsBuildTopClone());
+    hero.appendChild(heroInner);
+    card.appendChild(hero);
+  }
 
   const summary = __teamsSummaryText(kind);
   if(summary){
     const summaryEl = document.createElement('div');
     summaryEl.className = 'teams-export-summary';
     summaryEl.textContent = summary;
-    card.appendChild(summaryEl);
+    (titleHero || card).appendChild(summaryEl);
   }
 
   const meta = __teamsMetaText(kind);
@@ -957,7 +984,7 @@ function __teamsBuildExportCard(kind, modifier='standard'){
     const metaEl = document.createElement('div');
     metaEl.className = 'teams-export-meta';
     metaEl.textContent = meta;
-    card.appendChild(metaEl);
+    (titleHero || card).appendChild(metaEl);
   }
 
   return card;
@@ -1194,13 +1221,16 @@ async function __buildTeamsProjectionsExportSurface(kind){
     const _team = String(teamSelect?.value || '').trim();
     const _leaguePlayers = await ensureProjLeaguePlayers();
     if(!_team || !_leaguePlayers.length) throw new Error('Load the projections chart before exporting.');
+    const _teamPlayerCount = _leaguePlayers.filter(p => String(p?.team || '').toUpperCase() === _team.toUpperCase()).length;
+    const _chartHeight = Math.max(640, Math.min(1300, 120 + (_teamPlayerCount * 34)));
     const content = document.createElement('div');
     content.className = 'teams-export-content';
     const exportBlock = __teamsBuildChartCanvasBlock('', 'teams-export-chart-canvas-shell teams-export-chart-canvas-shell--proj');
+    exportBlock.block.querySelector('.teams-export-chart-canvas-shell--proj')?.style.setProperty('height', `${_chartHeight}px`);
     content.appendChild(exportBlock.block);
     card.appendChild(content);
     card.__teamsBeforeCapture = async ()=>{
-      const chart = __createProjTeamStackChart(exportBlock.canvas, _team, _leaguePlayers, { animate:false });
+      const chart = __createProjTeamStackChart(exportBlock.canvas, _team, _leaguePlayers, { animate:false, export:true });
       if(!chart) throw new Error('Load the projections chart before exporting.');
       card.__teamsCleanup = ()=>{
         try{ chart.destroy(); }catch(_){/*noop*/}
@@ -2379,6 +2409,7 @@ function __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, options
 
   const labels = list.map(p=>p.name || String(p.playerId));
   const tick = themeTextDim();
+  const isExport = options.export === true;
   const grid = 'rgba(154,164,177,0.14)';
   const datasets = [{
     label: 'Projection',
@@ -2391,6 +2422,9 @@ function __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, options
     }),
     borderColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
+    barPercentage: isExport ? 0.58 : 0.68,
+    categoryPercentage: isExport ? 0.80 : 0.86,
+    maxBarThickness: isExport ? 20 : 18,
   }];
 
   return new Chart(ctx, {
@@ -2419,8 +2453,22 @@ function __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, options
         } }
       },
       scales: {
-        x: { ticks: { color: tick }, grid: { color: grid } },
-        y: { ticks: { color: tick, autoSkip: false }, grid: { display:false } },
+        x: {
+          ticks: {
+            color: tick,
+            font: { size: isExport ? 18 : 12, weight: isExport ? '700' : '500' },
+          },
+          grid: { color: grid },
+        },
+        y: {
+          offset: true,
+          ticks: {
+            color: tick,
+            autoSkip: false,
+            font: { size: isExport ? 20 : 12, weight: isExport ? '700' : '500' },
+          },
+          grid: { display:false },
+        },
       }
     }
   });
