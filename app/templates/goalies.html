@@ -1292,6 +1292,25 @@ function restoreSkatersState(){
 
 function __sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
+async function __waitForSeasonValueReady(timeoutMs = 8000){
+  const t0 = Date.now();
+  while(Date.now() - t0 < timeoutMs){
+    const firstTxt = String(seasonSelect?.options?.[0]?.textContent || '').toLowerCase();
+    const hasSeasonOptions = !!(seasonSelect && seasonSelect.options && seasonSelect.options.length);
+    if(hasSeasonOptions && firstTxt !== 'loading...'){
+      const current = String(seasonSelect?.value || '').trim();
+      if(current) return true;
+      const firstValid = Array.from(seasonSelect.options).find(option => String(option?.value || '').trim());
+      if(firstValid){
+        seasonSelect.value = String(firstValid.value || '').trim();
+        if(String(seasonSelect.value || '').trim()) return true;
+      }
+    }
+    await __sleep(60);
+  }
+  return String(seasonSelect?.value || '').trim() !== '';
+}
+
 async function initSkatersPage(){
   try{
     // Restore saved state first.
@@ -6303,6 +6322,7 @@ projExportCsv?.addEventListener('click', ()=>{
 });
 
 teamSelect?.addEventListener('change', async ()=>{
+  await __waitForSeasonValueReady(8000);
   await loadPlayers();
   await loadPlayerCard();
   applyExportButtonTextColor();
