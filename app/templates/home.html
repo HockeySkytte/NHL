@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+{% block filters_content %}
+<div class="hqj-section">
+  <div class="hqj-header">Hockey-Statistics Sites</div>
+  <nav class="hqj-nav" aria-label="Hockey-Statistics sites navigation">
+    <a class="hqj-link" href="https://hockey-statistics.com/" target="_blank" rel="noopener">
+      <img class="hqj-logo" src="{{ url_for('static', filename='link-logos/main-site.png') }}" alt="Hockey Statistics logo" loading="lazy">
+      <span class="hqj-copy"><strong>Main Site</strong><small>hockey-statistics.com</small></span>
+    </a>
+    <a class="hqj-link" href="https://pwhl.hockey-statistics.com/" target="_blank" rel="noopener">
+      <img class="hqj-logo" src="{{ url_for('static', filename='link-logos/pwhl-site.png') }}" alt="PWHL Hockey Statistics logo" loading="lazy">
+      <span class="hqj-copy"><strong>PWHL Site</strong><small>pwhl.hockey-statistics.com</small></span>
+    </a>
+  </nav>
+</div>
+
+<div class="hqj-section">
+  <div class="hqj-header">Hockey-Statistics Tools</div>
+  <nav class="hqj-nav" aria-label="Hockey-Statistics tools navigation">
+    <a class="hqj-link" href="https://sports-tagging.netlify.app/hockey/" target="_blank" rel="noopener">
+      <img class="hqj-logo" src="https://sports-tagging.netlify.app/hockey/puck.svg" alt="Shot Plotter logo" loading="lazy">
+      <span class="hqj-copy"><strong>Shot Plotter</strong><small>sports-tagging.netlify.app</small></span>
+    </a>
+  </nav>
+</div>
+
+<div class="hqj-section">
+  <div class="hqj-header">Other Links</div>
+  <nav class="hqj-nav" aria-label="Other links navigation">
+    <a class="hqj-link" href="https://www.nhl.com/" target="_blank" rel="noopener">
+      <img class="hqj-logo" src="{{ url_for('static', filename='link-logos/nhl-official.png') }}" alt="NHL logo" loading="lazy">
+      <span class="hqj-copy"><strong>NHL Official</strong><small>nhl.com</small></span>
+    </a>
+  </nav>
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+  body.neutral-page .filters-shell{
+    border:none;
+    border-radius:0;
+    padding:0;
+    background:transparent;
+    box-shadow:none;
+  }
+
+  /* ── Sidebar quick-jump ──────────────────────────── */
+  .hqj-section{
+    margin-top:16px;
+  }
+  .hqj-section:first-of-type{
+    margin-top:0;
+  }
+  .hqj-header{
+    font-size:11px;
+    font-weight:900;
+    letter-spacing:1.1px;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    margin-bottom:10px;
+  }
+  .hqj-nav{ display:flex; flex-direction:column; gap:2px; margin-top:14px; }
+  .hqj-link{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:9px 10px;
+    border-radius:9px;
+    border:1px solid transparent;
+    text-decoration:none;
+    color:#c6d2e4;
+    font-size:14px;
+    font-weight:600;
+    transition:background .14s ease, border-color .14s ease, color .14s ease;
+  }
+  .hqj-copy{ display:grid; gap:2px; min-width:0; }
+  .hqj-copy strong{ font-size:14px; font-weight:700; color:#e6f0ff; }
+  .hqj-copy small{ font-size:11px; color:#95a8c4; }
+  .hqj-link:hover{
+    background:rgba(255,255,255,0.05);
+    border-color:#2a3142;
+    color:#f0f6ff;
+  }
+  .hqj-logo{
+    flex:0 0 auto;
+    width:30px;
+    height:30px;
+    object-fit:contain;
+  }
+
+  /* ── Main content ────────────────────────────────── */
+  .home-page{ display:grid; grid-template-rows:auto 1fr; gap:0; }
+
+  .home-intro{
+    padding-bottom:20px;
+    border-bottom:1px solid #1e2738;
+    margin-bottom:24px;
+  }
+  .home-intro h2{
+    margin:0 0 10px;
+    font-size:28px;
+    font-weight:750;
+    letter-spacing:.3px;
+    color:#f0f6ff;
+  }
+  .home-intro p{
+    margin:0;
+    font-size:15px;
+    line-height:1.7;
+    color:rgba(210,222,238,0.86);
+    max-width:68ch;
+  }
+
+  .home-groups{ display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  .home-group{
+    border:1px solid #1e2738;
+    border-radius:14px;
+    overflow:hidden;
+    background:rgba(255,255,255,0.015);
+  }
+  .home-group-label{
+    padding:10px 16px;
+    border-bottom:1px solid #1e2738;
+    font-size:11px;
+    font-weight:900;
+    letter-spacing:1.1px;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    background:rgba(255,255,255,0.025);
+  }
+  .home-entries{ display:flex; flex-direction:column; }
+  .home-entry{
+    display:grid;
+    grid-template-columns:1fr 170px;
+    gap:12px;
+    align-items:center;
+    padding:13px 16px;
+    border-bottom:1px solid #1a2232;
+    text-decoration:none;
+    color:inherit;
+    transition:background .12s ease;
+  }
+  .home-entry:last-child{ border-bottom:none; }
+  .home-entry:hover{ background:rgba(255,255,255,0.04); }
+  .home-entry-name{
+    font-size:14px;
+    font-weight:700;
+    color:#e8f0fb;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .home-entry-name::after{
+    content:'→';
+    font-size:12px;
+    opacity:0;
+    transform:translateX(-4px);
+    transition:opacity .12s ease, transform .12s ease;
+  }
+  .home-entry:hover .home-entry-name::after{
+    opacity:.6;
+    transform:translateX(0);
+  }
+  .home-entry-desc{
+    font-size:13px;
+    color:rgba(195,210,230,0.74);
+    line-height:1.55;
+  }
+  .home-entry-thumb{
+    display:block;
+    width:100%;
+    border-radius:10px;
+    border:1px solid #2a3f5f;
+    background:#0d1626;
+  }
+
+  @media(max-width:1100px){
+    .home-groups{ grid-template-columns:1fr; }
+  }
+  @media(max-width:980px){
+    .home-intro h2{ font-size:22px; }
+    .home-entry{ grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="home-page">
+  <div class="home-intro">
+    <h2>NHL Analytics</h2>
+    <p>
+      A set of connected views for reading NHL hockey at different levels of depth — from tonight's schedule and live game tracking
+      to player-level stats, line combinations, expected goals models, and team projections.
+      Every view uses the same team and season filters, so pivoting from game to player to line is one click.
+    </p>
+  </div>
+
+  <div class="home-groups">
+    <div class="home-group">
+      <div class="home-group-label">Game Discovery</div>
+      <div class="home-entries">
+        <a class="home-entry" href="/schedule">
+          <div>
+            <div class="home-entry-name">Schedule</div>
+            <div class="home-entry-desc">Full calendar view for any team, any season back to 1917. Click any game to open the full game report.</div>
+          </div>
+          <img class="home-entry-thumb" src="{{ url_for('static', filename='screenshots/schedule-card.png') }}" alt="Schedule page screenshot placeholder" loading="lazy">
+        </a>
+        <a class="home-entry" href="/live">
+          <div>
+            <div class="home-entry-name">Live Games</div>
+            <div class="home-entry-desc">Fast-scan view of games in progress — score, period, and a direct link into each game's live data.</div>
+          </div>
+          <img class="home-entry-thumb" src="{{ url_for('static', filename='screenshots/live-card.png') }}" alt="Live Games page screenshot placeholder" loading="lazy">
+        </a>
+        <a class="home-entry" href="/standings">
+          <div>
+            <div class="home-entry-name">Standings</div>
+            <div class="home-entry-desc">Points, GF/GA, differentials and win streaks for all teams. Filter by season and game state.</div>
+          </div>
+          <img class="home-entry-thumb" src="{{ url_for('static', filename='screenshots/standings-card.png') }}" alt="Standings page screenshot placeholder" loading="lazy">
+        </a>
+        <a class="home-entry" href="/projections">
+          <div>
+            <div class="home-entry-name">Game Projections</div>
+            <div class="home-entry-desc">Model-based pre-game outlooks using roster context, recent form, and goaltending assignments.</div>
+          </div>
+          <img class="home-entry-thumb" src="{{ url_for('static', filename='screenshots/projections-card.png') }}" alt="Game Projections page screenshot placeholder" loading="lazy">
+        </a>
+      </div>
+    </div>
+
+    <div class="home-group">
+      <div class="home-group-label">Player &amp; Team Analysis</div>
+      <div class="home-entries">
+        <a class="home-entry" href="/skaters">
+          <div>
+            <div class="home-entry-name">Skaters</div>
+            <div class="home-entry-desc">Player cards, shot maps, trend charts, RAPM, and projections. Exportable as PNG for any view.</div>
+          </div>
+          <img class="home-entry-thumb" src="{{ url_for('static', filename='screenshots/skaters-card.png') }}" alt="Skaters page screenshot placeholder" loading="lazy">
+        </a>
+        <a class="home-entry" href="/goalies">
+          <div>
+            <div class="home-entry-name">Goalies</div>
+            <div class="home-entry-desc">GSAA, GSAx, save percentage trends, and model-informed workload context.</div>
+          </div>
+          <img class="home-entry-thumb" src="{{ url_for('static', filename='screenshots/goalies-card.png') }}" alt="Goalies page screenshot placeholder" loading="lazy">
+        </a>
+        <a class="home-entry" href="/teams">
+          <div>
+            <div class="home-entry-name">Teams</div>
+            <div class="home-entry-desc">Team-level dashboards across play-driving, shooting, and projection metrics. Roster-stacked charts.</div>
+          </div>
+          <img class="home-entry-thumb" src="{{ url_for('static', filename='screenshots/teams-card.png') }}" alt="Teams page screenshot placeholder" loading="lazy">
+        </a>
+        <a class="home-entry" href="/line-tool">
+          <div>
+            <div class="home-entry-name">Line Tool</div>
+            <div class="home-entry-desc">Pick any player combination. View zone heat maps, WOWY breakdowns, and line usage tables.</div>
+          </div>
+          <img class="home-entry-thumb" src="{{ url_for('static', filename='screenshots/line-tool-card.png') }}" alt="Line Tool page screenshot placeholder" loading="lazy">
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

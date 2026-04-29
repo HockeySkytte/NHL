@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" aria-label="Game Projections placeholder">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#112641"/><stop offset="100%" stop-color="#2a5d92"/></linearGradient></defs>
+  <rect width="640" height="360" fill="url(#g)"/>
+  <rect x="20" y="20" width="600" height="320" rx="14" fill="rgba(255,255,255,0.06)" stroke="#5f88bf"/>
+  <text x="320" y="175" text-anchor="middle" fill="#dbe8fb" font-size="34" font-family="Inter, Arial, sans-serif" font-weight="700">Game Projections</text>
+  <text x="320" y="218" text-anchor="middle" fill="#a9c2e4" font-size="20" font-family="Inter, Arial, sans-serif">Screenshot Placeholder</text>
+</svg>

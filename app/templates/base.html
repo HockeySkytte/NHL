@@ -122,6 +122,39 @@
   .brand-logo { height:100px; width:auto; object-fit:contain; filter:drop-shadow(0 0 8px rgba(0,0,0,.7)); }
   .brand-by { font-size:16px; color:var(--text-dim); font-weight:600; letter-spacing:.6px; font-style:italic; margin-top:-15px; }
 
+  body.neutral-page aside{
+    background:
+      radial-gradient(circle at 16% 12%, rgba(88, 168, 255, 0.20), transparent 42%),
+      radial-gradient(circle at 82% 10%, rgba(47, 115, 203, 0.18), transparent 38%),
+      linear-gradient(180deg, #0b1527, #08101e 68%, #070d17);
+    border-right:1px solid #2a3f61;
+  }
+  body.neutral-page .filters-shell{
+    border:1px solid #2b4367;
+    border-radius:13px;
+    padding:10px;
+    background:linear-gradient(180deg, rgba(52, 106, 176, 0.20), rgba(18, 37, 66, 0.33));
+    box-shadow:inset 0 1px 0 rgba(140, 188, 255, 0.09);
+  }
+  body.neutral-page .filters-hd{
+    border-color:#375985;
+    background:rgba(62, 117, 188, 0.14);
+  }
+  body.neutral-page .filters-hd .ttl,
+  body.neutral-page label{ color:#c4dbf6; }
+  body.neutral-page .filters-toggle,
+  body.neutral-page select,
+  body.neutral-page input[type="number"],
+  body.neutral-page input[type="text"]{
+    border-color:#335179;
+    background:#111f35;
+  }
+  body.neutral-page .about-headline-link:hover{
+    border-color:#3a5f8f;
+    background:rgba(67, 128, 201, 0.14);
+  }
+  body.neutral-page .brand{ border-top-color:#2c4468; }
+
   @media (max-width: 980px){
     .app-shell{ grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     aside{ border-right:none; border-bottom:1px solid #232a3a; padding:12px 10px 12px; position:static; top:auto; z-index:auto; }
@@ -151,7 +184,7 @@
   </script>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% if active_tab in ['Home','About','Donation','Account','User Management'] %}neutral-page{% endif %}">
   <div class="app-shell">
     <aside>
       <header>
@@ -177,7 +210,8 @@
       </header>
 
       <div id="mobileMenuPanel" class="mobile-menu" hidden>
-        <a href="/" class="{% if active_tab=='Schedule' %}active{% endif %}">Schedule</a>
+        <a href="/" class="{% if active_tab=='Home' %}active{% endif %}">Home</a>
+        <a href="/schedule" class="{% if active_tab=='Schedule' %}active{% endif %}">Schedule</a>
         <a href="/standings" class="{% if active_tab=='Standings' %}active{% endif %}">Standings</a>
         <a href="/live" class="{% if active_tab=='Live Games' %}active{% endif %}">Live Games</a>
         <a href="/projections" class="{% if active_tab=='Game Projections' %}active{% endif %}">Game Projections</a>
@@ -236,7 +270,7 @@
         {% if show_include_historic is not defined or show_include_historic %}
         <label class="checkbox-row"><input type="checkbox" id="includeHistoric" /> <span>Include Historic Teams</span></label>
         {% endif %}
-        {% if active_tab in ['Schedule','Standings','Live Games'] %}
+        {% if active_tab in ['Schedule','Standings','Live Games','Home'] %}
         <div class="brand">
           <a href="https://hockey-statistics.com/" target="_blank" rel="noopener">
             <img class="brand-logo" src="{{ url_for('static', filename='Logo.png') }}" alt="Hockey Statistics" />
@@ -252,7 +286,8 @@
     </aside>
     <div>
       <nav class="tabs">
-  <a href="/" class="{% if active_tab=='Schedule' %}active{% endif %}">Schedule</a>
+  <a href="/" class="{% if active_tab=='Home' %}active{% endif %}">Home</a>
+  <a href="/schedule" class="{% if active_tab=='Schedule' %}active{% endif %}">Schedule</a>
   <a href="/standings" class="{% if active_tab=='Standings' %}active{% endif %}">Standings</a>
   <a href="/live" class="{% if active_tab=='Live Games' %}active{% endif %}">Live Games</a>
   <a href="/projections" class="{% if active_tab=='Game Projections' %}active{% endif %}">Projections</a>

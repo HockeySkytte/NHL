@@ -2169,7 +2169,13 @@ def _disk_cache_path_shifts(game_id: int) -> str:
     return os.path.join(d, f'shifts_{int(game_id)}.json')
 @main_bp.route('/')
 def index_page():
-    """Frontpage Schedule view."""
+    """Landing page."""
+    return render_template('home.html', teams=TEAM_ROWS, active_tab='Home')
+
+
+@main_bp.route('/schedule')
+def schedule_page():
+    """Schedule view."""
     return render_template('index.html', teams=TEAM_ROWS, active_tab='Schedule', show_season_state=True)
 
 
@@ -2323,7 +2329,7 @@ def account_page():
         }
     return render_template(
         'account.html',
-        active_tab=None,
+        active_tab='Account',
         show_filters=False,
         plan_options=_AUTH_PLAN_OPTIONS,
         auth_user=auth_user,
@@ -2566,7 +2572,7 @@ def user_management_page():
         'free': sum(1 for user in users if user.get('subscription_plan') == 'free'),
         'pro': sum(1 for user in users if user.get('billing_interval') in {'monthly', 'yearly'}),
     }
-    return render_template('user_management.html', active_tab=None, show_filters=False, auth_user=auth_user, users=users, plan_options=_AUTH_PLAN_OPTIONS, filters=filters, counts=counts)
+    return render_template('user_management.html', active_tab='User Management', show_filters=False, auth_user=auth_user, users=users, plan_options=_AUTH_PLAN_OPTIONS, filters=filters, counts=counts)
 
 
 @main_bp.route('/admin/users/sync', methods=['POST'])
