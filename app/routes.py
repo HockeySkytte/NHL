@@ -6161,6 +6161,8 @@ def api_skaters_card():
     ctx_row: Optional[Dict[str, Any]] = None
     needs_rapm = any(('|RAPM ' in mid) for mid in metric_ids)
     needs_ctx = any((mid in {'Context|QoT', 'Context|QoC', 'Context|ZS'}) for mid in metric_ids)
+    needs_projection = any(mid.startswith('Projection|') for mid in metric_ids)
+    projection_map: Dict[int, Dict[str, Any]] = {}
 
     if needs_rapm:
         rapm_rows = _load_rapm_player_rows_static(int(pid), season_int)
@@ -6221,6 +6223,78 @@ def api_skaters_card():
         if ctx_row is None and candidates2:
             ctx_row = candidates2[0]
 
+    if needs_projection:
+        try:
+            projection_map = _load_current_player_projections_cached() or {}
+        except Exception:
+            projection_map = {}
+
+    def _projection_value_for_player(player_id: int) -> Optional[float]:
+        row = None
+        if isinstance(projection_map, dict):
+            pid_int = int(player_id)
+            pid_str = str(pid_int)
+            row = projection_map.get(pid_int)
+            if not isinstance(row, dict):
+                row = projection_map.get(pid_str)
+            if not isinstance(row, dict):
+                for k, v in projection_map.items():
+                    try:
+                        if int(str(k).strip()) == pid_int and isinstance(v, dict):
+                            row = v
+                            break
+                    except Exception:
+                        continue
+        if not isinstance(row, dict):
+            return None
+        for key in ('projected_value', 'projection', 'projectedValue', 'Projection', 'ProjectedValue'):
+            val = _parse_locale_float(row.get(key))
+            if val is not None:
+                return float(val)
+        return None
+
+    def _projection_pos_group_for_player(player_id: int) -> str:
+        row = None
+        if isinstance(projection_map, dict):
+            pid_int = int(player_id)
+            pid_str = str(pid_int)
+            row = projection_map.get(pid_int)
+            if not isinstance(row, dict):
+                row = projection_map.get(pid_str)
+        if not isinstance(row, dict):
+            return ''
+        return _projection_position_group(row.get('position'))
+
+    def _projection_pool_for_group(group: str) -> List[float]:
+        if not isinstance(projection_map, dict) or not projection_map:
+            return []
+        g = str(group or '').strip().upper()
+        out_vals: List[float] = []
+        for raw in projection_map.values():
+            if not isinstance(raw, dict):
+                continue
+            try:
+                pg = _projection_position_group(raw.get('position'))
+            except Exception:
+                pg = ''
+            if g in {'F', 'D'} and pg != g:
+                continue
+            v = None
+            for key in ('projected_value', 'projection', 'projectedValue', 'Projection', 'ProjectedValue'):
+                v = _parse_locale_float(raw.get(key))
+                if v is not None:
+                    break
+            if v is None:
+                continue
+            try:
+                fv = float(v)
+                if math.isfinite(fv):
+                    out_vals.append(fv)
+            except Exception:
+                continue
+        out_vals.sort()
+        return out_vals
+
     def _compute_metric(metric_id: str, v: Dict[str, Any], player_id: int) -> Optional[float]:
         # SeasonStats base vars
         gp = float(v.get('GP') or 0.0)
@@ -6257,6 +6331,9 @@ def api_skaters_card():
             category, metric = metric_id.split('|', 1)
         else:
             metric = metric_id
+
+        if category == 'Projection' and metric in {'Percentile', 'Projection Percentile', 'Projection'}:
+            return _projection_value_for_player(int(player_id))
 
         # NHL Edge metrics (value + percentile come from the NHL Edge API; don't compute percentiles locally).
         if category == 'Edge':
@@ -6603,6 +6680,12 @@ def api_skaters_card():
     for mid in metric_ids:
         val = mine.get(mid)
         pct = special_pct.get(mid)
+        if mid.startswith('Projection|'):
+            proj_group = _projection_pos_group_for_player(int(pid))
+            if proj_group not in {'F', 'D'}:
+                proj_group = my_group if my_group in {'F', 'D'} else 'F'
+            pool = _projection_pool_for_group(proj_group)
+            pct = _percentile_sorted(pool, val)
         if pct is None:
             pool = dist_by_pos.get((my_group, mid))
             if not pool:
@@ -6624,6 +6707,7 @@ def api_skaters_card():
     payload = {
         'playerId': int(pid),
         'season': season_int,
+        'positionGroup': my_group,
         'scope': scope,
         'seasonState': season_state,
         'strengthState': strength_state,

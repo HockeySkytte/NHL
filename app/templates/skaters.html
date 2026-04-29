@@ -63,6 +63,25 @@
   .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
   .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
   .skater-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
+  .skater-proj-kpi{
+    margin-left:auto;
+    width:150px;
+    height:150px;
+    border-radius:999px;
+    border:3px solid var(--proj-kpi-color, rgba(255,255,255,0.32));
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding:14px;
+    box-sizing:border-box;
+    background:rgba(4,8,14,0.48);
+    box-shadow:0 14px 30px rgba(0,0,0,0.28);
+  }
+  .skater-proj-kpi-val{ color:var(--proj-kpi-color, rgba(255,255,255,0.9)); font-size:34px; font-weight:900; letter-spacing:.2px; line-height:1; }
+  .skater-proj-kpi-lbl{ margin-top:8px; color:rgba(255,255,255,0.88); font-size:11px; letter-spacing:.8px; text-transform:uppercase; font-weight:800; line-height:1.25; }
+  .skater-proj-kpi[hidden]{ display:none !important; }
   .kv{ display:flex; gap:6px; align-items:baseline; }
   .k{ text-transform:uppercase; font-size:12px; letter-spacing:1px; color:var(--text-dim); font-weight:750; }
   .v{ font-weight:750; color:var(--text); }
@@ -413,6 +432,44 @@
   .rapm-export-card .skater-export-team-logo,
   .proj-player-export-card .skater-export-team-logo,
   .shoot-export-card .skater-export-team-logo{ display:block; width:auto; height:132px; object-fit:contain; filter:drop-shadow(0 10px 20px rgba(0,0,0,0.16)); opacity:0.96; }
+  .card-export-card .skater-export-proj-kpi-wrap,
+  .charts-export-card .skater-export-proj-kpi-wrap,
+  .edge-export-card .skater-export-proj-kpi-wrap,
+  .rapm-export-card .skater-export-proj-kpi-wrap,
+  .proj-player-export-card .skater-export-proj-kpi-wrap,
+  .shoot-export-card .skater-export-proj-kpi-wrap{ display:flex; align-items:center; justify-content:flex-end; justify-self:end; min-width:180px; flex:0 0 auto; }
+  .card-export-card .skater-export-proj-kpi,
+  .charts-export-card .skater-export-proj-kpi,
+  .edge-export-card .skater-export-proj-kpi,
+  .rapm-export-card .skater-export-proj-kpi,
+  .proj-player-export-card .skater-export-proj-kpi,
+  .shoot-export-card .skater-export-proj-kpi{
+    width:148px;
+    height:148px;
+    border-radius:999px;
+    border:4px solid var(--proj-kpi-color, rgba(255,255,255,0.32));
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding:14px;
+    box-sizing:border-box;
+    background:rgba(5,10,17,0.45);
+    box-shadow:0 12px 28px rgba(0,0,0,0.25);
+  }
+  .card-export-card .skater-export-proj-kpi .val,
+  .charts-export-card .skater-export-proj-kpi .val,
+  .edge-export-card .skater-export-proj-kpi .val,
+  .rapm-export-card .skater-export-proj-kpi .val,
+  .proj-player-export-card .skater-export-proj-kpi .val,
+  .shoot-export-card .skater-export-proj-kpi .val{ color:var(--proj-kpi-color, rgba(255,255,255,0.9)); font-size:42px; font-weight:900; line-height:1; }
+  .card-export-card .skater-export-proj-kpi .lbl,
+  .charts-export-card .skater-export-proj-kpi .lbl,
+  .edge-export-card .skater-export-proj-kpi .lbl,
+  .rapm-export-card .skater-export-proj-kpi .lbl,
+  .proj-player-export-card .skater-export-proj-kpi .lbl,
+  .shoot-export-card .skater-export-proj-kpi .lbl{ color:rgba(255,255,255,0.88); font-size:12px; letter-spacing:.7px; text-transform:uppercase; font-weight:800; line-height:1.25; margin-top:7px; }
   .card-export-summary{ color:rgba(255,255,255,0.95); font-size:36px; font-style:italic; font-weight:800; letter-spacing:.2px; }
   .card-export-content{ width:100%; }
   .card-export-card .card-grid{ grid-template-columns:1fr 1fr 1fr !important; gap:28px; align-items:start; }
@@ -595,10 +652,13 @@
     .skater-wrap{ margin-left:0; }
     .skater-card{ padding:10px 8px 8px; }
     .skater-top{ flex-direction:column; align-items:center; text-align:center; gap:12px; }
-    .skater-top > div{ display:contents; }
+    .skater-top > div:not(.skater-proj-kpi){ display:contents; }
     #skaterName{ order:1; font-size:26px; }
     #skaterImg{ order:2; width:140px; height:140px; }
     #skaterInfo{ order:3; justify-content:center; gap:12px; font-size:14px; }
+    #skaterProjectionKpi{ order:4; margin:6px auto 0; width:118px; height:118px; }
+    #skaterProjectionKpi .skater-proj-kpi-val{ font-size:28px; }
+    #skaterProjectionKpi .skater-proj-kpi-lbl{ font-size:10px; }
     .subtabs{ justify-content:center; flex-wrap:wrap; }
 
     /* Card header: button above filter context */
@@ -664,6 +724,10 @@
       <div style="min-width:0;">
         <h2 id="skaterName" class="skater-name">Select a player</h2>
         <div id="skaterInfo" class="skater-sub"></div>
+      </div>
+      <div id="skaterProjectionKpi" class="skater-proj-kpi" hidden>
+        <div id="skaterProjectionKpiValue" class="skater-proj-kpi-val">--%</div>
+        <div id="skaterProjectionKpiLabel" class="skater-proj-kpi-lbl">Projection</div>
       </div>
     </div>
 
@@ -991,6 +1055,9 @@ const playerSelect = document.getElementById('playerSelect');
 const skaterImg = document.getElementById('skaterImg');
 const skaterName = document.getElementById('skaterName');
 const skaterInfo = document.getElementById('skaterInfo');
+const skaterProjectionKpi = document.getElementById('skaterProjectionKpi');
+const skaterProjectionKpiValue = document.getElementById('skaterProjectionKpiValue');
+const skaterProjectionKpiLabel = document.getElementById('skaterProjectionKpiLabel');
 const skaterMsg = document.getElementById('skaterMsg');
 
 const tabCard = document.getElementById('tabCard');
@@ -1152,6 +1219,10 @@ let __scatterCache = new Map();
 let __logoImgCache = new Map();
 let __chartsLastKey = '';
 let __playerMugCache = new Map();
+let __skaterPlayerMetaById = new Map();
+let __cardProjectionEnabled = false;
+let __cardProjectionPct = null;
+let __cardProjectionPositionGroup = '';
 
 const teams = JSON.parse(document.getElementById('teams-data').textContent);
 
@@ -1963,6 +2034,58 @@ function renderPlayerLanding(landing){
   skaterInfo.innerHTML = parts.map(p=>`<div class="kv"><span class="k">${p.k}</span><span class="v">${p.v}</span></div>`).join('');
 }
 
+function __positionToGroup(pos){
+  const p = String(pos || '').trim().toUpperCase();
+  if(p === 'D') return 'D';
+  if(p === 'G') return 'G';
+  if(['F', 'C', 'L', 'R', 'LW', 'RW'].includes(p)) return 'F';
+  return '';
+}
+
+function __isProjectionMetricEnabledInConfig(cfg){
+  return !!(cfg?.showProjection === true || String(cfg?.showProjection || '').toLowerCase() === 'true' || String(cfg?.showProjection || '') === '1');
+}
+
+function __renderProjectionKpi(enabled, pct, positionGroup){
+  if(!skaterProjectionKpi || !skaterProjectionKpiValue || !skaterProjectionKpiLabel) return;
+  if(!enabled){
+    skaterProjectionKpi.hidden = true;
+    skaterProjectionKpi.style.removeProperty('--proj-kpi-color');
+    skaterProjectionKpiValue.textContent = '--%';
+    skaterProjectionKpiLabel.textContent = 'Projection';
+    return;
+  }
+  const n = Number(pct);
+  const ok = Number.isFinite(n);
+  const clamped = ok ? clamp(n, 0, 100) : null;
+  const color = ok ? pctToColor(clamped) : 'rgba(255,255,255,0.35)';
+  skaterProjectionKpi.hidden = false;
+  skaterProjectionKpi.style.setProperty('--proj-kpi-color', color);
+  skaterProjectionKpiValue.textContent = ok ? `${Math.round(clamped)}%` : '--%';
+  skaterProjectionKpiLabel.textContent = 'Projection';
+}
+
+function __updateProjectionKpiFromCardData(data, cfg){
+  const enabled = __isProjectionMetricEnabledInConfig(cfg);
+  __cardProjectionEnabled = enabled;
+  const metric = data?.metrics?.['Projection|Percentile'];
+  const rawPct = metric?.pct;
+  let pct = (rawPct == null || rawPct === '') ? NaN : Number(rawPct);
+  if(!Number.isFinite(pct)){
+    const rawVal = metric?.value;
+    pct = (rawVal == null || rawVal === '') ? NaN : Number(rawVal);
+  }
+  __cardProjectionPct = Number.isFinite(pct) ? clamp(pct, 0, 100) : null;
+
+  let group = __positionToGroup(data?.positionGroup);
+  if(!group){
+    const meta = __skaterPlayerMetaById.get(String(playerSelect?.value || ''));
+    group = __positionToGroup(meta?.pos);
+  }
+  __cardProjectionPositionGroup = group;
+  __renderProjectionKpi(enabled, __cardProjectionPct, __cardProjectionPositionGroup);
+}
+
 function setActiveTab(which){
   const w = String(which || '').toLowerCase();
   const isC = (w === 'card');
@@ -2449,12 +2572,14 @@ function buildDefaultCardConfig(defs){
   Object.entries(categoryPlace).forEach(([cat, place])=>{
     if(CARD_SLOTS.includes(place)) slots[place] = cat;
   });
-  return { version: 1, slots, categorySelected };
+  return { version: 1, slots, categorySelected, showProjection: false };
 }
 
 function loadCardConfig(defs){
   const raw = safeJsonParse(localStorage.getItem(CARD_CONFIG_KEY));
-  if(raw && typeof raw === 'object' && raw.slots && raw.categorySelected) return raw;
+  if(raw && typeof raw === 'object' && raw.slots && raw.categorySelected){
+    return normalizeCardConfig(defs, raw);
+  }
   return buildDefaultCardConfig(defs);
 }
 
@@ -2482,14 +2607,14 @@ function normalizeCardConfig(defs, cfg){
   const categories = new Set((Array.isArray(defs?.categories) ? defs.categories : []).map(String));
   const allowedMetricIds = new Set(metrics.map(m=>String(m?.id||'')).filter(Boolean));
 
-  const out = { version: 1, slots: {}, categorySelected: {} };
+  const out = { version: 1, slots: {}, categorySelected: {}, showProjection: false };
   // slots
   const slotsIn = cfg?.slots && typeof cfg.slots === 'object' ? cfg.slots : {};
   CARD_SLOTS.forEach(s=>{ out.slots[s] = null; });
   CARD_SLOTS.forEach(s=>{
     const cat = slotsIn?.[s];
     const c = (cat == null || cat === '') ? null : String(cat);
-    if(c && categories.has(c)) out.slots[s] = c;
+    if(c && categories.has(c) && c !== 'Projection') out.slots[s] = c;
   });
   // enforce uniqueness (first wins)
   const seen = new Set();
@@ -2503,9 +2628,18 @@ function normalizeCardConfig(defs, cfg){
   // metric selections
   const selIn = cfg?.categorySelected && typeof cfg.categorySelected === 'object' ? cfg.categorySelected : {};
   categories.forEach(cat=>{
+    if(cat === 'Projection') return;
     const arr = Array.isArray(selIn?.[cat]) ? selIn[cat] : [];
     out.categorySelected[cat] = arr.map(String).filter(id=>allowedMetricIds.has(id));
   });
+
+  const explicit = cfg?.showProjection;
+  const explicitOn = explicit === true || String(explicit || '').toLowerCase() === 'true' || String(explicit || '') === '1';
+  const legacyProjectionSlot = Object.values(slotsIn || {}).some((c)=> String(c || '') === 'Projection');
+  const legacyProjectionSel = Array.isArray(selIn?.Projection)
+    ? selIn.Projection.map(String).includes('Projection|Percentile')
+    : false;
+  out.showProjection = !!(explicitOn || legacyProjectionSlot || legacyProjectionSel);
 
   return out;
 }
@@ -2546,7 +2680,7 @@ function closeCardConfig(){
 
 function renderCardConfigModal(defs, cfg){
   if(!ccGrid) return;
-  const categories = Array.isArray(defs?.categories) ? defs.categories : [];
+  const categories = (Array.isArray(defs?.categories) ? defs.categories : []).filter((c)=> String(c || '') !== 'Projection');
   const metrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
   const byCat = {};
   metrics.forEach(m=>{
@@ -2579,7 +2713,15 @@ function renderCardConfigModal(defs, cfg){
     return `<div class="cc-metrics" style="margin-top:10px;">${checks || '<div class="cc-help">No metrics</div>'}</div>`;
   }
 
-  ccGrid.innerHTML = CARD_SLOTS.map(slot=>{
+  const projectionChecked = cfg?.showProjection ? ' checked' : '';
+  ccGrid.innerHTML = `
+    <div class="cc-slot" style="grid-column:1 / -1;">
+      <label class="cc-metric" style="font-size:14px; font-weight:800; margin:0;">
+        <input type="checkbox" id="ccShowProjection"${projectionChecked} />
+        <span>Show Projection</span>
+      </label>
+    </div>
+  ` + CARD_SLOTS.map(slot=>{
     const assignedCat = String(cfg?.slots?.[slot] || '');
     return `
       <div class="cc-slot" data-slot="${slot}">
@@ -2592,6 +2734,13 @@ function renderCardConfigModal(defs, cfg){
       </div>
     `;
   }).join('');
+
+  const projToggle = ccGrid.querySelector('#ccShowProjection');
+  if(projToggle){
+    projToggle.addEventListener('change', ()=>{
+      cfg.showProjection = !!projToggle.checked;
+    });
+  }
 
   ccGrid.querySelectorAll('select.cc-assign[data-slot]').forEach(dd=>{
     dd.addEventListener('change', ()=>{
@@ -2855,6 +3004,7 @@ async function loadCardPanel(){
   const playerId = String(playerSelect?.value || '').trim();
   if(!playerId){
     cardPanelInner.textContent = 'Select a player to view Card.';
+    __updateProjectionKpiFromCardData(null, null);
     return;
   }
 
@@ -2895,6 +3045,9 @@ async function loadCardPanel(){
     if(String(rates) === 'PerGame' && metricIds.includes('Ice Time|TOI') && !metricIds.includes('Ice Time|GP')){
       metricIds.push('Ice Time|GP');
     }
+    if(__isProjectionMetricEnabledInConfig(cfg) && !metricIds.includes('Projection|Percentile')){
+      metricIds.push('Projection|Percentile');
+    }
 
     const url = `/api/skaters/card?season=${encodeURIComponent(season)}&playerId=${encodeURIComponent(playerId)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(rates)}&scope=${encodeURIComponent(scope)}&minGP=${encodeURIComponent(String(minGP))}&minTOI=${encodeURIComponent(String(minTOI))}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
     const r = await fetch(url, { cache: 'no-store' });
@@ -2907,20 +3060,25 @@ async function loadCardPanel(){
     if(!r.ok){
       const err = (data && typeof data === 'object' && data.error) ? String(data.error) : '';
       cardPanelInner.textContent = `Error loading Card (${r.status}${err?`: ${err}`:''}).`;
+      __updateProjectionKpiFromCardData(null, cfg);
       return;
     }
     if(data?.error){
       if(data.error === 'not_found'){
         cardPanelInner.textContent = 'No SeasonStats found for this filter.';
+        __updateProjectionKpiFromCardData(null, cfg);
         return;
       }
       cardPanelInner.textContent = 'Error loading Card.';
+      __updateProjectionKpiFromCardData(null, cfg);
       return;
     }
     renderCardUI(data, defs, cfg);
+    __updateProjectionKpiFromCardData(data, cfg);
   }catch(e){
     try{ console.error('[card] loadCardPanel failed:', e); }catch(_){/*noop*/}
     cardPanelInner.textContent = 'Error loading Card.';
+    __updateProjectionKpiFromCardData(null, __cardConfig);
   }
 }
 
@@ -4834,6 +4992,7 @@ async function loadPlayers(){
     const data = await r.json();
     const list = Array.isArray(data?.players) ? data.players : [];
     list.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||'')));
+    __skaterPlayerMetaById = new Map(list.map((p)=> [String(p.playerId), { pos: String(p.pos || '') }]));
     const savedKey = `skaters_player_${team}`;
     const saved = localStorage.getItem(savedKey);
     playerSelect.innerHTML = '<option value="">Select player</option>' + list.map(p=>`<option value="${p.playerId}">${p.name}</option>`).join('');
@@ -4859,6 +5018,7 @@ async function loadPlayerCard(){
     setDefaultHeadshot();
     skaterName.textContent = 'Select a player';
     skaterInfo.innerHTML = '';
+    __updateProjectionKpiFromCardData(null, null);
     setMsg('Choose Team, Season, and Player.');
     return;
   }
@@ -4873,6 +5033,7 @@ async function loadPlayerCard(){
       skaterInfo.innerHTML = '';
       skaterName.textContent = 'Unknown player';
       setDefaultHeadshot();
+      __updateProjectionKpiFromCardData(null, null);
       return;
     }
     renderPlayerLanding(data);
@@ -4883,6 +5044,7 @@ async function loadPlayerCard(){
   }catch(e){
     setMsg('Could not load player info.', true);
     setDefaultHeadshot();
+    __updateProjectionKpiFromCardData(null, null);
   }
 }
 
@@ -5955,7 +6117,7 @@ function __buildCardExportSurface(){
 
   const top = document.querySelector('.skater-top');
   if(top){
-    const hero = __buildSkaterExportHero(top.cloneNode(true));
+    const hero = __buildSkaterExportHero(top.cloneNode(true), { showProjectionKpi: !!__cardProjectionEnabled });
     if(hero) card.appendChild(hero);
   }
 
@@ -6103,8 +6265,10 @@ function __selectedSkaterExportTeam(){
   return { teamAbbrev, teamColor };
 }
 
-function __buildSkaterExportHero(topClone){
+function __buildSkaterExportHero(topClone, opts){
   if(!topClone) return null;
+  const options = (opts && typeof opts === 'object') ? opts : {};
+  const showProjectionKpi = options.showProjectionKpi === true;
   const { teamAbbrev, teamColor } = __selectedSkaterExportTeam();
   const hero = document.createElement('div');
   hero.className = 'skater-export-hero';
@@ -6113,9 +6277,36 @@ function __buildSkaterExportHero(topClone){
 
   const inner = document.createElement('div');
   inner.className = 'skater-export-hero-inner';
+  try{
+    const existingKpi = topClone.querySelector('#skaterProjectionKpi');
+    if(existingKpi) existingKpi.remove();
+  }catch(_){/*noop*/}
   inner.appendChild(topClone);
 
-  if(teamAbbrev){
+  if(showProjectionKpi){
+    const kpiWrap = document.createElement('div');
+    kpiWrap.className = 'skater-export-proj-kpi-wrap';
+
+    const kpi = document.createElement('div');
+    kpi.className = 'skater-export-proj-kpi';
+    const pct = Number(__cardProjectionPct);
+    const hasPct = Number.isFinite(pct);
+    const clamped = hasPct ? clamp(pct, 0, 100) : null;
+    kpi.style.setProperty('--proj-kpi-color', hasPct ? pctToColor(clamped) : 'rgba(255,255,255,0.35)');
+
+    const val = document.createElement('div');
+    val.className = 'val';
+    val.textContent = hasPct ? `${Math.round(clamped)}%` : '--%';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'lbl';
+    lbl.textContent = 'Projection';
+
+    kpi.appendChild(val);
+    kpi.appendChild(lbl);
+    kpiWrap.appendChild(kpi);
+    inner.appendChild(kpiWrap);
+  }else if(teamAbbrev){
     const logoWrap = document.createElement('div');
     logoWrap.className = 'skater-export-team-logo-wrap';
     const logo = document.createElement('img');
