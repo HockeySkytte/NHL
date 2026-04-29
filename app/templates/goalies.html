@@ -54,6 +54,25 @@
   .skater-wrap{ width:100%; margin-left:-10px; min-width:0; overflow-x:hidden; }
   .skater-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:14px 12px 10px; min-width:0; overflow-x:hidden; }
   .skater-top{ display:flex; gap:22px; align-items:center; }
+  .skater-proj-kpi{
+    margin-left:auto;
+    width:150px;
+    height:150px;
+    border-radius:999px;
+    border:3px solid var(--proj-kpi-color, rgba(255,255,255,0.32));
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding:14px;
+    box-sizing:border-box;
+    background:rgba(4,8,14,0.48);
+    box-shadow:0 14px 30px rgba(0,0,0,0.28);
+  }
+  .skater-proj-kpi-val{ color:var(--proj-kpi-color, rgba(255,255,255,0.9)); font-size:34px; font-weight:900; letter-spacing:.2px; line-height:1; }
+  .skater-proj-kpi-lbl{ margin-top:8px; color:rgba(255,255,255,0.88); font-size:11px; letter-spacing:.8px; text-transform:uppercase; font-weight:800; line-height:1.25; }
+  .skater-proj-kpi[hidden]{ display:none !important; }
   .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
   .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
   .skater-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
@@ -336,7 +355,7 @@
   .gtend-export-card .card-export-hero{ display:block; margin:-36px -36px 0; padding:10px 36px 18px; border:none; border-radius:32px 32px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, var(--card-export-team-color-soft, rgba(77,163,255,0.28)), rgba(11,15,24,0.18) 36%, var(--card-export-team-color-dark, rgb(24,31,45)) 100%); box-shadow:none; }
   .card-export-card .card-export-hero-inner,
   .charts-export-card .card-export-hero-inner,
-  .gtend-export-card .card-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:28px; }
+  .gtend-export-card .card-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:28px; }
   .card-export-card .card-export-hero .skater-top,
   .charts-export-card .card-export-hero .skater-top,
   .gtend-export-card .card-export-hero .skater-top{ gap:28px; min-width:0; }
@@ -361,6 +380,12 @@
   .card-export-card .card-export-team-logo,
   .charts-export-card .card-export-team-logo,
   .gtend-export-card .card-export-team-logo{ display:block; width:auto; height:auto; max-width:none; max-height:none; object-fit:contain; filter:drop-shadow(0 12px 22px rgba(0,0,0,0.16)); opacity:0.98; }
+  .card-export-card .card-export-proj-kpi-wrap,
+  .charts-export-card .card-export-proj-kpi-wrap,
+  .gtend-export-card .card-export-proj-kpi-wrap{ display:flex; align-items:center; justify-content:flex-end; justify-self:end; min-width:180px; flex:0 0 auto; }
+  .card-export-card .card-export-proj-kpi-wrap .skater-proj-kpi,
+  .charts-export-card .card-export-proj-kpi-wrap .skater-proj-kpi,
+  .gtend-export-card .card-export-proj-kpi-wrap .skater-proj-kpi{ margin-left:0; width:148px; height:148px; border-width:4px; }
   .table-export-card .table-export-header-hero{ display:grid; gap:8px; margin:-34px -34px 0; padding:14px 34px 18px; border:none; border-radius:30px 30px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, rgba(77,163,255,0.28), rgba(11,15,24,0.18) 36%, rgba(11,15,24,0.02) 100%); }
   .card-export-card .skater-img, .charts-export-card .skater-img, .gtend-export-card .skater-img{ width:194px; height:194px; }
   .card-export-card .skater-name, .charts-export-card .skater-name, .gtend-export-card .skater-name{ font-size:58px; }
@@ -455,10 +480,13 @@
     .skater-wrap{ margin-left:0; }
     .skater-card{ padding:10px 8px 8px; }
     .skater-top{ flex-direction:column; align-items:center; text-align:center; gap:12px; }
-    .skater-top > div{ display:contents; }
+    .skater-top > div:not(.skater-proj-kpi){ display:contents; }
     #skaterName{ order:1; font-size:26px; }
     #skaterImg{ order:2; width:140px; height:140px; }
     #skaterInfo{ order:3; justify-content:center; gap:12px; font-size:14px; }
+    #goalieProjectionKpi{ order:4; margin:6px auto 0; width:118px; height:118px; }
+    #goalieProjectionKpi .skater-proj-kpi-val{ font-size:28px; }
+    #goalieProjectionKpi .skater-proj-kpi-lbl{ font-size:10px; }
     .subtabs{ justify-content:center; flex-wrap:wrap; }
 
     /* Filter context sizing + layout (match Skaters/Teams) */
@@ -509,6 +537,10 @@
         <h2 id="skaterName" class="skater-name">Select a goalie</h2>
         <div id="skaterInfo" class="skater-sub"></div>
       </div>
+      <div id="goalieProjectionKpi" class="skater-proj-kpi" hidden>
+        <div id="goalieProjectionKpiValue" class="skater-proj-kpi-val">--%</div>
+        <div id="goalieProjectionKpiLabel" class="skater-proj-kpi-lbl">Projection</div>
+      </div>
     </div>
 
     <div class="subtabs" role="tablist" aria-label="Goalie tabs">
@@ -522,6 +554,7 @@
       <div class="card-panel-hd">
         <div id="cardSlicerSummary" class="card-panel-meta"></div>
         <div class="card-panel-actions">
+          <button id="btnToggleProjection" class="config-btn" type="button">Show Projection</button>
           <button id="btnExportCardPng" class="config-btn" type="button">Export PNG</button>
           <button id="btnShareCardPng" class="config-btn" type="button">Share</button>
         </div>
@@ -792,7 +825,17 @@ const cardXgModelWrap = document.getElementById('cardXgModelWrap');
 let __cardDefs = null;
 let __cardConfig = null;
 const CARD_CONFIG_KEY = 'nhlGoaliesCardConfig_v1';
+const GOALIE_PROJ_KEY = 'nhlGoaliesCardProjectionEnabled';
 const CARD_SLOTS = ['L1','C1','R1','L2','C2','R2','L3','C3','R3'];
+
+let __goalieProjectionEnabled = false;
+try{ __goalieProjectionEnabled = localStorage.getItem(GOALIE_PROJ_KEY) === '1'; }catch(_){/*noop*/}
+let __goalieProjectionPct = null;
+
+const goalieProjectionKpi = document.getElementById('goalieProjectionKpi');
+const goalieProjectionKpiValue = document.getElementById('goalieProjectionKpiValue');
+const goalieProjectionKpiLabel = document.getElementById('goalieProjectionKpiLabel');
+const btnToggleProjection = document.getElementById('btnToggleProjection');
 
 const SKATERS_STATE_KEY = 'nhlGoaliesPageState_v1';
 let __restoreActiveTab = null;
@@ -1885,6 +1928,9 @@ function setActiveTab(which){
   if(finalR) loadRAPMPanel();
   if(finalP && projectionsEnabled()) loadProjectionsPanel();
 
+  // Re-evaluate KPI visibility on every tab switch so it hides outside Card.
+  __renderGoalieProjectionKpi(__goalieProjectionEnabled, __goalieProjectionPct);
+
   saveSkatersState();
 }
 
@@ -2634,6 +2680,18 @@ function __buildCardExportHero(topClone){
   if(!topClone) return null;
   const teamColor = _getSelectedTeamColor() || '#4da3ff';
   const team = String(teamSelect?.value || '').trim().toUpperCase();
+  let projectionKpi = null;
+  try{
+    projectionKpi = topClone.querySelector('#goalieProjectionKpi');
+    if(projectionKpi){
+      projectionKpi.removeAttribute('id');
+      const val = projectionKpi.querySelector('#goalieProjectionKpiValue');
+      if(val) val.removeAttribute('id');
+      const lbl = projectionKpi.querySelector('#goalieProjectionKpiLabel');
+      if(lbl) lbl.removeAttribute('id');
+      projectionKpi.remove();
+    }
+  }catch(_){ projectionKpi = null; }
   const hero = document.createElement('div');
   hero.className = 'card-export-hero';
   hero.style.setProperty('--card-export-team-color', teamColor);
@@ -2658,6 +2716,12 @@ function __buildCardExportHero(topClone){
     logo.src = teamLogoUrl(team);
     logoWrap.appendChild(logo);
     inner.appendChild(logoWrap);
+  }
+  if(projectionKpi && !projectionKpi.hidden){
+    const kpiWrap = document.createElement('div');
+    kpiWrap.className = 'card-export-proj-kpi-wrap';
+    kpiWrap.appendChild(projectionKpi);
+    inner.appendChild(kpiWrap);
   }
   hero.appendChild(inner);
   return hero;
@@ -3411,6 +3475,29 @@ async function showCardConfig(){
   openCardConfig();
 }
 
+function __renderGoalieProjectionKpi(enabled, pct){
+  if(!goalieProjectionKpi || !goalieProjectionKpiValue || !goalieProjectionKpiLabel) return;
+  const show = !!enabled && !!tabCard?.classList.contains('active');
+  if(!show){
+    goalieProjectionKpi.hidden = true;
+    goalieProjectionKpi.style.removeProperty('--proj-kpi-color');
+    goalieProjectionKpiValue.textContent = '--%';
+    return;
+  }
+  const n = Number(pct);
+  const ok = Number.isFinite(n);
+  const clamped = ok ? clamp(n, 0, 100) : null;
+  const color = ok ? pctToColor(clamped) : 'rgba(255,255,255,0.35)';
+  goalieProjectionKpi.hidden = false;
+  goalieProjectionKpi.style.setProperty('--proj-kpi-color', color);
+  goalieProjectionKpiValue.textContent = ok ? `${Math.round(clamped)}%` : '--%';
+}
+
+function __updateGoalieProjectionToggleBtn(){
+  if(!btnToggleProjection) return;
+  btnToggleProjection.textContent = __goalieProjectionEnabled ? 'Hide Projection' : 'Show Projection';
+}
+
 function parseLocaleNumber(x){
   if(x == null) return NaN;
   if(typeof x === 'number') return x;
@@ -3865,8 +3952,12 @@ async function loadCardPanel(){
   try{
     const defs = await ensureCardDefs();
     const cfg = (__cardConfig = fixedGoaliesCardConfig(defs));
+    __updateGoalieProjectionToggleBtn();
     // Goalies page: always show all goalie metrics.
     const metricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map(m=>String(m?.id||'')).filter(Boolean);
+    if(__goalieProjectionEnabled && !metricIds.includes('Projection|Percentile')){
+      metricIds.push('Projection|Percentile');
+    }
 
     const url = `/api/goalies/card?season=${encodeURIComponent(season)}&playerId=${encodeURIComponent(playerId)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(rates)}&scope=${encodeURIComponent(scope)}&minGP=${encodeURIComponent(String(minGP))}&minTOI=${encodeURIComponent(String(minTOI))}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
     const r = await fetch(url, { cache: 'no-store' });
@@ -3890,6 +3981,15 @@ async function loadCardPanel(){
       return;
     }
     renderCardUI(data, defs, cfg);
+
+    // Update projection KPI
+    try{
+      const metric = data?.metrics?.['Projection|Percentile'];
+      const rawPct = metric?.pct;
+      const pct = (rawPct == null || rawPct === '') ? NaN : Number(rawPct);
+      __goalieProjectionPct = Number.isFinite(pct) ? pct : null;
+      __renderGoalieProjectionKpi(__goalieProjectionEnabled, __goalieProjectionPct);
+    }catch(_){/*noop*/}
 
     // Load + render the season trend chart (career timeline).
     try{
@@ -6197,6 +6297,12 @@ seasonSelect?.addEventListener('change', __maybeReloadGoaltending);
 
 btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
 btnConfigureTable?.addEventListener('click', async ()=>{ await showTableConfig(); });
+btnToggleProjection?.addEventListener('click', ()=>{
+  __goalieProjectionEnabled = !__goalieProjectionEnabled;
+  try{ localStorage.setItem(GOALIE_PROJ_KEY, __goalieProjectionEnabled ? '1' : '0'); }catch(_){/*noop*/}
+  __updateGoalieProjectionToggleBtn();
+  loadCardPanel();
+});
 btnExportCardPng?.addEventListener('click', async ()=>{ await exportCardPng(); });
 btnShareCardPng?.addEventListener('click', async ()=>{ await openShareModal('card'); });
 btnExportChartsPng?.addEventListener('click', async ()=>{ await exportChartsPng(); });

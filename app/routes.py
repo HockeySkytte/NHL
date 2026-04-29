@@ -6893,6 +6893,76 @@ def api_goalies_card():
             career_gsaa_by_pid = {}
             career_gsax_by_pid = {}
 
+    needs_projection = any(mid.startswith('Projection|') for mid in metric_ids)
+    projection_map_g: Dict[int, Dict[str, Any]] = {}
+    if needs_projection:
+        try:
+            projection_map_g = _load_current_player_projections_cached() or {}
+        except Exception:
+            projection_map_g = {}
+
+    def _goalie_projection_value(player_id: int) -> Optional[float]:
+        if not isinstance(projection_map_g, dict):
+            return None
+        pid_int = int(player_id)
+        row = projection_map_g.get(pid_int)
+        if not isinstance(row, dict):
+            row = projection_map_g.get(str(pid_int))
+        if not isinstance(row, dict):
+            for k, vv in projection_map_g.items():
+                try:
+                    if int(str(k).strip()) == pid_int and isinstance(vv, dict):
+                        row = vv
+                        break
+                except Exception:
+                    continue
+        if not isinstance(row, dict):
+            return None
+        for key in ('projected_value', 'projection', 'projectedValue', 'Projection', 'ProjectedValue'):
+            val = _parse_locale_float(row.get(key))
+            if val is not None:
+                return float(val)
+        return None
+
+    def _goalie_projection_pool() -> List[float]:
+        if not isinstance(projection_map_g, dict) or not projection_map_g:
+            return []
+        out_vals: List[float] = []
+        for raw in projection_map_g.values():
+            if not isinstance(raw, dict):
+                continue
+            pg = _projection_position_group(raw.get('position'))
+            if pg != 'G':
+                continue
+            v = None
+            for key in ('projected_value', 'projection', 'projectedValue', 'Projection', 'ProjectedValue'):
+                v = _parse_locale_float(raw.get(key))
+                if v is not None:
+                    break
+            if v is None:
+                continue
+            try:
+                fv = float(v)
+                if math.isfinite(fv):
+                    out_vals.append(fv)
+            except Exception:
+                continue
+        out_vals.sort()
+        return out_vals
+
+    # Pre-compute goalie projection percentile so it bypasses the derived pool.
+    projection_special_pct: Dict[str, Optional[float]] = {}
+    if needs_projection:
+        try:
+            g_pool = _goalie_projection_pool()
+            g_val = _goalie_projection_value(int(pid))
+            if g_val is not None and g_pool:
+                import bisect
+                idx = bisect.bisect_right(g_pool, float(g_val))
+                projection_special_pct['Projection|Percentile'] = 100.0 * (idx / float(len(g_pool)))
+        except Exception:
+            pass
+
     def _compute_metric(metric_id: str, pid_i: int, v: Dict[str, Any]) -> Optional[float]:
         gp = float(v.get('GP') or 0.0)
         toi = float(v.get('TOI') or 0.0)
@@ -6907,6 +6977,9 @@ def api_goalies_card():
             category, metric = metric_id.split('|', 1)
         else:
             metric = metric_id
+
+        if category == 'Projection' and metric in {'Percentile', 'Projection Percentile', 'Projection'}:
+            return _goalie_projection_value(int(pid_i))
 
         if category == 'Workload' and metric == 'FA':
             return _rate_from(gp, toi, fa)
@@ -6986,10 +7059,14 @@ def api_goalies_card():
     out_metrics: Dict[str, Any] = {}
     for mid in metric_ids:
         val = mine.get(mid)
-        pool = dist_all.get(mid) or []
-        pct = _percentile(pool, val)
-        if pct is not None and _lower_is_better(mid):
-            pct = 100.0 - pct
+        # Use pre-computed percentile for projection (filtered to goalie pool).
+        if mid in projection_special_pct:
+            pct = projection_special_pct[mid]
+        else:
+            pool = dist_all.get(mid) or []
+            pct = _percentile(pool, val)
+            if pct is not None and _lower_is_better(mid):
+                pct = 100.0 - pct
         out_metrics[mid] = {'value': val, 'pct': pct}
 
     label_attempts = 'SA' if xg_model == 'xG_S' else 'FA'
@@ -7618,6 +7695,63 @@ def api_teams_card():
     # For Edge metrics we compute percentiles directly from rank (not from league distributions).
     special_pct: Dict[str, Optional[float]] = {}
 
+    # Pre-compute projection rankings using the same current-lineup aggregation
+    # logic as the Teams Projections league table.
+    needs_proj_ranking = any(mid.startswith('Projection|') for mid in metric_ids)
+    team_projection_rank: Dict[str, int] = {}
+    if needs_proj_ranking:
+        try:
+            lineups_all = _load_lineups_all() or {}
+            proj_map_t = _load_current_player_projections_cached() or {}
+            skater_bios = _load_skater_bios_season_cached(int(season_int)) or {}
+            goalie_bios = _load_goalie_bios_season_cached(int(season_int)) or {}
+            roster_map = {**skater_bios, **goalie_bios}
+            team_proj_totals: Dict[str, float] = {}
+
+            lineup_pids_by_team: Dict[str, set[int]] = {}
+            for team_abbrev_i, node in lineups_all.items():
+                try:
+                    team_key = str(team_abbrev_i or '').strip().upper()
+                    if not team_key:
+                        continue
+                    ids: set[int] = set()
+                    for bucket in ('forwards', 'defense', 'goalies'):
+                        for player in (node.get(bucket) or []):
+                            pid_i = _safe_int((player or {}).get('playerId'))
+                            if pid_i and pid_i > 0:
+                                ids.add(int(pid_i))
+                    lineup_pids_by_team[team_key] = ids
+                except Exception:
+                    continue
+
+            for pid_raw, raw in (proj_map_t or {}).items():
+                try:
+                    pid_i = _safe_int((raw or {}).get('player_id') or (raw or {}).get('playerId') or pid_raw)
+                    if not pid_i or pid_i <= 0:
+                        continue
+                    info = roster_map.get(int(pid_i)) or {}
+                    team_abbrev_i = str(info.get('team') or '').strip().upper()
+                    if not team_abbrev_i:
+                        continue
+                    if int(pid_i) not in lineup_pids_by_team.get(team_abbrev_i, set()):
+                        continue
+                    projection_i = _parse_locale_float((raw or {}).get('projected_value'))
+                    if projection_i is None:
+                        continue
+                    team_proj_totals[team_abbrev_i] = float(team_proj_totals.get(team_abbrev_i, 0.0)) + float(projection_i)
+                except Exception:
+                    continue
+
+            sorted_teams = sorted(team_proj_totals.items(), key=lambda x: x[1], reverse=True)
+            for rank_i, (tab, _) in enumerate(sorted_teams, start=1):
+                team_projection_rank[tab] = rank_i
+        except Exception:
+            team_projection_rank = {}
+
+    if needs_proj_ranking and team_ab in team_projection_rank:
+        # No percentile for ranking; frontend colors by rank value directly.
+        special_pct['Projection|Ranking'] = None
+
     def _compute_metric(metric_id: str, v: Dict[str, Any], team_id: int) -> Optional[float]:
         gp = float(v.get('GP') or 0.0)
         cf = float(v.get('CF') or 0.0)
@@ -7759,6 +7893,13 @@ def api_teams_card():
             # Goal differential above expected = (GF - xGF) + (xGA - GA)
             return _rate_from(gp, (gf - float(xgf)) + (float(xga) - ga))
 
+        if category == 'Projection' and metric in {'Ranking', 'Rank', 'Projection Ranking'}:
+            # Return the team's projection ranking (1=best, 32=worst).
+            rank = team_projection_rank.get(team_ab)
+            if rank is not None:
+                return float(rank)
+            return None
+
         return None
 
     edge_metric_ids = {mid for mid in metric_ids if str(mid).startswith('Edge|')}
@@ -7856,12 +7997,15 @@ def api_teams_card():
     out_metrics: Dict[str, Any] = {}
     for mid in metric_ids:
         val = mine.get(mid)
-        pct = special_pct.get(mid)
-        if pct is None and mid not in edge_metric_ids:
+        if mid in special_pct:
+            pct = special_pct[mid]
+        elif mid not in edge_metric_ids:
             pool = dist_all.get(mid) or []
             pct = _percentile(pool, val)
             if pct is not None and _lower_is_better_team(mid):
                 pct = 100.0 - pct
+        else:
+            pct = None
         mm: Dict[str, Any] = {'value': val, 'pct': pct}
         if mid in edge_metric_ids:
             mm['rank'] = edge_rank_map.get(mid)

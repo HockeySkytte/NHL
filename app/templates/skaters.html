@@ -407,7 +407,7 @@
   .edge-export-card .skater-export-hero-inner,
   .rapm-export-card .skater-export-hero-inner,
   .proj-player-export-card .skater-export-hero-inner,
-  .shoot-export-card .skater-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:28px; }
+  .shoot-export-card .skater-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:28px; }
   .card-export-card .skater-export-hero .skater-top,
   .charts-export-card .skater-export-hero .skater-top,
   .edge-export-card .skater-export-hero .skater-top,
@@ -746,6 +746,7 @@
         <div id="cardSlicerSummary" class="card-panel-meta"></div>
         <div class="card-panel-actions">
           <button id="btnConfigureCard" class="config-btn" type="button">Configure Card</button>
+          <button id="btnToggleProjection" class="config-btn" type="button">Show Projection</button>
           <button id="btnExportCardPng" class="config-btn" type="button">Export PNG</button>
           <button id="btnShareCardPng" class="config-btn" type="button">Share</button>
         </div>
@@ -1108,6 +1109,7 @@ const cardRates = document.getElementById('cardRates');
 const cardXgModel = document.getElementById('cardXgModel');
 
 const btnConfigureCard = document.getElementById('btnConfigureCard');
+const btnToggleProjection = document.getElementById('btnToggleProjection');
 const btnExportCardPng = document.getElementById('btnExportCardPng');
 const btnShareCardPng = document.getElementById('btnShareCardPng');
 const cardConfigModal = document.getElementById('cardConfigModal');
@@ -2048,7 +2050,8 @@ function __isProjectionMetricEnabledInConfig(cfg){
 
 function __renderProjectionKpi(enabled, pct, positionGroup){
   if(!skaterProjectionKpi || !skaterProjectionKpiValue || !skaterProjectionKpiLabel) return;
-  if(!enabled){
+  const show = !!enabled && !!tabCard?.classList.contains('active');
+  if(!show){
     skaterProjectionKpi.hidden = true;
     skaterProjectionKpi.style.removeProperty('--proj-kpi-color');
     skaterProjectionKpiValue.textContent = '--%';
@@ -2084,6 +2087,12 @@ function __updateProjectionKpiFromCardData(data, cfg){
   }
   __cardProjectionPositionGroup = group;
   __renderProjectionKpi(enabled, __cardProjectionPct, __cardProjectionPositionGroup);
+}
+
+function __updateProjectionToggleBtn(){
+  if(!btnToggleProjection) return;
+  const on = __isProjectionMetricEnabledInConfig(__cardConfig);
+  btnToggleProjection.textContent = on ? 'Hide Projection' : 'Show Projection';
 }
 
 function setActiveTab(which){
@@ -2148,6 +2157,9 @@ function setActiveTab(which){
   if(finalE) loadEdgePanel();
   if(finalR) loadRAPMPanel();
   if(finalP && projectionsEnabled()) loadProjectionsPanel();
+
+  // Re-evaluate KPI visibility on every tab switch so it hides outside Card.
+  __renderProjectionKpi(__cardProjectionEnabled, __cardProjectionPct, __cardProjectionPositionGroup);
 
   saveSkatersState();
 }
@@ -2667,6 +2679,7 @@ async function importCardConfigFromText(text){
   const norm = normalizeCardConfig(defs, parsed);
   __cardConfig = norm;
   saveCardConfig(norm);
+  __updateProjectionToggleBtn();
   renderCardConfigModal(defs, __cardConfig);
   loadCardPanel();
 }
@@ -2713,15 +2726,7 @@ function renderCardConfigModal(defs, cfg){
     return `<div class="cc-metrics" style="margin-top:10px;">${checks || '<div class="cc-help">No metrics</div>'}</div>`;
   }
 
-  const projectionChecked = cfg?.showProjection ? ' checked' : '';
-  ccGrid.innerHTML = `
-    <div class="cc-slot" style="grid-column:1 / -1;">
-      <label class="cc-metric" style="font-size:14px; font-weight:800; margin:0;">
-        <input type="checkbox" id="ccShowProjection"${projectionChecked} />
-        <span>Show Projection</span>
-      </label>
-    </div>
-  ` + CARD_SLOTS.map(slot=>{
+  ccGrid.innerHTML = CARD_SLOTS.map(slot=>{
     const assignedCat = String(cfg?.slots?.[slot] || '');
     return `
       <div class="cc-slot" data-slot="${slot}">
@@ -2734,13 +2739,6 @@ function renderCardConfigModal(defs, cfg){
       </div>
     `;
   }).join('');
-
-  const projToggle = ccGrid.querySelector('#ccShowProjection');
-  if(projToggle){
-    projToggle.addEventListener('change', ()=>{
-      cfg.showProjection = !!projToggle.checked;
-    });
-  }
 
   ccGrid.querySelectorAll('select.cc-assign[data-slot]').forEach(dd=>{
     dd.addEventListener('change', ()=>{
@@ -3023,6 +3021,7 @@ async function loadCardPanel(){
   try{
     const defs = await ensureCardDefs();
     const cfg = (__cardConfig = loadCardConfig(defs));
+    __updateProjectionToggleBtn();
     // Build requested metric list from configured categories.
     const defsMetrics = Array.isArray(defs?.metrics) ? defs.metrics : [];
     const byCat = {};
@@ -6283,6 +6282,17 @@ function __buildSkaterExportHero(topClone, opts){
   }catch(_){/*noop*/}
   inner.appendChild(topClone);
 
+  if(teamAbbrev){
+    const logoWrap = document.createElement('div');
+    logoWrap.className = 'skater-export-team-logo-wrap';
+    const logo = document.createElement('img');
+    logo.className = 'skater-export-team-logo';
+    logo.src = teamLogoUrl(teamAbbrev);
+    logo.alt = `${teamAbbrev} logo`;
+    logoWrap.appendChild(logo);
+    inner.appendChild(logoWrap);
+  }
+
   if(showProjectionKpi){
     const kpiWrap = document.createElement('div');
     kpiWrap.className = 'skater-export-proj-kpi-wrap';
@@ -6306,15 +6316,6 @@ function __buildSkaterExportHero(topClone, opts){
     kpi.appendChild(lbl);
     kpiWrap.appendChild(kpi);
     inner.appendChild(kpiWrap);
-  }else if(teamAbbrev){
-    const logoWrap = document.createElement('div');
-    logoWrap.className = 'skater-export-team-logo-wrap';
-    const logo = document.createElement('img');
-    logo.className = 'skater-export-team-logo';
-    logo.src = teamLogoUrl(teamAbbrev);
-    logo.alt = `${teamAbbrev} logo`;
-    logoWrap.appendChild(logo);
-    inner.appendChild(logoWrap);
   }
 
   hero.appendChild(inner);
@@ -7534,6 +7535,13 @@ try{ cardMinToi?.addEventListener('input', __scheduleMinFilterSave); }catch(_){/
 btnConfigureCard?.addEventListener('click', async ()=>{
   await showCardConfig();
 });
+btnToggleProjection?.addEventListener('click', ()=>{
+  if(!__cardConfig) return;
+  __cardConfig.showProjection = !__isProjectionMetricEnabledInConfig(__cardConfig);
+  saveCardConfig(__cardConfig);
+  __updateProjectionToggleBtn();
+  loadCardPanel();
+});
 btnCloseCardConfig?.addEventListener('click', ()=> closeCardConfig());
 cardConfigModal?.addEventListener('click', (e)=>{
   // click backdrop to close
@@ -7545,6 +7553,7 @@ document.addEventListener('keydown', (e)=>{
 btnResetCardConfig?.addEventListener('click', async ()=>{
   const defs = await ensureCardDefs();
   __cardConfig = buildDefaultCardConfig(defs);
+  __updateProjectionToggleBtn();
   renderCardConfigModal(defs, __cardConfig);
 });
 btnSaveCardConfig?.addEventListener('click', ()=>{

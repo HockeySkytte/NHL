@@ -37,6 +37,25 @@
   .team-wrap{ width:100%; margin-left:-10px; min-width:0; overflow-x:hidden; }
   .team-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:14px 12px 10px; min-width:0; overflow-x:hidden; }
   .team-top{ display:flex; gap:22px; align-items:center; }
+  .skater-proj-kpi{
+    margin-left:auto;
+    width:150px;
+    height:150px;
+    border-radius:999px;
+    border:3px solid var(--proj-kpi-color, rgba(255,255,255,0.32));
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding:14px;
+    box-sizing:border-box;
+    background:rgba(4,8,14,0.48);
+    box-shadow:0 14px 30px rgba(0,0,0,0.28);
+  }
+  .skater-proj-kpi-val{ color:var(--proj-kpi-color, rgba(255,255,255,0.9)); font-size:34px; font-weight:900; letter-spacing:.2px; line-height:1; }
+  .skater-proj-kpi-lbl{ margin-top:8px; color:rgba(255,255,255,0.88); font-size:11px; letter-spacing:.8px; text-transform:uppercase; font-weight:800; line-height:1.25; }
+  .skater-proj-kpi[hidden]{ display:none !important; }
   /* Smaller surrounding square while keeping the logo's effective size similar. */
   .team-img{ width:190px; height:190px; border-radius:18px; object-fit:contain; object-position:center; background:var(--panel); border:1px solid #2a3142; padding:0; transform:none; }
   .team-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
@@ -198,10 +217,12 @@
   .teams-export-card--standard{ width:100%; max-width:none; }
   .teams-export-card--table{ display:inline-grid; width:max-content; min-width:0; max-width:none; justify-items:stretch; }
   .teams-export-hero{ display:block; margin:-36px -36px 0; padding:12px 36px 18px; border:none; border-radius:32px 32px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, var(--teams-export-team-color-soft, rgba(77,163,255,0.28)), rgba(11,15,24,0.18) 36%, var(--teams-export-team-color-dark, rgb(24,31,45)) 100%); box-shadow:none; }
-  .teams-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr); align-items:center; }
+  .teams-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:28px; }
   .teams-export-title-hero{ display:grid; gap:8px; margin:-34px -34px 0; padding:14px 34px 18px; border:none; border-radius:30px 30px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, rgba(77,163,255,0.28), rgba(11,15,24,0.18) 36%, rgba(11,15,24,0.02) 100%); }
   .teams-export-top{ display:flex; gap:24px; align-items:center; }
   .teams-export-logo{ display:block; width:auto; height:148px; max-width:220px; object-fit:contain; background:transparent; border:none; border-radius:0; padding:0; }
+  .teams-export-proj-kpi-wrap{ display:flex; align-items:center; justify-content:flex-end; justify-self:end; min-width:180px; flex:0 0 auto; }
+  .teams-export-proj-kpi-wrap .skater-proj-kpi{ margin-left:0; width:148px; height:148px; border-width:4px; }
   .teams-export-title{ color:rgba(255,255,255,0.98); font-size:50px; line-height:1.04; font-weight:900; letter-spacing:-.02em; }
   .teams-export-info{ margin-top:10px; display:flex; gap:16px; flex-wrap:wrap; color:rgba(255,255,255,0.86); font-size:16px; }
   .teams-export-summary{ color:rgba(255,255,255,0.95); font-size:30px; font-style:italic; font-weight:800; letter-spacing:.2px; }
@@ -249,10 +270,13 @@
     .team-wrap{ margin-left:0; }
     .team-card{ padding:10px 8px 8px; }
     .team-top{ flex-direction:column; align-items:center; text-align:center; gap:12px; }
-    .team-top > div{ display:contents; }
+    .team-top > div:not(.skater-proj-kpi){ display:contents; }
     #teamName{ order:1; font-size:26px; }
     #teamImg{ order:2; width:150px; height:150px; }
     #teamInfo{ order:3; justify-content:center; gap:12px; font-size:14px; }
+    #teamProjectionKpi{ order:4; margin:6px auto 0; width:118px; height:118px; }
+    #teamProjectionKpi .skater-proj-kpi-val{ font-size:28px; }
+    #teamProjectionKpi .skater-proj-kpi-lbl{ font-size:10px; }
     .subtabs{ justify-content:center; flex-wrap:wrap; }
     .teams-export-table-grid{ grid-template-columns:1fr; }
 
@@ -307,6 +331,10 @@
         <h2 id="teamName" class="team-name">Teams</h2>
         <div id="teamInfo" class="team-sub"></div>
       </div>
+      <div id="teamProjectionKpi" class="skater-proj-kpi" hidden>
+        <div id="teamProjectionKpiValue" class="skater-proj-kpi-val">--</div>
+        <div id="teamProjectionKpiLabel" class="skater-proj-kpi-lbl">Projection</div>
+      </div>
     </div>
 
     <div class="subtabs" role="tablist" aria-label="Teams tabs">
@@ -321,6 +349,7 @@
       <div class="card-panel-hd">
         <div id="cardSlicerSummary" class="card-panel-meta"></div>
         <div class="panel-actions">
+          <button id="btnToggleProjection" class="config-btn" type="button">Show Projection</button>
           <button id="btnReloadCard" class="config-btn" type="button">Reload</button>
           <button id="btnExportTeamsCardPng" class="config-btn" type="button">Export PNG</button>
           <button id="btnShareTeamsCardPng" class="config-btn" type="button">Share</button>
@@ -526,6 +555,7 @@ const cardStrengthState = document.getElementById('cardStrengthState');
 const cardRates = document.getElementById('cardRates');
 
 const btnReloadCard = document.getElementById('btnReloadCard');
+const btnToggleProjection = document.getElementById('btnToggleProjection');
 const btnExportTeamsCardPng = document.getElementById('btnExportTeamsCardPng');
 const btnShareTeamsCardPng = document.getElementById('btnShareTeamsCardPng');
 
@@ -590,6 +620,15 @@ let __projLeaguePlayersBySeason = new Map();
 let __projTeamChart = null;
 let __projLeagueSort = { key: 'projTotal', dir: 'desc' };
 let __projLeagueMode = 'all';
+
+const TEAMS_PROJ_KEY = 'nhlTeamsCardProjectionEnabled';
+let __teamsProjectionEnabled = false;
+try{ __teamsProjectionEnabled = localStorage.getItem(TEAMS_PROJ_KEY) === '1'; }catch(_){/*noop*/}
+let __teamsProjectionRank = null;
+
+const teamProjectionKpi = document.getElementById('teamProjectionKpi');
+const teamProjectionKpiValue = document.getElementById('teamProjectionKpiValue');
+const teamProjectionKpiLabel = document.getElementById('teamProjectionKpiLabel');
 let __tableLastKey = '';
 let __logoImgCache = new Map();
 
@@ -699,6 +738,36 @@ function pctToColor(p){
   const blue = '#4da3ff';
   if(pp <= 50) return mixHex(red, white, pp / 50);
   return mixHex(white, blue, (pp - 50) / 50);
+}
+
+function rankToColor(rank){
+  // rank 1 = best (blue), rank 32 = worst (red); 16.5 = white
+  const r = Number(rank);
+  if(!Number.isFinite(r)) return 'rgba(255,255,255,0.35)';
+  const pct = clamp((32 - r) / 31 * 100, 0, 100);
+  return pctToColor(pct);
+}
+
+function __renderTeamsProjectionKpi(enabled, rank){
+  if(!teamProjectionKpi || !teamProjectionKpiValue || !teamProjectionKpiLabel) return;
+  const show = !!enabled && !!tabCard?.classList.contains('active');
+  if(!show){
+    teamProjectionKpi.hidden = true;
+    teamProjectionKpi.style.removeProperty('--proj-kpi-color');
+    teamProjectionKpiValue.textContent = '--';
+    return;
+  }
+  const r = Number(rank);
+  const ok = Number.isFinite(r);
+  const color = ok ? rankToColor(r) : 'rgba(255,255,255,0.35)';
+  teamProjectionKpi.hidden = false;
+  teamProjectionKpi.style.setProperty('--proj-kpi-color', color);
+  teamProjectionKpiValue.textContent = ok ? `#${Math.round(r)}` : '--';
+}
+
+function __updateTeamsProjectionToggleBtn(){
+  if(!btnToggleProjection) return;
+  btnToggleProjection.textContent = __teamsProjectionEnabled ? 'Hide Projection' : 'Show Projection';
 }
 
 function _ordinal(n){
@@ -967,6 +1036,15 @@ function __teamsBuildExportCard(kind, modifier='standard'){
     const heroInner = document.createElement('div');
     heroInner.className = 'teams-export-hero-inner';
     heroInner.appendChild(__teamsBuildTopClone());
+    if(kind === 'card' && __teamsProjectionEnabled && teamProjectionKpi && !teamProjectionKpi.hidden){
+      const kpiWrap = document.createElement('div');
+      kpiWrap.className = 'teams-export-proj-kpi-wrap';
+      const kpiClone = __teamsCloneNode(teamProjectionKpi);
+      kpiClone.removeAttribute('id');
+      kpiClone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+      kpiWrap.appendChild(kpiClone);
+      heroInner.appendChild(kpiWrap);
+    }
     hero.appendChild(heroInner);
     card.appendChild(hero);
   }
@@ -1581,6 +1659,9 @@ function setActiveTab(which){
   if(isProj) renderProjections();
   if(isTable) loadTablePanel();
 
+  // Re-evaluate KPI visibility on every tab switch so it hides outside Card.
+  __renderTeamsProjectionKpi(__teamsProjectionEnabled, __teamsProjectionRank);
+
   saveTeamsState();
 }
 
@@ -1900,6 +1981,10 @@ async function loadCardPanel(){
       })
       .map(m=>String(m.id||''))
       .filter(Boolean);
+    __updateTeamsProjectionToggleBtn();
+    if(__teamsProjectionEnabled && !metricIds.includes('Projection|Ranking')){
+      metricIds.push('Projection|Ranking');
+    }
     const url = `/api/teams/card?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
     const r = await fetch(url, { cache:'no-store' });
     const data = await r.json();
@@ -1950,6 +2035,14 @@ async function loadCardPanel(){
         const p = el.getAttribute('data-pct');
         fillPctBar(el, p==null?null:Number(p));
       });
+    }catch(_){/*noop*/}
+
+    // Update projection ranking KPI
+    try{
+      const metric = data?.metrics?.['Projection|Ranking'];
+      const rank = metric?.value;
+      __teamsProjectionRank = (rank == null) ? null : Number(rank);
+      __renderTeamsProjectionKpi(__teamsProjectionEnabled, __teamsProjectionRank);
     }catch(_){/*noop*/}
   }catch(e){
     cardPanelInner.innerHTML = '<div class="team-empty err">Error loading card.</div>';
@@ -2838,6 +2931,12 @@ async function loadTablePanel(){
 
 try{
   btnReloadCard?.addEventListener('click', ()=>{ __scatterCache.clear(); __chartsLastKey=''; loadCardPanel(); });
+  btnToggleProjection?.addEventListener('click', ()=>{
+    __teamsProjectionEnabled = !__teamsProjectionEnabled;
+    try{ localStorage.setItem(TEAMS_PROJ_KEY, __teamsProjectionEnabled ? '1' : '0'); }catch(_){/*noop*/}
+    __updateTeamsProjectionToggleBtn();
+    loadCardPanel();
+  });
   btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
   btnExportTeamsCardPng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>exportTeamsPng('card')); });
   btnShareTeamsCardPng?.addEventListener('click', ()=>{ void __runTeamsAction(()=>shareTeamsPng('card')); });
