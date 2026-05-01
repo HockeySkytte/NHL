@@ -3026,6 +3026,40 @@ def _get_lt_pbp(season: str, game_ids: list, xg_col: str, extra_cols: str = '') 
     return all_pbp
 
 
+def _get_lt_shifts_parallel(team: str, season_ids: Sequence[int]) -> List[Dict[str, Any]]:
+    """Fetch shifts for multiple seasons in parallel to avoid sequential I/O latency."""
+    if len(season_ids) <= 1:
+        rows: List[Dict[str, Any]] = []
+        for sid in season_ids:
+            rows.extend(_get_lt_shifts(team, str(sid)))
+        return rows
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(season_ids)) as ex:
+        results = list(ex.map(lambda sid: _get_lt_shifts(team, str(sid)), season_ids))
+    return [r for rows in results for r in rows]
+
+
+def _get_lt_pbp_parallel(
+    season_ids: Sequence[int],
+    game_list: List[int],
+    xg_col: str,
+    extra_cols: str = '',
+) -> List[Dict[str, Any]]:
+    """Fetch PBP for multiple seasons in parallel."""
+    def _fetch(sid: int) -> List[Dict[str, Any]]:
+        gids = [g for g in game_list if len(str(g)) >= 8 and str(g)[:4] == str(sid)[:4]]
+        if not gids:
+            return []
+        return _get_lt_pbp(str(sid), gids, xg_col, extra_cols)
+
+    if len(season_ids) <= 1:
+        return [r for sid in season_ids for r in _fetch(sid)]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(season_ids)) as ex:
+        results = list(ex.map(_fetch, season_ids))
+    return [r for rows in results for r in rows]
+
+
 def _compute_line_tool_team_combos(team: str, season: str, ss: str, strength: str,
                                    xg_col: str, line_type: str,
                                    pid_info: Dict[str, Dict[str, str]]) -> List[Dict[str, Any]]:
@@ -3236,10 +3270,8 @@ def api_line_tool_data():
         j_cached.headers['Cache-Control'] = 'no-store'
         return j_cached
 
-    # ── 1. Fetch shifts for the team + season ────────────────
-    shift_rows = []
-    for _sid in season_ids:
-        shift_rows.extend(_get_lt_shifts(team, str(_sid)))
+    # ── 1. Fetch shifts for the team + season (parallel) ─────
+    shift_rows = _get_lt_shifts_parallel(team, season_ids)
     if not shift_rows:
         return jsonify(_empty_line_tool_response())
     shift_rows = _filter_shifts_season_state(shift_rows, ss)
@@ -3316,13 +3348,9 @@ def api_line_tool_data():
         team_toi_sec += int(s.get('duration', 0) or 0)
     team_toi_min = team_toi_sec / 60.0
 
-    # ── 5. Fetch PBP for the relevant games ──────────────────
+    # ── 5. Fetch PBP for the relevant games (parallel) ───────
     game_list = sorted(game_ids)
-    all_pbp = []
-    for _sid in season_ids:
-        _gids = [g for g in game_list if len(str(g)) >= 8 and str(g)[:4] == str(_sid)[:4]]
-        if _gids:
-            all_pbp.extend(_get_lt_pbp(str(_sid), _gids, xg_col, extra_cols='x,y,box_id,highlight_url'))
+    all_pbp = _get_lt_pbp_parallel(season_ids, game_list, xg_col, extra_cols='x,y,box_id,highlight_url')
 
     # ── 6. Filter PBP to matching shift_indexes ──────────────
     events_for = []   # team shooting (event_team = team)
@@ -3563,10 +3591,8 @@ def api_line_tool_wowy():
     xg_col_map = {'xG_F': 'xg_f', 'xG_S': 'xg_s', 'xG_F2': 'xg_f2'}
     xg_col = xg_col_map.get(xg_model, 'xg_f')
 
-    # ── 1. Fetch shifts ──────────────────────────────────────
-    shift_rows = []
-    for _sid in season_ids:
-        shift_rows.extend(_get_lt_shifts(team, str(_sid)))
+    # ── 1. Fetch shifts (parallel across seasons) ─────────────
+    shift_rows = _get_lt_shifts_parallel(team, season_ids)
     if not shift_rows:
         return jsonify({'combos': [], 'players': []})
     shift_rows = _filter_shifts_season_state(shift_rows, ss)
@@ -3609,12 +3635,8 @@ def api_line_tool_wowy():
         all_game_ids.update(grp['game_ids'])
     game_list = sorted(all_game_ids)
 
-    all_pbp = []
-    for _sid in season_ids:
-        _gids = [g for g in game_list if len(str(g)) >= 8 and str(g)[:4] == str(_sid)[:4]]
-        if _gids:
-            all_pbp.extend(_get_lt_pbp(str(_sid), _gids, xg_col,
-                                        extra_cols='player1_id,player2_id,player3_id,goalie_id'))
+    all_pbp = _get_lt_pbp_parallel(season_ids, game_list, xg_col,
+                                  extra_cols='player1_id,player2_id,player3_id,goalie_id')
 
     # Build shift_key → mask lookup
     sk_to_mask = {}
@@ -3837,9 +3859,7 @@ def api_line_tool_versus():
         return j_cached
 
     # 1) Team shifts filtered by selected FOR players (or all shifts if no FOR players selected)
-    shift_rows: List[Dict[str, Any]] = []
-    for _sid in season_ids:
-        shift_rows.extend(_get_lt_shifts(team, str(_sid)))
+    shift_rows: List[Dict[str, Any]] = _get_lt_shifts_parallel(team, season_ids)
     if not shift_rows:
         return jsonify({'rows': [], 'vsTeam': vs_team, 'vsPlayers': []})
     shift_rows = _filter_shifts_season_state(shift_rows, ss)
@@ -3858,9 +3878,7 @@ def api_line_tool_versus():
         return jsonify({'rows': [], 'vsTeam': vs_team, 'vsPlayers': []})
 
     # 2) Opponent shifts map: (game_id, shift_index) -> set(opponent player ids)
-    opp_shift_rows: List[Dict[str, Any]] = []
-    for _sid in season_ids:
-        opp_shift_rows.extend(_get_lt_shifts(vs_team, str(_sid)))
+    opp_shift_rows: List[Dict[str, Any]] = _get_lt_shifts_parallel(vs_team, season_ids)
     opp_shift_rows = _filter_shifts_season_state(opp_shift_rows, ss)
     opp_shift_rows = _apply_lt_strength_filter(opp_shift_rows, strength)
 
@@ -3917,11 +3935,7 @@ def api_line_tool_versus():
         all_game_ids.update(grp['game_ids'])
     game_list = sorted(all_game_ids)
 
-    all_pbp: List[Dict[str, Any]] = []
-    for _sid in season_ids:
-        _gids = [g for g in game_list if len(str(g)) >= 8 and str(g)[:4] == str(_sid)[:4]]
-        if _gids:
-            all_pbp.extend(_get_lt_pbp(str(_sid), _gids, xg_col, extra_cols=''))
+    all_pbp: List[Dict[str, Any]] = _get_lt_pbp_parallel(season_ids, game_list, xg_col)
 
     sk_to_group: Dict[Tuple[int, int], Tuple[str, Any]] = {}
     for gkey, grp in group_rows.items():
