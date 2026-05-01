@@ -2897,21 +2897,47 @@ def api_line_tool_players():
 
     season_ids = _parse_request_season_ids(season)
 
-    pid_info = _load_player_info_for_seasons(season_ids)
-    if not pid_info:
-        return jsonify({'players': []})
-
-    # We need to filter by team – the players table doesn't have a team column,
-    # so we use the game_data table to find players who played for this team.
-    team_pids = set()
+    # Step 1: get player IDs who played for this team – game_data is filtered by
+    # team + season so this is a small, fast query even for multiple seasons.
+    team_pids: set = set()
     for season_id in season_ids:
         gd_rows = _sb_read(
             'game_data',
-            columns='player_id,team',
+            columns='player_id',
             filters={'season': f'eq.{int(season_id)}', 'team': f'eq.{team}'},
         )
         if gd_rows:
             team_pids.update(int(r['player_id']) for r in gd_rows if r.get('player_id'))
+
+    if not team_pids:
+        return jsonify({'players': []})
+
+    # Step 2: fetch name/position only for the ~20-30 relevant player IDs.
+    # This avoids a full-table scan of the players table (which can be 30k+ rows
+    # per season) and makes multi-season loads ~100× faster.
+    pid_filter = ','.join(str(p) for p in sorted(team_pids))
+    player_rows = _sb_read(
+        'players',
+        columns='player_id,player,position',
+        filters={'player_id': f'in.({pid_filter})'},
+    )
+
+    pid_info: Dict[str, Dict[str, str]] = {}
+    for row in player_rows or []:
+        pid = _safe_int(row.get('player_id'))
+        if not pid:
+            continue
+        key = str(pid)
+        if key not in pid_info:
+            pid_info[key] = {
+                'name': str(row.get('player') or '').strip(),
+                'position': str(row.get('position') or '').strip().upper(),
+            }
+
+    # Fallback: if the players table returned nothing, try the season-based lookup
+    # (which may hit the NHL roster API for historical seasons).
+    if not pid_info:
+        pid_info = _load_player_info_for_seasons(season_ids)
 
     players_map = {}
     for pid in team_pids:
@@ -3735,8 +3761,8 @@ def api_line_tool_wowy():
     # Sort by TOI descending
     combos.sort(key=lambda c: c['toi'], reverse=True)
 
-    # Player name map
-    pid_info = _load_player_info_for_seasons(season_ids)
+    # Player name map – targeted lookup for only the selected player IDs (fast).
+    pid_info = _load_player_info_targeted([int(pid) for pid in player_ids])
 
     player_info = []
     for pid in player_ids:
@@ -3953,7 +3979,8 @@ def api_line_tool_versus():
                 st['ga'] += 1
             st['xga'] += xg_val
 
-    pid_info = _load_player_info_for_seasons(season_ids)
+    # Targeted lookup – only the selected opponent player IDs are needed for labels.
+    pid_info = _load_player_info_targeted([int(pid) for pid in vs_player_ids])
     vs_player_info = []
     for pid in vs_player_ids:
         info = pid_info.get(pid, {})
@@ -4046,7 +4073,58 @@ def api_line_tool_lines():
     line_type = str(request.args.get('type', 'fwd')).strip().lower()
     scope = str(request.args.get('scope', 'team')).strip().lower()
 
-    pid_info = _load_player_info_for_seasons(season_ids)
+    # Result cache – first cold load for 3 seasons can take 30–60 s; cache the
+    # result so subsequent requests are instant.
+    try:
+        lt_lines_ttl_s = max(30, int(os.getenv('LINE_TOOL_DATA_CACHE_TTL_SECONDS', '300') or '300'))
+    except Exception:
+        lt_lines_ttl_s = 300
+    try:
+        lt_lines_max_items = max(8, int(os.getenv('LINE_TOOL_DATA_CACHE_MAX_ITEMS', '96') or '96'))
+    except Exception:
+        lt_lines_max_items = 96
+
+    lt_lines_cache_key = (
+        'lines',
+        str(team),
+        tuple(_normalize_season_id_list(season_ids)),
+        str(ss),
+        str(strength),
+        str(xg_col),
+        str(line_type),
+        str(scope),
+    )
+    _cache_prune_ttl_and_size(_LT_DATA_CACHE, ttl_s=lt_lines_ttl_s, max_items=lt_lines_max_items)
+    lt_lines_cached = _cache_get(_LT_DATA_CACHE, lt_lines_cache_key, lt_lines_ttl_s)
+    if isinstance(lt_lines_cached, dict):
+        j_cached = jsonify(lt_lines_cached)
+        j_cached.headers['Cache-Control'] = 'no-store'
+        return j_cached
+
+    try:
+        result = _compute_api_line_tool_lines(
+            team, season_ids, ss, strength, xg_col, line_type, scope)
+    except Exception:
+        return jsonify({'combos': [], 'players': {}}), 200
+
+    _cache_set_multi_bounded(_LT_DATA_CACHE, lt_lines_cache_key, result,
+                             ttl_s=lt_lines_ttl_s, max_items=lt_lines_max_items)
+    j = jsonify(result)
+    j.headers['Cache-Control'] = 'no-store'
+    return j
+
+
+def _compute_api_line_tool_lines(
+    team: str, season_ids: List[int], ss: str, strength: str,
+    xg_col: str, line_type: str, scope: str,
+) -> Dict[str, Any]:
+    """Core logic for api_line_tool_lines, extracted so the route can cache + guard it."""
+    # Fast targeted lookup: use game_data (filtered by team+season) to get the
+    # ~20-30 relevant player IDs, then fetch only their name/position.
+    _team_pids = _get_team_pids_for_seasons(team, season_ids)
+    pid_info = _load_player_info_targeted(_team_pids) if _team_pids else {}
+    if not pid_info:
+        pid_info = _load_player_info_for_seasons(season_ids)
 
     if scope == 'league':
         tbl = 'forward_lines' if line_type == 'fwd' else 'defense_pairings'
@@ -4132,15 +4210,13 @@ def api_line_tool_lines():
                         'position': info.get('position', ''),
                     }
         combos.sort(key=lambda c: c['toi'], reverse=True)
-        j = jsonify({'combos': combos, 'players': players_out})
-        j.headers['Cache-Control'] = 'no-store'
-        return j
+        return {'combos': combos, 'players': players_out}
 
-    combo_acc: Dict[Tuple[str, Tuple[str, ...]], Dict[str, Any]] = {}
+    combo_acc2: Dict[Tuple[str, Tuple[str, ...]], Dict[str, Any]] = {}
     for season_id in season_ids:
         for combo in _compute_line_tool_team_combos(team, str(season_id), ss, strength, xg_col, line_type, pid_info):
             combo_key = (str(combo.get('team', '')), tuple(combo.get('players', [])))
-            acc = combo_acc.setdefault(combo_key, {
+            acc = combo_acc2.setdefault(combo_key, {
                 'gp': 0,
                 'toi': 0.0,
                 'cf': 0,
@@ -4157,15 +4233,10 @@ def api_line_tool_lines():
             _accumulate_line_tool_combo(acc, combo)
     combos = [
         _finalize_line_tool_combo(team_abbr, pids, acc)
-        for (team_abbr, pids), acc in combo_acc.items()
+        for (team_abbr, pids), acc in combo_acc2.items()
         if float(acc.get('toi') or 0.0) >= 0.1
     ]
-    if not combos:
-        return jsonify({'combos': [], 'players': pid_info})
-
-    j = jsonify({'combos': combos, 'players': pid_info})
-    j.headers['Cache-Control'] = 'no-store'
-    return j
+    return {'combos': combos, 'players': pid_info}
 
 
 @main_bp.route('/teams')
@@ -13052,6 +13123,53 @@ def _load_player_info_for_seasons(season_ids: Sequence[int]) -> Dict[str, Dict[s
     for pid, name in roster_names.items():
         info_by_pid[str(pid)] = {'name': name, 'position': ''}
     return info_by_pid
+
+
+def _load_player_info_targeted(player_ids: Sequence) -> Dict[str, Dict[str, str]]:
+    """Fetch name/position for a specific set of player IDs in one small query.
+
+    Much faster than _load_player_info_for_seasons when only a handful of players
+    are needed (e.g. the 5 selected players, or a team roster of ~25 players).
+    Falls back gracefully to an empty dict if the table is unreachable.
+    """
+    if not player_ids:
+        return {}
+    pid_list = sorted(set(int(p) for p in player_ids if _safe_int(p)))
+    if not pid_list:
+        return {}
+    pid_filter = ','.join(str(p) for p in pid_list)
+    rows = _sb_read('players', columns='player_id,player,position',
+                    filters={'player_id': f'in.({pid_filter})'})
+    info: Dict[str, Dict[str, str]] = {}
+    for row in rows or []:
+        pid = _safe_int(row.get('player_id'))
+        if not pid:
+            continue
+        key = str(pid)
+        if key not in info:
+            info[key] = {
+                'name': str(row.get('player') or '').strip(),
+                'position': str(row.get('position') or '').strip().upper(),
+            }
+    return info
+
+
+def _get_team_pids_for_seasons(team: str, season_ids: Sequence[int]) -> set:
+    """Return the set of player IDs who played for *team* across the given seasons.
+
+    Uses the game_data table which is already filtered by team+season, so this
+    is a small, fast query even for multiple seasons.
+    """
+    team_pids: set = set()
+    for season_id in season_ids:
+        gd_rows = _sb_read(
+            'game_data',
+            columns='player_id',
+            filters={'season': f'eq.{int(season_id)}', 'team': f'eq.{team}'},
+        )
+        if gd_rows:
+            team_pids.update(int(r['player_id']) for r in gd_rows if r.get('player_id'))
+    return team_pids
 
 
 def _apply_lt_strength_filter(shift_rows: Sequence[Dict[str, Any]], strength: str) -> List[Dict[str, Any]]:
