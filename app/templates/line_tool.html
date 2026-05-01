@@ -211,6 +211,7 @@
   .lt-export-vs-title{ color:rgba(255,255,255,0.80); font-size:13px; font-weight:850; text-transform:uppercase; letter-spacing:.12em; }
   .lt-export-vs-team{ display:grid; justify-items:center; gap:8px; }
   .lt-export-headshot{ width:118px; height:118px; border-radius:50%; border:3px solid #2b3648; object-fit:cover; background:#1a2236; }
+  .lt-export-team-badge{ width:118px; height:118px; border-radius:50%; border:3px solid #2b3648; object-fit:contain; background:#1a2236; padding:10px; box-sizing:border-box; }
   .lt-export-player-name{ font-size:22px; font-weight:850; text-align:center; }
   .lt-export-player-sub{ color:var(--text-dim); font-size:14px; font-weight:750; text-transform:uppercase; letter-spacing:.08em; }
   .lt-export-card .lt-kpis{ width:100%; justify-content:center; gap:18px; margin:0; flex-wrap:nowrap; }
@@ -1210,7 +1211,7 @@ function __buildExportFormation(){
   const teamBlock = document.createElement('div');
   teamBlock.className = 'lt-export-vs-team';
   teamBlock.innerHTML = `
-    <img class="lt-export-headshot" src="${vsTeamLogoUrl(team)}" alt="${team || 'Any Team'} logo">
+    <img class="lt-export-team-badge" src="${vsTeamLogoUrl(team)}" alt="${team || 'Any Team'} logo">
     <div class="lt-export-player-name">${team || 'Any Team'}</div>
     <div class="lt-export-player-sub">Team</div>
   `;
