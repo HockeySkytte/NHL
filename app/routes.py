@@ -3027,16 +3027,57 @@ def _get_lt_pbp(season: str, game_ids: list, xg_col: str, extra_cols: str = '') 
 
 
 def _get_lt_shifts_parallel(team: str, season_ids: Sequence[int]) -> List[Dict[str, Any]]:
-    """Fetch shifts for multiple seasons in parallel to avoid sequential I/O latency."""
-    if len(season_ids) <= 1:
-        rows: List[Dict[str, Any]] = []
-        for sid in season_ids:
-            rows.extend(_get_lt_shifts(team, str(sid)))
-        return rows
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=len(season_ids)) as ex:
-        results = list(ex.map(lambda sid: _get_lt_shifts(team, str(sid)), season_ids))
-    return [r for rows in results for r in rows]
+    """Fetch shifts for multiple seasons using a single IN-query to avoid threading
+    issues with the shared sync Supabase client and reduce round-trips."""
+    import time as _time
+    sorted_sids = sorted(set(int(s) for s in season_ids))
+    if not sorted_sids:
+        return []
+    if len(sorted_sids) == 1:
+        return _get_lt_shifts(team, str(sorted_sids[0]))
+
+    # Check per-season caches first — if all cached, no DB call needed.
+    all_rows: List[Dict[str, Any]] = []
+    missing: List[int] = []
+    for sid in sorted_sids:
+        key = f"{team}|{sid}"
+        cached = _LT_SHIFTS_CACHE.get(key)
+        if cached and (_time.time() - cached[0] < _LT_SHIFTS_TTL):
+            all_rows.extend(cached[1])
+        else:
+            missing.append(sid)
+    if not missing:
+        return all_rows
+
+    # Fetch all missing seasons in ONE query using the `in` filter — single
+    # round-trip, no threading, no shared-client concurrency issues.
+    season_list = ','.join(str(s) for s in missing)
+    new_rows = _sb_read(
+        'shifts',
+        columns='shift_index,game_id,player_id,duration,strength_state,season',
+        filters={'team': f'eq.{team}', 'season': f'in.({season_list})'},
+        order='shift_index',
+    ) or []
+
+    # Split by season so we can cache each season individually.
+    by_sid: Dict[int, List[Dict[str, Any]]] = {s: [] for s in missing}
+    for r in new_rows:
+        sid_val = _safe_int(r.get('season'))
+        if sid_val and sid_val in by_sid:
+            # Strip the season column before caching (not used downstream).
+            by_sid[sid_val].append({k: v for k, v in r.items() if k != 'season'})
+
+    for sid in missing:
+        season_rows = by_sid.get(sid, [])
+        if season_rows:
+            cache_key = f"{team}|{sid}"
+            _LT_SHIFTS_CACHE[cache_key] = (_time.time(), season_rows)
+            if len(_LT_SHIFTS_CACHE) > 40:
+                oldest = min(_LT_SHIFTS_CACHE, key=lambda k: _LT_SHIFTS_CACHE[k][0])
+                _LT_SHIFTS_CACHE.pop(oldest, None)
+        all_rows.extend(season_rows)
+
+    return all_rows
 
 
 def _get_lt_pbp_parallel(
@@ -3045,19 +3086,13 @@ def _get_lt_pbp_parallel(
     xg_col: str,
     extra_cols: str = '',
 ) -> List[Dict[str, Any]]:
-    """Fetch PBP for multiple seasons in parallel."""
-    def _fetch(sid: int) -> List[Dict[str, Any]]:
+    """Fetch PBP for multiple seasons sequentially (safe with shared sync client)."""
+    all_pbp: List[Dict[str, Any]] = []
+    for sid in sorted(set(int(s) for s in season_ids)):
         gids = [g for g in game_list if len(str(g)) >= 8 and str(g)[:4] == str(sid)[:4]]
-        if not gids:
-            return []
-        return _get_lt_pbp(str(sid), gids, xg_col, extra_cols)
-
-    if len(season_ids) <= 1:
-        return [r for sid in season_ids for r in _fetch(sid)]
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=len(season_ids)) as ex:
-        results = list(ex.map(_fetch, season_ids))
-    return [r for rows in results for r in rows]
+        if gids:
+            all_pbp.extend(_get_lt_pbp(str(sid), gids, xg_col, extra_cols))
+    return all_pbp
 
 
 def _compute_line_tool_team_combos(team: str, season: str, ss: str, strength: str,
