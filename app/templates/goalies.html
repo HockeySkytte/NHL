@@ -921,6 +921,7 @@ let __goalieTrendKey = '';
 let __goalieTrendSeriesBase = null;
 let __goalieTrendSeries = null;
 let __goalieTrendCurrentPoint = null;
+let __goalieTrendCurrentPointCache = new Map();
 const GOALIES_TREND_STATE_KEY = 'nhlGoaliesTrendState_v2';
 const GOALIE_TABLE_EXPORT_METRIC_IDS = [
   'Workload|xGA',
@@ -1416,7 +1417,7 @@ try{
 }catch(_){/*noop*/}
 
 async function fetchScatter(xMetricId, yMetricId){
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
   const xgModel = String(cardXgModel?.value||'xG_F');
@@ -1663,7 +1664,7 @@ function makeScatterChart(canvasEl, title){
 
 async function renderCharts(){
   if(!tabPanelCharts) return;
-  const season = String(seasonSelect?.value||'').trim();
+  const season = ((typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'')).trim();
   if(!season){
     if(chartsEmpty) chartsEmpty.hidden = false;
     if(chartsGrid) chartsGrid.style.display = 'none';
@@ -2198,11 +2199,9 @@ function setCardSlicersVisible(on, opts){
 function updateCardSlicerSummary(){
   if(!cardSlicerSummary && !chartsSlicerSummary) return;
   const scope = String(cardScope?.value || 'season');
-  const rawSeason = String(seasonSelect?.value || '').trim();
-  let season = rawSeason;
-  if(/^\d{8}$/.test(rawSeason)){
-    season = `${rawSeason.slice(0,4)}/${rawSeason.slice(4,8)}`;
-  }
+  const season = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : String(seasonSelect?.value || '').trim();
   const seasonState = String(cardSeasonState?.selectedOptions?.[0]?.textContent || cardSeasonState?.value || '').trim();
   const strengthState = String(cardStrengthState?.selectedOptions?.[0]?.textContent || cardStrengthState?.value || '').trim();
   const ratesText = String(cardRates?.selectedOptions?.[0]?.textContent || cardRates?.value || '').trim();
@@ -2752,10 +2751,61 @@ function __goalieTrendMetricTotal(metrics, metricId){
   return value;
 }
 
-function __buildGoalieTrendCurrentPoint(data){
-  const season = Number(seasonSelect?.value || '');
+async function __buildGoalieTrendCurrentPoint(data, options){
+  const playerId = String(options?.playerId || playerSelect?.value || '').trim();
+  if(!playerId) return null;
+  const selectedSeasons = (typeof window.getSelectedSeasonValues === 'function')
+    ? window.getSelectedSeasonValues()
+    : String(seasonSelect?.value || '').split(',').map((v)=>String(v || '').trim()).filter(Boolean);
+  const seasonRaw = (typeof window.getPrimarySeasonValue === 'function')
+    ? window.getPrimarySeasonValue()
+    : (selectedSeasons[0] || seasonSelect?.value || '');
+  const season = Number(seasonRaw || '');
   if(!Number.isFinite(season) || season <= 0) return null;
-  const metrics = data?.metrics || {};
+  let source = data;
+  if(Array.isArray(selectedSeasons) && selectedSeasons.length !== 1){
+    const seasonState = String(options?.seasonState || cardSeasonState?.value || 'regular');
+    const strengthState = String(options?.strengthState || cardStrengthState?.value || '5v5');
+    const xgModel = String(options?.xgModel || cardXgModel?.value || 'xG_F');
+    const ratesVal = String(cardRates?.value || 'Totals');
+    let minGP = Number.parseInt(String(cardMinGp?.value || '0'), 10);
+    if(!Number.isFinite(minGP) || minGP < 0) minGP = 0;
+    let minTOI = Number(String(cardMinToi?.value || '0'));
+    if(!Number.isFinite(minTOI) || minTOI < 0) minTOI = 0;
+
+    const cacheKey = JSON.stringify({
+      playerId,
+      season: String(seasonRaw),
+      seasonState,
+      strengthState,
+      xgModel,
+      rates: ratesVal,
+      minGP,
+      minTOI,
+    });
+
+    if(__goalieTrendCurrentPointCache.has(cacheKey)){
+      source = __goalieTrendCurrentPointCache.get(cacheKey);
+    }else{
+      const metricIds = [
+        'Results|GSAA',
+        'Results|GSAx',
+        'Ice Time|TOI',
+        'Ice Time|GP',
+      ];
+      try{
+        const url = `/api/goalies/card?season=${encodeURIComponent(String(seasonRaw))}&playerId=${encodeURIComponent(playerId)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(ratesVal)}&scope=season&minGP=${encodeURIComponent(String(minGP))}&minTOI=${encodeURIComponent(String(minTOI))}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
+        const r = await fetch(url, { cache:'no-store' });
+        const js = await r.json().catch(()=>null);
+        source = (r.ok && js && !js.error) ? js : null;
+      }catch(_){
+        source = null;
+      }
+      __goalieTrendCurrentPointCache.set(cacheKey, source);
+    }
+  }
+
+  const metrics = source?.metrics || {};
   const gsaa = __goalieTrendMetricTotal(metrics, 'Results|GSAA');
   const gsax = __goalieTrendMetricTotal(metrics, 'Results|GSAx');
   if(!Number.isFinite(gsaa) && !Number.isFinite(gsax)) return null;
@@ -3477,7 +3527,7 @@ async function showCardConfig(){
 
 function __renderGoalieProjectionKpi(enabled, pct){
   if(!goalieProjectionKpi || !goalieProjectionKpiValue || !goalieProjectionKpiLabel) return;
-  const show = !!enabled && !!tabCard?.classList.contains('active');
+  const show = !!enabled && !!tabCard?.classList.contains('active') && __isGoalieProjectionSeasonAllowed();
   if(!show){
     goalieProjectionKpi.hidden = true;
     goalieProjectionKpi.style.removeProperty('--proj-kpi-color');
@@ -3493,8 +3543,18 @@ function __renderGoalieProjectionKpi(enabled, pct){
   goalieProjectionKpiValue.textContent = ok ? `${Math.round(clamped)}%` : '--%';
 }
 
+function __isGoalieProjectionSeasonAllowed(){
+  const selected = (typeof window.getSelectedSeasonValues === 'function')
+    ? window.getSelectedSeasonValues()
+    : [String(seasonSelect?.value || '').trim()].filter(Boolean);
+  return Array.isArray(selected) && selected.length === 1 && String(selected[0]) === '20252026';
+}
+
 function __updateGoalieProjectionToggleBtn(){
   if(!btnToggleProjection) return;
+  const allowed = __isGoalieProjectionSeasonAllowed();
+  btnToggleProjection.style.display = allowed ? '' : 'none';
+  if(!allowed) return;
   btnToggleProjection.textContent = __goalieProjectionEnabled ? 'Hide Projection' : 'Show Projection';
 }
 
@@ -3937,7 +3997,7 @@ async function loadCardPanel(){
     return;
   }
 
-  const season = String(seasonSelect?.value || '').trim() || '20252026';
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value || '').trim() || '20252026';
   const scope = String(cardScope?.value || 'season');
   const seasonState = String(cardSeasonState?.value || 'regular');
   const strengthState = String(cardStrengthState?.value || '5v5');
@@ -3955,7 +4015,7 @@ async function loadCardPanel(){
     __updateGoalieProjectionToggleBtn();
     // Goalies page: always show all goalie metrics.
     const metricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map(m=>String(m?.id||'')).filter(Boolean);
-    if(__goalieProjectionEnabled && !metricIds.includes('Projection|Percentile')){
+    if(__isGoalieProjectionSeasonAllowed() && __goalieProjectionEnabled && !metricIds.includes('Projection|Percentile')){
       metricIds.push('Projection|Percentile');
     }
 
@@ -3994,7 +4054,7 @@ async function loadCardPanel(){
     // Load + render the season trend chart (career timeline).
     try{
       const st = _loadGoaliesTrendState();
-      __goalieTrendCurrentPoint = __buildGoalieTrendCurrentPoint(data);
+      __goalieTrendCurrentPoint = await __buildGoalieTrendCurrentPoint(data, { playerId, seasonState, strengthState, xgModel });
       const seriesBase = await _ensureGoalieTrendSeries(playerId, seasonState, strengthState, xgModel);
       const series = __mergeGoalieTrendSeries(seriesBase, __goalieTrendCurrentPoint);
       __goalieTrendSeries = series;
@@ -4191,7 +4251,7 @@ async function loadTablePanel(){
   if(__tableBusy) return;
 
   const team = String(teamSelect?.value||'').trim();
-  const season = String(seasonSelect?.value||'').trim() || '20252026';
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim() || '20252026';
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
   const rates = String(cardRates?.value||'Totals');
@@ -4206,6 +4266,7 @@ async function loadTablePanel(){
 
   const defs = await ensureCardDefs();
   const cfg0 = ensureTableConfig();
+  // Goalies page: always include all goalie card metrics in table output.
   const metricIds = (Array.isArray(defs?.metrics) ? defs.metrics : []).map(m=>String(m?.id||'')).filter(Boolean);
   const sortMetricId = String(cfg0.sortMetricId||'Results|GSAA');
   const sortDir = (String(cfg0.sortDir||'desc') === 'asc') ? 'asc' : 'desc';
@@ -5670,7 +5731,7 @@ async function loadProjectionsPanel(){
 async function loadPlayers(){
   if(!teamSelect || !seasonSelect || !playerSelect) return;
   const team = teamSelect.value;
-  const season = seasonSelect.value;
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || seasonSelect.value;
   const seasonState = String(cardSeasonState?.value || 'regular');
   if(!team || !season){
     playerSelect.innerHTML = '<option value="">Select team/season</option>';
@@ -5944,7 +6005,7 @@ async function loadGtendGeoJson(){
 
 async function loadGoaltendingPanel(){
   const team = teamSelect?.value;
-  const season = seasonSelect?.value;
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || seasonSelect?.value;
   const ss = cardSeasonState?.value || 'regular';
   const str = cardStrengthState?.value || '5v5';
   const xm = cardXgModel?.value || 'xG_F';
@@ -5952,7 +6013,9 @@ async function loadGoaltendingPanel(){
   const key = `${team}|${season}|${ss}|${str}|${xm}|${pid}`;
 
   if(gtendSlicerSummary){
-    const sn = season ? (season.slice(0,4)+'/'+season.slice(4)) : '';
+    const sn = (typeof window.formatSeasonSelectionLabel === 'function')
+      ? window.formatSeasonSelectionLabel()
+      : (season ? (season.slice(0,4)+'/'+season.slice(4)) : '');
     gtendSlicerSummary.textContent = `${sn} – ${ss==='playoffs'?'Playoffs':ss==='all'?'All':'Regular'} – ${str} – ${xm.replace('_',' ')}`;
     gtendSlicerSummary.style.fontStyle = 'italic';
   }
@@ -6298,6 +6361,7 @@ seasonSelect?.addEventListener('change', __maybeReloadGoaltending);
 btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
 btnConfigureTable?.addEventListener('click', async ()=>{ await showTableConfig(); });
 btnToggleProjection?.addEventListener('click', ()=>{
+  if(!__isGoalieProjectionSeasonAllowed()) return;
   __goalieProjectionEnabled = !__goalieProjectionEnabled;
   try{ localStorage.setItem(GOALIE_PROJ_KEY, __goalieProjectionEnabled ? '1' : '0'); }catch(_){/*noop*/}
   __updateGoalieProjectionToggleBtn();
@@ -6437,6 +6501,8 @@ teamSelect?.addEventListener('change', async ()=>{
 });
 seasonSelect?.addEventListener('change', async ()=>{
   updateTabsVisibility();
+  __updateGoalieProjectionToggleBtn();
+  __renderGoalieProjectionKpi(__goalieProjectionEnabled, __goalieProjectionPct);
   await loadPlayers();
   await loadPlayerCard();
   updateCardSlicerSummary();
@@ -6454,6 +6520,8 @@ playerSelect?.addEventListener('change', ()=> { loadPlayerCard(); saveSkatersSta
 })();
 
 // Boot sequence: restore persisted state and load once base.html filters are ready.
+__updateGoalieProjectionToggleBtn();
+__renderGoalieProjectionKpi(__goalieProjectionEnabled, __goalieProjectionPct);
 initSkatersPage();
 
 // Re-draw shot map on resize / orientation change so markers fit the new container size

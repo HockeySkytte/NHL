@@ -87,6 +87,14 @@
     label { display:flex; flex-direction:column; font-size:12px; gap:6px; text-transform:uppercase; letter-spacing:.9px; color:var(--text-dim); font-weight:600; }
   select { background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; padding:10px 12px; border-radius:8px; font-size:14px; font-weight:500; appearance:none; -webkit-appearance:none; -moz-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239aa4b1'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; background-size:18px; padding-right:42px; }
   select:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  .season-multi{ position:relative; }
+  .season-multi-btn{ width:100%; text-align:left; background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; padding:10px 42px 10px 12px; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; position:relative; box-shadow:none; }
+  .season-multi-btn::after{ content:""; position:absolute; right:12px; top:50%; width:18px; height:18px; transform:translateY(-50%); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239aa4b1'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-size:18px; pointer-events:none; }
+  .season-multi-btn:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  .season-multi-menu{ position:absolute; left:0; right:0; top:calc(100% + 8px); z-index:120; max-height:320px; overflow:auto; border:1px solid #294d7f; border-radius:14px; background:linear-gradient(180deg, #0c1730, #091426); box-shadow:0 22px 40px rgba(0,0,0,0.48); padding:8px; }
+  .season-multi-item{ display:flex; flex-direction:row; align-items:center; justify-content:flex-start; gap:12px; padding:9px 11px; border-radius:10px; cursor:pointer; color:var(--value-text, var(--text)); font-size:14px; font-weight:700; line-height:1.2; text-transform:none; letter-spacing:0; }
+  .season-multi-item:hover{ background:rgba(255,255,255,0.08); }
+  .season-multi-item input{ accent-color:var(--accent); width:16px; height:16px; margin:0; flex:0 0 auto; }
   input[type="number"], input[type="text"] { background:var(--panel-alt); color:var(--value-text, var(--text)); border:1px solid #2a3142; padding:10px 12px; border-radius:8px; font-size:14px; font-weight:500; }
   input[type="number"]:focus, input[type="text"]:focus { outline:2px solid var(--accent); outline-offset:1px; }
   label.checkbox-row { flex-direction:row; align-items:center; font-size:11px; letter-spacing:.8px; text-transform:uppercase; gap:8px; font-weight:600; }
@@ -144,6 +152,7 @@
   body.neutral-page label{ color:#c4dbf6; }
   body.neutral-page .filters-toggle,
   body.neutral-page select,
+  body.neutral-page .season-multi-btn,
   body.neutral-page input[type="number"],
   body.neutral-page input[type="text"]{
     border-color:#335179;
@@ -256,7 +265,11 @@
           <select id="teamSelect"></select>
         </label>
         <label>Season
-          <select id="seasonSelect"></select>
+          <div class="season-multi" id="seasonMultiWrap">
+            <button id="seasonMultiButton" class="season-multi-btn" type="button" aria-haspopup="listbox" aria-expanded="false">Select season</button>
+            <div id="seasonMultiMenu" class="season-multi-menu" role="listbox" aria-multiselectable="true" hidden></div>
+            <select id="seasonSelect" hidden></select>
+          </div>
         </label>
         {% block extra_filters %}{% endblock %}
         {% if show_season_state %}
@@ -334,6 +347,9 @@
     if(window.__filtersInit) return; window.__filtersInit = true;
     const teamSelect = document.getElementById('teamSelect');
     const seasonSelect = document.getElementById('seasonSelect');
+    const seasonMultiWrap = document.getElementById('seasonMultiWrap');
+    const seasonMultiButton = document.getElementById('seasonMultiButton');
+    const seasonMultiMenu = document.getElementById('seasonMultiMenu');
     const seasonStateSelect = document.getElementById('seasonStateSelect');
     const includeHistoric = document.getElementById('includeHistoric');
     const btnMobileMenu = document.getElementById('btnMobileMenu');
@@ -416,22 +432,169 @@
     // Global slicers: Team + Season must stay consistent across pages.
     // Priority: URL params (if present) -> localStorage.
     let __urlTeam = null;
-    let __urlSeason = null;
+    let __urlSeasons = [];
+    let __lastValidSeasonSelection = [];
+
+    function _normalizeSeasonValues(values){
+      const src = Array.isArray(values) ? values : String(values || '').split(',');
+      const out = [];
+      const seen = new Set();
+      for(const raw of src){
+        const season = String(raw || '').trim();
+        if(!/^\d{8}$/.test(season) || seen.has(season)) continue;
+        seen.add(season);
+        out.push(season);
+      }
+      return out;
+    }
+
+    function _sortSeasonValuesAsc(values){
+      return _normalizeSeasonValues(values).sort((a, b)=> Number(a) - Number(b));
+    }
+
+    function _sortSeasonValuesDesc(values){
+      return _normalizeSeasonValues(values).sort((a, b)=> Number(b) - Number(a));
+    }
+
+    function _serializeSeasonValues(values){
+      return _sortSeasonValuesDesc(values).join(',');
+    }
+
+    function _formatSingleSeasonLabel(rawSeason){
+      const season = String(rawSeason || '').trim();
+      return /^\d{8}$/.test(season) ? `${season.slice(0,4)}/${season.slice(4,8)}` : season;
+    }
+
+    function getSelectedSeasonValues(){
+      if(!seasonSelect) return [];
+      const selected = Array.from(seasonSelect.selectedOptions || [])
+        .map(opt => String(opt?.value || '').trim())
+        .filter(season => /^\d{8}$/.test(season));
+      return _sortSeasonValuesDesc(selected);
+    }
+
+    function getPrimarySeasonValue(){
+      const selected = getSelectedSeasonValues();
+      return selected[0] || '';
+    }
+
+    function formatSeasonSelectionLabel(values){
+      const selected = _sortSeasonValuesAsc(values == null ? getSelectedSeasonValues() : values);
+      if(!selected.length) return '—';
+      if(selected.length === 1) return _formatSingleSeasonLabel(selected[0]);
+      let consecutive = true;
+      for(let i = 1; i < selected.length; i += 1){
+        if((Number(selected[i]) - Number(selected[i - 1])) !== 10001){
+          consecutive = false;
+          break;
+        }
+      }
+      if(consecutive){
+        return `${selected[0].slice(0,4)} to ${selected[selected.length - 1].slice(4,8)}`;
+      }
+      return selected.map(_formatSingleSeasonLabel).join('+');
+    }
+
+    function _setSeasonButtonLabel(){
+      if(!seasonMultiButton) return;
+      const label = formatSeasonSelectionLabel();
+      seasonMultiButton.textContent = label && label !== '—' ? label : 'Select season';
+      seasonMultiButton.title = seasonMultiButton.textContent;
+    }
+
+    function _syncSeasonMenuChecks(){
+      if(!seasonMultiMenu) return;
+      const selected = new Set(getSelectedSeasonValues());
+      seasonMultiMenu.querySelectorAll('input[type="checkbox"][data-season-value]').forEach((el)=>{
+        const value = String(el.getAttribute('data-season-value') || '').trim();
+        el.checked = selected.has(value);
+        const row = el.closest('.season-multi-item');
+        if(row) row.setAttribute('aria-selected', el.checked ? 'true' : 'false');
+      });
+    }
+
+    function _buildSeasonMenu(){
+      if(!seasonMultiMenu) return;
+      const seasonOptions = Array.from(seasonSelect?.options || [])
+        .map((opt)=> String(opt?.value || '').trim())
+        .filter((value)=> /^\d{8}$/.test(value));
+
+      if(!seasonOptions.length){
+        seasonMultiMenu.innerHTML = '<div class="season-multi-item">No seasons</div>';
+        return;
+      }
+
+      seasonMultiMenu.innerHTML = seasonOptions.map((value)=>{
+        const label = _formatSingleSeasonLabel(value);
+        return `<div class="season-multi-item" role="option" aria-selected="false"><input type="checkbox" data-season-value="${value}"><span>${label}</span></div>`;
+      }).join('');
+      _syncSeasonMenuChecks();
+    }
+
+    function _setSeasonMenuOpen(open){
+      if(!seasonMultiMenu || !seasonMultiButton) return;
+      const isOpen = !!open;
+      seasonMultiMenu.hidden = !isOpen;
+      seasonMultiButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    }
+
+    function _toggleSeasonByValue(value){
+      const normalized = String(value || '').trim();
+      if(!/^\d{8}$/.test(normalized) || !seasonSelect) return;
+
+      const selected = getSelectedSeasonValues();
+      const next = new Set(selected);
+      if(next.has(normalized)) next.delete(normalized);
+      else next.add(normalized);
+
+      let nextValues = _sortSeasonValuesDesc(Array.from(next));
+      const totalOptions = Array.from(seasonSelect.options || []).filter(opt => /^\d{8}$/.test(String(opt?.value || '').trim())).length;
+      if(!nextValues.length){
+        nextValues = __lastValidSeasonSelection.length ? __lastValidSeasonSelection.slice() : [String(seasonSelect.options?.[0]?.value || '').trim()];
+      }
+      if(totalOptions > 1 && nextValues.length >= totalOptions){
+        nextValues = __lastValidSeasonSelection.length ? __lastValidSeasonSelection.slice() : [nextValues[0]];
+      }
+
+      _applySeasonSelection(nextValues);
+      seasonSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function _refreshSeasonMultiUi(){
+      _setSeasonButtonLabel();
+      _buildSeasonMenu();
+    }
+
+    function _applySeasonSelection(values){
+      const desired = new Set(_sortSeasonValuesDesc(values));
+      Array.from(seasonSelect?.options || []).forEach(opt => {
+        opt.selected = desired.has(String(opt.value || '').trim());
+      });
+      const selected = getSelectedSeasonValues();
+      if(selected.length) __lastValidSeasonSelection = selected.slice();
+      _setSeasonButtonLabel();
+      _syncSeasonMenuChecks();
+      return selected;
+    }
+
+    window.getSelectedSeasonValues = getSelectedSeasonValues;
+    window.getPrimarySeasonValue = getPrimarySeasonValue;
+    window.getSelectedSeasonQueryValue = ()=> _serializeSeasonValues(getSelectedSeasonValues());
+    window.formatSeasonSelectionLabel = formatSeasonSelectionLabel;
     try{
       const sp = new URLSearchParams(window.location.search || '');
       const t = String(sp.get('team') || '').trim();
       const s = String(sp.get('season') || '').trim();
       __urlTeam = t || null;
-      __urlSeason = s || null;
+      __urlSeasons = _normalizeSeasonValues(s);
       if(t) localStorage.setItem('team', t);
-      if(s) localStorage.setItem('season', s);
+      if(__urlSeasons.length) localStorage.setItem('season', _serializeSeasonValues(__urlSeasons));
     }catch(_){/*noop*/}
 
     function syncUrlAndNav(){
       try{
         const team = String(teamSelect.value||'').trim();
-        const seasonRaw = String(seasonSelect.value||'').trim();
-        const season = /^\d{8}$/.test(seasonRaw) ? seasonRaw : '';
+        const season = _serializeSeasonValues(getSelectedSeasonValues());
 
         const u = new URL(window.location.href);
         if(team) u.searchParams.set('team', team);
@@ -456,8 +619,7 @@
     function updateSlicerSummaryFromFilters(){
       try{
         const team = String(teamSelect?.value||'').trim();
-        const seasonRaw = String(seasonSelect?.value||'').trim();
-        const season = /^\d{8}$/.test(seasonRaw) ? seasonRaw : '';
+        const season = formatSeasonSelectionLabel();
         updateSlicerSummary([team||'—', season||'—'].join(' · '));
       }catch(_){/*noop*/}
     }
@@ -490,6 +652,7 @@
       const viewModeSelect = document.getElementById('viewMode');
       const playerSelect = document.getElementById('playerSelect');
       [teamSelect, seasonSelect, seasonStateSelect, viewModeSelect, playerSelect].filter(Boolean).forEach(sel=> sel.style.color = valueColor);
+      if(seasonMultiButton) seasonMultiButton.style.color = valueColor;
     }
     function populateTeams(){
       const showHistoric = includeHistoric && includeHistoric.checked;
@@ -553,13 +716,24 @@
       window.__seasonMeta = normalized;
       if(!normalized.length){
         seasonSelect.innerHTML = '<option value="">No seasons</option>';
+        _refreshSeasonMultiUi();
         return;
       }
+      seasonSelect.multiple = true;
+      seasonSelect.size = Math.min(Math.max(normalized.length, 2), 8);
       seasonSelect.innerHTML = normalized.map(o=>`<option value="${o.season}">${o.season}</option>`).join('');
-      const saved = __urlSeason || localStorage.getItem('season');
-      if(saved && normalized.find(m=>String(m.season)===saved)) seasonSelect.value = saved;
-      else seasonSelect.value = String(normalized[0].season);
-      __urlSeason = null;
+      const available = new Set(normalized.map(m => String(m.season)));
+      let desired = _normalizeSeasonValues(__urlSeasons.length ? __urlSeasons : localStorage.getItem('season'))
+        .filter(season => available.has(season));
+      if(!desired.length){
+        desired = [String(normalized[0].season)];
+      }
+      if(normalized.length > 1 && desired.length >= normalized.length){
+        desired = [String(normalized[0].season)];
+      }
+      _applySeasonSelection(desired);
+      _refreshSeasonMultiUi();
+      __urlSeasons = [];
     }
 
     async function _fetchSeasonMeta(team, signal){
@@ -622,7 +796,9 @@
       }
     }
     function handleSeasonStateAvailability(){
-      if(!seasonStateSelect) return; const val = parseInt(seasonSelect.value,10); const meta = (window.__seasonMeta||[]).find(m=>m.season===val); const playoffs = meta && Array.isArray(meta.gameTypes) && meta.gameTypes.map(String).includes('3');
+      if(!seasonStateSelect) return;
+      const selected = new Set(getSelectedSeasonValues());
+      const playoffs = (window.__seasonMeta || []).some(meta => selected.has(String(meta?.season)) && Array.isArray(meta?.gameTypes) && meta.gameTypes.map(String).includes('3'));
       for(const opt of seasonStateSelect.options){ if(opt.value==='3'){ opt.disabled = !playoffs; if(!playoffs && seasonStateSelect.value==='3') seasonStateSelect.value='2'; }}
       triggerDataReload();
     }
@@ -632,7 +808,49 @@
     }
     // Event listeners
     teamSelect.addEventListener('change', ()=>{ localStorage.setItem('team', teamSelect.value); setTheme(); syncUrlAndNav(); updateSlicerSummaryFromFilters(); loadSeasons(); });
-    seasonSelect.addEventListener('change', ()=>{ localStorage.setItem('season', seasonSelect.value); syncUrlAndNav(); updateSlicerSummaryFromFilters(); handleSeasonStateAvailability(); triggerDataReload(); });
+
+    if(seasonMultiButton){
+      seasonMultiButton.addEventListener('click', (e)=>{
+        e.preventDefault();
+        const isOpen = !seasonMultiMenu?.hidden;
+        _setSeasonMenuOpen(!isOpen);
+      });
+    }
+
+    if(seasonMultiMenu){
+      seasonMultiMenu.addEventListener('click', (e)=>{
+        const row = e.target && e.target.closest ? e.target.closest('.season-multi-item') : null;
+        const cb = row ? row.querySelector('input[type="checkbox"][data-season-value]') : null;
+        if(!cb) return;
+        const value = String(cb.getAttribute('data-season-value') || '').trim();
+        _toggleSeasonByValue(value);
+      });
+    }
+
+    document.addEventListener('click', (e)=>{
+      if(!seasonMultiMenu || !seasonMultiButton || seasonMultiMenu.hidden) return;
+      const target = e.target;
+      if(seasonMultiWrap && seasonMultiWrap.contains(target)) return;
+      _setSeasonMenuOpen(false);
+    });
+
+    seasonSelect.addEventListener('change', ()=>{
+      const totalOptions = Array.from(seasonSelect.options || []).filter(opt => /^\d{8}$/.test(String(opt?.value || '').trim())).length;
+      let selected = getSelectedSeasonValues();
+      if(!selected.length){
+        selected = _applySeasonSelection(__lastValidSeasonSelection.length ? __lastValidSeasonSelection : [String(seasonSelect.options?.[0]?.value || '')]);
+      }else if(totalOptions > 1 && selected.length >= totalOptions){
+        selected = _applySeasonSelection(__lastValidSeasonSelection.length ? __lastValidSeasonSelection : [selected[0]]);
+      }else{
+        __lastValidSeasonSelection = selected.slice();
+      }
+      localStorage.setItem('season', _serializeSeasonValues(selected));
+      _setSeasonMenuOpen(false);
+      syncUrlAndNav();
+      updateSlicerSummaryFromFilters();
+      handleSeasonStateAvailability();
+      triggerDataReload();
+    });
     if(seasonStateSelect) seasonStateSelect.addEventListener('change', ()=> triggerDataReload());
     if(includeHistoric) includeHistoric.addEventListener('change', ()=>{ populateTeams(); setTheme(); loadSeasons(); });
     // Init

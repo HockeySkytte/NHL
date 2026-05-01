@@ -750,7 +750,7 @@ function rankToColor(rank){
 
 function __renderTeamsProjectionKpi(enabled, rank){
   if(!teamProjectionKpi || !teamProjectionKpiValue || !teamProjectionKpiLabel) return;
-  const show = !!enabled && !!tabCard?.classList.contains('active');
+  const show = !!enabled && !!tabCard?.classList.contains('active') && __isTeamsProjectionSeasonAllowed();
   if(!show){
     teamProjectionKpi.hidden = true;
     teamProjectionKpi.style.removeProperty('--proj-kpi-color');
@@ -765,8 +765,18 @@ function __renderTeamsProjectionKpi(enabled, rank){
   teamProjectionKpiValue.textContent = ok ? `#${Math.round(r)}` : '--';
 }
 
+function __isTeamsProjectionSeasonAllowed(){
+  const selected = (typeof window.getSelectedSeasonValues === 'function')
+    ? window.getSelectedSeasonValues()
+    : [String(seasonSelect?.value || '').trim()].filter(Boolean);
+  return Array.isArray(selected) && selected.length === 1 && String(selected[0]) === '20252026';
+}
+
 function __updateTeamsProjectionToggleBtn(){
   if(!btnToggleProjection) return;
+  const allowed = __isTeamsProjectionSeasonAllowed();
+  btnToggleProjection.style.display = allowed ? '' : 'none';
+  if(!allowed) return;
   btnToggleProjection.textContent = __teamsProjectionEnabled ? 'Hide Projection' : 'Show Projection';
 }
 
@@ -906,11 +916,12 @@ function __teamsSummaryText(kind){
   const text = String(el?.textContent || '').trim();
   if(kind === 'projections-team') return '';
   if(kind === 'edge'){
-    const season = String(seasonSelect?.value || '').trim();
+    const season = (typeof window.formatSeasonSelectionLabel === 'function')
+      ? window.formatSeasonSelectionLabel()
+      : String(seasonSelect?.value || '').trim();
     const seasonState = String(cardSeasonState?.value || 'regular');
-    const fmtSeason = /^\d{8}$/.test(season) ? `${season.slice(0,4)}/${season.slice(4,8)}` : (season || '—');
     const stateLabel = seasonState === 'playoffs' ? 'Playoffs' : seasonState === 'all' ? 'All' : 'Regular';
-    return [fmtSeason, stateLabel].filter(Boolean).join(' - ');
+    return [season || '—', stateLabel].filter(Boolean).join(' - ');
   }
   if(kind === 'table') return '';
   return text;
@@ -1556,14 +1567,15 @@ function updateHeader(){
 }
 
 function updateSlicerSummaries(){
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : String(seasonSelect?.value||'').trim();
   const scope = String(cardScope?.value||'season');
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
   const rates = String(cardRates?.value||'Totals');
-  const fmtSeason = /^\d{8}$/.test(season) ? `${season.slice(0,4)}/${season.slice(4,8)}` : (season || '—');
   const stateLabel = seasonState === 'playoffs' ? 'Playoffs' : seasonState === 'all' ? 'All' : 'Regular';
-  const text = [fmtSeason, stateLabel, strengthState, rates, scope].filter(Boolean).join(' - ');
+  const text = [season || '—', stateLabel, strengthState, rates, scope].filter(Boolean).join(' - ');
   if(cardSlicerSummary) cardSlicerSummary.textContent = text;
   if(chartsSlicerSummary) chartsSlicerSummary.textContent = text;
   if(edgeSlicerSummary) edgeSlicerSummary.textContent = text;
@@ -1599,7 +1611,7 @@ function restoreTeamsState(){
     if(!s || typeof s !== 'object') return;
 
     try{ if(s.team) localStorage.setItem('team', String(s.team)); }catch(_){/*noop*/}
-    try{ if(s.season) localStorage.setItem('season', String(s.season)); }catch(_){/*noop*/}
+    // Do not overwrite multi-season selection from saved single-season state
 
     try{ if(cardSeasonState && s.seasonState) cardSeasonState.value = String(s.seasonState); }catch(_){/*noop*/}
     try{ if(cardStrengthState && s.strengthState) cardStrengthState.value = String(s.strengthState); }catch(_){/*noop*/}
@@ -1677,14 +1689,17 @@ async function loadEdgePanel(){
   if(!edgePanelInner) return;
 
   const team = String(teamSelect?.value||'').trim();
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   if(!team){
     edgePanelInner.textContent = '';
     return;
   }
 
-  const seasonInt = parseInt(season, 10);
-  if(Number.isFinite(seasonInt) && seasonInt < 20212022){
+  const seasonValues = (typeof window.getSelectedSeasonValues === 'function')
+    ? window.getSelectedSeasonValues()
+    : String(season || '').split(',').map((v)=>String(v || '').trim()).filter(Boolean);
+  const edgeEligible = seasonValues.filter((s)=> Number.parseInt(String(s), 10) >= 20212022);
+  if(!edgeEligible.length){
     edgePanelInner.innerHTML = `<div class="team-empty" style="padding:10px 0;">NHL Edge data is available starting in 2021/22. (Selected season: ${season || '—'})</div>`;
     return;
   }
@@ -1959,7 +1974,7 @@ async function loadCardPanel(){
   updateSlicerSummaries();
 
   const team = String(teamSelect?.value||'').trim();
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   if(!team){
     cardPanelInner.innerHTML = '';
     return;
@@ -1982,7 +1997,7 @@ async function loadCardPanel(){
       .map(m=>String(m.id||''))
       .filter(Boolean);
     __updateTeamsProjectionToggleBtn();
-    if(__teamsProjectionEnabled && !metricIds.includes('Projection|Ranking')){
+    if(__isTeamsProjectionSeasonAllowed() && __teamsProjectionEnabled && !metricIds.includes('Projection|Ranking')){
       metricIds.push('Projection|Ranking');
     }
     const url = `/api/teams/card?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&rates=${encodeURIComponent(ratesVal)}&scope=${encodeURIComponent(scopeVal)}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
@@ -2081,7 +2096,7 @@ async function initChartsMetricSelects(){
 }
 
 async function fetchScatter(xMetricId, yMetricId){
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
   const ratesVal = String(cardRates?.value||'Totals');
@@ -2823,7 +2838,7 @@ async function loadTablePanel(){
   if(!teamsTable) return;
   updateSlicerSummaries();
 
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
   const ratesVal = String(cardRates?.value||'Totals');
@@ -2932,6 +2947,7 @@ async function loadTablePanel(){
 try{
   btnReloadCard?.addEventListener('click', ()=>{ __scatterCache.clear(); __chartsLastKey=''; loadCardPanel(); });
   btnToggleProjection?.addEventListener('click', ()=>{
+    if(!__isTeamsProjectionSeasonAllowed()) return;
     __teamsProjectionEnabled = !__teamsProjectionEnabled;
     try{ localStorage.setItem(TEAMS_PROJ_KEY, __teamsProjectionEnabled ? '1' : '0'); }catch(_){/*noop*/}
     __updateTeamsProjectionToggleBtn();
@@ -3017,7 +3033,7 @@ try{
 
 try{
   teamSelect?.addEventListener('change', ()=>{ updateHeader(); reloadAll(); });
-  seasonSelect?.addEventListener('change', ()=>{ updateHeader(); reloadAll(); });
+  seasonSelect?.addEventListener('change', ()=>{ updateHeader(); __updateTeamsProjectionToggleBtn(); __renderTeamsProjectionKpi(__teamsProjectionEnabled, __teamsProjectionRank); reloadAll(); });
   includeHistoric?.addEventListener('change', ()=>{ __scatterCache.clear(); __chartsLastKey=''; __tableLastKey=''; if(tabCharts?.classList.contains('active')) renderCharts(); if(tabTable?.classList.contains('active')) loadTablePanel(); });
   for(const sel of [pdX, pdY, scX, scY]){
     sel?.addEventListener('change', ()=>{ __chartsLastKey=''; if(tabCharts?.classList.contains('active')) renderCharts(); saveTeamsState(); });

@@ -39,11 +39,20 @@
   .lt-shell{ display:grid; gap:18px; width:100%; min-width:0; }
 
   /* ── Player Selectors (hockey formation) ── */
-  .lt-formation{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:8px; }
+  .lt-selectors-bar{ display:flex; align-items:flex-start; justify-content:center; gap:32px; flex-wrap:wrap; margin-bottom:8px; }
+  .lt-selectors-side{ display:flex; flex-direction:column; gap:6px; align-items:center; }
+  .lt-selectors-label{ font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); margin-bottom:2px; }
+  .lt-selectors-divider{ width:1px; background:#2b3648; align-self:stretch; margin:0 4px; }
+  .lt-formation{ display:flex; flex-direction:column; align-items:center; gap:10px; }
   .lt-formation-row{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
-  .lt-player-slot{ display:flex; flex-direction:column; align-items:center; gap:4px; width:176px; }
+  .lt-player-slot{ display:flex; flex-direction:column; align-items:center; gap:4px; width:148px; }
   .lt-player-slot select{ width:100%; font-size:13px; padding:7px 10px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
-  .lt-headshot{ width:72px; height:72px; border-radius:50%; background:#1a2236; border:2px solid #2b3648; object-fit:cover; }
+  .lt-headshot{ width:64px; height:64px; border-radius:50%; background:#1a2236; border:2px solid #2b3648; object-fit:cover; }
+  .lt-vs-panel{ display:none; }
+  .lt-vs-panel.open{ display:flex; flex-direction:column; gap:6px; align-items:center; }
+  .lt-vs-team-slot{ display:flex; flex-direction:column; align-items:center; gap:4px; width:148px; }
+  .lt-vs-team-logo{ width:64px; height:64px; border-radius:50%; background:#1a2236; border:2px solid #2b3648; object-fit:cover; }
+  .lt-vs-team-slot select{ width:100%; font-size:13px; padding:7px 10px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
 
   /* ── KPI Cards ── */
   .lt-kpis{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:10px 0; }
@@ -134,6 +143,12 @@
   .lt-wowy-table tr:hover td{ background:rgba(255,255,255,0.03); }
   .wowy-with{ color:#5b9bd5; font-weight:700; }
   .wowy-without{ color:#e88b8b; font-weight:400; font-style:italic; }
+  .lt-versus-context.vs{ color:#5b9bd5; font-weight:700; }
+  .lt-versus-context.not-vs{ color:#e88b8b; font-weight:400; font-style:italic; }
+  .lt-versus-flag.vs{ color:#5b9bd5; font-weight:700; }
+  .lt-versus-flag.wo{ color:#e88b8b; font-weight:700; font-style:italic; }
+  .lt-versus-metric.good{ color:#5b9bd5; font-weight:700; }
+  .lt-versus-metric.bad{ color:#e88b8b; font-weight:700; font-style:italic; }
   .wowy-player-cell{ text-align:left !important; min-width:90px; }
   .lt-wowy-table th.sortable{ cursor:pointer; user-select:none; }
   .lt-wowy-table th.sortable:hover{ color:#fff; }
@@ -179,6 +194,7 @@
   .lt-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px; color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12); background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%), linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988)); box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:visible; }
   .lt-export-card--heat{ width:1680px; }
   .lt-export-card--table{ display:inline-grid; width:max-content; min-width:0; max-width:none; justify-items:stretch; }
+  .lt-export-card--table.lt-export-card--versus{ width:1680px; min-width:1680px; max-width:1680px; }
   .lt-export-header-hero{ display:grid; gap:8px; margin:-34px -34px 0; padding:14px 34px 18px; border:none; border-radius:30px 30px 0 0; background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%), linear-gradient(135deg, var(--lt-export-team-color-soft, rgba(77,163,255,0.28)), rgba(11,15,24,0.18) 36%, var(--lt-export-team-color-dark, rgba(11,15,24,0.02)) 100%); }
   .lt-export-header-hero-top{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:18px; }
   .lt-export-team-logo{ display:block; width:auto; height:122px; object-fit:contain; filter:drop-shadow(0 8px 18px rgba(0,0,0,0.18)); opacity:0.97; }
@@ -189,6 +205,11 @@
   .lt-export-formation{ display:grid; gap:16px; justify-items:center; }
   .lt-export-formation-row{ display:flex; justify-content:center; gap:18px; }
   .lt-export-player{ display:grid; justify-items:center; gap:8px; min-width:180px; }
+  .lt-export-vs-shell{ display:grid; grid-template-columns:1fr auto 1fr; align-items:start; gap:24px; }
+  .lt-export-vs-divider{ width:1px; background:rgba(255,255,255,0.16); align-self:stretch; }
+  .lt-export-vs-side{ display:grid; gap:12px; justify-items:center; }
+  .lt-export-vs-title{ color:rgba(255,255,255,0.80); font-size:13px; font-weight:850; text-transform:uppercase; letter-spacing:.12em; }
+  .lt-export-vs-team{ display:grid; justify-items:center; gap:8px; }
   .lt-export-headshot{ width:118px; height:118px; border-radius:50%; border:3px solid #2b3648; object-fit:cover; background:#1a2236; }
   .lt-export-player-name{ font-size:22px; font-weight:850; text-align:center; }
   .lt-export-player-sub{ color:var(--text-dim); font-size:14px; font-weight:750; text-transform:uppercase; letter-spacing:.08em; }
@@ -209,11 +230,16 @@
   .lt-export-card .lt-hm-rink{ width:100% !important; max-width:none !important; justify-self:stretch; align-self:stretch; aspect-ratio:75/85 !important; }
   .lt-export-card .lt-zone-label{ font-size:3.2px; }
   .lt-export-table-wrap{ width:max-content; max-width:none; justify-self:start; overflow:hidden; border-radius:24px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); }
+  .lt-export-card--versus .lt-export-table-wrap{ width:100%; justify-self:stretch; }
   .lt-export-card .lt-wowy-table-wrap{ overflow:visible; max-height:none; }
   .lt-export-card .lt-wowy-table{ width:auto; border-collapse:collapse; font-size:18px; font-variant-numeric:tabular-nums; table-layout:auto; }
+  .lt-export-card--versus .lt-wowy-table{ width:100%; table-layout:fixed; }
   .lt-export-card .lt-wowy-table th{ background:rgba(15,21,34,0.98); padding:12px 10px; text-align:center; font-size:15px; font-weight:850; text-transform:uppercase; letter-spacing:.45px; color:rgba(255,255,255,0.76); white-space:nowrap; position:static; }
   .lt-export-card .lt-wowy-table td{ padding:10px 10px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.06); white-space:nowrap; }
+  .lt-export-card--versus .lt-wowy-table th,
+  .lt-export-card--versus .lt-wowy-table td{ padding:12px 14px; }
   .lt-export-card .lt-wowy-table .wowy-player-cell{ text-align:left !important; min-width:90px; }
+  .lt-export-card--versus .lt-wowy-table .wowy-player-cell{ min-width:0; }
   .lt-export-card .lt-wowy-table tbody tr:nth-child(even) td{ background:rgba(255,255,255,0.02); }
 
   @media (max-width:900px){
@@ -230,8 +256,12 @@
     .lt-player-slot{ width:140px; }
     /* Filter context: allow wrapping */
     #ltPanelHeat .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
-    #ltPanelHeat .card-panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    #ltPanelHeat .card-panel-actions button{ flex:1 1 120px; }
+    #ltPanelHeat .card-panel-actions,
+    #ltPanelWowy .card-panel-actions,
+    #ltPanelVersus .card-panel-actions{ width:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #ltPanelHeat .card-panel-actions button,
+    #ltPanelWowy .card-panel-actions button,
+    #ltPanelVersus .card-panel-actions button{ flex:1 1 120px; }
     .card-panel-meta{ font-size:13px; white-space:normal; overflow:visible; text-overflow:clip; line-height:1.15; }
   }
   @media (max-width:900px) and (orientation:landscape){
@@ -242,29 +272,63 @@
 
 <section class="lt-shell">
   <!-- Player Formation Selectors -->
-  <div class="lt-formation">
-    <div class="lt-formation-row">
-      <div class="lt-player-slot">
-        <img id="ltHead0" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
-        <select id="ltPlayer0"><option value="">— None —</option></select>
-      </div>
-      <div class="lt-player-slot">
-        <img id="ltHead1" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
-        <select id="ltPlayer1"><option value="">— None —</option></select>
-      </div>
-      <div class="lt-player-slot">
-        <img id="ltHead2" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
-        <select id="ltPlayer2"><option value="">— None —</option></select>
+  <div class="lt-selectors-bar">
+    <!-- FOR side -->
+    <div class="lt-selectors-side">
+      <div class="lt-selectors-label">For</div>
+      <div class="lt-formation" id="ltForFormation">
+        <div class="lt-formation-row">
+          <div class="lt-player-slot">
+            <img id="ltHead0" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+            <select id="ltPlayer0"><option value="">— None —</option></select>
+          </div>
+          <div class="lt-player-slot">
+            <img id="ltHead1" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+            <select id="ltPlayer1"><option value="">— None —</option></select>
+          </div>
+          <div class="lt-player-slot">
+            <img id="ltHead2" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+            <select id="ltPlayer2"><option value="">— None —</option></select>
+          </div>
+        </div>
+        <div class="lt-formation-row">
+          <div class="lt-player-slot">
+            <img id="ltHead3" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+            <select id="ltPlayer3"><option value="">— None —</option></select>
+          </div>
+          <div class="lt-player-slot">
+            <img id="ltHead4" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+            <select id="ltPlayer4"><option value="">— None —</option></select>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="lt-formation-row">
-      <div class="lt-player-slot">
-        <img id="ltHead3" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
-        <select id="ltPlayer3"><option value="">— None —</option></select>
+
+    <!-- AGAINST side (hidden until toggled) -->
+    <div id="ltVsPanel" class="lt-vs-panel">
+      <div class="lt-selectors-divider" style="display:none"></div>
+      <div class="lt-selectors-label">Against</div>
+      <!-- Team selector row -->
+      <div class="lt-formation-row">
+        <div class="lt-vs-team-slot">
+          <img id="ltVsTeamHead" class="lt-vs-team-logo" src="https://assets.nhle.com/logos/nhl/svg/NHL_dark.svg" alt="" />
+          <select id="ltVsTeam"><option value="">— Any Team —</option></select>
+        </div>
       </div>
-      <div class="lt-player-slot">
-        <img id="ltHead4" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
-        <select id="ltPlayer4"><option value="">— None —</option></select>
+      <!-- 3 player slots -->
+      <div class="lt-formation-row">
+        <div class="lt-player-slot">
+          <img id="ltVsHead0" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+          <select id="ltVsPlayer0"><option value="">— None —</option></select>
+        </div>
+        <div class="lt-player-slot">
+          <img id="ltVsHead1" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+          <select id="ltVsPlayer1"><option value="">— None —</option></select>
+        </div>
+        <div class="lt-player-slot">
+          <img id="ltVsHead2" class="lt-headshot" src="https://assets.nhle.com/mugs/nhl/default-skater.png" alt="" />
+          <select id="ltVsPlayer2"><option value="">— None —</option></select>
+        </div>
       </div>
     </div>
   </div>
@@ -276,6 +340,7 @@
   <div class="subtabs" role="tablist" aria-label="Line Tool tabs">
     <button id="ltTabHeat" class="subtab-btn active" type="button" role="tab" aria-selected="true">Heat Map</button>
     <button id="ltTabWowy" class="subtab-btn" type="button" role="tab" aria-selected="false">WOWY</button>
+    <button id="ltTabVersus" class="subtab-btn" type="button" role="tab" aria-selected="false">Versus</button>
     <button id="ltTabFwd" class="subtab-btn" type="button" role="tab" aria-selected="false">Forward Lines</button>
     <button id="ltTabDef" class="subtab-btn" type="button" role="tab" aria-selected="false">Defense Pairs</button>
   </div>
@@ -285,6 +350,7 @@
     <div class="card-panel-hd">
       <div id="ltSlicerSummary" class="card-panel-meta"></div>
       <div class="card-panel-actions">
+        <button class="config-btn lt-vs-toggle-btn" type="button">Show Versus</button>
         <button id="btnExportLtHeatPng" class="config-btn" type="button">Export PNG</button>
         <button id="btnShareLtHeatPng" class="config-btn" type="button">Share</button>
       </div>
@@ -320,7 +386,7 @@
         </div>
       </div>
     </div>
-    <div id="ltHeatEmpty" class="lt-empty">Select at least one player to view the heat map.</div>
+    <div id="ltHeatEmpty" class="lt-empty">Loading data...</div>
     <div id="ltZoneFilterBar" class="lt-zone-filter-bar" style="display:none;">
       <button id="ltZoneClear" type="button">✕ Clear zone selection</button>
     </div>
@@ -368,6 +434,16 @@
     <div id="ltWowyExportBar" class="lt-wowy-export-bar" style="display:none;"></div>
     <div id="ltWowyTableWrap" class="lt-wowy-table-wrap"></div>
     <div id="ltWowyEmpty" class="lt-empty">Select at least one player to view WOWY analysis.</div>
+  </div>
+
+  <!-- Versus Panel -->
+  <div id="ltPanelVersus" class="panel" role="tabpanel" style="display:none;">
+    <div class="card-panel-hd">
+      <div id="ltVersusSummary" class="card-panel-meta"></div>
+    </div>
+    <div id="ltVersusExportBar" class="lt-wowy-export-bar" style="display:none;"></div>
+    <div id="ltVersusTableWrap" class="lt-wowy-table-wrap"></div>
+    <div id="ltVersusEmpty" class="lt-empty">Enable Versus and select an against team to view combinations.</div>
   </div>
 
   <!-- Forward Lines Panel -->
@@ -442,10 +518,15 @@ const ltHmMetric = document.getElementById('ltHmMetric');
 const ltHmCompare = document.getElementById('ltHmCompare');
 const ltTabHeat = document.getElementById('ltTabHeat');
 const ltTabWowy = document.getElementById('ltTabWowy');
+const ltTabVersus = document.getElementById('ltTabVersus');
 const ltPanelHeat = document.getElementById('ltPanelHeat');
 const ltPanelWowy = document.getElementById('ltPanelWowy');
+const ltPanelVersus = document.getElementById('ltPanelVersus');
 const ltSlicerSummary = document.getElementById('ltSlicerSummary');
 const ltWowySummary = document.getElementById('ltWowySummary');
+const ltVersusSummary = document.getElementById('ltVersusSummary');
+const ltVersusTableWrap = document.getElementById('ltVersusTableWrap');
+const ltVersusEmpty = document.getElementById('ltVersusEmpty');
 const ltZoneFilterBar = document.getElementById('ltZoneFilterBar');
 const ltZoneClear = document.getElementById('ltZoneClear');
 const ltWowyPersp = document.getElementById('ltWowyPersp');
@@ -466,6 +547,7 @@ const ltDefEmpty = document.getElementById('ltDefEmpty');
 const ltFwdMinToi = document.getElementById('ltFwdMinToi');
 const ltDefMinToi = document.getElementById('ltDefMinToi');
 const ltWowyExportBar = document.getElementById('ltWowyExportBar');
+const ltVersusExportBar = document.getElementById('ltVersusExportBar');
 const ltFwdExportBar = document.getElementById('ltFwdExportBar');
 const ltDefExportBar = document.getElementById('ltDefExportBar');
 const ltFwdScopeTeam = document.getElementById('ltFwdScopeTeam');
@@ -484,6 +566,15 @@ const SLOT_IDS = [0,1,2,3,4];
 const playerSelects = SLOT_IDS.map(i => document.getElementById(`ltPlayer${i}`));
 const headshots = SLOT_IDS.map(i => document.getElementById(`ltHead${i}`));
 
+const VS_SLOT_IDS = [0,1,2];
+const vsPlayerSelects = VS_SLOT_IDS.map(i => document.getElementById(`ltVsPlayer${i}`));
+const vsHeadshots = VS_SLOT_IDS.map(i => document.getElementById(`ltVsHead${i}`));
+const ltVsTeamHead = document.getElementById('ltVsTeamHead');
+const ltVsTeam = document.getElementById('ltVsTeam');
+const ltVsPanel = document.getElementById('ltVsPanel');
+let __vsOpen = false;
+let __vsPlayers = [];  // {id, name, position} for the vs team
+
 let __players = [];  // {id, name, position}
 let __geoJson = null;
 let __data = null;
@@ -491,10 +582,14 @@ let __reqVer = 0;
 let __selectedZones = new Set();
 let __wowyData = null;
 let __wowyVer = 0;
+let __versusData = null;
+let __versusVer = 0;
 let __fetchTimer = null;
 let __wowyFetchTimer = null;
 let __wowySortCol = -1;
 let __wowySortAsc = true;
+let __versusSortCol = -1;
+let __versusSortAsc = false;
 let __fwdData = null;
 let __defData = null;
 let __fwdSortCol = -1;
@@ -533,6 +628,7 @@ function debouncedFetchWowy(){
 const LT_TABS = [
   {id:'heat', btn: ltTabHeat, panel: ltPanelHeat},
   {id:'wowy', btn: ltTabWowy, panel: ltPanelWowy},
+  {id:'versus', btn: ltTabVersus, panel: ltPanelVersus},
   {id:'fwd',  btn: ltTabFwd,  panel: ltPanelFwd},
   {id:'def',  btn: ltTabDef,  panel: ltPanelDef},
 ];
@@ -549,6 +645,7 @@ function setTab(which){
     populateWowyPersp();
     fetchWowy();
   }
+  if(which === 'versus' && !__versusData) fetchVersus();
   if(which === 'fwd' && !__fwdData) fetchLines('fwd');
   if(which === 'def' && !__defData) fetchLines('def');
 }
@@ -558,6 +655,10 @@ function refreshActiveSupplementalPanel(){
   if(active === 'wowy'){
     populateWowyPersp();
     fetchWowy();
+    return;
+  }
+  if(active === 'versus'){
+    fetchVersus();
     return;
   }
   if(active === 'fwd'){
@@ -571,7 +672,9 @@ function refreshActiveSupplementalPanel(){
 
 // ── Filter context summary ───────────────────────────────────
 function updateSlicerSummaries(){
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : String(seasonSelect?.value||'').trim();
   const ss = String(ltSeasonState?.value||'regular');
   const str = String(ltStrengthState?.value||'5v5');
   const rates = String(ltRates?.value||'Totals');
@@ -579,12 +682,13 @@ function updateSlicerSummaries(){
   const txt = `Season ${season || '—'} · ${ss} · ${str} · ${rates} · ${xg}`;
   if(ltSlicerSummary) ltSlicerSummary.textContent = txt;
   if(ltWowySummary) ltWowySummary.textContent = txt;
+  if(ltVersusSummary) ltVersusSummary.textContent = txt;
 }
 
 // ── Player list loading ──────────────────────────────────────
 async function loadPlayers(){
   const team = String(teamSelect?.value||'').trim().toUpperCase();
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   if(!team || !season){ __players = []; populateSelects(); return; }
   try{
     const r = await fetch(`/api/line-tool/players?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}`, {cache:'no-store'});
@@ -592,6 +696,83 @@ async function loadPlayers(){
     __players = Array.isArray(j.players) ? j.players : [];
   }catch(_){ __players = []; }
   populateSelects();
+}
+
+async function loadVsPlayers(){
+  const vsTeam = String(ltVsTeam?.value||'').trim().toUpperCase();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
+  if(!vsTeam || !season){ __vsPlayers = []; populateVsSelects(); updateVsTeamLogo(); return; }
+  try{
+    const r = await fetch(`/api/line-tool/players?team=${encodeURIComponent(vsTeam)}&season=${encodeURIComponent(season)}`, {cache:'no-store'});
+    const j = await r.json();
+    __vsPlayers = Array.isArray(j.players) ? j.players : [];
+  }catch(_){ __vsPlayers = []; }
+  populateVsSelects();
+  updateVsTeamLogo();
+}
+
+function populateVsTeamSelect(){
+  if(!ltVsTeam) return;
+  const teamsData = (() => { try { return JSON.parse(document.getElementById('teams-data')?.textContent||'[]'); } catch(_){ return []; } })();
+  const cur = ltVsTeam.value;
+  ltVsTeam.innerHTML = '<option value="">— Any Team —</option>';
+  for(const t of teamsData.filter(t => t.Active === '1' || t.Active === 1)){
+    const opt = document.createElement('option');
+    opt.value = String(t.Team || t.abbreviation || t.abbr || t.id || '');
+    opt.textContent = String(t.Name || t.name || t.Team || t.abbreviation || '');
+    ltVsTeam.appendChild(opt);
+  }
+  if(cur) ltVsTeam.value = cur;
+}
+
+function populateVsSelects(){
+  for(const sel of vsPlayerSelects){
+    if(!sel) continue;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— None —</option>';
+    for(const p of __vsPlayers){
+      const opt = document.createElement('option');
+      opt.value = String(p.id);
+      opt.textContent = `${p.name} (${p.position || '?'})`;
+      sel.appendChild(opt);
+    }
+    if(cur) sel.value = cur;
+    if(!sel.value) sel.value = '';
+  }
+  updateVsHeadshots();
+}
+
+function vsHeadshotUrl(pid, vsTeam){
+  if(!pid) return DEFAULT_IMG;
+  const season = String(seasonSelect?.value||'').trim();
+  if(!season || !vsTeam) return DEFAULT_IMG;
+  return `/api/player-headshot/${encodeURIComponent(pid)}.png?season=${encodeURIComponent(season)}&team=${encodeURIComponent(vsTeam)}`;
+}
+
+function vsTeamLogoUrl(team){
+  const t = String(team || '').trim().toUpperCase();
+  if(!t) return 'https://assets.nhle.com/logos/nhl/svg/NHL_dark.svg';
+  return `/api/team-logo/${encodeURIComponent(t)}.svg`;
+}
+
+function updateVsTeamLogo(){
+  if(!ltVsTeamHead) return;
+  const vsTeam = String(ltVsTeam?.value||'').trim().toUpperCase();
+  ltVsTeamHead.src = vsTeamLogoUrl(vsTeam);
+  ltVsTeamHead.onerror = function(){ this.src = 'https://assets.nhle.com/logos/nhl/svg/NHL_dark.svg'; };
+  ltVsTeamHead.alt = vsTeam ? `${vsTeam} logo` : 'Team logo';
+}
+
+function updateVsHeadshots(){
+  const vsTeam = String(ltVsTeam?.value||'').trim().toUpperCase();
+  for(let i = 0; i < VS_SLOT_IDS.length; i++){
+    const pid = vsPlayerSelects[i]?.value || '';
+    const img = vsHeadshots[i];
+    if(img){
+      img.src = vsHeadshotUrl(pid, vsTeam);
+      img.onerror = function(){ this.src = DEFAULT_IMG; };
+    }
+  }
 }
 
 function populateSelects(){
@@ -630,9 +811,63 @@ function updateHeadshots(){
   }
 }
 
+// ── Versus Panel Toggle ──────────────────────────────────────
+function setVsOpen(open){
+  __vsOpen = !!open;
+  if(ltVsPanel) ltVsPanel.classList.toggle('open', __vsOpen);
+  syncVsToggleLabels();
+  if(__vsOpen && ltVsTeam && ltVsTeam.options.length <= 1) populateVsTeamSelect();
+  updateVsTeamLogo();
+}
+
+function syncVsToggleLabels(){
+  const text = __vsOpen ? 'Hide Versus' : 'Show Versus';
+  document.querySelectorAll('.lt-vs-toggle-btn').forEach(btn => {
+    btn.textContent = text;
+  });
+}
+
+function onVsToggleClick(){
+  setVsOpen(!__vsOpen);
+  __versusData = null;
+  if(!__vsOpen){
+    if(ltVsTeam) ltVsTeam.value = '';
+    for(const s of vsPlayerSelects) if(s) s.value = '';
+    updateVsHeadshots();
+    debouncedFetch();
+  }
+  refreshActiveSupplementalPanel();
+  saveSelections();
+}
+
+document.addEventListener('click', (event) => {
+  const btn = event.target?.closest?.('.lt-vs-toggle-btn');
+  if(!btn) return;
+  onVsToggleClick();
+});
+
+ltVsTeam?.addEventListener('change', () => {
+  loadVsPlayers();
+  __versusData = null;
+  debouncedFetch();
+  refreshActiveSupplementalPanel();
+  saveSelections();
+});
+
+for(const sel of vsPlayerSelects){
+  sel?.addEventListener('change', () => {
+    updateVsHeadshots();
+    __versusData = null;
+    debouncedFetch();
+    refreshActiveSupplementalPanel();
+    saveSelections();
+  });
+}
+
 function __linePanelTitle(kind){
   if(kind === 'heat') return 'Heat Map';
   if(kind === 'wowy') return 'WOWY';
+  if(kind === 'versus') return 'Versus';
   if(kind === 'fwd') return 'Forward Lines';
   return 'Defense Pairs';
 }
@@ -655,6 +890,14 @@ function __lineHeatMeta(){
 function __lineWowyMeta(){
   const comboCount = Array.isArray(__wowyData?.combos) ? __wowyData.combos.length : 0;
   return `All selected-player combinations${comboCount ? ` · ${comboCount} rows` : ''}`;
+}
+
+function __lineVersusMeta(){
+  const vsTeam = String(ltVsTeam?.value || '').trim().toUpperCase();
+  const vsPlayers = __lineSelectedVsPlayers();
+  const bits = [`Against ${vsTeam || 'selected opponent'}`];
+  if(vsPlayers.length) bits.push(vsPlayers.map(player => player.name.split(' ').pop() || player.name).join(', '));
+  return bits.join(' · ');
 }
 
 function __lineLinesMeta(type){
@@ -740,7 +983,9 @@ function __lineSelectedTeamColor(){
 
 function __lineShareText(kind){
   const team = String(teamSelect?.value || '').trim().toUpperCase();
-  const season = String(seasonSelect?.value || '').trim();
+  const season = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : String(seasonSelect?.value || '').trim();
   const title = __linePanelTitle(kind);
   return `${title} for ${team || 'selected team'} ${season || ''}`.trim();
 }
@@ -761,11 +1006,29 @@ function __lineSelectedPlayers(){
     });
 }
 
+function __lineSelectedVsPlayers(){
+  if(!__vsOpen) return [];
+  return vsPlayerSelects
+    .map(sel => String(sel?.value || '').trim())
+    .filter(Boolean)
+    .map(pid => {
+      const info = __vsPlayers.find(player => String(player.id) === pid) || {};
+      return {
+        id: pid,
+        name: info.name || `#${pid}`,
+        position: info.position || '',
+        headshot: vsHeadshotUrl(pid, String(ltVsTeam?.value || '').trim().toUpperCase()),
+      };
+    });
+}
+
 function __lineShareStateKey(kind){
   const players = __lineSelectedPlayers().map(player => player.id).join(',');
-  const base = [kind, teamSelect?.value || '', seasonSelect?.value || '', players, __lineBaseSummary()].join('|');
+  const vsPlayers = __lineSelectedVsPlayers().map(player => player.id).join(',');
+  const base = [kind, teamSelect?.value || '', seasonSelect?.value || '', players, __lineBaseSummary(), __vsOpen ? '1' : '0', String(ltVsTeam?.value || ''), vsPlayers].join('|');
   if(kind === 'heat') return `${base}|${__lineHeatMeta()}|${ltKpis?.innerHTML || ''}|${ltHeatContent?.innerHTML || ''}`;
   if(kind === 'wowy') return `${base}|${__lineWowyMeta()}|${ltWowyTableWrap?.innerHTML || ''}`;
+  if(kind === 'versus') return `${base}|${__lineVersusMeta()}|${ltVersusTableWrap?.innerHTML || ''}`;
   const wrap = kind === 'fwd' ? ltFwdTableWrap : ltDefTableWrap;
   return `${base}|${__lineLinesMeta(kind)}|${wrap?.innerHTML || ''}`;
 }
@@ -892,29 +1155,82 @@ async function __renderDesktopExportCanvas(element){
 
 function __buildExportFormation(){
   const players = __lineSelectedPlayers();
-  if(!players.length) return null;
-  const wrapper = document.createElement('div');
-  wrapper.className = 'lt-export-formation';
-  const rows = [players.slice(0, 3), players.slice(3, 5)].filter(row => row.length);
-  for(const rowPlayers of rows){
+  const vsPlayers = __lineSelectedVsPlayers();
+  const hasVs = __vsOpen;
+  if(!players.length && !hasVs) return null;
+
+  function __buildPlayerCard(player){
+    const card = document.createElement('div');
+    card.className = 'lt-export-player';
+    card.innerHTML = `
+      <img class="lt-export-headshot" src="${player.headshot}" alt="${player.name}">
+      <div class="lt-export-player-name">${player.name}</div>
+      <div class="lt-export-player-sub">${player.position || 'Player'}</div>
+    `;
+    card.querySelector('img')?.addEventListener('error', event => {
+      event.currentTarget.src = DEFAULT_IMG;
+    }, { once: true });
+    return card;
+  }
+
+  if(!hasVs){
+    const wrapper = document.createElement('div');
+    wrapper.className = 'lt-export-formation';
+    const rows = [players.slice(0, 3), players.slice(3, 5)].filter(row => row.length);
+    for(const rowPlayers of rows){
+      const row = document.createElement('div');
+      row.className = 'lt-export-formation-row';
+      for(const player of rowPlayers) row.appendChild(__buildPlayerCard(player));
+      wrapper.appendChild(row);
+    }
+    return wrapper;
+  }
+
+  const shell = document.createElement('div');
+  shell.className = 'lt-export-vs-shell';
+
+  const forSide = document.createElement('div');
+  forSide.className = 'lt-export-vs-side';
+  forSide.innerHTML = '<div class="lt-export-vs-title">For</div>';
+  const forFormation = document.createElement('div');
+  forFormation.className = 'lt-export-formation';
+  const forRows = [players.slice(0, 3), players.slice(3, 5)].filter(row => row.length);
+  for(const rowPlayers of forRows){
     const row = document.createElement('div');
     row.className = 'lt-export-formation-row';
-    for(const player of rowPlayers){
-      const card = document.createElement('div');
-      card.className = 'lt-export-player';
-      card.innerHTML = `
-        <img class="lt-export-headshot" src="${player.headshot}" alt="${player.name}">
-        <div class="lt-export-player-name">${player.name}</div>
-        <div class="lt-export-player-sub">${player.position || 'Player'}</div>
-      `;
-      card.querySelector('img')?.addEventListener('error', event => {
-        event.currentTarget.src = DEFAULT_IMG;
-      }, { once: true });
-      row.appendChild(card);
-    }
-    wrapper.appendChild(row);
+    for(const player of rowPlayers) row.appendChild(__buildPlayerCard(player));
+    forFormation.appendChild(row);
   }
-  return wrapper;
+  forSide.appendChild(forFormation);
+
+  const againstSide = document.createElement('div');
+  againstSide.className = 'lt-export-vs-side';
+  againstSide.innerHTML = '<div class="lt-export-vs-title">Against</div>';
+  const team = String(ltVsTeam?.value || '').trim().toUpperCase();
+  const teamBlock = document.createElement('div');
+  teamBlock.className = 'lt-export-vs-team';
+  teamBlock.innerHTML = `
+    <img class="lt-export-headshot" src="${vsTeamLogoUrl(team)}" alt="${team || 'Any Team'} logo">
+    <div class="lt-export-player-name">${team || 'Any Team'}</div>
+    <div class="lt-export-player-sub">Team</div>
+  `;
+  teamBlock.querySelector('img')?.addEventListener('error', event => {
+    event.currentTarget.src = 'https://assets.nhle.com/logos/nhl/svg/NHL_dark.svg';
+  }, { once: true });
+  againstSide.appendChild(teamBlock);
+  if(vsPlayers.length){
+    const row = document.createElement('div');
+    row.className = 'lt-export-formation-row';
+    for(const player of vsPlayers) row.appendChild(__buildPlayerCard(player));
+    againstSide.appendChild(row);
+  }
+
+  const divider = document.createElement('div');
+  divider.className = 'lt-export-vs-divider';
+  shell.appendChild(forSide);
+  shell.appendChild(divider);
+  shell.appendChild(againstSide);
+  return shell;
 }
 
 function __cloneNodeWithoutId(node){
@@ -1109,6 +1425,20 @@ function __buildWowyExportSurface(){
   return card;
 }
 
+function __buildVersusExportSurface(){
+  if(!ltVersusTableWrap?.querySelector('table')) throw new Error('Load Versus data before exporting.');
+  const card = __buildExportCard(__lineExportTitle('versus'), __lineBaseSummary(), __lineVersusMeta());
+  card.classList.add('lt-export-card--table', 'lt-export-card--versus');
+  const table = __buildExportTable(ltVersusTableWrap, { maxRows: 20 });
+  if(!table) throw new Error('Versus export is unavailable right now.');
+  const wrap = document.createElement('div');
+  wrap.className = 'lt-export-table-wrap';
+  wrap.appendChild(table);
+  card.appendChild(wrap);
+  card.appendChild(__buildLineToolWatermark());
+  return card;
+}
+
 function __buildLinesExportSurface(type){
   const wrapSource = type === 'fwd' ? ltFwdTableWrap : ltDefTableWrap;
   const title = type === 'fwd' ? 'Forward Lines' : 'Defense Pairs';
@@ -1129,6 +1459,7 @@ async function __buildLineToolPngBlob(kind){
   let surface;
   if(kind === 'heat') surface = __buildHeatExportSurface();
   else if(kind === 'wowy') surface = __buildWowyExportSurface();
+  else if(kind === 'versus') surface = __buildVersusExportSurface();
   else surface = __buildLinesExportSurface(kind);
   const canvas = await __renderDesktopExportCanvas(surface);
   return __canvasToBlob(canvas);
@@ -1224,24 +1555,30 @@ async function loadGeoJson(){
 // ── Fetch line tool data ─────────────────────────────────────
 async function fetchData(){
   const team = String(teamSelect?.value||'').trim().toUpperCase();
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   const pids = playerSelects.map(s => s?.value || '').filter(Boolean);
-  if(!team || !season || !pids.length){
+  if(!team || !season){
     __data = null;
     renderKpis();
     renderHeatMap();
     return;
   }
-  // Show loading state
+  // Show loading state while request is in-flight.
   if(ltKpis) ltKpis.innerHTML = '<div class="lt-empty">Loading data...</div>';
   if(ltHeatContent) ltHeatContent.style.display = 'none';
   if(ltHeatEmpty) ltHeatEmpty.style.display = '';
   if(ltHeatEmpty) ltHeatEmpty.textContent = 'Loading data...';
+
   const ver = ++__reqVer;
   const ss = String(ltSeasonState?.value||'regular');
   const str = String(ltStrengthState?.value||'5v5');
   const xg = String(ltXgModel?.value||'xG_F');
-  const url = `/api/line-tool/data?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&players=${encodeURIComponent(pids.join(','))}&seasonState=${encodeURIComponent(ss)}&strengthState=${encodeURIComponent(str)}&xgModel=${encodeURIComponent(xg)}`;
+  const playersParam = pids.length ? `&players=${encodeURIComponent(pids.join(','))}` : '';
+  const vsTeam = __vsOpen ? String(ltVsTeam?.value||'').trim().toUpperCase() : '';
+  const vsPids = __vsOpen ? vsPlayerSelects.map(s => s?.value || '').filter(Boolean) : [];
+  const vsTeamParam = vsTeam ? `&vs_team=${encodeURIComponent(vsTeam)}` : '';
+  const vsPlayersParam = vsPids.length ? `&vs_players=${encodeURIComponent(vsPids.join(','))}` : '';
+  const url = `/api/line-tool/data?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}${playersParam}${vsTeamParam}${vsPlayersParam}&seasonState=${encodeURIComponent(ss)}&strengthState=${encodeURIComponent(str)}&xgModel=${encodeURIComponent(xg)}`;
   try{
     const r = await fetch(url, {cache:'no-store'});
     if(ver !== __reqVer) return;
@@ -1455,7 +1792,7 @@ function renderHeatMap(){
   if(ltHeatContent) ltHeatContent.style.display = hasData ? '' : 'none';
   if(ltHeatEmpty){
     ltHeatEmpty.style.display = hasData ? 'none' : '';
-    ltHeatEmpty.textContent = 'Select at least one player to view the heat map.';
+    ltHeatEmpty.textContent = 'No data available for the selected filters.';
   }
   const payload = __getHeatRenderPayload();
   if(!payload) return;
@@ -1799,6 +2136,244 @@ function getFilteredData(){
     cfPct, ffPct, sfPct, gfPct, xgfPct, shPct, svPct, pdo:shPct+svPct };
 }
 
+// ── Versus combinations ─────────────────────────────────────
+async function fetchVersus(){
+  const team = String(teamSelect?.value||'').trim().toUpperCase();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
+  const pids = playerSelects.map(s => s?.value||'').filter(Boolean);
+  const vsTeam = __vsOpen ? String(ltVsTeam?.value||'').trim().toUpperCase() : '';
+  const vsPids = __vsOpen ? vsPlayerSelects.map(s => s?.value || '').filter(Boolean) : [];
+  if(!team || !season || !__vsOpen || !vsTeam){
+    __versusData = null;
+    renderVersus();
+    return;
+  }
+  if(ltVersusTableWrap) ltVersusTableWrap.innerHTML = '';
+  if(ltVersusEmpty){ ltVersusEmpty.style.display = ''; ltVersusEmpty.textContent = 'Loading Versus combinations…'; }
+  const ver = ++__versusVer;
+  const ss = String(ltSeasonState?.value||'regular');
+  const str = String(ltStrengthState?.value||'5v5');
+  const xg = String(ltXgModel?.value||'xG_F');
+  const playersParam = pids.length ? `&players=${encodeURIComponent(pids.join(','))}` : '';
+  const vsPlayersParam = vsPids.length ? `&vs_players=${encodeURIComponent(vsPids.join(','))}` : '';
+  const url = `/api/line-tool/versus?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}${playersParam}&vs_team=${encodeURIComponent(vsTeam)}${vsPlayersParam}&seasonState=${encodeURIComponent(ss)}&strengthState=${encodeURIComponent(str)}&xgModel=${encodeURIComponent(xg)}`;
+  try{
+    const r = await fetch(url, {cache:'no-store'});
+    if(ver !== __versusVer) return;
+    __versusData = await r.json();
+  }catch(_){
+    if(ver !== __versusVer) return;
+    __versusData = null;
+  }
+  renderVersus();
+}
+
+function renderVersus(){
+  const v = __versusData;
+  const rowsSrc = Array.isArray(v?.rows) ? v.rows.slice() : [];
+  if(ltVersusTableWrap) ltVersusTableWrap.innerHTML = '';
+  if(ltVersusExportBar) ltVersusExportBar.style.display = 'none';
+  const hasVsTeam = __vsOpen && String(ltVsTeam?.value || '').trim() !== '';
+  if(!hasVsTeam){
+    if(ltVersusEmpty){ ltVersusEmpty.style.display = ''; ltVersusEmpty.textContent = 'Enable Versus and select an against team to view combinations.'; }
+    return;
+  }
+  if(!rowsSrc.length){
+    if(ltVersusEmpty){ ltVersusEmpty.style.display = ''; ltVersusEmpty.textContent = 'No Versus data found for the selected filters.'; }
+    return;
+  }
+  if(ltVersusEmpty) ltVersusEmpty.style.display = 'none';
+
+  const vsTeam = String(v?.vsTeam || ltVsTeam?.value || '').trim().toUpperCase();
+  const vsPlayers = Array.isArray(v?.vsPlayers) ? v.vsPlayers : [];
+  const againstHeaders = [
+    { short: vsTeam, label: vsTeam },
+    ...vsPlayers.map(p => {
+      const lastName = String(p?.name || '').split(' ').pop() || `#${p?.id || ''}`;
+      return { short: lastName, label: lastName };
+    })
+  ];
+  const headers = [...againstHeaders, 'GP', 'TOI', 'CF', 'CA', 'CF%', 'GF', 'GA', 'GF%', 'xGF', 'xGA', 'xGF%', 'PDO'];
+
+  function metricClass(value, threshold){
+    const numericValue = Number(value);
+    if(!Number.isFinite(numericValue)) return '';
+    if(numericValue > threshold) return 'lt-versus-metric good';
+    if(numericValue < threshold) return 'lt-versus-metric bad';
+    return '';
+  }
+
+  const rows = rowsSrc.map(row => ({
+    row,
+    sortVals: [
+      row?.context === 'vs' ? 1 : 0,
+      ...(Array.isArray(row?.mask) ? row.mask.map(vv => vv ? 1 : 0) : []),
+      Number(row?.gp || 0),
+      Number(row?.toi || 0),
+      Number(row?.cf || 0),
+      Number(row?.ca || 0),
+      Number(row?.cfPct || 0),
+      Number(row?.gf || 0),
+      Number(row?.ga || 0),
+      Number(row?.gfPct || 0),
+      Number(row?.xgf || 0),
+      Number(row?.xga || 0),
+      Number(row?.xgfPct || 0),
+      Number(row?.pdo || 0),
+    ],
+  }));
+
+  if(__versusSortCol >= 0 && __versusSortCol < headers.length){
+    rows.sort((a, b) => {
+      const va = a.sortVals[__versusSortCol];
+      const vb = b.sortVals[__versusSortCol];
+      if(typeof va === 'string' || typeof vb === 'string'){
+        return __versusSortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+      }
+      return __versusSortAsc ? (va - vb) : (vb - va);
+    });
+  }
+
+  let html = '<table class="lt-wowy-table"><thead><tr>';
+  headers.forEach((h, i) => {
+    const isActive = i === __versusSortCol;
+    const arrow = isActive ? (__versusSortAsc ? '▲' : '▼') : '▲';
+    const playerCls = i < againstHeaders.length ? 'wowy-player-cell ' : '';
+    const headerText = typeof h === 'string' ? h : h.short;
+    html += `<th class="${playerCls}sortable${isActive ? ' sort-active' : ''}" data-col="${i}">${headerText}<span class="sort-arrow">${arrow}</span></th>`;
+  });
+  html += '</tr></thead><tbody>';
+  const rates = String(ltRates?.value||'Totals');
+
+  for(const entry of rows){
+    const row = entry.row || {};
+    const gp = Number(row.gp || 0) || 1;
+    const toi60 = Math.max(Number(row.toi || 0), 0.001) / 60;
+    const rv = (val) => {
+      const v = Number(val || 0);
+      if(rates === 'Per60') return (v / toi60).toFixed(2);
+      if(rates === 'PerGame') return (v / gp).toFixed(2);
+      return v;
+    };
+    const rvX = (val) => {
+      const v = Number(val || 0);
+      if(rates === 'Per60') return (v / toi60).toFixed(2);
+      if(rates === 'PerGame') return (v / gp).toFixed(2);
+      return v.toFixed(2);
+    };
+    html += '<tr>';
+    html += `<td class="wowy-player-cell lt-versus-flag ${row.context === 'vs' ? 'vs' : 'wo'}">${row.context === 'vs' ? `vs ${vsTeam}` : `w/o ${vsTeam}`}</td>`;
+    if(vsPlayers.length){
+      const mask = Array.isArray(row.mask) ? row.mask : [];
+      for(let i = 0; i < vsPlayers.length; i++){
+        const on = !!mask[i];
+        const lastName = againstHeaders[i + 1]?.label || `#${vsPlayers[i]?.id || ''}`;
+        html += `<td class="wowy-player-cell lt-versus-flag ${on ? 'vs' : 'wo'}">${on ? `vs ${lastName}` : `w/o ${lastName}`}</td>`;
+      }
+    }
+    html += `<td>${row.gp || 0}</td>`;
+    html += `<td>${fmtToi(Number(row.toi || 0))}</td>`;
+    html += `<td>${rv(row.cf)}</td>`;
+    html += `<td>${rv(row.ca)}</td>`;
+    html += `<td class="${metricClass(row.cfPct, 50)}">${Number(row.cfPct || 0).toFixed(1)}</td>`;
+    html += `<td>${rv(row.gf)}</td>`;
+    html += `<td>${rv(row.ga)}</td>`;
+    html += `<td class="${metricClass(row.gfPct, 50)}">${Number(row.gfPct || 0).toFixed(1)}</td>`;
+    html += `<td>${rvX(row.xgf)}</td>`;
+    html += `<td>${rvX(row.xga)}</td>`;
+    html += `<td class="${metricClass(row.xgfPct, 50)}">${Number(row.xgfPct || 0).toFixed(1)}</td>`;
+    html += `<td class="${metricClass(row.pdo, 100)}">${Number(row.pdo || 0).toFixed(1)}</td>`;
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  if(ltVersusTableWrap) ltVersusTableWrap.innerHTML = html;
+
+  if(ltVersusExportBar){
+    ltVersusExportBar.style.display = '';
+    ltVersusExportBar.innerHTML = [
+      '<button class="config-btn lt-vs-toggle-btn" type="button">Show Versus</button>',
+      '<button class="config-btn ltVersusExportPng" type="button">Export PNG</button>',
+      '<button class="config-btn ltVersusSharePng" type="button">Share</button>',
+      '<button class="config-btn ltVersusExportCsv" type="button">Export CSV</button>'
+    ].join('');
+  }
+  syncVsToggleLabels();
+
+  const headerLabels = headers.map(h => typeof h === 'string' ? h : h.short);
+  const csvBodyRows = [];
+  for(const entry of rows){
+    const row = entry.row || {};
+    const gp = Number(row.gp || 0) || 1;
+    const toi60 = Math.max(Number(row.toi || 0), 0.001) / 60;
+    const rv = (val) => {
+      const v = Number(val || 0);
+      if(rates === 'Per60') return (v / toi60).toFixed(2);
+      if(rates === 'PerGame') return (v / gp).toFixed(2);
+      return String(v);
+    };
+    const rvX = (val) => {
+      const v = Number(val || 0);
+      if(rates === 'Per60') return (v / toi60).toFixed(2);
+      if(rates === 'PerGame') return (v / gp).toFixed(2);
+      return v.toFixed(2);
+    };
+    const line = [row.context === 'vs' ? `vs ${vsTeam}` : `w/o ${vsTeam}`];
+    if(vsPlayers.length){
+      const mask = Array.isArray(row.mask) ? row.mask : [];
+      for(let i = 0; i < vsPlayers.length; i++){
+        const on = !!mask[i];
+        const lastName = againstHeaders[i + 1]?.label || `#${vsPlayers[i]?.id || ''}`;
+        line.push(on ? `vs ${lastName}` : `w/o ${lastName}`);
+      }
+    }
+    line.push(String(row.gp || 0));
+    line.push(fmtToi(Number(row.toi || 0)));
+    line.push(rv(row.cf));
+    line.push(rv(row.ca));
+    line.push(Number(row.cfPct || 0).toFixed(1));
+    line.push(rv(row.gf));
+    line.push(rv(row.ga));
+    line.push(Number(row.gfPct || 0).toFixed(1));
+    line.push(rvX(row.xgf));
+    line.push(rvX(row.xga));
+    line.push(Number(row.xgfPct || 0).toFixed(1));
+    line.push(Number(row.pdo || 0).toFixed(1));
+    csvBodyRows.push(line);
+  }
+
+  ltVersusTableWrap?.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const ci = parseInt(th.dataset.col, 10);
+      if(__versusSortCol === ci) __versusSortAsc = !__versusSortAsc;
+      else { __versusSortCol = ci; __versusSortAsc = false; }
+      renderVersus();
+    });
+  });
+
+  ltVersusExportBar?.querySelector('.ltVersusExportPng')?.addEventListener('click', async () => {
+    try{
+      await exportLineToolPng('versus');
+    }catch(error){
+      alert(error?.message || 'Unable to export Versus PNG.');
+    }
+  });
+  ltVersusExportBar?.querySelector('.ltVersusSharePng')?.addEventListener('click', () => {
+    openShareModal('versus');
+  });
+  ltVersusExportBar?.querySelector('.ltVersusExportCsv')?.addEventListener('click', () => {
+    const esc = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const lines = [headerLabels.map(esc).join(',')];
+    for(const row of csvBodyRows) lines.push(row.map(esc).join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'versus_export.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
 // ── WOWY ─────────────────────────────────────────────────────
 function populateWowyPersp(){
   if(!ltWowyPersp) return;
@@ -1817,7 +2392,7 @@ function populateWowyPersp(){
 
 async function fetchWowy(){
   const team = String(teamSelect?.value||'').trim().toUpperCase();
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   const pids = playerSelects.map(s => s?.value||'').filter(Boolean);
   if(!team || !season || pids.length < 1){
     __wowyData = null; renderWowy(); return;
@@ -1970,11 +2545,13 @@ function renderWowy(){
   if(ltWowyExportBar){
     ltWowyExportBar.style.display = '';
     ltWowyExportBar.innerHTML = [
+      '<button class="config-btn lt-vs-toggle-btn" type="button">Show Versus</button>',
       '<button class="config-btn ltWowyExportPng" type="button">Export PNG</button>',
       '<button class="config-btn ltWowySharePng" type="button">Share</button>',
       '<button id="ltWowyExport" class="config-btn" type="button">Export CSV</button>'
     ].join('');
   }
+  syncVsToggleLabels();
 
   // Build header
   let html = '<table class="lt-wowy-table"><thead><tr>';
@@ -2058,7 +2635,7 @@ ltWowyPersp?.addEventListener('change', () => renderWowy());
 // ── Forward Lines / Defense Pairs ────────────────────────────
 async function fetchLines(type){
   const team = String(teamSelect?.value||'').trim().toUpperCase();
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   if(!team || !season) return;
   const wrap = type === 'fwd' ? ltFwdTableWrap : ltDefTableWrap;
   const empty = type === 'fwd' ? ltFwdEmpty : ltDefEmpty;
@@ -2297,6 +2874,7 @@ for(const sel of playerSelects){
     updateHeadshots();
     debouncedFetch();
     __wowyData = null;
+    __versusData = null;
     __fwdData = null;
     __defData = null;
     populateWowyPersp();
@@ -2329,6 +2907,7 @@ teamSelect?.addEventListener('change', async () => {
   await loadPlayers();
   debouncedFetch();
   __wowyData = null;
+  __versusData = null;
   __fwdData = null;
   __defData = null;
   populateWowyPersp();
@@ -2340,6 +2919,7 @@ seasonSelect?.addEventListener('change', async () => {
   await loadPlayers();
   debouncedFetch();
   __wowyData = null;
+  __versusData = null;
   __fwdData = null;
   __defData = null;
   populateWowyPersp();
@@ -2350,6 +2930,7 @@ seasonSelect?.addEventListener('change', async () => {
 ltSeasonState?.addEventListener('change', () => {
   debouncedFetch();
   __wowyData = null;
+  __versusData = null;
   __fwdData = null;
   __defData = null;
   refreshActiveSupplementalPanel();
@@ -2359,16 +2940,18 @@ ltSeasonState?.addEventListener('change', () => {
 ltStrengthState?.addEventListener('change', () => {
   debouncedFetch();
   __wowyData = null;
+  __versusData = null;
   __fwdData = null;
   __defData = null;
   refreshActiveSupplementalPanel();
   updateSlicerSummaries();
   saveSelections();
 });
-ltRates?.addEventListener('change', () => { renderKpis(); renderHeatKpis(); renderWowy(); renderLines('fwd'); renderLines('def'); updateSlicerSummaries(); saveSelections(); });
+ltRates?.addEventListener('change', () => { renderKpis(); renderHeatKpis(); renderWowy(); renderVersus(); renderLines('fwd'); renderLines('def'); updateSlicerSummaries(); saveSelections(); });
 ltXgModel?.addEventListener('change', () => {
   debouncedFetch();
   __wowyData = null;
+  __versusData = null;
   __fwdData = null;
   __defData = null;
   refreshActiveSupplementalPanel();
@@ -2413,6 +2996,9 @@ function saveSelections(){
       xgModel: ltXgModel?.value || 'xG_F',
       hmMetric: ltHmMetric?.value || 'fenwick',
       hmCompare: ltHmCompare?.value || 'value',
+      vsOpen: __vsOpen,
+      vsTeam: ltVsTeam?.value || '',
+      vsPlayers: vsPlayerSelects.map(s => s?.value || ''),
     };
     localStorage.setItem(LT_STORAGE_KEY, JSON.stringify(state));
   }catch(_){}
@@ -2445,7 +3031,7 @@ async function boot(){
   const saved = restoreSelections();
   if(saved){
     if(saved.team && teamSelect) teamSelect.value = saved.team;
-    if(saved.season && seasonSelect) seasonSelect.value = saved.season;
+    // Do not overwrite multi-season selection; base.html manages season from URL/localStorage
     if(saved.seasonState && ltSeasonState) ltSeasonState.value = saved.seasonState;
     if(saved.strengthState && ltStrengthState) ltStrengthState.value = saved.strengthState;
     if(saved.rates && ltRates) ltRates.value = saved.rates;
@@ -2465,12 +3051,29 @@ async function boot(){
     updateHeadshots();
   }
 
+  // Restore versus panel state
+  if(saved && saved.vsOpen){
+    populateVsTeamSelect();
+    if(saved.vsTeam && ltVsTeam) ltVsTeam.value = saved.vsTeam;
+    setVsOpen(true);
+    if(saved.vsTeam){
+      await loadVsPlayers();
+      if(saved.vsPlayers){
+        for(let i = 0; i < VS_SLOT_IDS.length; i++){
+          const pid = saved.vsPlayers[i] || '';
+          if(pid && vsPlayerSelects[i]) vsPlayerSelects[i].value = pid;
+        }
+        updateVsHeadshots();
+      }
+    }
+  }
+
   updateSlicerSummaries();
 
-  // Auto-fetch if players were restored
+  // Auto-fetch on load (with or without players – no players shows team data)
+  fetchData();
   const pids = playerSelects.map(s => s?.value || '').filter(Boolean);
   if(pids.length){
-    fetchData();
     populateWowyPersp();
   }
 }

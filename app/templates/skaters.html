@@ -1598,7 +1598,7 @@ try{
 }catch(_){/*noop*/}
 
 async function fetchScatter(xMetricId, yMetricId){
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
   const xgModel = String(cardXgModel?.value||'xG_F');
@@ -1623,6 +1623,24 @@ async function fetchScatter(xMetricId, yMetricId){
 
 function makeScatterChart(canvasEl, title){
   if(!canvasEl || typeof Chart === 'undefined') return null;
+
+  function __chartsIsTeamHit(raw, wantTeam){
+    const row = raw || {};
+    const rowTeam = String(row.team || '').trim().toUpperCase();
+    if(wantTeam && rowTeam) return rowTeam === wantTeam;
+    // Fallback: points can be missing team in some payloads; use loaded team roster ids.
+    const pid = String(row.playerId || '').trim();
+    return !!(pid && __skaterPlayerMetaById instanceof Map && __skaterPlayerMetaById.has(pid));
+  }
+
+  function __chartsIsHighlightedPoint(raw){
+    const mode = __chartsHighlightMode;
+    const wantTeam = String(teamSelect?.value || '').toUpperCase();
+    const wantPid = String(playerSelect?.value || '');
+    return (mode === 'player')
+      ? !!(wantPid && String(raw?.playerId || '') === wantPid)
+      : __chartsIsTeamHit(raw, wantTeam);
+  }
 
   const avgLinesPlugin = {
     id: 'avgLines',
@@ -1687,9 +1705,7 @@ function makeScatterChart(canvasEl, title){
         meta.data.forEach((ptEl, i)=>{
           const raw = chart.data.datasets[0].data[i];
           if(!raw) return;
-          const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
-            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          const isHit = __chartsIsHighlightedPoint(raw);
           if(!isHit) return;
           const p = ptEl.getProps(['x','y'], true);
 
@@ -1713,7 +1729,7 @@ function makeScatterChart(canvasEl, title){
           if(mode === 'player'){
             img = getPlayerMugImage(season, selectedTeam, raw.playerId);
           }else{
-            img = getTeamLogoImage(raw.team);
+            img = getTeamLogoImage(raw.team || selectedTeam);
           }
 
           if(img && img.complete){
@@ -1762,42 +1778,22 @@ function makeScatterChart(canvasEl, title){
         data: [],
         pointBackgroundColor: (ctx)=>{
           const raw = ctx.raw || {};
-          const mode = __chartsHighlightMode;
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const wantPid = String(playerSelect?.value||'');
-          const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
-            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          const isHit = __chartsIsHighlightedPoint(raw);
           return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.16)';
         },
         pointBorderColor: (ctx)=>{
           const raw = ctx.raw || {};
-          const mode = __chartsHighlightMode;
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const wantPid = String(playerSelect?.value||'');
-          const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
-            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          const isHit = __chartsIsHighlightedPoint(raw);
           return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.10)';
         },
         pointBorderWidth: (ctx)=>{
           const raw = ctx.raw || {};
-          const mode = __chartsHighlightMode;
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const wantPid = String(playerSelect?.value||'');
-          const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
-            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          const isHit = __chartsIsHighlightedPoint(raw);
           return isHit ? 0 : 1;
         },
         pointRadius: (ctx)=>{
           const raw = ctx.raw || {};
-          const mode = __chartsHighlightMode;
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const wantPid = String(playerSelect?.value||'');
-          const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
-            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          const isHit = __chartsIsHighlightedPoint(raw);
           return isHit ? 10 : 4;
         },
         pointHoverRadius: 10,
@@ -1833,7 +1829,7 @@ function makeScatterChart(canvasEl, title){
 
 async function renderCharts(){
   if(!tabPanelCharts) return;
-  const season = String(seasonSelect?.value||'').trim();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim();
   if(!season){
     if(chartsEmpty) chartsEmpty.hidden = false;
     if(chartsGrid) chartsGrid.style.display = 'none';
@@ -2048,9 +2044,16 @@ function __isProjectionMetricEnabledInConfig(cfg){
   return !!(cfg?.showProjection === true || String(cfg?.showProjection || '').toLowerCase() === 'true' || String(cfg?.showProjection || '') === '1');
 }
 
+function __isProjectionSeasonAllowed(){
+  const selected = (typeof window.getSelectedSeasonValues === 'function')
+    ? window.getSelectedSeasonValues()
+    : String(seasonSelect?.value || '').split(',').map((v)=>String(v || '').trim()).filter(Boolean);
+  return Array.isArray(selected) && selected.length === 1 && String(selected[0]) === '20252026';
+}
+
 function __renderProjectionKpi(enabled, pct, positionGroup){
   if(!skaterProjectionKpi || !skaterProjectionKpiValue || !skaterProjectionKpiLabel) return;
-  const show = !!enabled && !!tabCard?.classList.contains('active');
+  const show = !!enabled && !!tabCard?.classList.contains('active') && __isProjectionSeasonAllowed();
   if(!show){
     skaterProjectionKpi.hidden = true;
     skaterProjectionKpi.style.removeProperty('--proj-kpi-color');
@@ -2069,7 +2072,7 @@ function __renderProjectionKpi(enabled, pct, positionGroup){
 }
 
 function __updateProjectionKpiFromCardData(data, cfg){
-  const enabled = __isProjectionMetricEnabledInConfig(cfg);
+  const enabled = __isProjectionSeasonAllowed() && __isProjectionMetricEnabledInConfig(cfg);
   __cardProjectionEnabled = enabled;
   const metric = data?.metrics?.['Projection|Percentile'];
   const rawPct = metric?.pct;
@@ -2091,6 +2094,9 @@ function __updateProjectionKpiFromCardData(data, cfg){
 
 function __updateProjectionToggleBtn(){
   if(!btnToggleProjection) return;
+  const allowed = __isProjectionSeasonAllowed();
+  btnToggleProjection.style.display = allowed ? '' : 'none';
+  if(!allowed) return;
   const on = __isProjectionMetricEnabledInConfig(__cardConfig);
   btnToggleProjection.textContent = on ? 'Hide Projection' : 'Show Projection';
 }
@@ -2383,7 +2389,7 @@ async function loadEdgePanel(){
   }
   updateEdgeSlicerSummary();
   const playerId = String(playerSelect?.value || '').trim();
-  const season = String(seasonSelect?.value || '').trim() || '20252026';
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value || '').trim() || '20252026';
   const seasonState = String(edgeSeasonState?.value || 'regular');
 
   if(!playerId){
@@ -2429,11 +2435,9 @@ function setCardSlicersVisible(on, opts){
 function updateCardSlicerSummary(){
   if(!cardSlicerSummary && !chartsSlicerSummary) return;
   const scope = String(cardScope?.value || 'season');
-  const rawSeason = String(seasonSelect?.value || '').trim();
-  let season = rawSeason;
-  if(/^\d{8}$/.test(rawSeason)){
-    season = `${rawSeason.slice(0,4)}/${rawSeason.slice(4,8)}`;
-  }
+  const season = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : String(seasonSelect?.value || '').trim();
   const seasonState = String(cardSeasonState?.selectedOptions?.[0]?.textContent || cardSeasonState?.value || '').trim();
   const strengthState = String(cardStrengthState?.selectedOptions?.[0]?.textContent || cardStrengthState?.value || '').trim();
   const ratesText = String(cardRates?.selectedOptions?.[0]?.textContent || cardRates?.value || '').trim();
@@ -2452,21 +2456,17 @@ function updateCardSlicerSummary(){
 
 function updateEdgeSlicerSummary(){
   if(!edgeSlicerSummary) return;
-  const rawSeason = String(seasonSelect?.value || '').trim();
-  let season = rawSeason;
-  if(/^\d{8}$/.test(rawSeason)){
-    season = `${rawSeason.slice(0,4)}/${rawSeason.slice(4,8)}`;
-  }
+  const season = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : String(seasonSelect?.value || '').trim();
   const seasonState = String(edgeSeasonState?.selectedOptions?.[0]?.textContent || edgeSeasonState?.value || '').trim();
   edgeSlicerSummary.textContent = [season, seasonState].filter(Boolean).join(' - ');
 }
 
 function getRapmSlicerSummaryText(){
-  const rawSeason = String(seasonSelect?.value || '').trim();
-  let season = rawSeason;
-  if(/^\d{8}$/.test(rawSeason)){
-    season = `${rawSeason.slice(0,4)}/${rawSeason.slice(4,8)}`;
-  }
+  const season = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : String(seasonSelect?.value || '').trim();
   const period = String(document.getElementById('rapmPeriod')?.selectedOptions?.[0]?.textContent || document.getElementById('rapmPeriod')?.value || '').trim();
   const metric = String(document.getElementById('rapmMetric')?.selectedOptions?.[0]?.textContent || document.getElementById('rapmMetric')?.value || '').trim();
   const ratesTotals = String(document.getElementById('rapmRatesTotals')?.selectedOptions?.[0]?.textContent || document.getElementById('rapmRatesTotals')?.value || '').trim();
@@ -2484,7 +2484,7 @@ function updateRapmSlicerSummary(){
 }
 
 function projectionsEnabled(){
-  return String(seasonSelect?.value || '').trim() === '20252026';
+  return __isProjectionSeasonAllowed();
 }
 
 function cardEnabled(){
@@ -3006,7 +3006,7 @@ async function loadCardPanel(){
     return;
   }
 
-  const season = String(seasonSelect?.value || '').trim() || '20252026';
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value || '').trim() || '20252026';
   const scope = String(cardScope?.value || 'season');
   const seasonState = String(cardSeasonState?.value || 'regular');
   const strengthState = String(cardStrengthState?.value || '5v5');
@@ -3016,8 +3016,6 @@ async function loadCardPanel(){
   if(!Number.isFinite(minGP) || minGP < 0) minGP = 0;
   let minTOI = Number(String(cardMinToi?.value || '0'));
   if(!Number.isFinite(minTOI) || minTOI < 0) minTOI = 0;
-
-  cardPanelInner.textContent = 'Loading card...';
   try{
     const defs = await ensureCardDefs();
     const cfg = (__cardConfig = loadCardConfig(defs));
@@ -3044,7 +3042,7 @@ async function loadCardPanel(){
     if(String(rates) === 'PerGame' && metricIds.includes('Ice Time|TOI') && !metricIds.includes('Ice Time|GP')){
       metricIds.push('Ice Time|GP');
     }
-    if(__isProjectionMetricEnabledInConfig(cfg) && !metricIds.includes('Projection|Percentile')){
+    if(__isProjectionSeasonAllowed() && __isProjectionMetricEnabledInConfig(cfg) && !metricIds.includes('Projection|Percentile')){
       metricIds.push('Projection|Percentile');
     }
 
@@ -3314,7 +3312,7 @@ async function loadTablePanel(){
   if(__tableBusy) return;
 
   const team = String(teamSelect?.value||'').trim();
-  const season = String(seasonSelect?.value||'').trim() || '20252026';
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value||'').trim() || '20252026';
   const seasonState = String(cardSeasonState?.value||'regular');
   const strengthState = String(cardStrengthState?.value||'5v5');
   const rates = String(cardRates?.value||'Totals');
@@ -4157,6 +4155,98 @@ function pickCtxRow(rows, strength){
   return rows.find(x => String(x.StrengthState||'') === strength) || null;
 }
 
+function _aggregateRapmRowsBySelection(rows, ctxRows){
+  const srcRows = Array.isArray(rows) ? rows : [];
+  if(!srcRows.length) return [];
+  const minutesBySeasonStrength = new Map();
+  (Array.isArray(ctxRows) ? ctxRows : []).forEach((r)=>{
+    const season = String(r?.Season || '').trim();
+    const strength = String(r?.StrengthState || '').trim();
+    const mins = parseLocaleNumber(r?.Minutes);
+    if(!season || !strength || !Number.isFinite(mins) || mins <= 0) return;
+    minutesBySeasonStrength.set(`${season}|${strength}`, mins);
+  });
+
+  const groups = new Map();
+  for(const row of srcRows){
+    const strength = String(row?.StrengthState || '').trim();
+    const ratesTotals = String(row?.Rates_Totals || '').trim();
+    if(!strength || !ratesTotals) continue;
+    const season = String(row?.Season || '').trim();
+    const key = `${strength}|${normRatesTotals(ratesTotals)}`;
+    let g = groups.get(key);
+    if(!g){
+      g = { StrengthState: strength, Rates_Totals: ratesTotals, Season: '', __sum: {}, __w: {}, __n: {} };
+      groups.set(key, g);
+    }
+
+    const mins = Number(minutesBySeasonStrength.get(`${season}|${strength}`));
+    const rateWeight = Number.isFinite(mins) && mins > 0 ? mins : 1;
+    const isTotals = normRatesTotals(ratesTotals) === 'Totals';
+
+    Object.entries(row || {}).forEach(([k, raw])=>{
+      if(k === 'PlayerID' || k === 'Season' || k === 'StrengthState' || k === 'Rates_Totals') return;
+      const val = parseLocaleNumber(raw);
+      if(!Number.isFinite(val)) return;
+      const isZ = /_zscore$/i.test(k);
+      if(isTotals && !isZ){
+        g.__sum[k] = (g.__sum[k] || 0) + val;
+        g.__n[k] = (g.__n[k] || 0) + 1;
+      }else{
+        g.__sum[k] = (g.__sum[k] || 0) + (val * rateWeight);
+        g.__w[k] = (g.__w[k] || 0) + rateWeight;
+      }
+    });
+  }
+
+  return Array.from(groups.values()).map((g)=>{
+    const out = {
+      StrengthState: g.StrengthState,
+      Rates_Totals: g.Rates_Totals,
+      Season: 'aggregate',
+    };
+    const keys = new Set([...Object.keys(g.__sum || {}), ...Object.keys(g.__w || {}), ...Object.keys(g.__n || {})]);
+    keys.forEach((k)=>{
+      const sum = Number(g.__sum[k] || 0);
+      const w = Number(g.__w[k] || 0);
+      if(w > 0) out[k] = sum / w;
+      else out[k] = sum;
+    });
+    return out;
+  });
+}
+
+function _aggregateContextRowsBySelection(ctxRows){
+  const srcRows = Array.isArray(ctxRows) ? ctxRows : [];
+  if(!srcRows.length) return [];
+  const groups = new Map();
+  for(const row of srcRows){
+    const strength = String(row?.StrengthState || '').trim();
+    if(!strength) continue;
+    let g = groups.get(strength);
+    if(!g){
+      g = { StrengthState: strength, Minutes: 0, __sum: {} };
+      groups.set(strength, g);
+    }
+    const mins = parseLocaleNumber(row?.Minutes);
+    const w = Number.isFinite(mins) && mins > 0 ? mins : 0;
+    if(w > 0) g.Minutes += w;
+    ['QoT_blend_xG67_G33', 'QoC_blend_xG67_G33', 'ZS_Difficulty'].forEach((k)=>{
+      const v = parseLocaleNumber(row?.[k]);
+      if(!Number.isFinite(v)) return;
+      if(w > 0) g.__sum[k] = (g.__sum[k] || 0) + (v * w);
+    });
+  }
+  return Array.from(groups.values()).map((g)=>({
+    StrengthState: g.StrengthState,
+    Season: 'aggregate',
+    Minutes: g.Minutes,
+    QoT_blend_xG67_G33: g.Minutes > 0 ? (Number(g.__sum['QoT_blend_xG67_G33'] || 0) / g.Minutes) : null,
+    QoC_blend_xG67_G33: g.Minutes > 0 ? (Number(g.__sum['QoC_blend_xG67_G33'] || 0) / g.Minutes) : null,
+    ZS_Difficulty: g.Minutes > 0 ? (Number(g.__sum['ZS_Difficulty'] || 0) / g.Minutes) : null,
+  }));
+}
+
 function applyRAPMSelectTextColor(){
   if(!teamSelect) return;
   const c = getComputedStyle(teamSelect).color;
@@ -4506,7 +4596,7 @@ function renderRAPMUI(){
       return;
     }
 
-    const season = String(seasonSelect?.value || '');
+    const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value || '');
     const pid = String(playerSelect?.value || '');
     const scaleKey = `${season}|${opts.ratesTotals}|${opts.metric}|${pid}`;
     if(mode === 'value' || mode === 'pct'){
@@ -4908,7 +4998,7 @@ function fmtNum(x, digits=3){
 async function loadRAPMPanel(){
   if(!rapmPanelInner) return;
   const playerId = playerSelect?.value;
-  const season = seasonSelect?.value;
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || String(seasonSelect?.value || '').trim();
   if(!playerId){
     if(rapmSlicerSummary) rapmSlicerSummary.textContent = '';
     rapmPanelInner.textContent = 'Select a player to view RAPM.';
@@ -4929,6 +5019,18 @@ async function loadRAPMPanel(){
       const [rapmRes, ctxRes] = await Promise.all([fetch(rapmUrl), fetch(ctxUrl)]);
       __rapmCache = await rapmRes.json();
       __ctxCache = await ctxRes.json();
+
+      const seasonValues = String(season || '').split(',').map((v)=>String(v || '').trim()).filter((v)=>/^\d{8}$/.test(v));
+      if(seasonValues.length > 1){
+        __rapmCache = {
+          ...(__rapmCache || {}),
+          rows: _aggregateRapmRowsBySelection(__rapmCache?.rows, __ctxCache?.rows),
+        };
+        __ctxCache = {
+          ...(__ctxCache || {}),
+          rows: _aggregateContextRowsBySelection(__ctxCache?.rows),
+        };
+      }
     }
 
     renderRAPMUI();
@@ -5256,7 +5358,7 @@ async function loadGeoJson(){
 
 async function loadShootingPanel(){
   const team = teamSelect?.value;
-  const season = seasonSelect?.value;
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || seasonSelect?.value;
   const ss = cardSeasonState?.value || 'regular';
   const str = cardStrengthState?.value || '5v5';
   const xm = cardXgModel?.value || 'xG_F';
@@ -5264,7 +5366,9 @@ async function loadShootingPanel(){
   const key = `${team}|${season}|${ss}|${str}|${xm}|${pid}`;
 
   if(shootSlicerSummary){
-    const sn = season ? (season.slice(0,4)+'/'+season.slice(4)) : '';
+    const sn = (typeof window.formatSeasonSelectionLabel === 'function')
+      ? window.formatSeasonSelectionLabel()
+      : (season ? (season.slice(0,4)+'/'+season.slice(4)) : '');
     shootSlicerSummary.textContent = `${sn} – ${ss==='playoffs'?'Playoffs':ss==='all'?'All':'Regular'} – ${str} – ${xm.replace('_',' ')}`;
     shootSlicerSummary.style.fontStyle = 'italic';
   }
@@ -7632,6 +7736,8 @@ teamSelect?.addEventListener('change', async ()=>{
 });
 seasonSelect?.addEventListener('change', async ()=>{
   updateTabsVisibility();
+  __updateProjectionToggleBtn();
+  __renderProjectionKpi(__cardProjectionEnabled, __cardProjectionPct, __cardProjectionPositionGroup);
   await loadPlayers();
   await loadPlayerCard();
   updateCardSlicerSummary();

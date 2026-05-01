@@ -79,14 +79,30 @@ let currentFilteredGames = [];
 let monthMeta = []; // [{key, year, month, label}]
 let currentMonthIndex = 0;
 
+function getScheduleSelectedSeasons(){
+  const selected = (typeof window.getSelectedSeasonValues === 'function')
+    ? window.getSelectedSeasonValues()
+    : [String(seasonSelect?.value || '').trim()];
+  return selected.filter(season => /^\d{8}$/.test(season));
+}
+
 async function loadSchedule(){
   const team = teamSelect.value;
-  const season = String(seasonSelect.value||'').trim();
-  if(!team || !/^\d{8}$/.test(season)) return;
+  const seasons = getScheduleSelectedSeasons();
+  if(!team || !seasons.length) return;
   if(scheduleGridRoot) scheduleGridRoot.innerHTML = '<p>Loading schedule...</p>';
   if(scheduleTableRoot) scheduleTableRoot.innerHTML = '<p>Loading schedule...</p>';
-  const r = await fetch(`/api/schedule/${team}/${season}`);
-  let games = await r.json();
+  const payloads = await Promise.all(seasons.map(async (season)=>{
+    try{
+      const r = await fetch(`/api/schedule/${team}/${season}`);
+      if(!r.ok) return [];
+      const js = await r.json();
+      return Array.isArray(js) ? js : [];
+    }catch(_){
+      return [];
+    }
+  }));
+  let games = payloads.flat();
   console.debug('Raw schedule sample:', games.slice(0,3));
   // Exclude preseason (gameType 1)
   games = games.filter(g=> String(g.gameType) !== '1');
@@ -99,11 +115,11 @@ async function loadSchedule(){
   const state = seasonStateSelect.value; // '2' regular, '3' playoffs
   const want = state==='2' ? 'R' : (state==='3' ? 'P' : null);
   currentFilteredGames = want ? games.filter(g=>g.gameType===want) : games;
-  buildMonthMeta();
+  buildMonthMeta(seasons);
   renderCurrentMonth(team);
 }
 
-function buildMonthMeta(){
+function buildMonthMeta(selectedSeasons=[]){
   const set = new Set();
   monthMeta = [];
   currentFilteredGames.forEach(g=>{
@@ -114,11 +130,16 @@ function buildMonthMeta(){
     }
   });
   monthMeta.sort((a,b)=> a.year===b.year? a.month-b.month : a.year-b.year);
-  // Choose month containing today if present else first
-  const today = new Date();
-  const todayKey = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
-  const idx = monthMeta.findIndex(m=>m.key===todayKey);
-  currentMonthIndex = idx>=0? idx : 0;
+  const seasons = Array.isArray(selectedSeasons) ? selectedSeasons.filter(season => /^\d{8}$/.test(String(season || '').trim())) : [];
+  if(seasons.length > 1){
+    currentMonthIndex = 0;
+  }else{
+    // Choose month containing today if present else first
+    const today = new Date();
+    const todayKey = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
+    const idx = monthMeta.findIndex(m=>m.key===todayKey);
+    currentMonthIndex = idx>=0? idx : 0;
+  }
   buildMonthControls();
 }
 

@@ -57,7 +57,7 @@ const globalSeasonSelect = document.getElementById('seasonSelect');
 const globalTeamSelect = document.getElementById('teamSelect');
 const root = document.getElementById('standingsRoot');
 const viewModeSelect = document.getElementById('viewMode');
-const standingsCache = {}; // season -> data
+const standingsCache = {}; // season selection key -> data
 let sortKey = localStorage.getItem('standingsSortKey') || 'points';
 let sortDir = localStorage.getItem('standingsSortDir') || 'desc';
 // Era flags
@@ -65,15 +65,43 @@ let hasTies = false;
 let hasOTL = false;
 // Removed playoff separator concept; sorting makes separator unnecessary
 const storedViewMode = localStorage.getItem('standingsViewMode');
+let __standingsUserViewMode = storedViewMode || String(viewModeSelect?.value || 'division');
 if(storedViewMode){
   const opt = [...viewModeSelect.options].find(o=> o.value===storedViewMode);
   if(opt) viewModeSelect.value = storedViewMode;
 }
 const FALLBACK_LOGO = 'https://www-league.nhlstatic.com/images/logos/league-dark/133-flat.svg';
 
+function getSelectedStandingsSeasons(){
+  const selected = (typeof window.getSelectedSeasonValues === 'function')
+    ? window.getSelectedSeasonValues()
+    : [String(globalSeasonSelect?.value || '').trim()];
+  return selected.filter(season => /^\d{8}$/.test(season));
+}
+
+function getStandingsCacheKey(seasons){
+  return (Array.isArray(seasons) ? seasons.slice() : []).sort((a,b)=> Number(b) - Number(a)).join(',');
+}
+
+function isMultiSeasonStandings(){
+  return getSelectedStandingsSeasons().length > 1;
+}
+
+function updateViewModeAvailability(){
+  const multi = isMultiSeasonStandings();
+  Array.from(viewModeSelect.options || []).forEach(opt => {
+    opt.disabled = multi && opt.value !== 'league';
+  });
+  if(multi){
+    viewModeSelect.value = 'league';
+  }else if(__standingsUserViewMode && [...viewModeSelect.options].some(opt => opt.value === __standingsUserViewMode)){
+    viewModeSelect.value = __standingsUserViewMode;
+  }
+}
+
 function groupData(data){
   const mode = viewModeSelect.value;
-  if(mode==='league'){
+  if(mode==='league' || isMultiSeasonStandings()){
     return [['League', sortRows([...data])]];
   }
   if(mode==='conference'){
@@ -127,6 +155,7 @@ function renderTables(data){
   const groups = groupData(data);
   if(sortKey==='otl' && !hasOTL) sortKey='points';
   if(sortKey==='ties' && !hasTies) sortKey='points';
+  if(isMultiSeasonStandings() && (sortKey === 'l10' || sortKey === 'streak')) sortKey='points';
   root.innerHTML = groups.map(([label, rows])=> buildTable(label, rows, data)).join('');
   attachSortHandlers();
 }
@@ -142,6 +171,7 @@ function buildTable(label, rows, all){
 }
 
 function getColumns(){
+  const multi = isMultiSeasonStandings();
   const cols = [
     {key:'rank', label:'#'},
     {key:'team', label:'Team'},
@@ -156,15 +186,63 @@ function getColumns(){
     {key:'gf', label:'GF'},
     {key:'ga', label:'GA'},
     {key:'diff', label:'Diff'},
-    {key:'ppct', label:'P%'},
-    {key:'l10', label:'L10'},
-    {key:'streak', label:'Strk'}
+    {key:'ppct', label:'P%'}
   );
+  if(!multi){
+    cols.push({key:'l10', label:'L10'}, {key:'streak', label:'Strk'});
+  }
   return cols;
 }
 
 function getTeamAbbrev(r){
   return (r.teamAbbrev && typeof r.teamAbbrev === 'object') ? r.teamAbbrev.default : (r.teamAbbrev || (r.teamName && r.teamName.default) || '');
+}
+
+function aggregateStandingsRows(rows){
+  const byTeam = new Map();
+  const asNum = (value)=>{
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+  };
+  (rows || []).forEach(row => {
+    const abbrev = getTeamAbbrev(row);
+    if(!abbrev) return;
+    let agg = byTeam.get(abbrev);
+    if(!agg){
+      agg = {
+        ...row,
+        gamesPlayed: 0,
+        points: 0,
+        wins: 0,
+        losses: 0,
+        ties: 0,
+        otLosses: 0,
+        goalFor: 0,
+        goalAgainst: 0,
+        goalDifferential: 0,
+        pointPctg: 0,
+        l10Wins: 0,
+        l10Losses: 0,
+        l10OtLosses: 0,
+        streakCode: '',
+        streakCount: 0,
+      };
+      byTeam.set(abbrev, agg);
+    }
+    agg.gamesPlayed += asNum(row.gamesPlayed);
+    agg.points += asNum(row.points);
+    agg.wins += asNum(row.wins);
+    agg.losses += asNum(row.losses);
+    agg.ties += asNum(row.ties);
+    agg.otLosses += asNum(row.otLosses);
+    agg.goalFor += asNum(row.goalFor);
+    agg.goalAgainst += asNum(row.goalAgainst);
+  });
+  return Array.from(byTeam.values()).map(row => {
+    row.goalDifferential = asNum(row.goalFor) - asNum(row.goalAgainst);
+    row.pointPctg = row.gamesPlayed > 0 ? (asNum(row.points) / (2 * asNum(row.gamesPlayed))) : 0;
+    return row;
+  });
 }
 
 function headerCell(label,key){
@@ -207,32 +285,42 @@ function renderRow(r,i, selectedTeam, columns){
 }
 
 async function loadStandings(force=false){
-  const season = globalSeasonSelect.value;
-  if(!/^\d{8}$/.test(season)) { return waitForSeasonThenLoad(); }
-  if(!force && standingsCache[season]){ renderTables(standingsCache[season]); return; }
+  const seasons = getSelectedStandingsSeasons();
+  if(!seasons.length) { return waitForSeasonThenLoad(); }
+  updateViewModeAvailability();
+  const cacheKey = getStandingsCacheKey(seasons);
+  if(!force && standingsCache[cacheKey]){ deriveEraFlags(standingsCache[cacheKey]); renderTables(standingsCache[cacheKey]); return; }
   root.innerHTML = '<div class="loader">Loading standings...</div>';
   try {
-    const r = await fetch(`/api/standings/${season}`);
-    const data = await r.json();
-    if(data.error){ root.innerHTML = '<p>Error loading standings.</p>'; return; }
-    standingsCache[season] = data.standings || [];
-    if(!standingsCache[season].length){
-      root.innerHTML = '<p style="opacity:.7;">Historical standings not available for this season.</p>';
+    const payloads = await Promise.all(seasons.map(async season => {
+      try{
+        const r = await fetch(`/api/standings/${season}`);
+        const data = await r.json();
+        if(!r.ok || data?.error) return [];
+        return Array.isArray(data?.standings) ? data.standings : [];
+      }catch(_){
+        return [];
+      }
+    }));
+    const rows = seasons.length > 1 ? aggregateStandingsRows(payloads.flat()) : (payloads[0] || []);
+    standingsCache[cacheKey] = rows;
+    if(!rows.length){
+      root.innerHTML = `<p style="opacity:.7;">Historical standings not available for ${seasons.length > 1 ? 'the selected seasons' : 'this season'}.</p>`;
       return;
     }
-    deriveEraFlags(season, standingsCache[season]);
-    renderTables(standingsCache[season]);
+    deriveEraFlags(rows);
+    renderTables(rows);
   } catch(e){ root.innerHTML='<p>Error loading standings.</p>'; }
 }
 
-function deriveEraFlags(season, rows){
+function deriveEraFlags(rows){
   hasTies = rows.some(r=> (r.ties||0) > 0);
   hasOTL = rows.some(r=> (r.otLosses||0) > 0);
 }
 
 function waitForSeasonThenLoad(attempt=0){
   if(attempt>20) return; // give up after ~3s
-  if(/^\d{8}$/.test(globalSeasonSelect.value)) return loadStandings();
+  if(getSelectedStandingsSeasons().length) return loadStandings();
   setTimeout(()=> waitForSeasonThenLoad(attempt+1),150);
 }
 
@@ -245,18 +333,22 @@ function attachSortHandlers(){
   localStorage.setItem('standingsSortKey', sortKey);
   localStorage.setItem('standingsSortDir', sortDir);
       // Re-render using cached current season data
-      if(standingsCache[globalSeasonSelect.value]) renderTables(standingsCache[globalSeasonSelect.value]);
+      const cacheKey = getStandingsCacheKey(getSelectedStandingsSeasons());
+      if(standingsCache[cacheKey]) renderTables(standingsCache[cacheKey]);
     };
   });
 }
 // Sync with global filters
-globalSeasonSelect.addEventListener('change', ()=> loadStandings(true));
+globalSeasonSelect.addEventListener('change', ()=>{ updateViewModeAvailability(); loadStandings(true); });
 globalTeamSelect.addEventListener('change', ()=>{ /* team selection doesn't filter standings yet, but keeps theme synced */ });
 viewModeSelect.addEventListener('change', ()=>{ 
-  localStorage.setItem('standingsViewMode', viewModeSelect.value);
-  const season = globalSeasonSelect.value;
-  if(standingsCache[season]){ deriveEraFlags(season, standingsCache[season]); renderTables(standingsCache[season]); }
+  if(!isMultiSeasonStandings()){
+    __standingsUserViewMode = viewModeSelect.value;
+    localStorage.setItem('standingsViewMode', viewModeSelect.value);
+  }
+  const cacheKey = getStandingsCacheKey(getSelectedStandingsSeasons());
+  if(standingsCache[cacheKey]){ deriveEraFlags(standingsCache[cacheKey]); renderTables(standingsCache[cacheKey]); }
 });
-document.addEventListener('DOMContentLoaded', ()=> waitForSeasonThenLoad());
+document.addEventListener('DOMContentLoaded', ()=>{ updateViewModeAvailability(); waitForSeasonThenLoad(); });
 </script>
 {% endblock %}
