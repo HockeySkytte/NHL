@@ -11,7 +11,7 @@
   <meta name="description" content="{{ _meta_description }}" />
   <link rel="canonical" href="{{ _meta_url }}" />
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="NHL Analytics" />
+  <meta property="og:site_name" content="Hockey-Statistics NHL Analytics" />
   <meta property="og:title" content="{{ _meta_title }}" />
   <meta property="og:description" content="{{ _meta_description }}" />
   <meta property="og:url" content="{{ _meta_url }}" />
@@ -22,6 +22,26 @@
   <meta name="twitter:title" content="{{ _meta_title }}" />
   <meta name="twitter:description" content="{{ _meta_description }}" />
   <meta name="twitter:image" content="{{ _meta_image }}" />
+  <meta name="robots" content="index, follow" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Hockey-Statistics NHL Analytics",
+    "url": "{{ request.url_root.rstrip('/') }}",
+    "description": "Advanced NHL hockey analytics: live scores, xG, standings, skater and goalie stats, line combinations, and game projections.",
+    "publisher": {
+      "@type": "Organization",
+      "name": "Hockey-Statistics",
+      "url": "https://hockey-statistics.com"
+    },
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "{{ request.url_root.rstrip('/') }}/skaters?q={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
+  }
+  </script>
   <link rel="icon" type="image/png" href="/favicon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

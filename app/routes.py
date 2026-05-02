@@ -1276,10 +1276,11 @@ def _deny_premium_access(auth_user: Optional[Dict[str, Any]]) -> Any:
 
 @main_bp.app_context_processor
 def inject_auth_state() -> Dict[str, Any]:
-    social_default_title = 'NHL Analytics'
-    social_default_description = 'Live games, standings, projections, and deeper NHL analytics.'
+    social_default_title = 'NHL Analytics · Hockey-Statistics'
+    social_default_description = 'Advanced NHL analytics: live games, standings, skater and goalie stats, xG heat maps, line combinations, and game projections — all powered by Hockey-Statistics.'
     social_default_image = url_for('static', filename='social-preview.png', _external=True)
-    social_default_url = request.url
+    # Canonical URL: scheme + host + path, no query params
+    social_default_url = request.url_root.rstrip('/') + request.path
     return {
         'auth_enabled': _auth_enabled(),
         'auth_user': _current_auth_user(),
@@ -2170,22 +2171,79 @@ def _disk_cache_path_shifts(game_id: int) -> str:
     except Exception:
         pass
     return os.path.join(d, f'shifts_{int(game_id)}.json')
+_SITEMAP_STATIC_PAGES = [
+    ('/', 'weekly', '1.0'),
+    ('/schedule', 'daily', '0.9'),
+    ('/live', 'always', '0.9'),
+    ('/standings', 'daily', '0.8'),
+    ('/projections', 'daily', '0.9'),
+    ('/skaters', 'weekly', '0.8'),
+    ('/goalies', 'weekly', '0.8'),
+    ('/line-tool', 'weekly', '0.8'),
+    ('/teams', 'weekly', '0.8'),
+    ('/about', 'monthly', '0.5'),
+]
+
+
+@main_bp.route('/robots.txt')
+def robots_txt():
+    """Serve robots.txt allowing all crawlers and pointing to the sitemap."""
+    base = request.url_root.rstrip('/')
+    content = (
+        'User-agent: *\n'
+        'Allow: /\n'
+        'Disallow: /admin/\n'
+        'Disallow: /api/\n'
+        'Disallow: /account\n'
+        'Disallow: /login\n'
+        'Disallow: /signup\n'
+        'Disallow: /logout\n'
+        'Disallow: /stripe/\n'
+        f'\nSitemap: {base}/sitemap.xml\n'
+    )
+    return current_app.response_class(content, mimetype='text/plain')
+
+
+@main_bp.route('/sitemap.xml')
+def sitemap_xml():
+    """Generate XML sitemap for all public static pages."""
+    from xml.etree.ElementTree import Element, SubElement, tostring  # stdlib, no external deps
+    base = request.url_root.rstrip('/')
+    urlset = Element('urlset', xmlns='http://www.sitemaps.org/schemas/sitemap/0.9')
+    for path, changefreq, priority in _SITEMAP_STATIC_PAGES:
+        url_el = SubElement(urlset, 'url')
+        SubElement(url_el, 'loc').text = base + path
+        SubElement(url_el, 'changefreq').text = changefreq
+        SubElement(url_el, 'priority').text = priority
+    xml_bytes = tostring(urlset, encoding='unicode', xml_declaration=False)
+    return current_app.response_class(
+        '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes,
+        mimetype='application/xml',
+    )
+
+
 @main_bp.route('/')
 def index_page():
     """Landing page."""
-    return render_template('home.html', teams=TEAM_ROWS, active_tab='Home')
+    return render_template('home.html', teams=TEAM_ROWS, active_tab='Home',
+        meta_title='NHL Analytics · Hockey-Statistics',
+        meta_description='Advanced NHL hockey analytics powered by Hockey-Statistics. Explore xG stats, skater and goalie performance, live scores, standings, and game projections.')
 
 
 @main_bp.route('/schedule')
 def schedule_page():
     """Schedule view."""
-    return render_template('index.html', teams=TEAM_ROWS, active_tab='Schedule', show_season_state=True)
+    return render_template('index.html', teams=TEAM_ROWS, active_tab='Schedule', show_season_state=True,
+        meta_title='NHL Schedule & Game Results · Hockey-Statistics',
+        meta_description='Browse the full NHL schedule with game results, scores, and play-by-play stats for every game.')
 
 
 @main_bp.route('/live')
 def live_games_page():
     """Live Games page."""
-    return render_template('live.html', teams=TEAM_ROWS, active_tab='Live Games', show_season_state=False)
+    return render_template('live.html', teams=TEAM_ROWS, active_tab='Live Games', show_season_state=False,
+        meta_title='NHL Live Games · Hockey-Statistics',
+        meta_description='Live NHL game scores, real-time expected goals (xG), shot counts, and in-game analytics — updated continuously.')
 
 
 @main_bp.route('/standings')
@@ -2203,7 +2261,9 @@ def standings_page():
         seasons = []
     # Convert to list of objects for template parity
     season_objs = [{ 'season': s } for s in seasons]
-    return render_template('standings.html', teams=TEAM_ROWS, seasons=season_objs, active_tab='Standings', show_season_state=False)
+    return render_template('standings.html', teams=TEAM_ROWS, seasons=season_objs, active_tab='Standings', show_season_state=False,
+        meta_title='NHL Standings · Hockey-Statistics',
+        meta_description='Current and historical NHL standings with advanced metrics. Compare teams by xGF%, CF%, and PDO across regular season and playoffs.')
 
 
 @main_bp.route('/login', methods=['GET', 'POST'])
@@ -2843,7 +2903,9 @@ def stripe_webhook_page():
 @main_bp.route('/projections')
 def game_projections_page():
     """Game Projections page showing today's games by Eastern Time, with toggle to yesterday."""
-    return render_template('projections.html', teams=TEAM_ROWS, active_tab='Game Projections', show_season_state=False)
+    return render_template('projections.html', teams=TEAM_ROWS, active_tab='Game Projections', show_season_state=False,
+        meta_title='NHL Game Projections · Hockey-Statistics',
+        meta_description="Model-based NHL game projections with win probabilities, projected goals, and matchup analytics for today's games.")
 
 
 @main_bp.route('/donation')
@@ -2860,6 +2922,8 @@ def skaters_page():
         active_tab='Skaters',
         show_season_state=False,
         show_include_historic=False,
+        meta_title='NHL Skater Stats & xG · Hockey-Statistics',
+        meta_description='In-depth NHL skater statistics including goals, assists, xG, Corsi, Fenwick, and zone entry data. Filter by team, season, and strength state.',
     )
 
 
@@ -2872,6 +2936,8 @@ def goalies_page():
         active_tab='Goalies',
         show_season_state=False,
         show_include_historic=False,
+        meta_title='NHL Goalie Stats & GSAx · Hockey-Statistics',
+        meta_description='Advanced NHL goalie statistics: GSAx, xGA, save percentages by shot type, and zone-level shot-against heat maps. Compare goalies across seasons.',
     )
 
 
@@ -2884,6 +2950,8 @@ def line_tool_page():
         active_tab='Line Tool',
         show_season_state=False,
         show_include_historic=False,
+        meta_title='NHL Line Combinations & On-Ice Stats · Hockey-Statistics',
+        meta_description='Explore NHL forward line combinations and defense pairings with on-ice xG, Corsi, and zone heat maps. Supports WOWY analysis and multi-season views.',
     )
 
 
@@ -4297,6 +4365,8 @@ def teams_page():
         active_tab='Teams',
         show_season_state=False,
         show_include_historic=True,
+        meta_title='NHL Team Stats · Hockey-Statistics',
+        meta_description='NHL team analytics: xGF%, Corsi, Fenwick, zone starts, on-ice shooting percentage, and goalie performance. Compare all 32 teams across seasons.',
     )
 
 
@@ -5021,6 +5091,8 @@ def about_page_slug(section_slug: str):
         about_section_title=section_title,
         about_segments=segments,
         about_is_glossary=is_glossary,
+        meta_title=f'{section_title} · About · Hockey-Statistics',
+        meta_description='Learn about the metrics and models behind Hockey-Statistics NHL analytics — xG, RAPM, GSAx, Corsi, Fenwick, and more.',
     )
 
 
