@@ -104,7 +104,7 @@ _AUTH_PREMIUM_PAGE_PREFIXES = (
 _AUTH_PREMIUM_API_PREFIXES = (
     '/api/projections/',
 )
-_CARD_BUILDER_CARD_TYPES = {'skater', 'goalie', 'team'}
+_CARD_BUILDER_CARD_TYPES = {'skater', 'goalie', 'team', 'gm_mode'}
 
 
 def _auth_enabled() -> bool:
@@ -2955,6 +2955,24 @@ def line_tool_page():
     )
 
 
+@main_bp.route('/gm-mode')
+def gm_mode_page():
+    """Admin-only GM Mode page for lineup management workflows."""
+    guard = _require_admin_page()
+    if guard is not None:
+        return guard
+    return render_template(
+        'gm_mode.html',
+        teams=TEAM_ROWS,
+        active_tab='GM Mode',
+        show_season_state=False,
+        show_include_historic=False,
+        show_season_slicer=False,
+        meta_title='GM Mode · Hockey-Statistics',
+        meta_description='Admin GM Mode for viewing Daily Faceoff lines, defensive pairings, and goalie depth chart by team.',
+    )
+
+
 @main_bp.route('/api/line-tool/players')
 def api_line_tool_players():
     """Return all players (skaters + goalies) for a team/season from the players table."""
@@ -5211,7 +5229,23 @@ def api_player_current_projections():
     to the legacy player projections source when the current table is unavailable.
     """
     data = _load_current_player_projections_cached()
-    out = {str(k): v for k, v in data.items()}
+    roster_map = _load_all_rosters_cached() or {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for k, row in (data or {}).items():
+        try:
+            pid_i = _safe_int((row or {}).get('player_id') or (row or {}).get('playerId') or k)
+            base = dict(row or {})
+            info = roster_map.get(int(pid_i)) if pid_i and pid_i > 0 else {}
+            if info:
+                if not str(base.get('name') or base.get('player') or '').strip():
+                    base['name'] = str(info.get('name') or '').strip()
+                if not str(base.get('team') or base.get('Team') or '').strip():
+                    base['team'] = str(info.get('team') or '').strip().upper()
+                if not str(base.get('position') or base.get('Position') or '').strip():
+                    base['position'] = str(info.get('position') or '').strip().upper()
+            out[str(k)] = base
+        except Exception:
+            out[str(k)] = dict(row or {})
     j = jsonify(out)
     try:
         j.headers['Cache-Control'] = 'no-store'
@@ -5936,6 +5970,505 @@ def api_projections_games():
         pass
 
     return jsonify({ 'date': date_str, 'timezone': 'ET', 'games': out })
+
+
+_CLUB_SCHEDULE_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+_CUSTOM_LINEUPS_CACHE: Dict[Tuple[str, int], Tuple[float, Dict[str, List[Dict[str, Any]]]]] = {}
+
+
+def _fetch_club_schedule_games(team_abbrev: str, season: int) -> List[Dict[str, Any]]:
+    team = str(team_abbrev or '').strip().upper()
+    try:
+        season_i = int(season)
+    except Exception:
+        season_i = 20252026
+    if not team:
+        return []
+
+    cache_key = f'{team}:{season_i}'
+    now = time.time()
+    try:
+        ttl_s = max(300, int(os.getenv('CLUB_SCHEDULE_CACHE_TTL_SECONDS', '21600') or '21600'))
+    except Exception:
+        ttl_s = 21600
+    cached = _CLUB_SCHEDULE_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
+    url = f'https://api-web.nhle.com/v1/club-schedule-season/{team}/{season_i}'
+    try:
+        r = requests.get(url, timeout=25)
+        if r.status_code != 200:
+            _CLUB_SCHEDULE_CACHE[cache_key] = (now, [])
+            return []
+        js = r.json() or {}
+    except Exception:
+        _CLUB_SCHEDULE_CACHE[cache_key] = (now, [])
+        return []
+
+    out: List[Dict[str, Any]] = []
+    games = js.get('games') if isinstance(js, dict) else []
+    if not isinstance(games, list):
+        games = []
+    for g in games:
+        if not isinstance(g, dict):
+            continue
+        away_obj = g.get('awayTeam') if isinstance(g.get('awayTeam'), dict) else {}
+        home_obj = g.get('homeTeam') if isinstance(g.get('homeTeam'), dict) else {}
+        away_abbrev = str(away_obj.get('abbrev') or '').strip().upper()
+        home_abbrev = str(home_obj.get('abbrev') or '').strip().upper()
+        game_type_raw = g.get('gameType')
+        try:
+            game_type = int(str(game_type_raw).strip())
+        except Exception:
+            game_type = 0
+        date_raw = str(g.get('gameDate') or g.get('startTimeUTC') or '').strip()
+        date_iso = date_raw[:10] if len(date_raw) >= 10 else ''
+        if not away_abbrev or not home_abbrev or not date_iso:
+            continue
+        out.append({
+            'id': g.get('id') or g.get('gamePk') or g.get('gameId'),
+            'gameType': game_type,
+            'date': date_iso,
+            'away': away_abbrev,
+            'home': home_abbrev,
+        })
+
+    out.sort(key=lambda x: (str(x.get('date') or ''), int(x.get('id') or 0) if str(x.get('id') or '').isdigit() else 0))
+    _CLUB_SCHEDULE_CACHE[cache_key] = (now, out)
+    return out
+
+
+def _is_team_b2b_on_date(games: List[Dict[str, Any]], date_iso: str) -> bool:
+    if not games or not date_iso:
+        return False
+    try:
+        d = datetime.fromisoformat(str(date_iso)[:10]).date()
+        prev = (d - timedelta(days=1)).isoformat()
+    except Exception:
+        return False
+    for g in games:
+        if str(g.get('date') or '') == prev:
+            return True
+    return False
+
+
+def _projection_cache_actor_key() -> str:
+    """Return a stable per-user cache key for custom GM lineups."""
+    try:
+        auth_user = session.get(_AUTH_SESSION_KEY)
+        if isinstance(auth_user, dict):
+            user_id = str(auth_user.get('user_id') or auth_user.get('id') or '').strip()
+            if user_id:
+                return f'user:{user_id}'
+            email = str(auth_user.get('email') or '').strip().lower()
+            if email:
+                return f'email:{email}'
+    except Exception:
+        pass
+
+    # Anonymous/session-scoped fallback.
+    try:
+        anon_key = str(session.get('gm_projection_cache_key') or '').strip()
+        if not anon_key:
+            anon_key = secrets.token_hex(16)
+            session['gm_projection_cache_key'] = anon_key
+        return f'anon:{anon_key}'
+    except Exception:
+        # Last-resort fallback.
+        remote = str(request.remote_addr or 'unknown').strip()
+        return f'ip:{remote}'
+
+
+def _normalize_custom_lineup_entries(raw_lineup: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw_lineup, list):
+        return out
+    for entry in raw_lineup:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            pid = int(entry.get('pid') or 0)
+        except Exception:
+            pid = 0
+        pos = str(entry.get('pos') or 'F').strip().upper()[:1]
+        if pos not in {'F', 'D', 'G'}:
+            pos = 'F'
+        if pid <= 0:
+            continue
+        out.append({'pid': int(pid), 'pos': pos})
+    return out
+
+
+def _normalize_custom_lineups_by_team(raw_map: Any) -> Dict[str, List[Dict[str, Any]]]:
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    if not isinstance(raw_map, dict):
+        return out
+    for team_raw, lineup_raw in raw_map.items():
+        team = str(team_raw or '').strip().upper()
+        if not team:
+            continue
+        out[team] = _normalize_custom_lineup_entries(lineup_raw)
+    return out
+
+
+def _custom_lineups_cache_get(season: int) -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        ttl_s = max(60, int(os.getenv('CUSTOM_LINEUPS_CACHE_TTL_SECONDS', '43200') or '43200'))
+    except Exception:
+        ttl_s = 43200
+    key = (_projection_cache_actor_key(), int(season))
+    cached = _cache_get(_CUSTOM_LINEUPS_CACHE, key, ttl_s)
+    if isinstance(cached, dict):
+        return _normalize_custom_lineups_by_team(cached)
+    return {}
+
+
+def _custom_lineups_cache_set(season: int, lineups_by_team: Dict[str, List[Dict[str, Any]]]) -> None:
+    try:
+        ttl_s = max(60, int(os.getenv('CUSTOM_LINEUPS_CACHE_TTL_SECONDS', '43200') or '43200'))
+    except Exception:
+        ttl_s = 43200
+    try:
+        max_items = max(8, int(os.getenv('CUSTOM_LINEUPS_CACHE_MAX_ITEMS', '1024') or '1024'))
+    except Exception:
+        max_items = 1024
+    key = (_projection_cache_actor_key(), int(season))
+    safe_map = _normalize_custom_lineups_by_team(lineups_by_team)
+    _cache_set_multi_bounded(_CUSTOM_LINEUPS_CACHE, key, safe_map, ttl_s=ttl_s, max_items=max_items)
+
+
+def _team_proj_from_custom_lineup_entries(lineup_entries: List[Dict[str, Any]], proj_map: Dict[int, Dict[str, Any]]) -> float:
+    total = 0.0
+    for entry in (lineup_entries or []):
+        if not isinstance(entry, dict):
+            continue
+        try:
+            pid = int(entry.get('pid') or 0)
+        except Exception:
+            pid = 0
+        pos = str(entry.get('pos') or 'F').strip().upper()[:1]
+        if pos not in ('F', 'D', 'G'):
+            pos = 'F'
+        if pid > 0 and pid in proj_map:
+            total += _proj_value_for_player(proj_map.get(pid))
+        else:
+            total += _ROOKIE_FALLBACK.get(pos, _ROOKIE_FALLBACK['F'])
+    return float(total)
+
+
+def _all_team_abbrevs() -> List[str]:
+    vals = {
+        str(r.get('Team') or '').strip().upper()
+        for r in (TEAM_ROWS or [])
+        if str(r.get('Team') or '').strip()
+    }
+    return sorted([v for v in vals if v])
+
+
+def _team_proj_map_for_season(
+    season: int,
+    lineups_all: Dict[str, Any],
+    proj_map: Dict[int, Dict[str, Any]],
+    custom_lineups_by_team: Dict[str, List[Dict[str, Any]]],
+) -> Dict[str, float]:
+    out: Dict[str, float] = {}
+    for team in _all_team_abbrevs():
+        custom = custom_lineups_by_team.get(team)
+        if isinstance(custom, list):
+            out[team] = _team_proj_from_custom_lineup_entries(custom, proj_map)
+        else:
+            out[team] = _team_proj_from_lineup(team, lineups_all, proj_map)
+    return out
+
+
+def _projected_points_for_team(team: str, season: int, team_proj_map: Dict[str, float]) -> Tuple[float, int]:
+    team_games_all = _fetch_club_schedule_games(team, season)
+    team_games = [g for g in team_games_all if int(g.get('gameType') or 0) == 2]
+    if not team_games:
+        return 0.0, 0
+
+    projected_points = 0.0
+    usable_games = 0
+
+    for g in team_games:
+        away = str(g.get('away') or '').strip().upper()
+        home = str(g.get('home') or '').strip().upper()
+        date_iso = str(g.get('date') or '').strip()
+        if not away or not home or not date_iso:
+            continue
+        if away != team and home != team:
+            continue
+
+        opp = home if away == team else away
+        team_proj = float(team_proj_map.get(team) or 0.0)
+        opp_proj = float(team_proj_map.get(opp) or 0.0)
+
+        # Simplicity rule for GM card: use team B2B from its own schedule,
+        # and assume opponent is rested for this aggregate projection.
+        team_is_b2b = _is_team_b2b_on_date(team_games, date_iso)
+        if away == team:
+            a_b2b = bool(team_is_b2b)
+            h_b2b = False
+        else:
+            a_b2b = False
+            h_b2b = bool(team_is_b2b)
+
+        if a_b2b and h_b2b:
+            situation = -0.126602018
+        elif a_b2b and not h_b2b:
+            situation = -0.400515738
+        elif (not a_b2b) and h_b2b:
+            situation = 0.174538991
+        else:
+            situation = -0.153396566
+
+        proj_away = team_proj if away == team else opp_proj
+        proj_home = team_proj if home == team else opp_proj
+        dproj = proj_away - proj_home
+        try:
+            win_away = 1.0 / (1.0 + math.exp(-dproj - situation))
+        except Exception:
+            continue
+        win_team = float(win_away) if away == team else float(1.0 - win_away)
+        game_points = min(2.0, max(0.0, win_team * 2.24))
+        projected_points += game_points
+        usable_games += 1
+
+    return float(projected_points), int(usable_games)
+
+
+@main_bp.route('/api/projections/team-season-points')
+def api_projections_team_season_points():
+    """Projected regular-season points for a team based on game win probabilities.
+
+    Uses projected points per game = min(2.0, winProb * 2.24), then sums across regular-season games.
+    Query params:
+      - team: required NHL team abbrev
+      - season: optional season id, default 20252026
+    """
+    team = str(request.args.get('team') or '').strip().upper()
+    season_raw = request.args.get('season', '20252026')
+    try:
+        season = int(str(season_raw).strip())
+    except Exception:
+        season = 20252026
+
+    if not team:
+        return jsonify({'error': 'team_required'}), 400
+
+    lineups_all = _load_lineups_all()
+    proj_map = _load_current_player_projections_cached()
+    custom_lineups = _custom_lineups_cache_get(season)
+    team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
+    projected_points, usable_games = _projected_points_for_team(team, season, team_proj_map)
+
+    return jsonify({
+        'team': team,
+        'season': season,
+        'games': int(usable_games),
+        'projectedPoints': round(float(projected_points), 3),
+    })
+
+
+@main_bp.route('/api/projections/team-season-points-custom', methods=['POST'])
+def api_projections_team_season_points_custom():
+    """Projected regular-season points for a team using a *custom* lineup supplied by the client.
+
+    POST body JSON:
+      {
+        "team": "BOS",
+        "season": 20252026,           // optional, default 20252026
+        "lineup": [                   // list of players in the custom lineup
+          {"pid": 8478402, "pos": "F"},
+          ...
+        ]
+      }
+
+    Runs the same per-game logistic win-probability model as /api/projections/team-season-points
+    but derives the team proj score from the caller-supplied PIDs instead of the live lineup file.
+    """
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        body = {}
+
+    team = str(body.get('team') or '').strip().upper()
+    if not team:
+        return jsonify({'error': 'team_required'}), 400
+
+    season_raw = body.get('season', 20252026)
+    try:
+        season = int(season_raw)
+    except Exception:
+        season = 20252026
+
+    lineup_raw = body.get('lineup') or []
+    if not isinstance(lineup_raw, list):
+        return jsonify({'error': 'lineup_must_be_array'}), 400
+
+    # Persist the modified team lineup in the per-user cache.
+    custom_lineups = _custom_lineups_cache_get(season)
+    custom_lineups[team] = _normalize_custom_lineup_entries(lineup_raw)
+    _custom_lineups_cache_set(season, custom_lineups)
+
+    lineups_all = _load_lineups_all()
+    proj_map = _load_current_player_projections_cached()
+    team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
+    projected_points, usable_games = _projected_points_for_team(team, season, team_proj_map)
+
+    return jsonify({
+        'team': team,
+        'season': season,
+        'games': int(usable_games),
+        'projectedPoints': round(float(projected_points), 3),
+    })
+
+
+@main_bp.route('/api/projections/all-teams-custom', methods=['POST'])
+def api_projections_all_teams_custom():
+    """Projected regular-season points for ALL teams using cached custom lineups.
+
+    POST body JSON:
+      {
+        "team": "BOS",
+        "season": 20252026,           // optional, default 20252026
+        "lineup": [                   // custom lineup for the specified team
+          {"pid": 8478402, "pos": "F"},
+          ...
+        ]
+      }
+
+        Behavior:
+            - Updates custom-lineup cache from payload (single team and/or bulk lineupsByTeam)
+            - Computes projected points for all teams using cached custom lineups when present
+            - Falls back to live lineups for teams without custom cached lineups
+    """
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        body = {}
+
+    team = str(body.get('team') or '').strip().upper()
+
+    season_raw = body.get('season', 20252026)
+    try:
+        season = int(season_raw)
+    except Exception:
+        season = 20252026
+
+    lineup_raw = body.get('lineup') or []
+    if lineup_raw and not isinstance(lineup_raw, list):
+        return jsonify({'error': 'lineup_must_be_array'}), 400
+
+    custom_lineups = _custom_lineups_cache_get(season)
+
+    # Optional bulk replace from loaded GM config.
+    if isinstance(body.get('lineupsByTeam'), dict):
+        custom_lineups = _normalize_custom_lineups_by_team(body.get('lineupsByTeam'))
+
+    # Optional single-team upsert.
+    if team and isinstance(lineup_raw, list):
+        custom_lineups[team] = _normalize_custom_lineup_entries(lineup_raw)
+
+    _custom_lineups_cache_set(season, custom_lineups)
+
+    lineups_all = _load_lineups_all()
+    proj_map = _load_current_player_projections_cached()
+    team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
+
+    all_teams_points: Dict[str, float] = {}
+    all_teams_games: Dict[str, int] = {}
+    all_team_abbrevs = _all_team_abbrevs()
+    if not all_team_abbrevs:
+        return jsonify({'error': 'no_teams_found'}), 500
+
+    for team_i in all_team_abbrevs:
+        points_i, games_i = _projected_points_for_team(team_i, season, team_proj_map)
+        all_teams_points[team_i] = round(float(points_i), 3)
+        all_teams_games[team_i] = int(games_i)
+
+    return jsonify({
+        'customTeam': team,
+        'season': season,
+        'cachedCustomTeams': sorted(list(custom_lineups.keys())),
+        'teams': [
+            {
+                'team': team_abbrev,
+                'projectedPoints': all_teams_points.get(team_abbrev, 0.0),
+                'games': all_teams_games.get(team_abbrev, 0),
+            }
+            for team_abbrev in sorted(all_team_abbrevs)
+        ],
+    })
+
+
+@main_bp.route('/api/projections/custom-lineups-cache', methods=['GET', 'POST'])
+def api_projections_custom_lineups_cache():
+    """Read/write per-user custom lineup cache for GM projected-points calculations.
+
+    POST body options:
+      - {"season": 20252026, "lineupsByTeam": {"BOS": [{"pid": 1, "pos": "F"}, ...], ...}}
+        Replaces cached map for that season.
+      - {"season": 20252026, "team": "BOS", "lineup": [{"pid": 1, "pos": "F"}, ...]}
+        Upserts one team into cached map.
+
+    GET query options:
+      - season=20252026
+    """
+    if request.method == 'GET':
+        season_raw = request.args.get('season', '20252026')
+        try:
+            season = int(str(season_raw).strip())
+        except Exception:
+            season = 20252026
+        custom = _custom_lineups_cache_get(season)
+        return jsonify({
+            'season': season,
+            'teams': sorted(list(custom.keys())),
+            'lineupsByTeam': custom,
+        })
+
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        body = {}
+
+    season_raw = body.get('season', 20252026)
+    try:
+        season = int(season_raw)
+    except Exception:
+        season = 20252026
+
+    if isinstance(body.get('lineupsByTeam'), dict):
+        custom = _normalize_custom_lineups_by_team(body.get('lineupsByTeam'))
+        _custom_lineups_cache_set(season, custom)
+        return jsonify({
+            'ok': True,
+            'season': season,
+            'mode': 'replace',
+            'teams': sorted(list(custom.keys())),
+            'teamCount': int(len(custom)),
+        })
+
+    team = str(body.get('team') or '').strip().upper()
+    lineup_raw = body.get('lineup') or []
+    if not team:
+        return jsonify({'error': 'team_required'}), 400
+    if not isinstance(lineup_raw, list):
+        return jsonify({'error': 'lineup_must_be_array'}), 400
+
+    custom = _custom_lineups_cache_get(season)
+    custom[team] = _normalize_custom_lineup_entries(lineup_raw)
+    _custom_lineups_cache_set(season, custom)
+    return jsonify({
+        'ok': True,
+        'season': season,
+        'mode': 'upsert',
+        'team': team,
+        'lineupSize': int(len(custom.get(team) or [])),
+        'teams': sorted(list(custom.keys())),
+    })
 
 
 @main_bp.route('/api/roster/<team_code>/current')

@@ -248,6 +248,9 @@
         <a href="/goalies" class="{% if active_tab=='Goalies' %}active{% endif %}">Goalies</a>
         <a href="/line-tool" class="{% if active_tab=='Line Tool' %}active{% endif %}">Line Tool</a>
         <a href="/teams" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
+        {% if auth_user and auth_user.is_admin %}
+        <a href="/gm-mode" class="{% if active_tab=='GM Mode' %}active{% endif %}">GM Mode</a>
+        {% endif %}
         <a href="/about" class="{% if active_tab=='About' %}active{% endif %}">About</a>
         <a href="/donation" class="{% if active_tab=='Donation' %}active{% endif %}">Donation</a>
         {% if auth_user %}
@@ -284,6 +287,8 @@
         <label>Team
           <select id="teamSelect"></select>
         </label>
+        {% set _show_season_slicer = (show_season_slicer is not defined) or show_season_slicer %}
+        {% if _show_season_slicer %}
         <label>Season
           <div class="season-multi" id="seasonMultiWrap">
             <button id="seasonMultiButton" class="season-multi-btn" type="button" aria-haspopup="listbox" aria-expanded="false">Select season</button>
@@ -291,6 +296,9 @@
             <select id="seasonSelect" hidden></select>
           </div>
         </label>
+        {% else %}
+        <select id="seasonSelect" hidden></select>
+        {% endif %}
         {% block extra_filters %}{% endblock %}
         {% if show_season_state %}
         <label>Season State
@@ -328,6 +336,9 @@
   <a href="/goalies" class="{% if active_tab=='Goalies' %}active{% endif %}">Goalies</a>
   <a href="/line-tool" class="{% if active_tab=='Line Tool' %}active{% endif %}">Line Tool</a>
   <a href="/teams" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
+  {% if auth_user and auth_user.is_admin %}
+  <a href="/gm-mode" class="{% if active_tab=='GM Mode' %}active{% endif %}">GM Mode</a>
+  {% endif %}
   <a href="/about" class="{% if active_tab=='About' %}active{% endif %}">About</a>
   <a href="/donation" class="{% if active_tab=='Donation' %}active{% endif %}">Donation</a>
   <span class="nav-spacer"></span>

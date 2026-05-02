@@ -1,0 +1,1745 @@
+{% extends "base.html" %}
+
+{% block extra_filters %}
+<label>Player View
+  <select id="gmViewMode">
+    <option value="images" selected>Images</option>
+    <option value="projection">Projection</option>
+  </select>
+</label>
+<div class="gm-filter-actions">
+  <button id="gmSaveConfigBtn" class="gm-filter-btn" type="button">Save</button>
+  <button id="gmLoadConfigBtn" class="gm-filter-btn" type="button">Load</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+<style>
+  .gm-shell{ display:grid; gap:12px; width:100%; min-width:0; }
+  .gm-team-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:10px 0 2px; min-width:0; overflow-x:hidden; }
+  .gm-team-top{ display:flex; gap:22px; align-items:center; justify-content:space-between; }
+  .gm-team-main{ display:flex; gap:22px; align-items:center; min-width:0; }
+  .gm-team-img{ width:190px; height:190px; border-radius:18px; object-fit:contain; object-position:center; background:var(--panel); border:1px solid #2a3142; padding:0; }
+  .gm-team-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; color:#fff; line-height:1.05; }
+  .gm-team-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
+  .gm-team-kv{ display:flex; gap:6px; align-items:baseline; }
+  .gm-team-k{ text-transform:uppercase; font-size:12px; letter-spacing:1px; color:var(--text-dim); font-weight:750; }
+  .gm-team-v{ font-weight:750; color:var(--text); }
+  .gm-kpi-points-circle .v{
+    font-size:34px;
+    font-weight:900;
+    line-height:1;
+    letter-spacing:.2px;
+    color:inherit;
+  }
+  .gm-kpi-points-circle .l{
+    margin-top:5px;
+    font-size:10px;
+    font-weight:900;
+    letter-spacing:.85px;
+    text-transform:uppercase;
+    color:rgba(255,255,255,0.75);
+    line-height:1.1;
+  }
+  .gm-kpi-points-circle{
+    width:188px;
+    height:188px;
+    border-radius:50%;
+    display:grid;
+    place-items:center;
+    border:3px solid var(--gm-kpi-points-color, #ffffff);
+    background:rgba(4,8,14,0.48);
+    box-shadow:0 14px 30px rgba(0,0,0,0.28);
+    color:var(--gm-kpi-points-color, #ffffff);
+    text-align:center;
+    margin:0;
+    flex:0 0 auto;
+  }
+  .gm-kpi-points-circle .v{ font-size:56px; }
+  .gm-grid{ display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(0, 1fr); gap:12px; align-items:start; width:100%; }
+  .gm-col{ display:grid; gap:14px; min-width:0; }
+  .gm-frame{
+    background: transparent;
+    border:1px solid #2a3142;
+    border-radius:14px;
+    padding:12px 12px 12px 8px;
+    min-width:0;
+    width:100%;
+    box-sizing:border-box;
+    overflow-x:clip;
+  }
+  .gm-frame-forwards{ background: transparent; }
+  .gm-frame-defense{  background: transparent; }
+  .gm-frame-goalies{  background: transparent; }
+  .gm-frame-scratches{ background: transparent; }
+  .gm-frame-full{ width:100%; }
+  .gm-frame h2{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .gm-lines{ display:grid; gap:12px; }
+  .gm-line{ display:grid; gap:8px; }
+  .gm-line-label{ font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); }
+  .gm-row{ display:flex; gap:14px; flex-wrap:nowrap; align-items:flex-start; width:100%; }
+  .gm-slot{ display:flex; flex-direction:column; align-items:center; gap:8px; width:auto; flex:1 1 0; min-width:0; }
+  .gm-slot-label{ font-size:10px; font-weight:800; color:var(--text-dim); text-transform:uppercase; letter-spacing:.7px; }
+  .gm-visual{ width:114px; height:114px; display:grid; place-items:center; cursor:pointer; }
+  .gm-headshot{ width:104px; height:104px; border-radius:50%; background:#1a2236; border:3px solid #2b3648; object-fit:cover; }
+  .gm-proj-kpi{ display:none; width:104px; height:104px; border-radius:50%; border:3px solid var(--gm-proj-color, #59abff); place-items:center; text-align:center; line-height:1; background:#040914; }
+  .gm-proj-kpi .v{ font-size:32px; font-weight:900; letter-spacing:.2px; color:var(--gm-proj-color, #59abff); }
+  .gm-proj-kpi .l{ margin-top:4px; font-size:9px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; color:#f1e9db; }
+  .gm-games-note{ min-height:14px; font-size:10px; color:var(--text-dim); letter-spacing:.4px; }
+  .gm-rank-kpi{
+    width:122px; height:122px; border-radius:50%; display:grid; place-items:center; text-align:center;
+    border:3px solid var(--gm-rank-color, rgba(255,255,255,0.35)); background:#040914;
+  }
+  .gm-rank-slot{ display:flex; flex-direction:column; align-items:center; gap:8px; width:auto; flex:1 1 0; min-width:0; margin-left:0; }
+  .gm-rank-slot .gm-slot-label{ text-align:center; }
+  .gm-rank-kpi .v{ color:var(--gm-rank-color, rgba(255,255,255,0.9)); font-size:50px; font-weight:900; letter-spacing:.2px; line-height:1; }
+  .gm-rank-kpi .l{ margin-top:6px; color:rgba(255,255,255,0.88); font-size:11px; letter-spacing:.8px; text-transform:uppercase; font-weight:800; line-height:1.15; }
+  .gm-shell.gm-view-projection .gm-headshot{ display:none; }
+  .gm-shell.gm-view-projection .gm-proj-kpi{ display:grid; }
+  .gm-picker{ width:100%; position:relative; }
+  .gm-picker-btn{ width:100%; font-size:13px; padding:8px 10px; border-radius:10px; border:1px solid #2b3648; background:#131b2b; color:#fff; text-align:left; cursor:pointer; }
+  .gm-picker-btn:hover{ background:#172238; }
+  .gm-picker-panel{ position:absolute; left:0; transform:none; width:100%; top:calc(100% + 6px); background:#101a2e; border:1px solid #2b3648; border-radius:10px; box-shadow:0 14px 28px rgba(0,0,0,0.45); z-index:60; padding:8px; box-sizing:border-box; }
+  .gm-picker-panel[hidden]{ display:none !important; }
+  .gm-picker-search{ width:100%; font-size:12px; padding:6px 8px; border-radius:8px; border:1px solid #2b3648; background:#101a2e !important; color:#fff; margin:0 0 8px; box-sizing:border-box; }
+  .gm-picker-search::placeholder{ color:rgba(255,255,255,0.65); }
+  .gm-picker-search:focus{ outline:none; border-color:#4da3ff; box-shadow:0 0 0 1px rgba(77,163,255,0.25) inset; }
+  .gm-picker-options{ max-height:200px; overflow-y:auto; overflow-x:hidden; display:grid; gap:4px; }
+  .gm-picker-option{ width:100%; text-align:left; font-size:13px; padding:7px 8px; border-radius:8px; border:1px solid transparent; background:transparent; color:#fff; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gm-picker-option:hover{ background:#1a2942; }
+  .gm-picker-option.active{ background:#2b3648; border-color:#3d4d67; }
+  .gm-status{ border:1px solid #2a3142; border-radius:12px; padding:10px 12px; color:var(--text-dim); font-size:13px; }
+  .gm-filter-actions{ display:flex; gap:8px; align-items:center; }
+  .gm-filter-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .gm-filter-btn:hover{ background:rgba(255,255,255,0.05); }
+  .gm-config-modal{ position:fixed; inset:0; background:rgba(0,0,0,0.58); display:flex; align-items:center; justify-content:center; z-index:2100; }
+  .gm-config-modal[hidden]{ display:none !important; }
+  .gm-config-card{ width:min(760px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:#0f1522; border:1px solid #2a3142; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.6); }
+  .gm-config-hd{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; border-bottom:1px solid #232a3a; }
+  .gm-config-title{ font-weight:900; letter-spacing:.2px; }
+  .gm-config-bd{ padding:12px 14px; display:grid; gap:10px; }
+  .gm-config-note{ color:var(--text-dim); font-size:12px; }
+  .gm-config-list{ display:grid; gap:8px; max-height:44vh; overflow:auto; padding-right:2px; }
+  .gm-config-item{ border:1px solid #2a3142; border-radius:10px; padding:9px 10px; background:rgba(255,255,255,0.02); cursor:pointer; display:grid; gap:4px; }
+  .gm-config-item:hover{ background:rgba(255,255,255,0.05); }
+  .gm-config-item.active{ outline:2px solid rgba(77,163,255,0.28); background:rgba(77,163,255,0.12); }
+  .gm-config-name{ font-size:13px; font-weight:800; color:var(--text); }
+  .gm-config-meta{ font-size:11px; color:var(--text-dim); }
+  .gm-config-empty{ border:1px dashed #2a3142; border-radius:10px; padding:14px; text-align:center; color:var(--text-dim); font-size:12px; }
+  .gm-config-fields{ display:grid; gap:6px; }
+  .gm-config-fields label{ font-size:12px; color:var(--text-dim); font-weight:700; display:grid; gap:4px; }
+  .gm-config-fields input{ font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
+  .gm-config-actions{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
+  .gm-config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .gm-config-btn:hover{ background:rgba(255,255,255,0.05); }
+  .gm-config-btn.danger{ border-color:rgba(224,90,90,0.48); color:#ffd0d0; }
+  .gm-config-btn.primary{ border-color:rgba(77,163,255,0.48); color:#d8ebff; }
+
+  @media (max-width: 1080px){
+    .gm-team-top{ gap:14px; }
+    .gm-team-main{ gap:14px; }
+    .gm-team-img{ width:150px; height:150px; }
+    .gm-team-name{ font-size:32px; }
+    .gm-kpi-points-circle{ width:154px; height:154px; }
+    .gm-kpi-points-circle .v{ font-size:44px; }
+    .gm-kpi-points-circle .l{ font-size:9px; }
+    .gm-grid{ grid-template-columns:1fr; }
+    .gm-row{ flex-wrap:wrap; }
+    .gm-rank-slot{ margin-left:0; }
+  }
+  @media (max-width: 640px){
+    .gm-team-top{ flex-direction:column; align-items:center; gap:12px; }
+    .gm-team-main{ width:100%; display:grid; grid-template-columns:1fr; grid-template-areas:"name" "logo" "info"; gap:10px; justify-items:center; }
+    .gm-team-main > div{ display:contents; }
+    .gm-team-name{ font-size:26px; margin:0; grid-area:name; text-align:center; }
+    .gm-team-img{ width:120px; height:120px; border-radius:14px; grid-area:logo; }
+    .gm-team-sub{ gap:10px 14px; font-size:14px; grid-area:info; justify-content:center; text-align:center; }
+    .gm-kpi-points-circle{ width:126px; height:126px; align-self:center; }
+    .gm-kpi-points-circle .v{ font-size:36px; }
+    .gm-row{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; width:100%; }
+    .gm-slot,
+    .gm-rank-slot{ width:100%; margin-left:0; }
+    .gm-rank-slot{ justify-self:stretch; }
+    .gm-visual{ width:86px; height:86px; }
+    .gm-headshot{ width:78px; height:78px; border-width:2px; }
+    .gm-proj-kpi{ width:78px; height:78px; border-width:2px; }
+    .gm-proj-kpi .v{ font-size:30px; }
+    .gm-proj-kpi .l{ font-size:8px; }
+    .gm-rank-kpi{ width:98px; height:98px; }
+    .gm-rank-kpi .v{ font-size:42px; }
+    .gm-rank-kpi .l{ font-size:10px; }
+    .gm-row-two-skaters .gm-rank-slot{ grid-column:1 / -1; justify-self:center; max-width:170px; }
+    .gm-slot .gm-visual,
+    .gm-rank-slot .gm-rank-kpi{ margin-left:auto; margin-right:auto; }
+    .gm-shell{ overflow-x:hidden; }
+  }
+
+  @media (min-width: 641px){
+    .gm-picker-panel{ min-width:100%; width:max-content; }
+  }
+</style>
+
+<section id="gmShell" class="gm-shell">
+  <section class="gm-team-card" aria-label="Team header">
+    <div class="gm-team-top">
+      <div class="gm-team-main">
+        <img id="gmTeamLogo" class="gm-team-img" alt="" loading="lazy" />
+        <div>
+          <h1 id="gmTeamName" class="gm-team-name">-</h1>
+          <div class="gm-team-sub">
+            <span class="gm-team-kv"><span class="gm-team-k">Team</span><span id="gmTeamAbbr" class="gm-team-v">--</span></span>
+          </div>
+        </div>
+      </div>
+      <div id="gmKpiPoints" class="gm-kpi-points-circle"><div><div class="v">--</div><div class="l">Projected Points</div></div></div>
+    </div>
+  </section>
+
+  <div class="gm-grid">
+    <section class="gm-col" aria-label="Forward side">
+      <section class="gm-frame gm-frame-forwards" aria-label="Forward lines">
+        <h2>Forward Lines</h2>
+        <div id="gmForwards" class="gm-lines"></div>
+      </section>
+    </section>
+
+    <section class="gm-col" aria-label="Defense and goalies side">
+      <section class="gm-frame gm-frame-defense" aria-label="Defense pairs">
+        <h2>Defense Pairs</h2>
+        <div id="gmDefense" class="gm-lines"></div>
+      </section>
+      <section class="gm-frame gm-frame-goalies" aria-label="Goalies">
+        <h2>Goalies</h2>
+        <div id="gmGoalies" class="gm-lines"></div>
+      </section>
+    </section>
+  </div>
+
+  <section class="gm-frame gm-frame-full gm-frame-scratches" aria-label="Scratches">
+    <h2>Scratches</h2>
+    <div id="gmScratches" class="gm-lines"></div>
+  </section>
+
+  <div id="gmStatus" class="gm-status">Loading lineup data...</div>
+</section>
+
+<div id="gmConfigModal" class="gm-config-modal" hidden>
+  <div class="gm-config-card" role="dialog" aria-modal="true" aria-labelledby="gmConfigTitle">
+    <div class="gm-config-hd">
+      <div id="gmConfigTitle" class="gm-config-title">Configurations</div>
+      <button id="gmConfigCloseBtn" class="gm-config-btn" type="button">Close</button>
+    </div>
+    <div class="gm-config-bd">
+      <div id="gmConfigNote" class="gm-config-note"></div>
+      <div id="gmConfigList" class="gm-config-list"></div>
+      <div id="gmConfigFields" class="gm-config-fields" hidden>
+        <label>Configuration name
+          <input id="gmConfigNameInput" type="text" maxlength="80" placeholder="GM Mode Config" />
+        </label>
+      </div>
+      <div class="gm-config-actions">
+        <button id="gmConfigDeleteBtn" class="gm-config-btn danger" type="button">Delete</button>
+        <button id="gmConfigLoadBtn" class="gm-config-btn primary" type="button">Load</button>
+        <button id="gmConfigOverwriteBtn" class="gm-config-btn primary" type="button">Overwrite Selected</button>
+        <button id="gmConfigSaveNewBtn" class="gm-config-btn primary" type="button">Save As New</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  const DEFAULT_IMG = 'https://assets.nhle.com/mugs/nhl/default-skater.png';
+  const GM_VIEW_KEY = 'nhlGmModeView';
+
+  const teamSelect = document.getElementById('teamSelect');
+  const viewModeSelect = document.getElementById('gmViewMode');
+  const saveBtn = document.getElementById('gmSaveConfigBtn');
+  const loadBtn = document.getElementById('gmLoadConfigBtn');
+  const configModal = document.getElementById('gmConfigModal');
+  const configTitle = document.getElementById('gmConfigTitle');
+  const configNote = document.getElementById('gmConfigNote');
+  const configList = document.getElementById('gmConfigList');
+  const configFields = document.getElementById('gmConfigFields');
+  const configNameInput = document.getElementById('gmConfigNameInput');
+  const configCloseBtn = document.getElementById('gmConfigCloseBtn');
+  const configDeleteBtn = document.getElementById('gmConfigDeleteBtn');
+  const configLoadBtn = document.getElementById('gmConfigLoadBtn');
+  const configOverwriteBtn = document.getElementById('gmConfigOverwriteBtn');
+  const configSaveNewBtn = document.getElementById('gmConfigSaveNewBtn');
+  const teamLogo = document.getElementById('gmTeamLogo');
+  const teamName = document.getElementById('gmTeamName');
+  const teamAbbr = document.getElementById('gmTeamAbbr');
+  const kpiOverall = document.getElementById('gmKpiOverall');
+  const kpiForwards = document.getElementById('gmKpiForwards');
+  const kpiDefense = document.getElementById('gmKpiDefense');
+  const kpiGoalies = document.getElementById('gmKpiGoalies');
+  const kpiPoints = document.getElementById('gmKpiPoints');
+  const shell = document.getElementById('gmShell');
+  const forwardsWrap = document.getElementById('gmForwards');
+  const defenseWrap = document.getElementById('gmDefense');
+  const goaliesWrap = document.getElementById('gmGoalies');
+  const scratchWrap = document.getElementById('gmScratches');
+  const statusEl = document.getElementById('gmStatus');
+
+  if(!teamSelect || !shell || !forwardsWrap || !defenseWrap || !goaliesWrap || !scratchWrap || !statusEl){
+    return;
+  }
+
+  const FWD_ROWS = [
+    ['LW1', 'C1', 'RW1'],
+    ['LW2', 'C2', 'RW2'],
+    ['LW3', 'C3', 'RW3'],
+    ['LW4', 'C4', 'RW4'],
+  ];
+  const DEF_ROWS = [
+    ['LD1', 'RD1'],
+    ['LD2', 'RD2'],
+    ['LD3', 'RD3'],
+  ];
+  const GOALIE_SLOTS = ['G', 'B'];
+  const SLOT_LABELS = { B: 'Backup' };
+
+  let lineupsByTeam = {};
+  let projectionsByPid = {};
+  let projectionPools = { F: [], D: [], G: [] };
+  let projectionPlayersByPos = { F: [], D: [], G: [] };
+  let leagueGroupScores = {};
+  let leagueTeamKpiScores = { overall: [], forwards: [], defense: [], goalies: [] };
+  let teamConfigs = {};
+  let activeLayoutId = '';
+  let activeLayoutName = '';
+  let dialogMode = 'load';
+  let dialogLayouts = [];
+  let dialogSelectedId = '';
+  let slotVisualUpdaters = [];
+  let interactiveGroups = [];
+
+  const GROUP_SPECS = {
+    fwd1: { size: 3, pos: 'F' },
+    fwd2: { size: 3, pos: 'F' },
+    fwd3: { size: 3, pos: 'F' },
+    fwd4: { size: 3, pos: 'F' },
+    def1: { size: 2, pos: 'D' },
+    def2: { size: 2, pos: 'D' },
+    def3: { size: 2, pos: 'D' },
+    goalies: { size: 2, pos: 'G' },
+    scratches: { size: 5, pos: '' },
+  };
+  const GROUP_KEYS = Object.keys(GROUP_SPECS);
+  const ROOKIE_FALLBACK_BY_POS = { D: -0.031768511, F: -0.024601581, G: -0.12 };
+  const POINTS_SEASON = '20252026';
+  const POINTS_RED = 75;
+  const POINTS_NEUTRAL = 92.4;
+  const POINTS_BLUE = 110;
+  const POINTS_CONSERVATIVE_FACTOR = 0.55;
+  const CSRF_TOKEN = {{ csrf_token|tojson|safe }};
+  const teamsData = (function(){
+    const tag = document.getElementById('teams-data');
+    if(!tag) return [];
+    try{
+      const js = JSON.parse(tag.textContent || '[]');
+      return Array.isArray(js) ? js : [];
+    }catch(_){
+      return [];
+    }
+  })();
+  let pointsReqSeq = 0;
+  let pointsDebounceTimer = null;
+  let lineupsCacheDebounceTimer = null;
+  let lineupsCacheReqSeq = 0;
+
+  function parsePid(raw){
+    const n = Number.parseInt(String(raw == null ? '' : raw), 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function parseNum(raw){
+    const n = Number.parseFloat(String(raw == null ? '' : raw));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function headshotUrl(pid){
+    return pid > 0 ? 'https://assets.nhle.com/mugs/nhl/latest/' + String(pid) + '.png' : DEFAULT_IMG;
+  }
+
+  function normalizePos(rawPos){
+    const p = String(rawPos || '').trim().toUpperCase();
+    if(!p) return '';
+    if(p === 'G') return 'G';
+    if(p === 'D' || p === 'LD' || p === 'RD') return 'D';
+    return 'F';
+  }
+
+  function parseSlot(unit){
+    const u = String(unit || '').toUpperCase().replace(/\s+/g, '');
+    if(!u) return '';
+
+    let m = u.match(/^(LW|C|RW)([1-4])$/);
+    if(m) return m[1] + m[2];
+
+    m = u.match(/^([LCR])([1-4])$/);
+    if(m){
+      if(m[1] === 'L') return 'LW' + m[2];
+      if(m[1] === 'R') return 'RW' + m[2];
+      return 'C' + m[2];
+    }
+
+    m = u.match(/^([1-4])(LW|C|RW)$/);
+    if(m) return m[2] + m[1];
+
+    m = u.match(/^(LD|RD)([1-3])$/);
+    if(m) return m[1] + m[2];
+
+    m = u.match(/^([1-3])(LD|RD)$/);
+    if(m) return m[2] + m[1];
+
+    if(u === 'G' || u === 'G1' || u.includes('START')) return 'G';
+    if(u === 'G2' || u.includes('BACK') || u.includes('BUP') || u.includes('B/U')) return 'B';
+    if(u.startsWith('G')) return 'G';
+
+    return '';
+  }
+
+  function normalizeRecord(rec){
+    const name = String(rec && rec.name ? rec.name : '').trim();
+    const pid = parsePid(rec && rec.playerId);
+    const unit = String(rec && rec.unit ? rec.unit : '').trim().toUpperCase();
+    if(!name && !pid){
+      return null;
+    }
+    const key = pid > 0 ? ('p:' + String(pid)) : ('n:' + name.toLowerCase());
+    const inferred = unit.startsWith('G') ? 'G' : (unit.startsWith('LD') || unit.startsWith('RD') ? 'D' : 'F');
+    const pos = normalizePos(rec && rec.pos ? rec.pos : inferred);
+    return { name: name || ('#' + String(pid)), pid, unit, key, pos };
+  }
+
+  function uniquePlayers(records){
+    const out = [];
+    const seen = new Set();
+    for(const rec of records || []){
+      const norm = normalizeRecord(rec);
+      if(!norm || seen.has(norm.key)) continue;
+      seen.add(norm.key);
+      out.push(norm);
+    }
+    return out;
+  }
+
+  function toTitleCaseName(raw){
+    return String(raw || '').trim().replace(/\s+/g, ' ');
+  }
+
+  function projectionPlayerName(row, pid){
+    const candidates = [
+      row && row.player,
+      row && row.name,
+      row && row.player_name,
+      row && row.PlayerName,
+      row && row.fullName,
+      row && row.full_name,
+    ];
+    for(const c of candidates){
+      const s = toTitleCaseName(c);
+      if(s) return s;
+    }
+    return '#' + String(pid || '');
+  }
+
+  function projectionPlayerTeam(row){
+    const candidates = [
+      row && row.team,
+      row && row.Team,
+      row && row.team_abbrev,
+      row && row.teamAbbrev,
+      row && row.currentTeamAbbrev,
+      row && row.current_team_abbrev,
+    ];
+    for(const c of candidates){
+      const s = String(c || '').trim().toUpperCase();
+      if(s) return s;
+    }
+    return '';
+  }
+
+  function buildProjectionPlayersByPos(rowsByPid){
+    const byPos = { F: [], D: [], G: [] };
+    for(const key of Object.keys(rowsByPid || {})){
+      const row = rowsByPid[key] || {};
+      const pid = parsePid(row.player_id || row.playerId || key);
+      if(!pid) continue;
+      const pos = normalizePos(row.Position || row.position || row.positionCode || row.pos);
+      if(!pos || !byPos[pos]) continue;
+      byPos[pos].push({
+        key: 'p:' + String(pid),
+        pid: pid,
+        name: projectionPlayerName(row, pid),
+        pos: pos,
+        team: projectionPlayerTeam(row),
+      });
+    }
+
+    for(const pos of ['F', 'D', 'G']){
+      byPos[pos].sort((a, b)=> String(a.name || '').localeCompare(String(b.name || '')));
+    }
+    projectionPlayersByPos = byPos;
+  }
+
+  function buildTeamFirstCandidates(teamKey, positions){
+    const team = String(teamKey || '').trim().toUpperCase();
+    const wanted = Array.isArray(positions) ? positions : [];
+    const merged = [];
+    const seen = new Set();
+    for(const pos of wanted){
+      for(const p of (projectionPlayersByPos[pos] || [])){
+        if(!p || !p.key || seen.has(p.key)) continue;
+        seen.add(p.key);
+        merged.push(p);
+      }
+    }
+
+    const teamPlayers = merged.filter((p)=> String(p.team || '').toUpperCase() === team)
+      .sort((a, b)=> String(a.name || '').localeCompare(String(b.name || '')));
+    const otherPlayers = merged.filter((p)=> String(p.team || '').toUpperCase() !== team)
+      .sort((a, b)=> String(a.name || '').localeCompare(String(b.name || '')));
+    return teamPlayers.concat(otherPlayers);
+  }
+
+  function sortedNumeric(values){
+    return values.filter((v)=> Number.isFinite(v)).sort((a, b)=> a - b);
+  }
+
+  function upperBound(arr, target){
+    let lo = 0;
+    let hi = arr.length;
+    while(lo < hi){
+      const mid = (lo + hi) >> 1;
+      if(arr[mid] <= target) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  function percentileFromPool(arr, value){
+    if(!arr.length || !Number.isFinite(value)) return null;
+    const rank = upperBound(arr, value);
+    const pct = 100 * (rank / arr.length);
+    return Math.max(0, Math.min(100, pct));
+  }
+
+  function firstNum(row, keys){
+    if(!row || !keys) return null;
+    for(const key of keys){
+      const v = parseNum(row[key]);
+      if(v !== null) return v;
+    }
+    return null;
+  }
+
+  function projectionValueForRow(row, posHint){
+    if(!row || typeof row !== 'object') return null;
+    // Use ONLY projected_value field; no fallback to legacy metrics.
+    // Match backend field search order (case-insensitive key names).
+    const projected = firstNum(row, ['projected_value', 'projection', 'projectedValue', 'Projection', 'ProjectedValue']);
+    if(projected !== null) return projected;
+    // If projected_value is missing, use ROOKIE_FALLBACK for this position.
+    const pos = normalizePos((row && row.Position) || (row && row.position) || posHint);
+    return ROOKIE_FALLBACK_BY_POS[pos] || ROOKIE_FALLBACK_BY_POS.F;
+  }
+
+  function buildProjectionPools(rowsByPid){
+    const fVals = [];
+    const dVals = [];
+    const gVals = [];
+    for(const key of Object.keys(rowsByPid || {})){
+      const row = rowsByPid[key] || {};
+      const pos = normalizePos(row.Position || row.position);
+      const value = projectionValueForRow(row, pos);
+      if(value === null) continue;  // Skip only if no value at all
+      if(pos === 'G'){
+        gVals.push(value);
+      }else if(pos === 'D'){
+        dVals.push(value);
+      }else{
+        fVals.push(value);
+      }
+    }
+    // Create separate pools for F, D, G (matching backend grouping).
+    projectionPools = { 
+      F: sortedNumeric(fVals), 
+      D: sortedNumeric(dVals), 
+      G: sortedNumeric(gVals) 
+    };
+  }
+
+  function projectionPercentile(pid, posHint){
+    const pidInt = parsePid(pid);
+    if(!pidInt) return null;
+    const row = projectionsByPid[String(pidInt)] || projectionsByPid[pidInt] || null;
+    const pos = normalizePos((row && row.Position) || posHint);
+    const value = row ? projectionValueForRow(row, pos) : null;
+    // Uses projected_value, or ROOKIE_FALLBACK when projection is missing.
+    if(value === null) return null;
+    if(pos === 'G'){
+      return percentileFromPool(projectionPools.G, value);
+    }
+    // For F and D: use position-specific pools (verify backend grouping).
+    const pool = (pos === 'D') ? projectionPools.D : projectionPools.F;
+    return percentileFromPool(pool, value);
+  }
+
+  function projectionLabel(pct){
+    if(pct === null) return '--';
+    return String(Math.round(pct)) + '%';
+  }
+
+  function kpiPctLabel(v){
+    return Number.isFinite(v) ? (v.toFixed(1) + '%') : '--';
+  }
+
+  function kpiRankLabel(v){
+    return Number.isFinite(v) ? ('#' + String(Math.round(v))) : '--';
+  }
+
+  function membersByPosition(members){
+    const out = { F: [], D: [], G: [] };
+    for(const m of (members || [])){
+      const pos = normalizePos(m && m.pos);
+      if(pos === 'D') out.D.push(m);
+      else if(pos === 'G') out.G.push(m);
+      else out.F.push(m);
+    }
+    return out;
+  }
+
+  function clamp01(v){
+    return Math.max(0, Math.min(1, v));
+  }
+
+  function lerp(a, b, t){
+    return Math.round(a + (b - a) * t);
+  }
+
+  function hexFromRgb(r, g, b){
+    const toHex = function(x){ return Math.max(0, Math.min(255, x)).toString(16).padStart(2, '0'); };
+    return '#' + toHex(r) + toHex(g) + toHex(b);
+  }
+
+  function blendHex(c1, c2, t){
+    const a = String(c1 || '#000000').replace('#', '');
+    const b = String(c2 || '#000000').replace('#', '');
+    const r1 = parseInt(a.slice(0, 2), 16), g1 = parseInt(a.slice(2, 4), 16), b1 = parseInt(a.slice(4, 6), 16);
+    const r2 = parseInt(b.slice(0, 2), 16), g2 = parseInt(b.slice(2, 4), 16), b2 = parseInt(b.slice(4, 6), 16);
+    return hexFromRgb(lerp(r1, r2, t), lerp(g1, g2, t), lerp(b1, b2, t));
+  }
+
+  function projectionColor(pct){
+    if(!Number.isFinite(pct)) return '#7fa5d5';
+    if(pct <= 50){
+      const t = clamp01(pct / 50);
+      return blendHex('#e05a5a', '#ffffff', t);
+    }
+    const t = clamp01((pct - 50) / 50);
+    return blendHex('#ffffff', '#59abff', t);
+  }
+
+  function rankToColor(rank){
+    const r = Number(rank);
+    if(!Number.isFinite(r)) return 'rgba(255,255,255,0.35)';
+    const pct = clamp01((32 - r) / 31) * 100;
+    return projectionColor(pct);
+  }
+
+  function pointsToColor(points){
+    const p = Number(points);
+    if(!Number.isFinite(p)) return '#ffffff';
+    if(p <= POINTS_NEUTRAL){
+      const t = clamp01((p - POINTS_RED) / (POINTS_NEUTRAL - POINTS_RED));
+      return blendHex('#e05a5a', '#ffffff', t);
+    }
+    const t = clamp01((p - POINTS_NEUTRAL) / (POINTS_BLUE - POINTS_NEUTRAL));
+    return blendHex('#ffffff', '#59abff', t);
+  }
+
+  function conservativePoints(rawPoints){
+    const p = Number(rawPoints);
+    if(!Number.isFinite(p)) return null;
+    return POINTS_NEUTRAL + ((p - POINTS_NEUTRAL) * POINTS_CONSERVATIVE_FACTOR);
+  }
+
+  function normalizeTeamConfig(rawCfg){
+    const out = {};
+    const cfg = (rawCfg && typeof rawCfg === 'object') ? rawCfg : {};
+    for(const key of GROUP_KEYS){
+      const spec = GROUP_SPECS[key];
+      const src = Array.isArray(cfg[key]) ? cfg[key] : [];
+      const rows = [];
+      for(let i = 0; i < spec.size; i += 1){
+        const r = src[i] && typeof src[i] === 'object' ? src[i] : {};
+        const pid = parsePid(r.pid);
+        const posRaw = String(r.pos || spec.pos || '').toUpperCase();
+        const pos = posRaw ? normalizePos(posRaw) : '';
+        const gRaw = parseNum(r.games);
+        const games = (Number.isFinite(gRaw) && gRaw >= 0) ? Math.round(gRaw) : (pid > 0 ? 82 : 0);
+        rows.push({ pid, pos, games });
+      }
+      out[key] = rows;
+    }
+    return out;
+  }
+
+  function normalizeAllTeamConfigs(rawAll){
+    const out = {};
+    const src = (rawAll && typeof rawAll === 'object') ? rawAll : {};
+    for(const key of Object.keys(src)){
+      const team = String(key || '').trim().toUpperCase();
+      if(!team) continue;
+      out[team] = normalizeTeamConfig(src[key]);
+    }
+    return out;
+  }
+
+  function getCurrentTeamKey(){
+    return String(teamSelect && teamSelect.value || '').trim().toUpperCase();
+  }
+
+  function keyByPid(candidates, pid){
+    const pidInt = parsePid(pid);
+    if(!pidInt) return '';
+    const row = (candidates || []).find((c)=> parsePid(c && c.pid) === pidInt);
+    return row ? String(row.key || '') : '';
+  }
+
+  function defaultTeamConfig(teamNode){
+    return normalizeTeamConfig(extractTeamGroups(teamNode));
+  }
+
+  function ensureAllTeamConfigs(){
+    for(const teamKey of Object.keys(lineupsByTeam || {})){
+      if(!teamConfigs[teamKey]){
+        teamConfigs[teamKey] = defaultTeamConfig(lineupsByTeam[teamKey]);
+      }
+    }
+  }
+
+  function persistCurrentTeamConfig(){
+    const teamKey = getCurrentTeamKey();
+    if(!teamKey) return;
+    const cfg = {};
+    for(const key of GROUP_KEYS){
+      const group = interactiveGroups.find((g)=> g && g.key === key);
+      if(group && typeof group.getMembers === 'function'){
+        cfg[key] = group.getMembers().map((m)=>{
+          const pid = parsePid(m && m.pid);
+          const pos = String(m && m.pos || '').toUpperCase();
+          const gRaw = parseNum(m && m.games);
+          const games = (Number.isFinite(gRaw) && gRaw >= 0) ? Math.round(gRaw) : (pid > 0 ? 82 : 0);
+          return { pid, pos: pos ? normalizePos(pos) : '', games };
+        });
+      }else{
+        cfg[key] = normalizeTeamConfig({})[key];
+      }
+    }
+    teamConfigs[teamKey] = normalizeTeamConfig(cfg);
+  }
+
+  function projectedValueForMember(member){
+    const pid = parsePid(member && member.pid);
+    if(!pid) return null;
+    const row = projectionsByPid[String(pid)] || projectionsByPid[pid] || null;
+    if(!row) return null;
+    const pos = normalizePos((member && member.pos) || row.Position || row.position);
+    return projectionValueForRow(row, pos);
+  }
+
+  function scoreMembers(members){
+    let sum = 0;
+    let used = 0;
+    for(const m of (members || [])){
+      const rawValue = projectedValueForMember(m);
+      if(!Number.isFinite(rawValue)) continue;
+      const gRaw = parseNum(m && m.games);
+      const games = (Number.isFinite(gRaw) && gRaw > 0) ? gRaw : 82;
+      const weight = Math.max(0, games / 82);
+      sum += rawValue * weight;
+      used += 1;
+    }
+    if(used <= 0) return null;
+    return sum;
+  }
+
+  function rankFromPool(pool, score){
+    if(!Array.isArray(pool) || !pool.length || !Number.isFinite(score)) return null;
+    let higher = 0;
+    for(const s of pool){
+      if(Number.isFinite(s) && s > score) higher += 1;
+    }
+    return higher + 1;
+  }
+
+  function updateGroupRanks(){
+    persistCurrentTeamConfig();
+    rebuildLeagueGroupScores();
+
+    for(const g of interactiveGroups){
+      if(!g || !g.rankKpi || typeof g.getMembers !== 'function') continue;
+      const score = scoreMembers(g.getMembers());
+      const rank = rankFromPool(leagueGroupScores[g.key] || [], score);
+      const valEl = g.rankKpi.querySelector('.v');
+      if(valEl){
+        valEl.textContent = Number.isFinite(rank) ? ('#' + String(Math.round(rank))) : '--';
+      }
+      g.rankKpi.style.setProperty('--gm-rank-color', rankToColor(rank));
+      g.rankKpi.title = Number.isFinite(score) ? ('Projected total: ' + score.toFixed(2)) : 'Insufficient projection data';
+    }
+    updateProjectionKpis();
+    scheduleCustomLineupsCacheSync();
+    schedulePointsUpdate();
+  }
+
+  function membersForKeys(keys){
+    const out = [];
+    for(const key of (keys || [])){
+      const g = interactiveGroups.find((x)=> x && x.key === key);
+      if(!g || typeof g.getMembers !== 'function') continue;
+      const members = g.getMembers();
+      if(Array.isArray(members)) out.push.apply(out, members);
+    }
+    return out;
+  }
+
+  function updateProjectionKpis(){
+    const forwardMembers = membersForKeys(['fwd1', 'fwd2', 'fwd3', 'fwd4']);
+    const defenseMembers = membersForKeys(['def1', 'def2', 'def3']);
+    const goalieMembers = membersForKeys(['goalies']);
+    const scratchSplit = membersByPosition(membersForKeys(['scratches']));
+    const forwardsScore = scoreMembers(forwardMembers.concat(scratchSplit.F));
+    const defenseScore = scoreMembers(defenseMembers.concat(scratchSplit.D));
+    const goaliesScore = scoreMembers(goalieMembers.concat(scratchSplit.G));
+    const overallScore = scoreMembers(membersForKeys(['fwd1', 'fwd2', 'fwd3', 'fwd4', 'def1', 'def2', 'def3', 'goalies', 'scratches']));
+    const overallRank = rankFromPool(leagueTeamKpiScores.overall || [], overallScore);
+    const forwardsRank = rankFromPool(leagueTeamKpiScores.forwards || [], forwardsScore);
+    const defenseRank = rankFromPool(leagueTeamKpiScores.defense || [], defenseScore);
+    const goaliesRank = rankFromPool(leagueTeamKpiScores.goalies || [], goaliesScore);
+
+    if(kpiOverall){
+      const v = kpiOverall.querySelector('.v');
+      if(v) v.textContent = kpiRankLabel(overallRank);
+      kpiOverall.style.setProperty('--gm-kpi-rank-color', rankToColor(overallRank));
+    }
+    if(kpiForwards){
+      const v = kpiForwards.querySelector('.v');
+      if(v) v.textContent = kpiRankLabel(forwardsRank);
+      kpiForwards.style.setProperty('--gm-kpi-rank-color', rankToColor(forwardsRank));
+    }
+    if(kpiDefense){
+      const v = kpiDefense.querySelector('.v');
+      if(v) v.textContent = kpiRankLabel(defenseRank);
+      kpiDefense.style.setProperty('--gm-kpi-rank-color', rankToColor(defenseRank));
+    }
+    if(kpiGoalies){
+      const v = kpiGoalies.querySelector('.v');
+      if(v) v.textContent = kpiRankLabel(goaliesRank);
+      kpiGoalies.style.setProperty('--gm-kpi-rank-color', rankToColor(goaliesRank));
+    }
+  }
+
+  function setTeamKpiMeta(teamKey){
+    const key = String(teamKey || '').trim().toUpperCase();
+    const row = teamsData.find((t)=> String((t || {}).Team || '').trim().toUpperCase() === key) || null;
+    const logo = row ? String(row.Logo || '').trim() : '';
+    const name = row ? String(row.Name || key).trim() : key;
+
+    if(teamName) teamName.textContent = name || '-';
+    if(teamAbbr) teamAbbr.textContent = key || '--';
+    if(teamLogo){
+      teamLogo.src = logo || '';
+      teamLogo.alt = name ? (name + ' logo') : '';
+      teamLogo.style.visibility = logo ? 'visible' : 'hidden';
+    }
+  }
+
+  function schedulePointsUpdate(){
+    if(pointsDebounceTimer) clearTimeout(pointsDebounceTimer);
+    pointsDebounceTimer = setTimeout(function(){ updateProjectedPointsKpi(getCurrentTeamKey()); }, 800);
+  }
+
+  function buildLineupPayloadFromConfig(cfg){
+    const conf = normalizeTeamConfig(cfg || {});
+    const out = [];
+    for(const key of GROUP_KEYS){
+      const rows = Array.isArray(conf[key]) ? conf[key] : [];
+      const spec = GROUP_SPECS[key] || { pos: 'F' };
+      for(const row of rows){
+        const pid = parsePid(row && row.pid);
+        if(!pid) continue;
+        const pos = normalizePos((row && row.pos) || spec.pos) || 'F';
+        out.push({ pid: pid, pos: pos });
+      }
+    }
+    return out;
+  }
+
+  function buildAllTeamsLineupsPayload(){
+    ensureAllTeamConfigs();
+    const out = {};
+    for(const teamKey of Object.keys(lineupsByTeam || {})){
+      const cfg = teamConfigs[teamKey] || defaultTeamConfig(lineupsByTeam[teamKey]);
+      out[teamKey] = buildLineupPayloadFromConfig(cfg);
+    }
+    return out;
+  }
+
+  async function syncCustomLineupsCache(){
+    const reqId = ++lineupsCacheReqSeq;
+    try{
+      const lineupsByTeamPayload = buildAllTeamsLineupsPayload();
+      await fetch('/api/projections/custom-lineups-cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+        body: JSON.stringify({ season: Number(POINTS_SEASON), lineupsByTeam: lineupsByTeamPayload }),
+      });
+      if(reqId !== lineupsCacheReqSeq) return;
+    }catch(_){
+      if(reqId !== lineupsCacheReqSeq) return;
+    }
+  }
+
+  function scheduleCustomLineupsCacheSync(){
+    if(lineupsCacheDebounceTimer) clearTimeout(lineupsCacheDebounceTimer);
+    lineupsCacheDebounceTimer = setTimeout(function(){ syncCustomLineupsCache(); }, 900);
+  }
+
+  function buildLineupPayload(){
+    const out = [];
+    for(const key of GROUP_KEYS){
+      const g = interactiveGroups.find((x)=> x && x.key === key);
+      if(!g || typeof g.getMembers !== 'function') continue;
+      for(const m of g.getMembers()){
+        const pid = parsePid(m && m.pid);
+        if(!pid) continue;
+        const pos = normalizePos(m && m.pos) || 'F';
+        out.push({ pid: pid, pos: pos });
+      }
+    }
+    return out;
+  }
+
+  async function updateProjectedPointsKpi(teamKey){
+    if(!kpiPoints) return;
+    const team = String(teamKey || '').trim().toUpperCase();
+    if(!team){
+      const v = kpiPoints.querySelector('.v');
+      if(v) v.textContent = '--';
+      kpiPoints.style.setProperty('--gm-kpi-points-color', '#ffffff');
+      return;
+    }
+    const reqId = ++pointsReqSeq;
+    const loadingV = kpiPoints.querySelector('.v');
+    if(loadingV) loadingV.textContent = '...';
+    kpiPoints.style.setProperty('--gm-kpi-points-color', '#ffffff');
+    try{
+      const lineup = buildLineupPayload();
+      const res = await fetch('/api/projections/team-season-points-custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+        body: JSON.stringify({ team: team, season: Number(POINTS_SEASON), lineup: lineup }),
+      });
+      const data = await res.json().catch(()=>({}));
+      if(reqId !== pointsReqSeq) return;
+      if(!res.ok) throw new Error(String((data || {}).error || 'points_failed'));
+      const points = conservativePoints((data || {}).projectedPoints);
+      const v = kpiPoints.querySelector('.v');
+      if(Number.isFinite(points)){
+        if(v) v.textContent = points.toFixed(1);
+        kpiPoints.style.setProperty('--gm-kpi-points-color', pointsToColor(points));
+      }else{
+        if(v) v.textContent = '--';
+        kpiPoints.style.setProperty('--gm-kpi-points-color', '#ffffff');
+      }
+    }catch(_){
+      if(reqId !== pointsReqSeq) return;
+      const v = kpiPoints.querySelector('.v');
+      if(v) v.textContent = '--';
+      kpiPoints.style.setProperty('--gm-kpi-points-color', '#ffffff');
+    }
+  }
+
+  function createSlotCard(slot, candidates, selectedKey, allowNone, onChange, initialGames){
+    const card = document.createElement('div');
+    card.className = 'gm-slot';
+
+    const slotLabel = document.createElement('div');
+    slotLabel.className = 'gm-slot-label';
+    slotLabel.textContent = SLOT_LABELS[slot] || slot;
+
+    const visual = document.createElement('div');
+    visual.className = 'gm-visual';
+    visual.title = 'Click to set estimated games';
+
+    const img = document.createElement('img');
+    img.className = 'gm-headshot';
+    img.src = DEFAULT_IMG;
+    img.alt = '';
+    img.loading = 'lazy';
+
+    const proj = document.createElement('div');
+    proj.className = 'gm-proj-kpi';
+    proj.innerHTML = '<div><div class="v">--</div><div class="l">Projection</div></div>';
+    const projValue = proj.querySelector('.v');
+
+    visual.appendChild(img);
+    visual.appendChild(proj);
+
+    const gamesNote = document.createElement('div');
+    gamesNote.className = 'gm-games-note';
+    let estGames = null;
+
+    const picker = document.createElement('div');
+    picker.className = 'gm-picker';
+
+    const pickerBtn = document.createElement('button');
+    pickerBtn.type = 'button';
+    pickerBtn.className = 'gm-picker-btn';
+    pickerBtn.textContent = 'Select player';
+
+    const panel = document.createElement('div');
+    panel.className = 'gm-picker-panel';
+    panel.hidden = true;
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'gm-picker-search';
+    searchInput.placeholder = 'Search...';
+    searchInput.setAttribute('autocomplete', 'off');
+
+    const optionsWrap = document.createElement('div');
+    optionsWrap.className = 'gm-picker-options';
+
+    panel.appendChild(searchInput);
+    panel.appendChild(optionsWrap);
+    picker.appendChild(pickerBtn);
+    picker.appendChild(panel);
+
+    const byKey = new Map();
+    const allOptions = [];
+    const labelByKey = new Map();
+
+    if(allowNone){
+      allOptions.push({ key: '', label: '— None —', searchText: 'none' });
+      labelByKey.set('', '— None —');
+    }
+
+    for(const p of candidates){
+      if(!p || !p.key) continue;
+      const teamLabel = String(p.team || '').trim().toUpperCase();
+      const label = String(p.name || '').trim();
+      byKey.set(String(p.key), p);
+      labelByKey.set(String(p.key), label);
+      allOptions.push({
+        key: String(p.key),
+        label: label,
+        searchText: (label + ' ' + teamLabel).trim().toLowerCase(),
+      });
+    }
+
+    let selectedOptionKey = byKey.has(String(selectedKey || '')) ? String(selectedKey || '') : (allowNone ? '' : (allOptions.find((x)=> x.key) || {}).key || '');
+
+    const selectedMeta = function(){
+      return selectedOptionKey ? (byKey.get(selectedOptionKey) || null) : null;
+    };
+
+    const setButtonLabel = function(){
+      pickerBtn.textContent = String(labelByKey.get(selectedOptionKey || '') || 'Select player');
+    };
+
+    const closePanel = function(){
+      panel.hidden = true;
+    };
+
+    const sizePanelForViewport = function(){
+      const isMobile = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+      if(isMobile){
+        panel.style.width = '100%';
+        panel.style.minWidth = '100%';
+        panel.style.maxWidth = '100%';
+        return;
+      }
+
+      let maxLabelLen = 0;
+      for(const optDef of allOptions){
+        const len = String((optDef && optDef.label) || '').length;
+        if(len > maxLabelLen) maxLabelLen = len;
+      }
+
+      const buttonW = Math.max(120, Math.round(pickerBtn.getBoundingClientRect().width || 0));
+      const estTextW = Math.max(120, Math.round(maxLabelLen * 8.2));
+      const desired = Math.max(buttonW + 26, estTextW + 44);
+      const maxW = Math.max(buttonW, Math.min(440, Math.round((window.innerWidth || 1200) * 0.5)));
+      const finalW = Math.min(maxW, desired);
+
+      panel.style.minWidth = buttonW + 'px';
+      panel.style.width = finalW + 'px';
+      panel.style.maxWidth = maxW + 'px';
+    };
+
+    const openPanel = function(){
+      panel.hidden = false;
+      searchInput.value = '';
+      renderOptionButtons('');
+      sizePanelForViewport();
+      try{ searchInput.focus(); }catch(_){/*noop*/}
+    };
+
+    const renderOptionButtons = function(filterText){
+      const term = String(filterText || '').trim().toLowerCase();
+      optionsWrap.innerHTML = '';
+
+      for(const optDef of allOptions){
+        const key = String(optDef.key || '');
+        if(term && !String(optDef.searchText || '').includes(term)) continue;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'gm-picker-option' + (key === selectedOptionKey ? ' active' : '');
+        btn.textContent = String(optDef.label || '');
+        btn.addEventListener('click', function(){
+          selectedOptionKey = key;
+          setButtonLabel();
+          refreshVisual();
+          closePanel();
+          if(typeof onChange === 'function') onChange();
+        });
+        optionsWrap.appendChild(btn);
+      }
+    };
+
+    const ensureDefaultGames = function(pid){
+      if(pid > 0){
+        if(!(Number.isFinite(estGames) && estGames > 0)) estGames = 82;
+      }else{
+        estGames = 0;
+      }
+    };
+
+    const refreshVisual = function(){
+      const option = selectedMeta();
+      const pid = parsePid(option ? option.pid : 0);
+      const pos = option ? String(option.pos || '') : '';
+      ensureDefaultGames(pid);
+      const pct = projectionPercentile(pid, pos);
+      img.src = headshotUrl(pid);
+      img.alt = option ? String(option.name || '') : '';
+      projValue.textContent = projectionLabel(pct);
+      proj.style.setProperty('--gm-proj-color', projectionColor(pct));
+      gamesNote.textContent = 'GP ' + String(Number.isFinite(estGames) ? estGames : (pid > 0 ? 82 : 0));
+    };
+
+    const initialMeta = selectedMeta();
+    const initialPid = parsePid(initialMeta ? initialMeta.pid : 0);
+    const initialParsedGames = parseNum(initialGames);
+    if(Number.isFinite(initialParsedGames) && initialParsedGames >= 0){
+      estGames = Math.round(initialParsedGames);
+    }else{
+      estGames = initialPid > 0 ? 82 : 0;
+    }
+
+    setButtonLabel();
+    refreshVisual();
+    renderOptionButtons('');
+    sizePanelForViewport();
+
+    pickerBtn.addEventListener('click', function(){
+      if(panel.hidden) openPanel();
+      else closePanel();
+    });
+
+    searchInput.addEventListener('input', function(){
+      renderOptionButtons(searchInput.value);
+    });
+
+    searchInput.addEventListener('keydown', function(e){
+      if(e && e.key === 'Escape'){
+        e.preventDefault();
+        closePanel();
+      }
+    });
+
+    const outsideClickHandler = function(e){
+      if(!panel.hidden && !picker.contains(e.target)) closePanel();
+    };
+    document.addEventListener('mousedown', outsideClickHandler);
+    window.addEventListener('resize', sizePanelForViewport);
+
+    visual.addEventListener('click', function(){
+      const option = selectedMeta();
+      if(!option || !parsePid(option.pid)){
+        return;
+      }
+      const label = String(option.name || 'player').trim();
+      const current = Number.isFinite(estGames) ? String(estGames) : '';
+      const entered = window.prompt('Estimated games for ' + label + ' (blank to clear):', current);
+      if(entered === null) return;
+      const trimmed = String(entered).trim();
+      if(!trimmed){
+        estGames = 82;
+      }else{
+        const n = parseNum(trimmed);
+        if(!(Number.isFinite(n) && n >= 0)){
+          window.alert('Enter a non-negative number.');
+          return;
+        }
+        estGames = Math.round(n);
+      }
+      refreshVisual();
+      if(typeof onChange === 'function') onChange();
+    });
+    slotVisualUpdaters.push(refreshVisual);
+
+    card.appendChild(slotLabel);
+    card.appendChild(visual);
+    card.appendChild(gamesNote);
+    card.appendChild(picker);
+    return {
+      element: card,
+      getMember: function(){
+        const option = selectedMeta();
+        const pid = parsePid(option ? option.pid : 0);
+        const pos = option ? String(option.pos || '') : '';
+        return { pid: pid, pos: pos, games: Number.isFinite(estGames) ? estGames : (pid > 0 ? 82 : 0) };
+      },
+    };
+  }
+
+  function createLine(labelText, rankLabel){
+    const line = document.createElement('div');
+    line.className = 'gm-line';
+    const labelTextValue = String(labelText || '').trim();
+    if(labelTextValue){
+      const label = document.createElement('div');
+      label.className = 'gm-line-label';
+      label.textContent = labelTextValue;
+      line.appendChild(label);
+    }
+
+    const rankKpi = document.createElement('div');
+    rankKpi.className = 'gm-rank-kpi';
+    rankKpi.innerHTML = '<div><div class="v">--</div><div class="l">' + String(rankLabel || 'Rank') + '</div></div>';
+
+    const rankSlot = document.createElement('div');
+    rankSlot.className = 'gm-rank-slot';
+    const rankSlotLabel = document.createElement('div');
+    rankSlotLabel.className = 'gm-slot-label';
+    rankSlotLabel.textContent = 'Rank';
+    const rankGamesSpacer = document.createElement('div');
+    rankGamesSpacer.className = 'gm-games-note';
+    rankSlot.appendChild(rankSlotLabel);
+    rankSlot.appendChild(rankKpi);
+    rankSlot.appendChild(rankGamesSpacer);
+
+    const row = document.createElement('div');
+    row.className = 'gm-row';
+    line.appendChild(row);
+    return { line, row, rankKpi, rankSlot };
+  }
+
+  function addInteractiveGroup(key, lineObj, cards){
+    interactiveGroups.push({
+      key: key,
+      rankKpi: lineObj.rankKpi,
+      getMembers: function(){ return cards.map((c)=> c.getMember()); },
+    });
+  }
+
+  function renderScratches(container, candidates){
+    container.innerHTML = '';
+    const line = createLine('', 'Projection');
+    const cards = [];
+    for(let i = 1; i <= 5; i += 1){
+      const cardObj = createSlotCard('S' + String(i), candidates, '', true, updateGroupRanks);
+      cards.push(cardObj);
+      line.row.appendChild(cardObj.element);
+    }
+    line.row.appendChild(line.rankSlot);
+    container.appendChild(line.line);
+    addInteractiveGroup('scratches', line, cards);
+  }
+
+  function extractTeamGroups(teamNode){
+    const forwards = uniquePlayers(Array.isArray(teamNode && teamNode.forwards) ? teamNode.forwards : []);
+    const defense = uniquePlayers(Array.isArray(teamNode && teamNode.defense) ? teamNode.defense : []);
+    const goalies = uniquePlayers(Array.isArray(teamNode && teamNode.goalies) ? teamNode.goalies : []);
+    const bySlot = {};
+    for(const rec of forwards.concat(defense, goalies)){
+      const slot = parseSlot(rec.unit);
+      if(slot && !bySlot[slot]) bySlot[slot] = rec;
+    }
+
+    const groups = { fwd1: [], fwd2: [], fwd3: [], fwd4: [], def1: [], def2: [], def3: [], goalies: [], scratches: [] };
+    const used = new Set();
+
+    FWD_ROWS.forEach(function(rowSlots, idx){
+      const key = 'fwd' + String(idx + 1);
+      groups[key] = rowSlots.map(function(slot){
+        const p = bySlot[slot] || null;
+        if(p) used.add(p.key);
+        return p ? { pid: p.pid, pos: p.pos, games: 82 } : { pid: 0, pos: 'F', games: 0 };
+      });
+    });
+
+    DEF_ROWS.forEach(function(rowSlots, idx){
+      const key = 'def' + String(idx + 1);
+      groups[key] = rowSlots.map(function(slot){
+        const p = bySlot[slot] || null;
+        if(p) used.add(p.key);
+        return p ? { pid: p.pid, pos: p.pos, games: 82 } : { pid: 0, pos: 'D', games: 0 };
+      });
+    });
+
+    groups.goalies = GOALIE_SLOTS.map(function(slot){
+      const p = bySlot[slot] || null;
+      if(p) used.add(p.key);
+      return p ? { pid: p.pid, pos: p.pos, games: 82 } : { pid: 0, pos: 'G', games: 0 };
+    });
+
+    const leftovers = forwards.concat(defense, goalies).filter((p)=> !used.has(p.key)).slice(0, 5);
+    groups.scratches = [];
+    for(let i = 0; i < 5; i += 1){
+      const p = leftovers[i] || null;
+      groups.scratches.push(p ? { pid: p.pid, pos: p.pos, games: 82 } : { pid: 0, pos: '', games: 0 });
+    }
+    return groups;
+  }
+
+  function rebuildLeagueGroupScores(){
+    const keys = GROUP_KEYS;
+    leagueGroupScores = {};
+    for(const k of keys) leagueGroupScores[k] = [];
+    leagueTeamKpiScores = { overall: [], forwards: [], defense: [], goalies: [] };
+
+    for(const teamKey of Object.keys(lineupsByTeam || {})){
+      const groups = teamConfigs[teamKey] || defaultTeamConfig(lineupsByTeam[teamKey]);
+      for(const k of keys){
+        const s = scoreMembers(groups[k]);
+        if(Number.isFinite(s)) leagueGroupScores[k].push(s);
+      }
+      const scratches = groups.scratches || [];
+      const scratchSplit = membersByPosition(scratches);
+      const forwards = scoreMembers((groups.fwd1 || []).concat(groups.fwd2 || [], groups.fwd3 || [], groups.fwd4 || [], scratchSplit.F));
+      const defense = scoreMembers((groups.def1 || []).concat(groups.def2 || [], groups.def3 || [], scratchSplit.D));
+      const goalies = scoreMembers((groups.goalies || []).concat(scratchSplit.G));
+      const overall = scoreMembers(
+        (groups.fwd1 || []).concat(groups.fwd2 || [], groups.fwd3 || [], groups.fwd4 || [], groups.def1 || [], groups.def2 || [], groups.def3 || [], groups.goalies || [], groups.scratches || [])
+      );
+      if(Number.isFinite(overall)) leagueTeamKpiScores.overall.push(overall);
+      if(Number.isFinite(forwards)) leagueTeamKpiScores.forwards.push(forwards);
+      if(Number.isFinite(defense)) leagueTeamKpiScores.defense.push(defense);
+      if(Number.isFinite(goalies)) leagueTeamKpiScores.goalies.push(goalies);
+    }
+  }
+
+  function renderTeam(team){
+    const teamKey = String(team || '').trim().toUpperCase();
+    setTeamKpiMeta(teamKey);
+    updateProjectedPointsKpi(teamKey);
+    forwardsWrap.innerHTML = '';
+    defenseWrap.innerHTML = '';
+    goaliesWrap.innerHTML = '';
+    scratchWrap.innerHTML = '';
+    slotVisualUpdaters = [];
+    interactiveGroups = [];
+
+    const teamNode = lineupsByTeam[teamKey];
+    if(!teamNode){
+      statusEl.textContent = 'No Daily Faceoff lineup data available for this team.';
+      return;
+    }
+
+    const forwards = uniquePlayers(Array.isArray(teamNode.forwards) ? teamNode.forwards : []);
+    const defense = uniquePlayers(Array.isArray(teamNode.defense) ? teamNode.defense : []);
+    const goalies = uniquePlayers(Array.isArray(teamNode.goalies) ? teamNode.goalies : []);
+    const cfg = teamConfigs[teamKey] || defaultTeamConfig(teamNode);
+    teamConfigs[teamKey] = normalizeTeamConfig(cfg);
+    const forwardCandidates = buildTeamFirstCandidates(teamKey, ['F']);
+    const defenseCandidates = buildTeamFirstCandidates(teamKey, ['D']);
+    const goalieCandidates = buildTeamFirstCandidates(teamKey, ['G']);
+    const scratchCandidates = buildTeamFirstCandidates(teamKey, ['F', 'D', 'G']);
+
+    const bySlot = {};
+    for(const rec of forwards.concat(defense, goalies)){
+      const slot = parseSlot(rec.unit);
+      if(slot && !bySlot[slot]) bySlot[slot] = rec;
+    }
+
+    FWD_ROWS.forEach(function(rowSlots, idx){
+      const line = createLine('Line ' + String(idx + 1), 'Projection');
+      const cards = [];
+      for(const slot of rowSlots){
+        const rowIdx = rowSlots.indexOf(slot);
+        const entry = (((cfg['fwd' + String(idx + 1)] || [])[rowIdx]) || {});
+        const selected = keyByPid(forwardCandidates, entry.pid) || (bySlot[slot] ? bySlot[slot].key : '');
+        const cardObj = createSlotCard(slot, forwardCandidates, selected, true, updateGroupRanks, entry.games);
+        cards.push(cardObj);
+        line.row.appendChild(cardObj.element);
+      }
+      line.row.appendChild(line.rankSlot);
+      forwardsWrap.appendChild(line.line);
+      addInteractiveGroup('fwd' + String(idx + 1), line, cards);
+    });
+
+    DEF_ROWS.forEach(function(rowSlots, idx){
+      const line = createLine('Pair ' + String(idx + 1), 'Projection');
+      line.row.classList.add('gm-row-two-skaters');
+      const cards = [];
+      for(const slot of rowSlots){
+        const rowIdx = rowSlots.indexOf(slot);
+        const entry = (((cfg['def' + String(idx + 1)] || [])[rowIdx]) || {});
+        const selected = keyByPid(defenseCandidates, entry.pid) || (bySlot[slot] ? bySlot[slot].key : '');
+        const cardObj = createSlotCard(slot, defenseCandidates, selected, true, updateGroupRanks, entry.games);
+        cards.push(cardObj);
+        line.row.appendChild(cardObj.element);
+      }
+      line.row.appendChild(line.rankSlot);
+      defenseWrap.appendChild(line.line);
+      addInteractiveGroup('def' + String(idx + 1), line, cards);
+    });
+
+    const goalieLine = createLine('', 'Projection');
+    goalieLine.row.classList.add('gm-row-two-skaters');
+    const gCfg = cfg.goalies || [];
+    const starterDefault = keyByPid(goalieCandidates, (gCfg[0] || {}).pid) || (bySlot.G ? bySlot.G.key : (goalieCandidates[0] ? goalieCandidates[0].key : ''));
+    const backupDefault = keyByPid(goalieCandidates, (gCfg[1] || {}).pid) || '';
+    const goalieCards = [];
+    const g0 = createSlotCard(GOALIE_SLOTS[0], goalieCandidates, starterDefault, true, updateGroupRanks, (gCfg[0] || {}).games);
+    const g1 = createSlotCard(GOALIE_SLOTS[1], goalieCandidates, backupDefault, true, updateGroupRanks, (gCfg[1] || {}).games);
+    goalieCards.push(g0, g1);
+    goalieLine.row.appendChild(g0.element);
+    goalieLine.row.appendChild(g1.element);
+    goalieLine.row.appendChild(goalieLine.rankSlot);
+    goaliesWrap.appendChild(goalieLine.line);
+    addInteractiveGroup('goalies', goalieLine, goalieCards);
+
+    scratchWrap.innerHTML = '';
+    const scratchLine = createLine('', 'Projection');
+    const scratchCards = [];
+    const sCfg = cfg.scratches || [];
+    for(let i = 0; i < 5; i += 1){
+      const entry = sCfg[i] || {};
+      const selected = keyByPid(scratchCandidates, entry.pid) || '';
+      const cardObj = createSlotCard('S' + String(i + 1), scratchCandidates, selected, true, updateGroupRanks, entry.games);
+      scratchCards.push(cardObj);
+      scratchLine.row.appendChild(cardObj.element);
+    }
+    scratchLine.row.appendChild(scratchLine.rankSlot);
+    scratchWrap.appendChild(scratchLine.line);
+    addInteractiveGroup('scratches', scratchLine, scratchCards);
+
+    for(const fn of slotVisualUpdaters){
+      try{ fn(); }catch(_){/*noop*/}
+    }
+    updateGroupRanks();
+
+    const generatedAt = String(teamNode.generated_at || '').trim();
+    statusEl.textContent = generatedAt
+      ? ('Daily Faceoff lineup snapshot loaded. Updated: ' + generatedAt)
+      : 'Daily Faceoff lineup snapshot loaded.';
+  }
+
+  function renderFromSelectedTeam(){
+    const selectedTeam = String(teamSelect.value || '').trim().toUpperCase();
+    if(!selectedTeam){
+      statusEl.textContent = 'Select a team to view line combinations.';
+      return;
+    }
+    renderTeam(selectedTeam);
+  }
+
+  function waitForTeamSelection(attempt){
+    const tries = Number.isFinite(attempt) ? attempt : 0;
+    if(String(teamSelect.value || '').trim()){
+      renderFromSelectedTeam();
+      return;
+    }
+    if(tries >= 20){
+      renderFromSelectedTeam();
+      return;
+    }
+    setTimeout(function(){ waitForTeamSelection(tries + 1); }, 120);
+  }
+
+  function applyViewMode(modeRaw){
+    const mode = String(modeRaw || 'images').toLowerCase() === 'projection' ? 'projection' : 'images';
+    shell.classList.toggle('gm-view-projection', mode === 'projection');
+    if(viewModeSelect && viewModeSelect.value !== mode){
+      viewModeSelect.value = mode;
+    }
+    try{ localStorage.setItem(GM_VIEW_KEY, mode); }catch(_){/*noop*/}
+    for(const fn of slotVisualUpdaters){
+      try{ fn(); }catch(_){/*noop*/}
+    }
+  }
+
+  teamSelect.addEventListener('change', renderFromSelectedTeam);
+  if(viewModeSelect){
+    viewModeSelect.addEventListener('change', function(){ applyViewMode(viewModeSelect.value); });
+  }
+
+  function modalShow(show){
+    if(!configModal) return;
+    configModal.hidden = !show;
+  }
+
+  function getSelectedDialogLayout(){
+    return dialogLayouts.find((l)=> String((l || {}).id || '') === String(dialogSelectedId || '')) || null;
+  }
+
+  function updateDialogButtons(){
+    const hasSelection = !!getSelectedDialogLayout();
+    const isSave = dialogMode === 'save';
+    if(configFields) configFields.hidden = !isSave;
+    if(configLoadBtn) configLoadBtn.style.display = isSave ? 'none' : '';
+    if(configOverwriteBtn) configOverwriteBtn.style.display = isSave ? '' : 'none';
+    if(configSaveNewBtn) configSaveNewBtn.style.display = isSave ? '' : 'none';
+    if(configDeleteBtn) configDeleteBtn.style.display = '';
+
+    if(configLoadBtn) configLoadBtn.disabled = !hasSelection;
+    if(configDeleteBtn) configDeleteBtn.disabled = !hasSelection;
+    if(configOverwriteBtn) configOverwriteBtn.disabled = !hasSelection;
+    if(configSaveNewBtn) configSaveNewBtn.disabled = false;
+  }
+
+  function renderConfigList(){
+    if(!configList) return;
+    configList.innerHTML = '';
+    if(!dialogLayouts.length){
+      configList.innerHTML = '<div class="gm-config-empty">No saved GM Mode configurations found for this user.</div>';
+      dialogSelectedId = '';
+      updateDialogButtons();
+      return;
+    }
+
+    for(const layout of dialogLayouts){
+      const id = String((layout || {}).id || '').trim();
+      const name = String((layout || {}).name || 'GM Mode Config').trim();
+      const updated = String((layout || {}).updatedAt || '').replace('T', ' ').replace('Z', ' UTC');
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'gm-config-item' + (id === dialogSelectedId ? ' active' : '');
+      item.setAttribute('data-id', id);
+      item.innerHTML = '<div class="gm-config-name"></div><div class="gm-config-meta"></div>';
+      const nameEl = item.querySelector('.gm-config-name');
+      const metaEl = item.querySelector('.gm-config-meta');
+      if(nameEl) nameEl.textContent = name;
+      if(metaEl) metaEl.textContent = updated || 'No timestamp';
+      item.addEventListener('click', function(){
+        dialogSelectedId = id;
+        if(configNameInput && dialogMode === 'save') configNameInput.value = name;
+        renderConfigList();
+      });
+      configList.appendChild(item);
+    }
+    updateDialogButtons();
+  }
+
+  async function fetchGmLayouts(){
+    const res = await fetch('/api/card-builder/layouts', { cache: 'no-store' });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok){
+      throw new Error('load_failed');
+    }
+    const layouts = Array.isArray((data || {}).layouts) ? data.layouts : [];
+    return layouts.filter((l)=>{
+      const cfg = (l && typeof l.config === 'object') ? l.config : {};
+      return String((l || {}).cardType || '').toLowerCase() === 'gm_mode' || !!cfg.gmMode;
+    });
+  }
+
+  async function openConfigDialog(mode){
+    dialogMode = mode === 'save' ? 'save' : 'load';
+    if(configTitle) configTitle.textContent = dialogMode === 'save' ? 'Save GM Mode Configuration' : 'Load GM Mode Configuration';
+    if(configNote) configNote.textContent = dialogMode === 'save'
+      ? 'Select an existing configuration to overwrite, or enter a new name and save as new.'
+      : 'Select a configuration to load or delete.';
+
+    try{
+      dialogLayouts = await fetchGmLayouts();
+      dialogSelectedId = '';
+      if(activeLayoutId && dialogLayouts.some((l)=> String((l || {}).id || '') === activeLayoutId)){
+        dialogSelectedId = activeLayoutId;
+      } else if (dialogLayouts.length) {
+        dialogSelectedId = String((dialogLayouts[0] || {}).id || '');
+      }
+
+      if(configNameInput){
+        const selected = getSelectedDialogLayout();
+        configNameInput.value = dialogMode === 'save'
+          ? String((selected && selected.name) || activeLayoutName || 'GM Mode Config')
+          : '';
+      }
+      renderConfigList();
+      modalShow(true);
+    }catch(_){
+      statusEl.textContent = 'Unable to load configurations right now.';
+    }
+  }
+
+  function applyLayoutRecord(layout){
+    const chosen = layout || {};
+    const cfg = (chosen.config && typeof chosen.config === 'object') ? chosen.config : {};
+    teamConfigs = normalizeAllTeamConfigs(cfg.teamConfigs);
+    ensureAllTeamConfigs();
+    activeLayoutId = String(chosen.id || '');
+    activeLayoutName = String(chosen.name || '');
+    rebuildLeagueGroupScores();
+    scheduleCustomLineupsCacheSync();
+    renderFromSelectedTeam();
+  }
+
+  async function saveAs(layoutIdOrNull){
+    ensureAllTeamConfigs();
+    persistCurrentTeamConfig();
+    rebuildLeagueGroupScores();
+    const nameRaw = String((configNameInput && configNameInput.value) || '').trim();
+    const selected = getSelectedDialogLayout();
+    const name = nameRaw || String((selected && selected.name) || activeLayoutName || 'GM Mode Config');
+    const payload = {
+      id: layoutIdOrNull || null,
+      name: name,
+      cardType: 'team',
+      config: {
+        version: 1,
+        cardType: 'team',
+        gmMode: true,
+        teamConfigs: teamConfigs,
+      },
+    };
+    const res = await fetch('/api/card-builder/layouts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': CSRF_TOKEN,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(String((data && data.error) || 'save_failed'));
+    const saved = ((data || {}).layout || {});
+    activeLayoutId = String(saved.id || activeLayoutId || '');
+    activeLayoutName = String(saved.name || name || '');
+    statusEl.textContent = 'Configuration saved as "' + activeLayoutName + '".';
+    modalShow(false);
+  }
+
+  async function deleteSelectedLayout(){
+    const selected = getSelectedDialogLayout();
+    if(!selected) return;
+    const ok = window.confirm('Delete configuration "' + String(selected.name || 'GM Mode Config') + '"?');
+    if(!ok) return;
+    const id = String(selected.id || '');
+    const res = await fetch('/api/card-builder/layouts/' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: {
+        'X-CSRF-Token': CSRF_TOKEN,
+      },
+    });
+    if(!res.ok) throw new Error('delete_failed');
+    if(activeLayoutId === id){
+      activeLayoutId = '';
+      activeLayoutName = '';
+    }
+    dialogLayouts = dialogLayouts.filter((l)=> String((l || {}).id || '') !== id);
+    dialogSelectedId = dialogLayouts.length ? String((dialogLayouts[0] || {}).id || '') : '';
+    const selectedAfter = getSelectedDialogLayout();
+    if(configNameInput && dialogMode === 'save'){
+      configNameInput.value = String((selectedAfter && selectedAfter.name) || activeLayoutName || 'GM Mode Config');
+    }
+    renderConfigList();
+    statusEl.textContent = 'Configuration deleted.';
+  }
+
+  if(saveBtn){
+    saveBtn.addEventListener('click', function(){ openConfigDialog('save'); });
+  }
+  if(loadBtn){
+    loadBtn.addEventListener('click', function(){ openConfigDialog('load'); });
+  }
+  if(configCloseBtn){
+    configCloseBtn.addEventListener('click', function(){ modalShow(false); });
+  }
+  if(configModal){
+    configModal.addEventListener('click', function(e){
+      if(e.target === configModal) modalShow(false);
+    });
+  }
+  if(configLoadBtn){
+    configLoadBtn.addEventListener('click', function(){
+      const selected = getSelectedDialogLayout();
+      if(!selected) return;
+      applyLayoutRecord(selected);
+      statusEl.textContent = 'Loaded configuration "' + String(selected.name || 'GM Mode Config') + '".';
+      modalShow(false);
+    });
+  }
+  if(configDeleteBtn){
+    configDeleteBtn.addEventListener('click', async function(){
+      try{
+        await deleteSelectedLayout();
+      }catch(_){
+        statusEl.textContent = 'Unable to delete configuration right now.';
+      }
+    });
+  }
+  if(configOverwriteBtn){
+    configOverwriteBtn.addEventListener('click', async function(){
+      try{
+        const selected = getSelectedDialogLayout();
+        if(!selected) return;
+        await saveAs(String(selected.id || ''));
+      }catch(_){
+        statusEl.textContent = 'Unable to overwrite configuration right now.';
+      }
+    });
+  }
+  if(configSaveNewBtn){
+    configSaveNewBtn.addEventListener('click', async function(){
+      try{
+        await saveAs(null);
+      }catch(_){
+        statusEl.textContent = 'Unable to save configuration right now.';
+      }
+    });
+  }
+
+  let initialView = 'images';
+  try{
+    const saved = String(localStorage.getItem(GM_VIEW_KEY) || '').toLowerCase();
+    if(saved === 'projection' || saved === 'images') initialView = saved;
+  }catch(_){/*noop*/}
+  applyViewMode(initialView);
+
+  Promise.all([
+    fetch('/api/lineups/all', { cache: 'no-store' })
+      .then(function(res){ if(!res.ok) throw new Error('lineups'); return res.json(); }),
+    fetch('/api/player-current-projections', { cache: 'no-store' })
+      .then(function(res){ return res.ok ? res.json() : {}; })
+      .catch(function(){ return {}; }),
+  ])
+    .then(function(results){
+      lineupsByTeam = results[0] && typeof results[0] === 'object' ? results[0] : {};
+      projectionsByPid = results[1] && typeof results[1] === 'object' ? results[1] : {};
+      buildProjectionPools(projectionsByPid);
+      buildProjectionPlayersByPos(projectionsByPid);
+      ensureAllTeamConfigs();
+      scheduleCustomLineupsCacheSync();
+      rebuildLeagueGroupScores();
+      waitForTeamSelection(0);
+    })
+    .catch(function(){
+      statusEl.textContent = 'Unable to load Daily Faceoff lineup data right now.';
+    });
+})();
+</script>
+{% endblock %}
