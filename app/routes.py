@@ -104,6 +104,20 @@ _AUTH_PREMIUM_PAGE_PREFIXES = (
 _AUTH_PREMIUM_API_PREFIXES = (
     '/api/projections/',
 )
+_CRAWLER_UA_TOKENS = (
+    'meta-externalagent',
+    'facebookexternalhit',
+    'slackbot',
+    'discordbot',
+    'linkedinbot',
+    'twitterbot',
+    'whatsapp',
+    'telegrambot',
+    'skypeuripreview',
+    'crawler',
+    'spider',
+    'bot',
+)
 _CARD_BUILDER_CARD_TYPES = {'skater', 'goalie', 'team', 'gm_mode'}
 _COMMUNITY_FEED_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 _COMMUNITY_NHL_HUB_ID = str(os.getenv('COMMUNITY_NHL_HUB_ID') or '84dafae8-3ecd-4a09-ac00-3474edb0a8fa').strip()
@@ -123,6 +137,22 @@ def _auth_is_premium_path(path: str) -> bool:
         if path == prefix or path.startswith(prefix):
             return True
     return False
+
+
+def _is_crawler_request() -> bool:
+    if (request.method or 'GET').upper() not in {'GET', 'HEAD'}:
+        return False
+    user_agent = str(request.headers.get('User-Agent') or '').strip().lower()
+    if not user_agent:
+        return False
+    return any(token in user_agent for token in _CRAWLER_UA_TOKENS)
+
+
+def _minimal_bot_response(status_code: int = 404) -> Any:
+    response = make_response('', int(status_code or 404))
+    response.headers['Cache-Control'] = 'no-store, max-age=0'
+    response.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive'
+    return response
 
 
 def _safe_next_url(value: Any) -> Optional[str]:
@@ -1187,6 +1217,8 @@ def _require_account_page() -> Optional[Any]:
     auth_user = _current_auth_user()
     if auth_user:
         return None
+    if _is_crawler_request():
+        return _minimal_bot_response()
     return redirect(url_for('main.login_page', next=request.path))
 
 
@@ -1285,6 +1317,8 @@ def _deny_premium_access(auth_user: Optional[Dict[str, Any]]) -> Any:
     next_url = _safe_next_url((request.full_path or request.path or '').rstrip('?')) or request.path or '/projections'
     is_api = (request.path or '').startswith('/api/')
     if not auth_user:
+        if _is_crawler_request():
+            return _minimal_bot_response(401 if is_api else 404)
         if is_api:
             return jsonify({'error': 'auth_required', 'loginUrl': url_for('main.login_page', next=next_url)}), 401
         return redirect(url_for('main.login_page', next=next_url))
@@ -2206,7 +2240,7 @@ _SITEMAP_STATIC_PAGES = [
 
 @main_bp.route('/robots.txt')
 def robots_txt():
-    """Serve robots.txt allowing all crawlers and pointing to the sitemap."""
+    """Serve robots.txt with auth and premium areas excluded from crawling."""
     base = request.url_root.rstrip('/')
     content = (
         'User-agent: *\n'
@@ -2215,6 +2249,7 @@ def robots_txt():
         'Disallow: /api/\n'
         'Disallow: /account\n'
         'Disallow: /login\n'
+        'Disallow: /projections\n'
         'Disallow: /signup\n'
         'Disallow: /logout\n'
         'Disallow: /stripe/\n'
@@ -2287,6 +2322,8 @@ def standings_page():
 
 @main_bp.route('/login', methods=['GET', 'POST'])
 def login_page():
+    if request.method == 'GET' and _is_crawler_request():
+        return _minimal_bot_response()
     if request.method == 'GET' and _has_invalid_auth_next():
         return redirect(url_for('main.login_page'))
     if request.method == 'POST':
@@ -2317,6 +2354,8 @@ def login_page():
 
 @main_bp.route('/signup', methods=['GET', 'POST'])
 def signup_page():
+    if request.method == 'GET' and _is_crawler_request():
+        return _minimal_bot_response()
     if request.method == 'GET' and _has_invalid_auth_next():
         return redirect(url_for('main.signup_page'))
     if request.method == 'POST':
