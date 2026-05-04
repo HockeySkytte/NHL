@@ -2325,7 +2325,7 @@ def login_page():
     if request.method == 'GET' and _is_crawler_request():
         return _minimal_bot_response()
     if request.method == 'GET' and _has_invalid_auth_next():
-        return redirect(url_for('main.login_page'))
+        return _minimal_bot_response(400)
     if request.method == 'POST':
         if not _auth_enabled():
             flash('Auth is not configured in this environment yet.', 'error')
@@ -2357,7 +2357,7 @@ def signup_page():
     if request.method == 'GET' and _is_crawler_request():
         return _minimal_bot_response()
     if request.method == 'GET' and _has_invalid_auth_next():
-        return redirect(url_for('main.signup_page'))
+        return _minimal_bot_response(400)
     if request.method == 'POST':
         if not _auth_enabled():
             flash('Auth is not configured in this environment yet.', 'error')
