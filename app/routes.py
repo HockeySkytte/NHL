@@ -129,6 +129,18 @@ def _safe_next_url(value: Any) -> Optional[str]:
     raw = str(value or '').strip()
     if not raw or not raw.startswith('/') or raw.startswith('//'):
         return None
+    # Reject percent-encoded values — means the URL has already been encoded once,
+    # which is the telltale sign of a chained redirect loop (e.g. crawler abuse).
+    if '%' in raw:
+        return None
+    # Reject next values that contain a query string — prevents chaining redirects
+    # like /login?next=/login?next=...
+    if '?' in raw:
+        return None
+    # Reject redirecting back to auth pages themselves
+    clean = raw.rstrip('/')
+    if clean in ('/login', '/signup'):
+        return None
     parsed = urlsplit(raw)
     if parsed.scheme or parsed.netloc:
         return None
