@@ -181,6 +181,11 @@ def _auth_login_target() -> str:
     return _safe_next_url((request.full_path or request.path or '').rstrip('?')) or '/projections'
 
 
+def _has_invalid_auth_next() -> bool:
+    raw = str(request.values.get('next') or '').strip()
+    return bool(raw) and _safe_next_url(raw) is None
+
+
 def _parse_iso_datetime(value: Any) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
@@ -2282,6 +2287,8 @@ def standings_page():
 
 @main_bp.route('/login', methods=['GET', 'POST'])
 def login_page():
+    if request.method == 'GET' and _has_invalid_auth_next():
+        return redirect(url_for('main.login_page'))
     if request.method == 'POST':
         if not _auth_enabled():
             flash('Auth is not configured in this environment yet.', 'error')
@@ -2310,6 +2317,8 @@ def login_page():
 
 @main_bp.route('/signup', methods=['GET', 'POST'])
 def signup_page():
+    if request.method == 'GET' and _has_invalid_auth_next():
+        return redirect(url_for('main.signup_page'))
     if request.method == 'POST':
         if not _auth_enabled():
             flash('Auth is not configured in this environment yet.', 'error')
