@@ -105,6 +105,8 @@ _AUTH_PREMIUM_API_PREFIXES = (
     '/api/projections/',
 )
 _CARD_BUILDER_CARD_TYPES = {'skater', 'goalie', 'team', 'gm_mode'}
+_COMMUNITY_FEED_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+_COMMUNITY_NHL_HUB_ID = str(os.getenv('COMMUNITY_NHL_HUB_ID') or '84dafae8-3ecd-4a09-ac00-3474edb0a8fa').strip()
 
 
 def _auth_enabled() -> bool:
@@ -2906,6 +2908,222 @@ def game_projections_page():
     return render_template('projections.html', teams=TEAM_ROWS, active_tab='Game Projections', show_season_state=False,
         meta_title='NHL Game Projections · Hockey-Statistics',
         meta_description="Model-based NHL game projections with win probabilities, projected goals, and matchup analytics for today's games.")
+
+
+def _community_site_base_url() -> str:
+    base = str(os.getenv('COMMUNITY_SITE_URL') or 'https://community.hockey-statistics.com').strip()
+    return base.rstrip('/')
+
+
+def _community_strip_preview_text(text: Any, max_chars: int = 260) -> str:
+    raw = str(text or '')
+    raw = re.sub(r"\[\[image\]\]", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\[/?(?:b|i|u|s)\]", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\[(?:size|color|font|link)=[^\]]+\]", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\[/(?:size|color|font|link)\]", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\[image=[^\]]+\]", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    if len(raw) <= max_chars:
+        return raw
+    return raw[:max_chars].rstrip() + '...'
+
+
+def _community_abs_url(url: str) -> str:
+    raw = str(url or '').strip()
+    if not raw:
+        return ''
+    if raw.startswith('http://') or raw.startswith('https://'):
+        return raw
+    if raw.startswith('/'):
+        return _community_site_base_url() + raw
+    return _community_site_base_url() + '/' + raw
+
+
+def _community_fetch_posts_supabase(sort: str, limit: int) -> List[Dict[str, Any]]:
+    if not _SUPABASE_OK or not _sb_client:
+        return []
+    try:
+        sb = _sb_client()
+        q = sb.table('community_posts').select('id,title,author_display_name,created_at,body,preview_image_url,score,comment_count,status,hub_id')
+        if _COMMUNITY_NHL_HUB_ID:
+            q = q.eq('hub_id', _COMMUNITY_NHL_HUB_ID)
+        # Prefer active posts when the status column exists.
+        q = q.eq('status', 'active')
+        if sort == 'top':
+            q = q.order('score', desc=True).order('comment_count', desc=True).order('created_at', desc=True)
+        else:
+            q = q.order('created_at', desc=True)
+
+        rows = q.limit(max(limit, 5)).execute().data or []
+        if (not isinstance(rows, list) or not rows) and _COMMUNITY_NHL_HUB_ID:
+            # Fallback path for datasets where status/hub constraints differ.
+            q2 = sb.table('community_posts').select('id,title,author_display_name,created_at,body,preview_image_url,score,comment_count,hub_id').eq('hub_id', _COMMUNITY_NHL_HUB_ID)
+            if sort == 'top':
+                q2 = q2.order('score', desc=True).order('comment_count', desc=True).order('created_at', desc=True)
+            else:
+                q2 = q2.order('created_at', desc=True)
+            rows = q2.limit(max(limit, 5)).execute().data or []
+
+        if not isinstance(rows, list) or not rows:
+            return []
+
+        post_ids = [str(r.get('id') or '').strip() for r in rows if str(r.get('id') or '').strip()]
+        media_by_post: Dict[str, str] = {}
+        if post_ids:
+            media_rows = (
+                sb.table('community_post_media')
+                .select('post_id,public_url,media_kind,sort_order')
+                .in_('post_id', post_ids)
+                .eq('media_kind', 'image')
+                .order('sort_order')
+                .execute()
+                .data
+                or []
+            )
+            for m in media_rows:
+                pid = str((m or {}).get('post_id') or '').strip()
+                if not pid or pid in media_by_post:
+                    continue
+                media_by_post[pid] = _community_abs_url(str((m or {}).get('public_url') or ''))
+
+        out: List[Dict[str, Any]] = []
+        for row in rows[:limit]:
+            pid = str(row.get('id') or '').strip()
+            if not pid:
+                continue
+            preview = _community_abs_url(str(row.get('preview_image_url') or '')) or media_by_post.get(pid, '')
+            body_preview = _community_strip_preview_text(row.get('body'))
+            out.append({
+                'id': pid,
+                'title': str(row.get('title') or '').strip(),
+                'author': str(row.get('author_display_name') or 'Member').strip(),
+                'date': str(row.get('created_at') or '')[:10],
+                'snippet': body_preview,
+                'preview_image': preview,
+                'score': int(row.get('score') or 0),
+                'comment_count': int(row.get('comment_count') or 0),
+                'post_url': _community_site_base_url() + '/posts/' + pid,
+            })
+        return out
+    except Exception:
+        return []
+
+
+def _community_fetch_posts_html(sort: str, limit: int) -> List[Dict[str, Any]]:
+    if BeautifulSoup is None:
+        return []
+    base = _community_site_base_url()
+    urls: List[str] = []
+    if sort == 'top':
+        urls = [
+            base + '/home?sort=top',
+            base + '/hubs/nhl?sort=top',
+            base + '/home',
+        ]
+    else:
+        urls = [base + '/home']
+
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=15)
+            if r.status_code != 200:
+                continue
+            soup = BeautifulSoup(r.text or '', 'html.parser')
+            cards = soup.select('article.post-card-compact')
+            if not cards:
+                continue
+            out: List[Dict[str, Any]] = []
+            for card in cards:
+                post_url = _community_abs_url(str(card.get('data-post-url') or ''))
+                if not post_url:
+                    link = card.select_one('h2 a, h3 a')
+                    if link and link.get('href'):
+                        post_url = _community_abs_url(str(link.get('href') or ''))
+                title_el = card.select_one('h2 a, h3 a, h2, h3')
+                meta_spans = card.select('.post-meta-row span')
+                snippet_el = card.select_one('p.post-body-preview')
+                img_el = card.select_one('img.post-card-thumb')
+                score_el = card.select_one('.reaction-button .score-label, .reaction-button.no-pointer')
+                comments_el = card.select_one('a[href*="#comments"]')
+                score_val = 0
+                comment_val = 0
+                try:
+                    score_txt = str(score_el.get_text(' ', strip=True) if score_el else '0')
+                    m_score = re.search(r'-?\d+', score_txt)
+                    score_val = int(m_score.group(0)) if m_score else 0
+                except Exception:
+                    score_val = 0
+                try:
+                    comments_txt = str(comments_el.get_text(' ', strip=True) if comments_el else '0 comments')
+                    m_comments = re.search(r'\d+', comments_txt)
+                    comment_val = int(m_comments.group(0)) if m_comments else 0
+                except Exception:
+                    comment_val = 0
+
+                out.append({
+                    'id': '',
+                    'title': str(title_el.get_text(' ', strip=True) if title_el else '').strip(),
+                    'author': str(meta_spans[0].get_text(' ', strip=True) if len(meta_spans) > 0 else 'Member').strip(),
+                    'date': str(meta_spans[1].get_text(' ', strip=True) if len(meta_spans) > 1 else '').strip(),
+                    'snippet': _community_strip_preview_text(snippet_el.get_text(' ', strip=True) if snippet_el else ''),
+                    'preview_image': _community_abs_url(str(img_el.get('src') or '') if img_el else ''),
+                    'score': score_val,
+                    'comment_count': comment_val,
+                    'post_url': post_url,
+                })
+                if len(out) >= limit:
+                    break
+            if out:
+                return out
+        except Exception:
+            continue
+    return []
+
+
+@main_bp.route('/community')
+def community_page():
+    return render_template(
+        'community.html',
+        active_tab='Community',
+        show_filters=True,
+        meta_title='NHL Community · Hockey-Statistics',
+        meta_description='Read the latest and top hockey community posts from Hockey Skytte Community.',
+    )
+
+
+@main_bp.route('/api/community/posts')
+def api_community_posts():
+    sort = str(request.args.get('sort') or 'new').strip().lower()
+    if sort not in {'new', 'top'}:
+        sort = 'new'
+    try:
+        limit = int(str(request.args.get('limit') or '5').strip())
+    except Exception:
+        limit = 5
+    limit = max(1, min(20, limit))
+
+    cache_key = f'{sort}:{limit}'
+    now = time.time()
+    try:
+        ttl_s = max(30, int(os.getenv('COMMUNITY_FEED_CACHE_TTL_SECONDS', '300') or '300'))
+    except Exception:
+        ttl_s = 300
+
+    cached = _COMMUNITY_FEED_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < ttl_s:
+        return jsonify({'sort': sort, 'posts': cached[1], 'source': 'cache'})
+
+    posts = _community_fetch_posts_supabase(sort, limit)
+    source = 'supabase'
+    if not posts:
+        posts = _community_fetch_posts_html(sort, limit)
+        source = 'html'
+
+    if posts:
+        _COMMUNITY_FEED_CACHE[cache_key] = (now, posts)
+    elif cache_key in _COMMUNITY_FEED_CACHE:
+        _COMMUNITY_FEED_CACHE.pop(cache_key, None)
+    return jsonify({'sort': sort, 'posts': posts, 'source': source})
 
 
 @main_bp.route('/donation')

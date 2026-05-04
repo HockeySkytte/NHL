@@ -213,7 +213,7 @@
   </script>
   {% block head %}{% endblock %}
 </head>
-<body class="{% if active_tab in ['Home','About','Donation','Account','User Management'] %}neutral-page{% endif %}">
+<body class="{% if active_tab in ['Home','Community','About','Donation','Account','User Management'] %}neutral-page{% endif %}">
   <div class="app-shell">
     <aside>
       <header>
@@ -248,6 +248,7 @@
         <a href="/goalies" class="{% if active_tab=='Goalies' %}active{% endif %}">Goalies</a>
         <a href="/line-tool" class="{% if active_tab=='Line Tool' %}active{% endif %}">Line Tool</a>
         <a href="/teams" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
+        <a href="/community" class="{% if active_tab=='Community' %}active{% endif %}">Community</a>
         {% if auth_user and auth_user.is_admin %}
         <a href="/gm-mode" class="{% if active_tab=='GM Mode' %}active{% endif %}">GM Mode</a>
         {% endif %}
@@ -336,6 +337,7 @@
   <a href="/goalies" class="{% if active_tab=='Goalies' %}active{% endif %}">Goalies</a>
   <a href="/line-tool" class="{% if active_tab=='Line Tool' %}active{% endif %}">Line Tool</a>
   <a href="/teams" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
+  <a href="/community" class="{% if active_tab=='Community' %}active{% endif %}">Community</a>
   {% if auth_user and auth_user.is_admin %}
   <a href="/gm-mode" class="{% if active_tab=='GM Mode' %}active{% endif %}">GM Mode</a>
   {% endif %}

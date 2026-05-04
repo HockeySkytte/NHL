@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block filters_content %}
+<div class="hqj-section">
+  <div class="hqj-header">Community Hubs</div>
+  <nav class="hqj-nav" aria-label="Community hubs navigation">
+    <a class="hqj-link" href="https://community.hockey-statistics.com/hubs/nhl" target="_blank" rel="noopener">
+      <img class="hqj-logo" src="{{ url_for('static', filename='link-logos/nhl-official.png') }}" alt="NHL Hub logo" loading="lazy">
+      <span class="hqj-copy"><strong>NHL Hub</strong><small>community.hockey-statistics.com/hubs/nhl</small></span>
+    </a>
+    <a class="hqj-link" href="https://community.hockey-statistics.com/hubs/pwhl" target="_blank" rel="noopener">
+      <img class="hqj-logo" src="{{ url_for('static', filename='link-logos/pwhl-site.png') }}" alt="PWHL Hub logo" loading="lazy">
+      <span class="hqj-copy"><strong>PWHL Hub</strong><small>community.hockey-statistics.com/hubs/pwhl</small></span>
+    </a>
+    <a class="hqj-link" href="https://community.hockey-statistics.com/hubs/hockey-analytics" target="_blank" rel="noopener">
+      <img class="hqj-logo" src="{{ url_for('static', filename='Logo.png') }}" alt="Analytics Hub logo" loading="lazy">
+      <span class="hqj-copy"><strong>Analytics Hub</strong><small>community.hockey-statistics.com/hubs/hockey-analytics</small></span>
+    </a>
+  </nav>
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+  body.neutral-page .filters-shell{
+    border:none;
+    border-radius:0;
+    padding:0;
+    background:transparent;
+    box-shadow:none;
+  }
+
+  .hqj-section{ margin-top:16px; }
+  .hqj-section:first-of-type{ margin-top:0; }
+  .hqj-header{
+    font-size:11px;
+    font-weight:900;
+    letter-spacing:1.1px;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    margin-bottom:10px;
+  }
+  .hqj-nav{ display:flex; flex-direction:column; gap:2px; margin-top:14px; }
+  .hqj-link{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:9px 10px;
+    border-radius:9px;
+    border:1px solid transparent;
+    text-decoration:none;
+    color:#c6d2e4;
+    font-size:14px;
+    font-weight:600;
+    transition:background .14s ease, border-color .14s ease, color .14s ease;
+  }
+  .hqj-copy{ display:grid; gap:2px; min-width:0; }
+  .hqj-copy strong{ font-size:14px; font-weight:700; color:#e6f0ff; }
+  .hqj-copy small{ font-size:11px; color:#95a8c4; }
+  .hqj-link:hover{
+    background:rgba(255,255,255,0.05);
+    border-color:#2a3142;
+    color:#f0f6ff;
+  }
+  .hqj-logo{ flex:0 0 auto; width:30px; height:30px; object-fit:contain; }
+</style>
+{% endblock %}
+
+{% block content %}
+<style>
+  .community-page{ display:grid; gap:16px; padding-right:42px; box-sizing:border-box; }
+  .community-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .community-head h1{ margin:0; font-size:34px; letter-spacing:.2px; }
+  .community-sort{ display:flex; gap:8px; }
+  .community-sort-btn{ border:1px solid #2a3142; background:#141f33; color:#d8e8ff; border-radius:999px; padding:9px 16px; font-size:13px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; cursor:pointer; }
+  .community-sort-btn:hover{ background:#1a2942; }
+  .community-sort-btn.active{ border-color:#5ba7ff; box-shadow:0 0 0 2px rgba(91,167,255,0.18) inset; color:#f3f8ff; }
+
+  .community-stack{ display:grid; gap:14px; }
+  .community-card{
+    width:100%;
+    box-sizing:border-box;
+    border:1px solid #294777;
+    border-radius:18px;
+    background:linear-gradient(90deg, rgba(24,44,78,0.72), rgba(8,15,30,0.92));
+    box-shadow:inset 0 1px 0 rgba(142,186,255,0.12);
+    display:grid;
+    grid-template-columns:270px minmax(0, 1fr);
+    gap:18px;
+    padding:18px;
+    cursor:pointer;
+    transition:border-color .16s ease, transform .16s ease, box-shadow .16s ease;
+  }
+  .community-card:hover{ border-color:#56a5ff; transform:translateY(-1px); box-shadow:0 10px 24px rgba(0,0,0,0.24), inset 0 1px 0 rgba(142,186,255,0.18); }
+  .community-thumb-wrap{ width:100%; }
+  .community-thumb{ width:100%; aspect-ratio:16/10; border-radius:14px; object-fit:cover; background:#17233a; border:1px solid #2f456c; }
+  .community-thumb-placeholder{ width:100%; aspect-ratio:16/10; border-radius:14px; border:1px dashed #35507a; background:linear-gradient(135deg, rgba(72,113,167,0.18), rgba(28,45,73,0.45)); }
+
+  .community-card-body{ min-width:0; display:grid; gap:10px; }
+  .community-meta{ display:flex; justify-content:space-between; align-items:center; gap:12px; color:#b3c5df; font-size:16px; }
+  .community-author{ font-weight:650; }
+  .community-date{ white-space:nowrap; }
+  .community-title{ margin:0; font-size:36px; line-height:1.18; color:#f5f8ff; }
+  .community-snippet{
+    margin:0;
+    color:#d5e3f6;
+    font-size:18px;
+    line-height:1.45;
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+
+  .community-actions{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .community-pill{ border:1px solid #385a89; border-radius:999px; padding:9px 16px; font-size:16px; color:#dbe8fa; background:rgba(19,34,57,0.76); text-decoration:none; }
+  .community-pill.btn{ cursor:pointer; font-weight:700; }
+
+  .community-empty{ border:1px dashed #315488; border-radius:14px; background:rgba(20,31,52,0.62); padding:22px; color:#d1e0f6; }
+  .community-note{ color:#b4c4da; font-size:12px; }
+
+  @media (max-width: 980px){
+    .community-page{ padding-left:12px; padding-right:12px; }
+    .community-card{ grid-template-columns:1fr; padding:12px; gap:12px; }
+    .community-title{ font-size:23px; }
+    .community-snippet{ font-size:17px; }
+    .community-pill{ font-size:14px; }
+    .community-meta{ font-size:18px; }
+  }
+
+  @media (max-width: 640px){
+    .community-page{ padding-left:16px; padding-right:16px; }
+  }
+</style>
+
+<section class="community-page" aria-label="NHL Community posts">
+  <header class="community-head">
+    <div>
+      <h1>NHL Community</h1>
+    </div>
+    <div class="community-sort" role="tablist" aria-label="Sort posts">
+      <button id="communitySortNew" class="community-sort-btn active" type="button" data-sort="new" role="tab" aria-selected="true">New</button>
+      <button id="communitySortTop" class="community-sort-btn" type="button" data-sort="top" role="tab" aria-selected="false">Top</button>
+    </div>
+  </header>
+
+  <div id="communityStatus" class="community-note">Loading posts...</div>
+  <div id="communityStack" class="community-stack" aria-live="polite"></div>
+</section>
+
+<script>
+(function(){
+  const stack = document.getElementById('communityStack');
+  const status = document.getElementById('communityStatus');
+  const sortButtons = Array.from(document.querySelectorAll('.community-sort-btn'));
+  const isLoggedIn = {{ 'true' if auth_user else 'false' }};
+  let activeSort = 'new';
+
+  function esc(v){
+    return String(v || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function fmtDate(v){
+    const raw = String(v || '').trim();
+    if(!raw) return '';
+    return raw.slice(0, 10);
+  }
+
+  function truncate(v, maxChars){
+    const s = String(v || '').trim();
+    if(s.length <= maxChars) return s;
+    return s.slice(0, maxChars).trim() + '...';
+  }
+
+  function sharePost(url, title){
+    const shareUrl = String(url || '').trim();
+    const shareTitle = String(title || 'Community post').trim();
+    if(!shareUrl) return;
+    if(navigator.share){
+      navigator.share({ title: shareTitle, url: shareUrl }).catch(function(){});
+      return;
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(shareUrl).then(function(){
+        if(status) status.textContent = 'Link copied to clipboard.';
+      }).catch(function(){});
+    }
+  }
+
+  function render(posts){
+    if(!stack) return;
+    stack.innerHTML = '';
+    const rows = Array.isArray(posts) ? posts : [];
+    if(!rows.length){
+      stack.innerHTML = '<div class="community-empty">No posts available right now. Try again in a minute.</div>';
+      return;
+    }
+
+    for(const post of rows){
+      const postUrl = String(post.post_url || '').trim();
+      const title = String(post.title || '').trim() || 'Untitled post';
+      const author = String(post.author || 'Member').trim();
+      const date = fmtDate(post.date);
+      const snippet = truncate(post.snippet, 260);
+      const score = Number.isFinite(Number(post.score)) ? String(Math.trunc(Number(post.score))) : '0';
+      const comments = Number.isFinite(Number(post.comment_count)) ? String(Math.trunc(Number(post.comment_count))) : '0';
+      const thumb = String(post.preview_image || '').trim();
+
+      const card = document.createElement('article');
+      card.className = 'community-card';
+      card.setAttribute('role', 'link');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('aria-label', 'Open post: ' + title);
+      card.addEventListener('click', function(){
+        if(!postUrl) return;
+        window.open(postUrl, '_blank', 'noopener,noreferrer');
+      });
+      card.addEventListener('keydown', function(e){
+        if(!postUrl) return;
+        if(e && (e.key === 'Enter' || e.key === ' ')){
+          e.preventDefault();
+          window.open(postUrl, '_blank', 'noopener,noreferrer');
+        }
+      });
+
+      const thumbHtml = thumb
+        ? '<img class="community-thumb" src="' + esc(thumb) + '" alt="">'
+        : '<div class="community-thumb-placeholder" aria-hidden="true"></div>';
+
+      const voteAction = !isLoggedIn
+        ? '<a class="community-pill" href="/login?next=/community">Log in to vote</a>'
+        : '<a class="community-pill" href="' + esc(postUrl) + '" target="_blank" rel="noopener noreferrer">Vote on Community</a>';
+
+      card.innerHTML = '' +
+        '<div class="community-thumb-wrap">' + thumbHtml + '</div>' +
+        '<div class="community-card-body">' +
+          '<div class="community-meta"><span class="community-author">' + esc(author) + '</span><span class="community-date">' + esc(date) + '</span></div>' +
+          '<h2 class="community-title">' + esc(title) + '</h2>' +
+          '<p class="community-snippet">' + esc(snippet) + '</p>' +
+          '<div class="community-actions">' +
+            '<span class="community-pill">&#9650; ' + esc(score) + '</span>' +
+            voteAction +
+            '<a class="community-pill" href="' + esc(postUrl + '#comments') + '" target="_blank" rel="noopener noreferrer">' + esc(comments) + ' comments</a>' +
+            '<button class="community-pill btn" type="button" data-share-url="' + esc(postUrl) + '" data-share-title="' + esc(title) + '">Share</button>' +
+          '</div>' +
+        '</div>';
+
+      const shareBtn = card.querySelector('[data-share-url]');
+      if(shareBtn){
+        shareBtn.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          sharePost(shareBtn.getAttribute('data-share-url') || '', shareBtn.getAttribute('data-share-title') || '');
+        });
+      }
+
+      const links = card.querySelectorAll('a');
+      links.forEach(function(a){
+        a.addEventListener('click', function(e){ e.stopPropagation(); });
+      });
+
+      stack.appendChild(card);
+    }
+  }
+
+  function setSort(nextSort){
+    activeSort = (nextSort === 'top') ? 'top' : 'new';
+    sortButtons.forEach(function(btn){
+      const isActive = String(btn.getAttribute('data-sort') || '') === activeSort;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+  }
+
+  async function loadPosts(sort){
+    setSort(sort);
+    if(status) status.textContent = 'Loading ' + activeSort + ' posts...';
+    try{
+      const res = await fetch('/api/community/posts?sort=' + encodeURIComponent(activeSort) + '&limit=5', { cache:'no-store' });
+      const data = await res.json().catch(function(){ return {}; });
+      if(!res.ok) throw new Error('load_failed');
+      render(data.posts || []);
+      if(status) status.textContent = '';
+    }catch(_){
+      render([]);
+      if(status) status.textContent = 'Unable to load Community posts right now.';
+    }
+  }
+
+  sortButtons.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const requested = String(btn.getAttribute('data-sort') || 'new');
+      loadPosts(requested);
+    });
+  });
+
+  loadPosts('new');
+})();
+</script>
+{% endblock %}
