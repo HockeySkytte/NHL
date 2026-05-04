@@ -3633,6 +3633,17 @@ def api_line_tool_data():
     xg_col_map = {'xG_F': 'xg_f', 'xG_S': 'xg_s', 'xG_F2': 'xg_f2'}
     xg_col = xg_col_map.get(xg_model, 'xg_f')
 
+    # Optional versus filter (same semantics as /api/line-tool/data)
+    vs_team_raw = str(request.args.get('vs_team', '')).strip().upper()
+    vs_team = vs_team_raw if vs_team_raw else None
+    vs_players_raw = str(request.args.get('vs_players', '')).strip()
+    try:
+        vs_player_ids = [str(int(x)) for x in vs_players_raw.split(',') if x.strip()] if vs_players_raw else []
+    except Exception:
+        vs_player_ids = []
+    if len(vs_player_ids) > 3:
+        vs_player_ids = vs_player_ids[:3]
+
     # Optional versus filter
     vs_team_raw = str(request.args.get('vs_team', '')).strip().upper()
     vs_team = vs_team_raw if vs_team_raw else None
@@ -3698,7 +3709,7 @@ def api_line_tool_data():
         for _sid in season_ids:
             opp_shift_rows.extend(_get_lt_shifts(vs_team, str(_sid)))
         opp_shift_rows = _filter_shifts_season_state(opp_shift_rows, ss)
-        opp_shift_rows = _apply_lt_strength_filter(opp_shift_rows, strength)
+        # Do not apply selected-team strength filtering to opponent shifts.
         # Build set of shift keys where all requested vs_players are on ice for the opp
         if vs_player_ids:
             vs_id_set = set(vs_player_ids)
@@ -4009,6 +4020,29 @@ def api_line_tool_wowy():
         elif strength == 'Other':
             all_special = {'5v5', '5v4', '5v3', '4v3', '4v5', '3v5', '3v4'}
             shift_rows = [s for s in shift_rows if str(s.get('strength_state', '')) not in all_special]
+
+    # ── 2b. Intersect with opponent shifts if vs_team / vs_players set ──
+    if vs_team:
+        opp_shift_rows: List[Dict[str, Any]] = _get_lt_shifts_parallel(vs_team, season_ids)
+        opp_shift_rows = _filter_shifts_season_state(opp_shift_rows, ss)
+        # Do not apply selected-team strength filtering to opponent shifts.
+
+        if vs_player_ids:
+            vs_id_set = set(vs_player_ids)
+            opp_valid_keys: set = set()
+            for s in opp_shift_rows:
+                pids = set(str(s.get('player_id', '')).split())
+                if vs_id_set.issubset(pids):
+                    opp_valid_keys.add((int(s.get('game_id', 0)), int(s.get('shift_index', 0))))
+        else:
+            opp_valid_keys = {(int(s.get('game_id', 0)), int(s.get('shift_index', 0))) for s in opp_shift_rows}
+
+        shift_rows = [
+            s for s in shift_rows
+            if (int(s.get('game_id', 0)), int(s.get('shift_index', 0))) in opp_valid_keys
+        ]
+        if not shift_rows:
+            return jsonify({'combos': [], 'players': []})
 
     # ── 3. Group shifts by player mask ────────────────────────
     # mask = tuple of booleans, one per player_id in player_ids order

@@ -2404,7 +2404,11 @@ async function fetchWowy(){
   const ss = String(ltSeasonState?.value||'regular');
   const str = String(ltStrengthState?.value||'5v5');
   const xg = String(ltXgModel?.value||'xG_F');
-  const url = `/api/line-tool/wowy?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&players=${encodeURIComponent(pids.join(','))}&seasonState=${encodeURIComponent(ss)}&strengthState=${encodeURIComponent(str)}&xgModel=${encodeURIComponent(xg)}`;
+  const vsTeam = __vsOpen ? String(ltVsTeam?.value || '').trim().toUpperCase() : '';
+  const vsPids = __vsOpen ? vsPlayerSelects.map(s => String(s?.value || '').trim()).filter(Boolean) : [];
+  const vsTeamParam = vsTeam ? `&vs_team=${encodeURIComponent(vsTeam)}` : '';
+  const vsPlayersParam = vsPids.length ? `&vs_players=${encodeURIComponent(vsPids.join(','))}` : '';
+  const url = `/api/line-tool/wowy?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&players=${encodeURIComponent(pids.join(','))}${vsTeamParam}${vsPlayersParam}&seasonState=${encodeURIComponent(ss)}&strengthState=${encodeURIComponent(str)}&xgModel=${encodeURIComponent(xg)}`;
   try{
     const r = await fetch(url, {cache:'no-store'});
     if(ver !== __wowyVer) return;
