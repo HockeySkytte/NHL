@@ -4279,7 +4279,10 @@ def api_line_tool_versus():
     # 2) Opponent shifts map: (game_id, shift_index) -> set(opponent player ids)
     opp_shift_rows: List[Dict[str, Any]] = _get_lt_shifts_parallel(vs_team, season_ids)
     opp_shift_rows = _filter_shifts_season_state(opp_shift_rows, ss)
-    opp_shift_rows = _apply_lt_strength_filter(opp_shift_rows, strength)
+    # Do not apply selected-team strength filtering to the opponent side.
+    # Example: team PP corresponds to opponent SH on the same shift.
+    # We key by (game_id, shift_index), so the selected team's strength-state
+    # filter already defines the correct opponent context.
 
     opp_key_to_pids: Dict[Tuple[int, int], set] = {}
     for s in opp_shift_rows:
