@@ -4650,6 +4650,17 @@ def _compute_api_line_tool_lines(
             for (team_abbr, pids), acc in combo_acc.items()
             if float(acc.get('toi') or 0.0) >= 0.1
         ]
+        missing_pids = {
+            str(pid)
+            for combo in combos
+            for pid in (combo.get('players') or [])
+            if str(pid) not in pid_info
+        }
+        if missing_pids:
+            try:
+                pid_info.update(_load_player_info_targeted(sorted(missing_pids)) or {})
+            except Exception:
+                pass
         players_out = {}
         for combo in combos:
             for pid in combo['players']:

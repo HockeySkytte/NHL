@@ -664,9 +664,31 @@ function __sortedVsPlayers(){
   });
 }
 
-function __setMainPlayerSelectionFromCombo(type, combo){
+function handleMainPlayerSelectionChange(){
+  updateHeadshots();
+  debouncedFetch();
+  __wowyData = null;
+  __versusData = null;
+  __fwdData = null;
+  __defData = null;
+  populateWowyPersp();
+  refreshActiveSupplementalPanel();
+  saveSelections();
+}
+
+async function __setMainPlayerSelectionFromCombo(type, combo){
   const playerIds = Array.isArray(combo?.players) ? combo.players.map(pid => String(pid || '').trim()).filter(Boolean) : [];
   if(!playerIds.length) return;
+
+  const comboTeam = String(combo?.team || '').trim().toUpperCase();
+  const currentTeam = String(teamSelect?.value || '').trim().toUpperCase();
+  if(comboTeam && teamSelect && comboTeam !== currentTeam){
+    const hasTeamOption = Array.from(teamSelect.options || []).some(opt => String(opt?.value || '').trim().toUpperCase() === comboTeam);
+    if(hasTeamOption){
+      teamSelect.value = comboTeam;
+      await loadPlayers();
+    }
+  }
 
   function setSlot(slotIndex, pid){
     const sel = playerSelects[slotIndex];
@@ -687,13 +709,7 @@ function __setMainPlayerSelectionFromCombo(type, combo){
     setSlot(4, playerIds[1] || '');
   }
 
-  updateHeadshots();
-  __wowyData = null;
-  __versusData = null;
-  populateWowyPersp();
-  updateSlicerSummaries();
-  debouncedFetch();
-  saveSelections();
+  handleMainPlayerSelectionChange();
 }
 
 function debouncedFetch(){
@@ -2900,10 +2916,10 @@ function renderLines(type){
   });
 
   wrap?.querySelectorAll('tbody tr.lt-lines-row-selectable').forEach(tr => {
-    tr.addEventListener('click', () => {
+    tr.addEventListener('click', async () => {
       const rowIndex = parseInt(tr.dataset.rowIndex, 10);
       if(!Number.isFinite(rowIndex) || !rows[rowIndex]?.combo) return;
-      __setMainPlayerSelectionFromCombo(type, rows[rowIndex].combo);
+      await __setMainPlayerSelectionFromCombo(type, rows[rowIndex].combo);
     });
   });
 
@@ -2969,15 +2985,7 @@ ltDefScopeLeague?.addEventListener('click', () => {
 // ── Event listeners ──────────────────────────────────────────
 for(const sel of playerSelects){
   sel?.addEventListener('change', () => {
-    updateHeadshots();
-    debouncedFetch();
-    __wowyData = null;
-    __versusData = null;
-    __fwdData = null;
-    __defData = null;
-    populateWowyPersp();
-    refreshActiveSupplementalPanel();
-    saveSelections();
+    handleMainPlayerSelectionChange();
   });
 }
 
