@@ -4630,19 +4630,44 @@ def _compute_api_line_tool_lines(
                     'xgf': 0.0,
                     'xga': 0.0,
                 })
+                gp = int(r.get('gp') or 0)
+                cf = int(r.get('cf') or 0)
+                ca = int(r.get('ca') or 0)
+                ff = int(r.get('ff') or 0)
+                fa = int(r.get('fa') or 0)
+                sf = int(r.get('sf') or 0)
+                sa = int(r.get('sa') or 0)
+                gf = int(r.get('gf') or 0)
+                ga = int(r.get('ga') or 0)
+                xgf = float(r.get(xg_f_col) or 0.0)
+                xga = float(r.get(xg_a_col) or 0.0)
+                if line_type == 'def':
+                    # defense_pairings rows are stored at double the live shift-derived pair totals
+                    gp = int(round(gp / 2.0))
+                    toi /= 2.0
+                    cf = int(round(cf / 2.0))
+                    ca = int(round(ca / 2.0))
+                    ff = int(round(ff / 2.0))
+                    fa = int(round(fa / 2.0))
+                    sf = int(round(sf / 2.0))
+                    sa = int(round(sa / 2.0))
+                    gf = int(round(gf / 2.0))
+                    ga = int(round(ga / 2.0))
+                    xgf /= 2.0
+                    xga /= 2.0
                 _accumulate_line_tool_combo(acc, {
-                    'gp': int(r.get('gp') or 0),
+                    'gp': gp,
                     'toi': toi,
-                    'cf': int(r.get('cf') or 0),
-                    'ca': int(r.get('ca') or 0),
-                    'ff': int(r.get('ff') or 0),
-                    'fa': int(r.get('fa') or 0),
-                    'sf': int(r.get('sf') or 0),
-                    'sa': int(r.get('sa') or 0),
-                    'gf': int(r.get('gf') or 0),
-                    'ga': int(r.get('ga') or 0),
-                    'xgf': float(r.get(xg_f_col) or 0.0),
-                    'xga': float(r.get(xg_a_col) or 0.0),
+                    'cf': cf,
+                    'ca': ca,
+                    'ff': ff,
+                    'fa': fa,
+                    'sf': sf,
+                    'sa': sa,
+                    'gf': gf,
+                    'ga': ga,
+                    'xgf': xgf,
+                    'xga': xga,
                 })
 
         combos = [
