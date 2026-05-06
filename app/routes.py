@@ -3371,9 +3371,12 @@ def _get_lt_pbp(season: str, game_ids: list, xg_col: str, extra_cols: str = '') 
     if extra_cols:
         base_cols += f",{extra_cols}"
     all_pbp = []
-    BATCH = 20
-    for i in range(0, len(game_ids), BATCH):
-        batch_ids = game_ids[i:i + BATCH]
+    try:
+        batch_size = max(10, min(100, int(os.getenv('LINE_TOOL_PBP_BATCH_SIZE', '50') or '50')))
+    except Exception:
+        batch_size = 50
+    for i in range(0, len(game_ids), batch_size):
+        batch_ids = game_ids[i:i + batch_size]
         gid_filter = ','.join(str(g) for g in batch_ids)
         rows = _sb_read('pbp', columns=base_cols, filters={
             'season': f'eq.{season}',
@@ -3644,17 +3647,6 @@ def api_line_tool_data():
     if len(vs_player_ids) > 3:
         vs_player_ids = vs_player_ids[:3]
 
-    # Optional versus filter
-    vs_team_raw = str(request.args.get('vs_team', '')).strip().upper()
-    vs_team = vs_team_raw if vs_team_raw else None
-    vs_players_raw = str(request.args.get('vs_players', '')).strip()
-    try:
-        vs_player_ids = [str(int(x)) for x in vs_players_raw.split(',') if x.strip()] if vs_players_raw else []
-    except Exception:
-        vs_player_ids = []
-    if len(vs_player_ids) > 3:
-        vs_player_ids = vs_player_ids[:3]
-
     try:
         lt_data_ttl_s = max(30, int(os.getenv('LINE_TOOL_DATA_CACHE_TTL_SECONDS', '300') or '300'))
     except Exception:
@@ -3704,10 +3696,8 @@ def api_line_tool_data():
 
     # ── 2b. Intersect with opponent shifts if vs_team / vs_players set ──
     if vs_team:
-        # Fetch opponent shifts for all seasons
-        opp_shift_rows: list = []
-        for _sid in season_ids:
-            opp_shift_rows.extend(_get_lt_shifts(vs_team, str(_sid)))
+        # Fetch opponent shifts for all seasons in one cached batched query.
+        opp_shift_rows: list = _get_lt_shifts_parallel(vs_team, season_ids)
         opp_shift_rows = _filter_shifts_season_state(opp_shift_rows, ss)
         # Do not apply selected-team strength filtering to opponent shifts.
         # Build set of shift keys where all requested vs_players are on ice for the opp
@@ -4000,6 +3990,16 @@ def api_line_tool_wowy():
     xg_model = str(request.args.get('xgModel', 'xG_F')).strip()
     xg_col_map = {'xG_F': 'xg_f', 'xG_S': 'xg_s', 'xG_F2': 'xg_f2'}
     xg_col = xg_col_map.get(xg_model, 'xg_f')
+
+    vs_team_raw = str(request.args.get('vs_team', '')).strip().upper()
+    vs_team = vs_team_raw if vs_team_raw else None
+    vs_players_raw = str(request.args.get('vs_players', '')).strip()
+    try:
+        vs_player_ids = [str(int(x)) for x in vs_players_raw.split(',') if x.strip()] if vs_players_raw else []
+    except Exception:
+        vs_player_ids = []
+    if len(vs_player_ids) > 3:
+        vs_player_ids = vs_player_ids[:3]
 
     # ── 1. Fetch shifts (parallel across seasons) ─────────────
     shift_rows = _get_lt_shifts_parallel(team, season_ids)

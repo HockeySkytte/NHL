@@ -156,6 +156,7 @@
   .lt-wowy-table th.sort-active .sort-arrow{ opacity:1; color:#5b9bd5; }
   .lt-wowy-export-bar{ display:flex; justify-content:flex-end; margin-bottom:6px; }
   .lt-wowy-export-bar{ gap:8px; flex-wrap:wrap; }
+  .lt-lines-row-selectable td{ cursor:pointer; }
 
   /* ── Lines / Pairs ── */
   .lt-lines-controls{ display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; }
@@ -615,6 +616,85 @@ const LT_SHARE_PLATFORMS = [
   { id: 'telegram', name: 'Telegram', description: 'Open Telegram with share text.', mode: 'composer', color: '#26a5e4' },
   { id: 'more-apps', name: 'More Apps', description: 'Uses your device share sheet and can attach the PNG directly to installed apps.', mode: 'native', showText: true, color: '#ffffff' },
 ];
+const __textCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+
+function __sortTextAsc(a, b){
+  return __textCollator.compare(String(a || '').trim(), String(b || '').trim());
+}
+
+function __teamDisplayName(teamRow){
+  return String(teamRow?.Name || teamRow?.name || teamRow?.Team || teamRow?.abbreviation || '').trim();
+}
+
+function __playerName(player){
+  return String(player?.name || '').trim();
+}
+
+function __playerPositionBucket(rawPosition){
+  const pos = String(rawPosition || '').trim().toUpperCase();
+  if(pos.startsWith('D')) return 'D';
+  if(pos.startsWith('G')) return 'G';
+  if(pos.startsWith('C') || pos.startsWith('L') || pos.startsWith('R') || pos.startsWith('F')) return 'F';
+  return 'U';
+}
+
+function __playerSortPriorityForSlot(slotIndex, rawPosition){
+  const bucket = __playerPositionBucket(rawPosition);
+  const forwardFirst = { F: 0, D: 1, G: 2, U: 3 };
+  const defenseFirst = { D: 0, F: 1, G: 2, U: 3 };
+  const order = slotIndex <= 2 ? forwardFirst : defenseFirst;
+  return order[bucket] ?? 99;
+}
+
+function __sortedPlayersForSlot(slotIndex){
+  return (__players || []).slice().sort((a, b) => {
+    const priorityDiff = __playerSortPriorityForSlot(slotIndex, a?.position) - __playerSortPriorityForSlot(slotIndex, b?.position);
+    if(priorityDiff !== 0) return priorityDiff;
+    const nameDiff = __sortTextAsc(__playerName(a), __playerName(b));
+    if(nameDiff !== 0) return nameDiff;
+    return __sortTextAsc(a?.id, b?.id);
+  });
+}
+
+function __sortedVsPlayers(){
+  return (__vsPlayers || []).slice().sort((a, b) => {
+    const nameDiff = __sortTextAsc(__playerName(a), __playerName(b));
+    if(nameDiff !== 0) return nameDiff;
+    return __sortTextAsc(a?.id, b?.id);
+  });
+}
+
+function __setMainPlayerSelectionFromCombo(type, combo){
+  const playerIds = Array.isArray(combo?.players) ? combo.players.map(pid => String(pid || '').trim()).filter(Boolean) : [];
+  if(!playerIds.length) return;
+
+  function setSlot(slotIndex, pid){
+    const sel = playerSelects[slotIndex];
+    if(!sel) return;
+    const target = String(pid || '').trim();
+    sel.value = '';
+    if(!target) return;
+    const hasOption = Array.from(sel.options || []).some(opt => String(opt?.value || '').trim() === target);
+    if(hasOption) sel.value = target;
+  }
+
+  if(type === 'fwd'){
+    for(let i = 0; i < 3; i++) setSlot(i, playerIds[i] || '');
+    for(let i = 3; i < 5; i++) setSlot(i, '');
+  } else {
+    for(let i = 0; i < 3; i++) setSlot(i, '');
+    setSlot(3, playerIds[0] || '');
+    setSlot(4, playerIds[1] || '');
+  }
+
+  updateHeadshots();
+  __wowyData = null;
+  __versusData = null;
+  populateWowyPersp();
+  updateSlicerSummaries();
+  debouncedFetch();
+  saveSelections();
+}
 
 function debouncedFetch(){
   clearTimeout(__fetchTimer);
@@ -714,24 +794,28 @@ async function loadVsPlayers(){
 
 function populateVsTeamSelect(){
   if(!ltVsTeam) return;
-  const teamsData = (() => { try { return JSON.parse(document.getElementById('teams-data')?.textContent||'[]'); } catch(_){ return []; } })();
   const cur = ltVsTeam.value;
   ltVsTeam.innerHTML = '<option value="">— Any Team —</option>';
-  for(const t of teamsData.filter(t => t.Active === '1' || t.Active === 1)){
+  const teams = (__lineTeams || [])
+    .filter(t => t.Active === '1' || t.Active === 1)
+    .slice()
+    .sort((a, b) => __sortTextAsc(__teamDisplayName(a), __teamDisplayName(b)));
+  for(const t of teams){
     const opt = document.createElement('option');
     opt.value = String(t.Team || t.abbreviation || t.abbr || t.id || '');
-    opt.textContent = String(t.Name || t.name || t.Team || t.abbreviation || '');
+    opt.textContent = __teamDisplayName(t);
     ltVsTeam.appendChild(opt);
   }
   if(cur) ltVsTeam.value = cur;
 }
 
 function populateVsSelects(){
+  const players = __sortedVsPlayers();
   for(const sel of vsPlayerSelects){
     if(!sel) continue;
     const cur = sel.value;
     sel.innerHTML = '<option value="">— None —</option>';
-    for(const p of __vsPlayers){
+    for(const p of players){
       const opt = document.createElement('option');
       opt.value = String(p.id);
       opt.textContent = `${p.name} (${p.position || '?'})`;
@@ -777,11 +861,12 @@ function updateVsHeadshots(){
 }
 
 function populateSelects(){
-  for(const sel of playerSelects){
+  for(const [slotIndex, sel] of playerSelects.entries()){
     if(!sel) continue;
     const cur = sel.value;
     sel.innerHTML = '<option value="">— None —</option>';
-    for(const p of __players){
+    const slotPlayers = __sortedPlayersForSlot(slotIndex);
+    for(const p of slotPlayers){
       const opt = document.createElement('option');
       opt.value = String(p.id);
       opt.textContent = `${p.name} (${p.position || '?'})`;
@@ -2784,8 +2869,8 @@ function renderLines(type){
   }
   html += '</tr></thead><tbody>';
 
-  for(const row of rows){
-    html += '<tr>';
+  rows.forEach((row, rowIndex) => {
+    html += `<tr class="lt-lines-row-selectable" data-row-index="${rowIndex}">`;
     for(const pc of row.playerCells) html += pc.html;
     if(row.teamCell) html += row.teamCell.html;
     html += row.gpCell.html;
@@ -2795,7 +2880,7 @@ function renderLines(type){
       html += `<td class="${cls}">${display}</td>`;
     }
     html += '</tr>';
-  }
+  });
   html += '</tbody></table>';
   if(wrap) wrap.innerHTML = html;
 
@@ -2811,6 +2896,14 @@ function renderLines(type){
         else { __defSortCol = ci; __defSortAsc = false; }
       }
       renderLines(type);
+    });
+  });
+
+  wrap?.querySelectorAll('tbody tr.lt-lines-row-selectable').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const rowIndex = parseInt(tr.dataset.rowIndex, 10);
+      if(!Number.isFinite(rowIndex) || !rows[rowIndex]?.combo) return;
+      __setMainPlayerSelectionFromCombo(type, rows[rowIndex].combo);
     });
   });
 
