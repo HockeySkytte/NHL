@@ -676,6 +676,23 @@ function handleMainPlayerSelectionChange(){
   saveSelections();
 }
 
+function __setLineScope(type, scope){
+  const nextScope = String(scope || '').trim().toLowerCase();
+  if(type === 'fwd'){
+    __fwdScope = nextScope === 'league' ? 'league' : 'team';
+    __fwdData = null;
+    __fwdSortCol = -1;
+    ltFwdScopeTeam?.classList.toggle('active', __fwdScope === 'team');
+    ltFwdScopeLeague?.classList.toggle('active', __fwdScope === 'league');
+    return;
+  }
+  __defScope = nextScope === 'league' ? 'league' : 'team';
+  __defData = null;
+  __defSortCol = -1;
+  ltDefScopeTeam?.classList.toggle('active', __defScope === 'team');
+  ltDefScopeLeague?.classList.toggle('active', __defScope === 'league');
+}
+
 async function __setMainPlayerSelectionFromCombo(type, combo){
   const playerIds = Array.isArray(combo?.players) ? combo.players.map(pid => String(pid || '').trim()).filter(Boolean) : [];
   if(!playerIds.length) return;
@@ -683,9 +700,13 @@ async function __setMainPlayerSelectionFromCombo(type, combo){
   const comboTeam = String(combo?.team || '').trim().toUpperCase();
   const currentTeam = String(teamSelect?.value || '').trim().toUpperCase();
   if(comboTeam && teamSelect && comboTeam !== currentTeam){
+    const currentScope = type === 'fwd' ? __fwdScope : __defScope;
+    if(currentScope === 'league') __setLineScope(type, 'team');
     const hasTeamOption = Array.from(teamSelect.options || []).some(opt => String(opt?.value || '').trim().toUpperCase() === comboTeam);
     if(hasTeamOption){
       teamSelect.value = comboTeam;
+      teamSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      await _waitForSeasons(6000);
       await loadPlayers();
     }
   }
@@ -2959,26 +2980,22 @@ ltDefMinToi?.addEventListener('input', () => renderLines('def'));
 // Scope toggle handlers
 ltFwdScopeTeam?.addEventListener('click', () => {
   if(__fwdScope === 'team') return;
-  __fwdScope = 'team'; __fwdData = null; __fwdSortCol = -1;
-  ltFwdScopeTeam?.classList.add('active'); ltFwdScopeLeague?.classList.remove('active');
+  __setLineScope('fwd', 'team');
   fetchLines('fwd');
 });
 ltFwdScopeLeague?.addEventListener('click', () => {
   if(__fwdScope === 'league') return;
-  __fwdScope = 'league'; __fwdData = null; __fwdSortCol = -1;
-  ltFwdScopeLeague?.classList.add('active'); ltFwdScopeTeam?.classList.remove('active');
+  __setLineScope('fwd', 'league');
   fetchLines('fwd');
 });
 ltDefScopeTeam?.addEventListener('click', () => {
   if(__defScope === 'team') return;
-  __defScope = 'team'; __defData = null; __defSortCol = -1;
-  ltDefScopeTeam?.classList.add('active'); ltDefScopeLeague?.classList.remove('active');
+  __setLineScope('def', 'team');
   fetchLines('def');
 });
 ltDefScopeLeague?.addEventListener('click', () => {
   if(__defScope === 'league') return;
-  __defScope = 'league'; __defData = null; __defSortCol = -1;
-  ltDefScopeLeague?.classList.add('active'); ltDefScopeTeam?.classList.remove('active');
+  __setLineScope('def', 'league');
   fetchLines('def');
 });
 
