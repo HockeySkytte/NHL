@@ -1690,6 +1690,7 @@ _BOX_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 _LT_SHIFTS_CACHE: Dict[str, Tuple[float, list]] = {}   # key: "team|season" → (ts, rows)
 _LT_PBP_CACHE: Dict[str, Tuple[float, list]] = {}      # key: "season|game_ids_hash|xg_col" → (ts, rows)
 _LT_DATA_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
+_LT_BASE_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
 _LT_SHIFTS_TTL = 300  # 5-minute TTL for line-tool shifts cache
 _LT_PBP_TTL = 300
 
@@ -3462,6 +3463,79 @@ def _get_lt_pbp_parallel(
     return all_pbp
 
 
+def _get_lt_base_context(
+    team: str,
+    season_ids: Sequence[int],
+    player_ids: Sequence[str],
+    ss: str,
+    strength: str,
+    xg_col: str,
+    *,
+    ttl_s: int = 300,
+    max_items: int = 96,
+) -> Dict[str, Any]:
+    cache_key = (
+        'base-context',
+        str(team),
+        tuple(_normalize_season_id_list(season_ids)),
+        tuple(sorted((str(pid) for pid in player_ids), key=lambda x: int(x))) if player_ids else (),
+        str(ss),
+        str(strength),
+        str(xg_col),
+    )
+    _cache_prune_ttl_and_size(_LT_BASE_CACHE, ttl_s=ttl_s, max_items=max_items)
+    cached = _cache_get(_LT_BASE_CACHE, cache_key, ttl_s)
+    if isinstance(cached, dict):
+        return cached
+
+    shift_rows = _get_lt_shifts_parallel(team, season_ids)
+    if not shift_rows:
+        result = {'shiftRows': [], 'baseShifts': [], 'allPbp': []}
+        _cache_set_multi_bounded(_LT_BASE_CACHE, cache_key, result, ttl_s=ttl_s, max_items=max_items)
+        return result
+
+    shift_rows = _filter_shifts_season_state(shift_rows, ss)
+    shift_rows = _apply_lt_strength_filter(shift_rows, strength)
+
+    if player_ids:
+        player_id_set = set(str(pid) for pid in player_ids)
+        base_shifts = []
+        for shift_row in shift_rows:
+            pids_on_ice = set(str(shift_row.get('player_id', '')).split())
+            if player_id_set.issubset(pids_on_ice):
+                base_shifts.append(shift_row)
+    else:
+        base_shifts = shift_rows
+
+    game_list = sorted({int(s.get('game_id', 0)) for s in base_shifts if int(s.get('game_id', 0)) > 0})
+    all_pbp = _get_lt_pbp_parallel(season_ids, game_list, xg_col, extra_cols='x,y,box_id,highlight_url') if game_list else []
+
+    result = {
+        'shiftRows': shift_rows,
+        'baseShifts': base_shifts,
+        'allPbp': all_pbp,
+    }
+    _cache_set_multi_bounded(_LT_BASE_CACHE, cache_key, result, ttl_s=ttl_s, max_items=max_items)
+    return result
+
+
+def _lt_game_ids_for_opponent(team: str, vs_team: str, pbp_rows: Sequence[Dict[str, Any]]) -> set[int]:
+    game_ids: set[int] = set()
+    team_abbr = str(team or '').strip().upper()
+    opponent_abbr = str(vs_team or '').strip().upper()
+    if not team_abbr or not opponent_abbr:
+        return game_ids
+    for row in pbp_rows or []:
+        gid = _safe_int(row.get('game_id'))
+        if not gid:
+            continue
+        event_team = str(row.get('event_team', '')).upper()
+        opponent = str(row.get('opponent', '')).upper()
+        if (event_team == team_abbr and opponent == opponent_abbr) or (event_team == opponent_abbr and opponent == team_abbr):
+            game_ids.add(int(gid))
+    return game_ids
+
+
 def _compute_line_tool_team_combos(team: str, season: str, ss: str, strength: str,
                                    xg_col: str, line_type: str,
                                    pid_info: Dict[str, Dict[str, str]]) -> List[Dict[str, Any]]:
@@ -3672,50 +3746,50 @@ def api_line_tool_data():
         j_cached.headers['Cache-Control'] = 'no-store'
         return j_cached
 
-    # ── 1. Fetch shifts for the team + season (parallel) ─────
-    shift_rows = _get_lt_shifts_parallel(team, season_ids)
+    base_ctx = _get_lt_base_context(
+        team,
+        season_ids,
+        player_ids,
+        ss,
+        strength,
+        xg_col,
+        ttl_s=lt_data_ttl_s,
+        max_items=lt_data_max_items,
+    )
+    shift_rows = list(base_ctx.get('shiftRows') or [])
     if not shift_rows:
         return jsonify(_empty_line_tool_response())
-    shift_rows = _filter_shifts_season_state(shift_rows, ss)
-    shift_rows = _apply_lt_strength_filter(shift_rows, strength)
-
-    # ── 2. Find shifts where ALL selected players are on ice ─
-    # When no players are selected, use all team shifts (full team view).
-    if player_ids:
-        common_shifts = []
-        player_id_set = set(player_ids)
-        for s in shift_rows:
-            pids_on_ice = set(str(s.get('player_id', '')).split())
-            if player_id_set.issubset(pids_on_ice):
-                common_shifts.append(s)
-    else:
-        common_shifts = shift_rows
+    common_shifts = list(base_ctx.get('baseShifts') or [])
 
     if not common_shifts:
         return jsonify(_empty_line_tool_response())
 
+    all_pbp = list(base_ctx.get('allPbp') or [])
+
     # ── 2b. Intersect with opponent shifts if vs_team / vs_players set ──
     if vs_team:
-        # Fetch opponent shifts for all seasons in one cached batched query.
-        opp_shift_rows: list = _get_lt_shifts_parallel(vs_team, season_ids)
-        opp_shift_rows = _filter_shifts_season_state(opp_shift_rows, ss)
-        # Do not apply selected-team strength filtering to opponent shifts.
-        # Build set of shift keys where all requested vs_players are on ice for the opp
         if vs_player_ids:
+            # Fetch opponent shifts for all seasons in one cached batched query.
+            opp_shift_rows: list = _get_lt_shifts_parallel(vs_team, season_ids)
+            opp_shift_rows = _filter_shifts_season_state(opp_shift_rows, ss)
+            # Do not apply selected-team strength filtering to opponent shifts.
+            # Build set of shift keys where all requested vs_players are on ice for the opp
             vs_id_set = set(vs_player_ids)
             opp_valid_keys: set = set()
             for s in opp_shift_rows:
                 pids = set(str(s.get('player_id', '')).split())
                 if vs_id_set.issubset(pids):
                     opp_valid_keys.add((int(s.get('game_id', 0)), int(s.get('shift_index', 0))))
+            common_shifts = [
+                s for s in common_shifts
+                if (int(s.get('game_id', 0)), int(s.get('shift_index', 0))) in opp_valid_keys
+            ]
         else:
-            # Any opp shift → just use all opp shift keys
-            opp_valid_keys = {(int(s.get('game_id', 0)), int(s.get('shift_index', 0))) for s in opp_shift_rows}
-        # Restrict common_shifts to those where opponent is also on ice
-        common_shifts = [
-            s for s in common_shifts
-            if (int(s.get('game_id', 0)), int(s.get('shift_index', 0))) in opp_valid_keys
-        ]
+            opponent_game_ids = _lt_game_ids_for_opponent(team, vs_team, all_pbp)
+            common_shifts = [
+                s for s in common_shifts
+                if int(s.get('game_id', 0)) in opponent_game_ids
+            ]
         if not common_shifts:
             return jsonify(_empty_line_tool_response())
 
@@ -3748,9 +3822,8 @@ def api_line_tool_data():
         team_toi_sec += int(s.get('duration', 0) or 0)
     team_toi_min = team_toi_sec / 60.0
 
-    # ── 5. Fetch PBP for the relevant games (parallel) ───────
+    # ── 5. Reuse cached PBP for the relevant games ───────────
     game_list = sorted(game_ids)
-    all_pbp = _get_lt_pbp_parallel(season_ids, game_list, xg_col, extra_cols='x,y,box_id,highlight_url')
 
     # ── 6. Filter PBP to matching shift_indexes ──────────────
     events_for = []   # team shooting (event_team = team)
@@ -4291,44 +4364,46 @@ def api_line_tool_versus():
         j_cached.headers['Cache-Control'] = 'no-store'
         return j_cached
 
-    # 1) Team shifts filtered by selected FOR players (or all shifts if no FOR players selected)
-    shift_rows: List[Dict[str, Any]] = _get_lt_shifts_parallel(team, season_ids)
+    base_ctx = _get_lt_base_context(
+        team,
+        season_ids,
+        player_ids,
+        ss,
+        strength,
+        xg_col,
+        ttl_s=lt_data_ttl_s,
+        max_items=lt_data_max_items,
+    )
+    shift_rows: List[Dict[str, Any]] = list(base_ctx.get('shiftRows') or [])
     if not shift_rows:
         return jsonify({'rows': [], 'vsTeam': vs_team, 'vsPlayers': []})
-    shift_rows = _filter_shifts_season_state(shift_rows, ss)
-    shift_rows = _apply_lt_strength_filter(shift_rows, strength)
-
-    if player_ids:
-        player_set = set(player_ids)
-        base_shifts = []
-        for s in shift_rows:
-            pids_on_ice = set(str(s.get('player_id', '')).split())
-            if player_set.issubset(pids_on_ice):
-                base_shifts.append(s)
-    else:
-        base_shifts = shift_rows
+    base_shifts: List[Dict[str, Any]] = list(base_ctx.get('baseShifts') or [])
     if not base_shifts:
         return jsonify({'rows': [], 'vsTeam': vs_team, 'vsPlayers': []})
 
-    # 2) Opponent shifts map: (game_id, shift_index) -> set(opponent player ids)
-    opp_shift_rows: List[Dict[str, Any]] = _get_lt_shifts_parallel(vs_team, season_ids)
-    opp_shift_rows = _filter_shifts_season_state(opp_shift_rows, ss)
-    # Do not apply selected-team strength filtering to the opponent side.
-    # Example: team PP corresponds to opponent SH on the same shift.
-    # We key by (game_id, shift_index), so the selected team's strength-state
-    # filter already defines the correct opponent context.
+    all_pbp: List[Dict[str, Any]] = list(base_ctx.get('allPbp') or [])
 
     opp_key_to_pids: Dict[Tuple[int, int], set] = {}
-    for s in opp_shift_rows:
-        gid = int(s.get('game_id', 0))
-        si = int(s.get('shift_index', 0))
-        pset = set(str(s.get('player_id', '')).split())
-        key = (gid, si)
-        cur = opp_key_to_pids.get(key)
-        if cur is None:
-            opp_key_to_pids[key] = pset
-        else:
-            cur.update(pset)
+    opponent_game_ids = _lt_game_ids_for_opponent(team, vs_team, all_pbp)
+    if vs_player_ids:
+        # 2) Opponent shifts map: (game_id, shift_index) -> set(opponent player ids)
+        opp_shift_rows: List[Dict[str, Any]] = _get_lt_shifts_parallel(vs_team, season_ids)
+        opp_shift_rows = _filter_shifts_season_state(opp_shift_rows, ss)
+        # Do not apply selected-team strength filtering to the opponent side.
+        # Example: team PP corresponds to opponent SH on the same shift.
+        # We key by (game_id, shift_index), so the selected team's strength-state
+        # filter already defines the correct opponent context.
+
+        for s in opp_shift_rows:
+            gid = int(s.get('game_id', 0))
+            si = int(s.get('shift_index', 0))
+            pset = set(str(s.get('player_id', '')).split())
+            key = (gid, si)
+            cur = opp_key_to_pids.get(key)
+            if cur is None:
+                opp_key_to_pids[key] = pset
+            else:
+                cur.update(pset)
 
     # 3) Partition shifts into groups
     # Group key: ('vs', mask_tuple) for vs-team shifts, ('not_vs', None) for all other shifts.
@@ -4349,29 +4424,20 @@ def api_line_tool_versus():
         si = int(s.get('shift_index', 0))
         dur = int(s.get('duration', 0) or 0)
         key = (gid, si)
-        opp_pids = opp_key_to_pids.get(key)
-
-        if opp_pids is None:
-            gkey = ('not_vs', None)
+        if not vs_player_ids:
+            gkey = ('vs', tuple()) if gid in opponent_game_ids else ('not_vs', None)
         else:
-            if vs_player_ids:
-                mask = tuple(pid in opp_pids for pid in vs_player_ids)
+            opp_pids = opp_key_to_pids.get(key)
+            if opp_pids is None:
+                gkey = ('not_vs', None)
             else:
-                mask = tuple()
-            gkey = ('vs', mask)
+                mask = tuple(pid in opp_pids for pid in vs_player_ids)
+                gkey = ('vs', mask)
 
         grp = group_rows[gkey]
         grp['duration'] += dur
         grp['game_ids'].add(gid)
         grp['shift_keys'].add(key)
-
-    # 4) Fetch PBP for relevant games and map shift key -> group
-    all_game_ids = set()
-    for grp in group_rows.values():
-        all_game_ids.update(grp['game_ids'])
-    game_list = sorted(all_game_ids)
-
-    all_pbp: List[Dict[str, Any]] = _get_lt_pbp_parallel(season_ids, game_list, xg_col)
 
     sk_to_group: Dict[Tuple[int, int], Tuple[str, Any]] = {}
     for gkey, grp in group_rows.items():
