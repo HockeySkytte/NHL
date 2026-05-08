@@ -1691,8 +1691,8 @@ _LT_SHIFTS_CACHE: Dict[str, Tuple[float, list]] = {}   # key: "team|season" → 
 _LT_PBP_CACHE: Dict[str, Tuple[float, list]] = {}      # key: "season|game_ids_hash|xg_col" → (ts, rows)
 _LT_DATA_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
 _LT_BASE_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
-_LT_SHIFTS_TTL = 300  # 5-minute TTL for line-tool shifts cache
-_LT_PBP_TTL = 300
+_LT_SHIFTS_TTL = 1800  # 30-minute TTL for line-tool shifts cache
+_LT_PBP_TTL = 1800
 
 # --- Prestart snapshot config/state ---
 _PRESTART_THREAD_STARTED = False
@@ -3722,9 +3722,9 @@ def api_line_tool_data():
         vs_player_ids = vs_player_ids[:3]
 
     try:
-        lt_data_ttl_s = max(30, int(os.getenv('LINE_TOOL_DATA_CACHE_TTL_SECONDS', '300') or '300'))
+        lt_data_ttl_s = max(30, int(os.getenv('LINE_TOOL_DATA_CACHE_TTL_SECONDS', '1800') or '1800'))
     except Exception:
-        lt_data_ttl_s = 300
+        lt_data_ttl_s = 1800
     try:
         lt_data_max_items = max(8, int(os.getenv('LINE_TOOL_DATA_CACHE_MAX_ITEMS', '96') or '96'))
     except Exception:
@@ -4141,8 +4141,12 @@ def api_line_tool_wowy():
         all_game_ids.update(grp['game_ids'])
     game_list = sorted(all_game_ids)
 
-    all_pbp = _get_lt_pbp_parallel(season_ids, game_list, xg_col,
-                                  extra_cols='player1_id,player2_id,player3_id,goalie_id')
+    all_pbp = _get_lt_pbp_parallel(
+        season_ids,
+        game_list,
+        xg_col,
+        extra_cols='player1_id,player2_id,player3_id,goalie_id',
+    )
 
     # Build shift_key → mask lookup
     sk_to_mask = {}
@@ -4339,9 +4343,9 @@ def api_line_tool_versus():
     xg_col = xg_col_map.get(xg_model, 'xg_f')
 
     try:
-        lt_data_ttl_s = max(30, int(os.getenv('LINE_TOOL_DATA_CACHE_TTL_SECONDS', '300') or '300'))
+        lt_data_ttl_s = max(30, int(os.getenv('LINE_TOOL_DATA_CACHE_TTL_SECONDS', '1800') or '1800'))
     except Exception:
-        lt_data_ttl_s = 300
+        lt_data_ttl_s = 1800
     try:
         lt_data_max_items = max(8, int(os.getenv('LINE_TOOL_DATA_CACHE_MAX_ITEMS', '96') or '96'))
     except Exception:
@@ -4592,9 +4596,9 @@ def api_line_tool_lines():
     # Result cache – first cold load for 3 seasons can take 30–60 s; cache the
     # result so subsequent requests are instant.
     try:
-        lt_lines_ttl_s = max(30, int(os.getenv('LINE_TOOL_DATA_CACHE_TTL_SECONDS', '300') or '300'))
+        lt_lines_ttl_s = max(30, int(os.getenv('LINE_TOOL_DATA_CACHE_TTL_SECONDS', '1800') or '1800'))
     except Exception:
-        lt_lines_ttl_s = 300
+        lt_lines_ttl_s = 1800
     try:
         lt_lines_max_items = max(8, int(os.getenv('LINE_TOOL_DATA_CACHE_MAX_ITEMS', '96') or '96'))
     except Exception:
