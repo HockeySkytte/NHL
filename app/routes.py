@@ -19637,7 +19637,7 @@ def api_skaters_shooting():
     sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
     if not sb_failed:
         try:
-            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,event,highlight_url,period"
+            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,shot_type,player1_id,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,event,highlight_url,period"
             for season_id in season_ids:
                 rows = _sb_read('pbp', columns=cols, order='event_index', filters={
                     **filters_base,
@@ -19772,6 +19772,9 @@ def api_skaters_shooting():
     # Resolve goalie names from players table (DB), fall back to roster API
     player_names = _load_player_names_for_seasons(season_ids)
     for event in events_out:
+        player_id_out = _safe_int(event.get('playerId'))
+        if player_id_out:
+            event['playerName'] = player_names.get(player_id_out, str(event.get('playerName') or '').strip() or str(player_id_out))
         goalie_id_out = _safe_int(event.get('goalieId'))
         if goalie_id_out:
             event['goalieName'] = player_names.get(goalie_id_out, str(event.get('goalieName') or '').strip() or str(goalie_id_out))
@@ -19887,7 +19890,7 @@ def api_goalies_goaltending():
     sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
     if not sb_failed:
         try:
-            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,highlight_url,period"
+            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,shot_type,player1_id,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,highlight_url,period"
             for season_id in season_ids:
                 rows = _sb_read('pbp', columns=cols, order='event_index', filters={
                     **filters_base,
@@ -20028,6 +20031,9 @@ def api_goalies_goaltending():
     # Resolve shooter names from players table (DB), fall back to roster API
     player_names = _load_player_names_for_seasons(season_ids)
     for event in events_out:
+        player_id_out = _safe_int(event.get('playerId'))
+        if player_id_out:
+            event['playerName'] = player_names.get(player_id_out, str(event.get('playerName') or '').strip() or str(player_id_out))
         goalie_id_out = _safe_int(event.get('goalieId'))
         if goalie_id_out:
             event['goalieName'] = player_names.get(goalie_id_out, str(event.get('goalieName') or '').strip() or str(goalie_id_out))
