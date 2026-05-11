@@ -19507,40 +19507,35 @@ def api_skaters_shooting():
     if ss and ss != 'all':
         filters_base['season_state'] = f'eq.{ss}'
 
-    all_events = []
-    sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
-    if not sb_failed:
-        try:
-            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,event,highlight_url,period"
-            for season_id in season_ids:
-                rows = _sb_read('pbp', columns=cols, order='event_index', filters={
-                    **filters_base,
-                    'season': f'eq.{int(season_id)}',
-                    'corsi': 'eq.1',
-                })
-                if rows is None:
-                    sb_failed = True
-                    all_events = []
-                    break
-                if rows:
-                    all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
-        except Exception:
-            sb_failed = True
-            all_events = []
+    all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
+    if not all_events:
+        sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
+        if not sb_failed:
+            try:
+                cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,event,highlight_url,period"
+                for season_id in season_ids:
+                    rows = _sb_read('pbp', columns=cols, order='event_index', filters={
+                        **filters_base,
+                        'season': f'eq.{int(season_id)}',
+                        'corsi': 'eq.1',
+                    })
+                    if rows is None:
+                        sb_failed = True
+                        all_events = []
+                        break
+                    if rows:
+                        all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
+            except Exception:
+                sb_failed = True
+                all_events = []
 
-    if (not sb_failed) and (not player_id) and (not roster_ids) and (not _pbp_rows_have_expected_game_coverage(team, season_ids, ss, all_events)):
-        sb_failed = True
-        all_events = []
-
-    if sb_failed:
-        all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
-        if player_id:
-            player_id_int = _safe_int(player_id)
-            all_events = [e for e in all_events if _safe_int(e.get('player1_id')) == player_id_int]
-        all_events = [
-            e for e in all_events
-            if str(e.get('event_team') or '').strip().upper() == team and int(e.get('corsi') or 0) == 1 and int(e.get('period') or 0) != 5
-        ]
+    if player_id:
+        player_id_int = _safe_int(player_id)
+        all_events = [e for e in all_events if _safe_int(e.get('player1_id')) == player_id_int]
+    all_events = [
+        e for e in all_events
+        if str(e.get('event_team') or '').strip().upper() == team and int(e.get('corsi') or 0) == 1 and int(e.get('period') or 0) != 5
+    ]
 
     # Restrict to current roster players when roster filter is provided
     if roster_ids:
@@ -19756,41 +19751,36 @@ def api_goalies_goaltending():
     if ss and ss != 'all':
         filters_base['season_state'] = f'eq.{ss}'
 
-    all_events = []
-    sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
-    if not sb_failed:
-        try:
-            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,highlight_url,period"
-            for season_id in season_ids:
-                rows = _sb_read('pbp', columns=cols, order='event_index', filters={
-                    **filters_base,
-                    'season': f'eq.{int(season_id)}',
-                    'opponent': f'eq.{team}',
-                    'corsi': 'eq.1',
-                })
-                if rows is None:
-                    sb_failed = True
-                    all_events = []
-                    break
-                if rows:
-                    all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
-        except Exception:
-            sb_failed = True
-            all_events = []
+    all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
+    if not all_events:
+        sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
+        if not sb_failed:
+            try:
+                cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,highlight_url,period"
+                for season_id in season_ids:
+                    rows = _sb_read('pbp', columns=cols, order='event_index', filters={
+                        **filters_base,
+                        'season': f'eq.{int(season_id)}',
+                        'opponent': f'eq.{team}',
+                        'corsi': 'eq.1',
+                    })
+                    if rows is None:
+                        sb_failed = True
+                        all_events = []
+                        break
+                    if rows:
+                        all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
+            except Exception:
+                sb_failed = True
+                all_events = []
 
-    if (not sb_failed) and (not goalie_id) and (not roster_ids) and (not _pbp_rows_have_expected_game_coverage(team, season_ids, ss, all_events)):
-        sb_failed = True
-        all_events = []
-
-    if sb_failed:
-        all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
-        if goalie_id:
-            goalie_id_int = _safe_int(goalie_id)
-            all_events = [e for e in all_events if _safe_int(e.get('goalie_id')) == goalie_id_int]
-        all_events = [
-            e for e in all_events
-            if str(e.get('opponent') or '').strip().upper() == team and int(e.get('corsi') or 0) == 1 and int(e.get('period') or 0) != 5
-        ]
+    if goalie_id:
+        goalie_id_int = _safe_int(goalie_id)
+        all_events = [e for e in all_events if _safe_int(e.get('goalie_id')) == goalie_id_int]
+    all_events = [
+        e for e in all_events
+        if str(e.get('opponent') or '').strip().upper() == team and int(e.get('corsi') or 0) == 1 and int(e.get('period') or 0) != 5
+    ]
 
     # Restrict to current roster goalies when roster filter is provided
     if roster_ids:
