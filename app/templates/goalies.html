@@ -7014,11 +7014,8 @@ function __maybeReloadGoaltending(){
     loadGoaltendingPanel();
   }
 }
-cardSeasonState?.addEventListener('change', __maybeReloadGoaltending);
 cardStrengthState?.addEventListener('change', __maybeReloadGoaltending);
 cardXgModel?.addEventListener('change', __maybeReloadGoaltending);
-playerSelect?.addEventListener('change', __maybeReloadGoaltending);
-seasonSelect?.addEventListener('change', __maybeReloadGoaltending);
 
 btnReloadTable?.addEventListener('click', ()=>{ __tableLastKey=''; loadTablePanel(); });
 btnConfigureTable?.addEventListener('click', async ()=>{ await showTableConfig(); });

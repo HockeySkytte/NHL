@@ -4,6 +4,11 @@ from datetime import timedelta
 from flask import Flask
 
 try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
+
+try:
     from flask_compress import Compress
 except Exception:
     Compress = None
@@ -13,6 +18,12 @@ _compress = Compress() if Compress is not None else None
 
 
 def create_app():
+    try:
+        if load_dotenv is not None:
+            load_dotenv()
+    except Exception:
+        pass
+
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY') or 'nhl-dev-secret-change-me'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
