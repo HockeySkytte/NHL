@@ -3109,6 +3109,8 @@ async function loadCardPanel(){
   if(!Number.isFinite(minGP) || minGP < 0) minGP = 0;
   let minTOI = Number(String(cardMinToi?.value || '0'));
   if(!Number.isFinite(minTOI) || minTOI < 0) minTOI = 0;
+  cardPanelInner.textContent = 'Loading card...';
+  let requestKey = '';
   try{
     const defs = await ensureCardDefs();
     const cfg = (__cardConfig = loadCardConfig(defs));
@@ -3140,6 +3142,8 @@ async function loadCardPanel(){
     }
 
     const url = `/api/skaters/card?season=${encodeURIComponent(season)}&playerId=${encodeURIComponent(playerId)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(rates)}&scope=${encodeURIComponent(scope)}&minGP=${encodeURIComponent(String(minGP))}&minTOI=${encodeURIComponent(String(minTOI))}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
+    requestKey = url;
+    loadCardPanel.__reqKey = requestKey;
     const r = await fetch(url, { cache: 'no-store' });
     let data = null;
     try{
@@ -3147,6 +3151,7 @@ async function loadCardPanel(){
     }catch(_){
       data = null;
     }
+    if(requestKey !== String(loadCardPanel.__reqKey || '')) return;
     if(!r.ok){
       const err = (data && typeof data === 'object' && data.error) ? String(data.error) : '';
       cardPanelInner.textContent = `Error loading Card (${r.status}${err?`: ${err}`:''}).`;
@@ -3166,6 +3171,7 @@ async function loadCardPanel(){
     renderCardUI(data, defs, cfg);
     __updateProjectionKpiFromCardData(data, cfg);
   }catch(e){
+    if(requestKey && requestKey !== String(loadCardPanel.__reqKey || '')) return;
     try{ console.error('[card] loadCardPanel failed:', e); }catch(_){/*noop*/}
     cardPanelInner.textContent = 'Error loading Card.';
     __updateProjectionKpiFromCardData(null, __cardConfig);
@@ -5100,6 +5106,7 @@ async function loadRAPMPanel(){
   rapmPanelInner.textContent = 'Loading RAPM...';
   try{
     const key = `${playerId}|${season||''}`;
+    loadRAPMPanel.__reqKey = key;
     if(__rapmKey !== key){
       __rapmKey = key;
       __rapmCache = null;
@@ -5110,8 +5117,11 @@ async function loadRAPMPanel(){
       const rapmUrl = `/api/rapm/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season||'')}`;
       const ctxUrl = `/api/context/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season||'')}`;
       const [rapmRes, ctxRes] = await Promise.all([fetch(rapmUrl), fetch(ctxUrl)]);
-      __rapmCache = await rapmRes.json();
-      __ctxCache = await ctxRes.json();
+      const nextRapmCache = await rapmRes.json();
+      const nextCtxCache = await ctxRes.json();
+      if(key !== String(loadRAPMPanel.__reqKey || '')) return;
+      __rapmCache = nextRapmCache;
+      __ctxCache = nextCtxCache;
 
       const seasonValues = String(season || '').split(',').map((v)=>String(v || '').trim()).filter((v)=>/^\d{8}$/.test(v));
       if(seasonValues.length > 1){
@@ -5126,8 +5136,10 @@ async function loadRAPMPanel(){
       }
     }
 
+    if(key !== String(loadRAPMPanel.__reqKey || '')) return;
     renderRAPMUI();
   }catch(e){
+    if(String(loadRAPMPanel.__reqKey || '') !== `${playerId}|${season||''}`) return;
     rapmPanelInner.textContent = 'Error loading RAPM.';
   }
 }
@@ -5141,11 +5153,15 @@ async function loadProjectionsPanel(){
   const playerId = playerSelect?.value;
   const season = String(seasonSelect?.value || '').trim();
   const { teamAbbrev, teamColor } = __getCurrentProjectionTeamMeta();
+  const requestKey = `${playerId || ''}|${season}|${teamAbbrev || ''}`;
+  loadProjectionsPanel.__reqKey = requestKey;
   try{
     const [league, playerTrend] = await Promise.all([
       ensureProjLeaguePlayers(),
       ensureProjPlayerTrend(playerId, season),
     ]);
+
+    if(requestKey !== String(loadProjectionsPanel.__reqKey || '')) return;
 
     // Set CSS variable for team color highlight
     if(teamColor){
@@ -5159,6 +5175,7 @@ async function loadProjectionsPanel(){
     if(!projPanelPlayer?.hidden) renderProjPlayerTrend(playerTrend, teamColor);
     if(!projPanelTeam?.hidden) renderTeamStackFromLeague(teamAbbrev, league, teamColor);
   }catch(e){
+    if(requestKey !== String(loadProjectionsPanel.__reqKey || '')) return;
     if(projPlayerEmpty){
       projPlayerEmpty.hidden = false;
       projPlayerEmpty.textContent = 'Error loading player projection history.';
@@ -5207,11 +5224,26 @@ async function loadPlayers(){
   }
 }
 
+function loadActiveSkaterPanel(){
+  if(tabCard?.classList.contains('active')){
+    loadCardPanel();
+    return;
+  }
+  if(tabRAPM?.classList.contains('active')){
+    loadRAPMPanel();
+    return;
+  }
+  if(tabProjections?.classList.contains('active') && projectionsEnabled()){
+    loadProjectionsPanel();
+  }
+}
+
 async function loadPlayerCard(){
   if(!teamSelect || !seasonSelect || !playerSelect) return;
   const team = teamSelect.value;
   const season = seasonSelect.value;
   const playerId = playerSelect.value;
+  const selectedPlayerName = String(playerSelect?.selectedOptions?.[0]?.textContent || '').trim();
   if(!playerId){
     loadPlayerCard.__reqVer = Number(loadPlayerCard.__reqVer || 0) + 1;
     if(team) setTeamLogo(team);
@@ -5226,29 +5258,28 @@ async function loadPlayerCard(){
   const selectedPlayerId = String(playerId);
   localStorage.setItem(`skaters_player_${team}`, String(playerId));
   setHeadshot(team, season, playerId);
+  skaterName.textContent = selectedPlayerName || 'Unknown player';
+  skaterInfo.innerHTML = '';
   setMsg('Loading player info...');
+  loadActiveSkaterPanel();
   try{
-    const r = await fetch(`/api/player/${encodeURIComponent(playerId)}/landing`);
-    const data = await r.json();
+    const r = await fetch(`/api/player/${encodeURIComponent(playerId)}/landing?season=${encodeURIComponent(season)}&team=${encodeURIComponent(team)}`, { cache: 'no-store' });
+    let data = null;
+    try{
+      data = await r.json();
+    }catch(_){
+      data = null;
+    }
     if(reqVer !== Number(loadPlayerCard.__reqVer || 0) || String(playerSelect.value || '') !== selectedPlayerId) return;
-    if(data?.error){
-      setMsg('Could not load player info.', true);
-      skaterInfo.innerHTML = '';
-      skaterName.textContent = 'Unknown player';
-      setDefaultHeadshot();
-      __updateProjectionKpiFromCardData(null, null);
+    if(!r.ok || data?.error || !data || typeof data !== 'object'){
+      setMsg('Could not load player bio.', true);
       return;
     }
     renderPlayerLanding(data);
     setMsg('');
-    if(cardEnabled()) loadCardPanel();
-    loadRAPMPanel();
-    if(projectionsEnabled()) loadProjectionsPanel();
   }catch(e){
     if(reqVer !== Number(loadPlayerCard.__reqVer || 0) || String(playerSelect.value || '') !== selectedPlayerId) return;
-    setMsg('Could not load player info.', true);
-    setDefaultHeadshot();
-    __updateProjectionKpiFromCardData(null, null);
+    setMsg('Could not load player bio.', true);
   }
 }
 

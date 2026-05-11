@@ -7291,6 +7291,71 @@ def api_player_landing(player_id: int):
     if pid <= 0:
         return jsonify({'error': 'invalid_player_id'}), 400
 
+    def _json_no_store(payload: Dict[str, Any]):
+        j = jsonify(payload)
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j
+
+    def _build_bios_fallback_payload(season_value: Any, team_value: Any) -> Optional[Dict[str, Any]]:
+        try:
+            season_i = _safe_int(season_value)
+        except Exception:
+            season_i = 0
+        if season_i <= 0:
+            try:
+                season_i = int(current_season_id())
+            except Exception:
+                season_i = 0
+
+        team_q = str(team_value or '').strip().upper()
+        candidates: List[Dict[str, Any]] = []
+        for loader in (_load_skater_bios_season_cached, _load_goalie_bios_season_cached):
+            try:
+                info = (loader(season_i) or {}).get(pid)
+            except Exception:
+                info = None
+            if isinstance(info, dict) and info:
+                candidates.append(info)
+
+        if team_q:
+            candidates.sort(key=lambda info: 0 if str((info or {}).get('team') or '').strip().upper() == team_q else 1)
+
+        info = next((item for item in candidates if isinstance(item, dict) and item), None)
+        if not info:
+            return None
+
+        name = str(info.get('name') or '').strip()
+        if not name:
+            return None
+
+        parts = name.split()
+        first_name = parts[0] if parts else ''
+        last_name = ' '.join(parts[1:]) if len(parts) > 1 else ''
+        payload: Dict[str, Any] = {
+            'playerId': int(pid),
+            'firstName': {'default': first_name},
+            'lastName': {'default': last_name},
+            'partial': True,
+            'fallbackSource': 'bios',
+        }
+
+        birth_date = str(info.get('birthDate') or '').strip()
+        if birth_date:
+            payload['birthDate'] = birth_date
+        position_code = str(info.get('positionCode') or info.get('position') or '').strip().upper()
+        if position_code:
+            payload['position'] = position_code
+        shoots = str(info.get('shoots') or '').strip().upper()
+        if shoots:
+            payload['shootsCatches'] = shoots
+        team_name = str(info.get('team') or '').strip().upper()
+        if team_name:
+            payload['currentTeamAbbrev'] = team_name
+        return payload
+
     try:
         ttl_s = max(10, int(os.getenv('PLAYER_LANDING_CACHE_TTL_SECONDS', '3600') or '3600'))
     except Exception:
@@ -7301,38 +7366,72 @@ def api_player_landing(player_id: int):
     except Exception:
         max_items = 512
 
+    season_q = str(request.args.get('season') or '').strip()
+    team_q = str(request.args.get('team') or '').strip().upper()
+
+    stale_payload = None
+    try:
+        stale_entry = _PLAYER_LANDING_CACHE.get(pid)
+        if isinstance(stale_entry, tuple) and len(stale_entry) >= 2 and isinstance(stale_entry[1], dict):
+            stale_payload = dict(stale_entry[1])
+    except Exception:
+        stale_payload = None
+
+    def _fallback_response() -> Optional[Any]:
+        if isinstance(stale_payload, dict) and stale_payload:
+            payload = dict(stale_payload)
+            payload['stale'] = True
+            payload.setdefault('fallbackSource', 'stale-cache')
+            return _json_no_store(payload)
+        bios_payload = _build_bios_fallback_payload(season_q, team_q)
+        if isinstance(bios_payload, dict) and bios_payload:
+            return _json_no_store(bios_payload)
+        return None
+
     _cache_prune_ttl_and_size(_PLAYER_LANDING_CACHE, ttl_s=ttl_s, max_items=max_items)
 
     cached = _cache_get(_PLAYER_LANDING_CACHE, pid, ttl_s)
     if cached is not None:
-        j = jsonify(cached)
-        try:
-            j.headers['Cache-Control'] = 'no-store'
-        except Exception:
-            pass
-        return j
+        return _json_no_store(cached)
+
+    try:
+        timeout_s = max(2.0, float(os.getenv('PLAYER_LANDING_TIMEOUT_SECONDS', '8') or '8'))
+    except Exception:
+        timeout_s = 8.0
 
     url = f'https://api-web.nhle.com/v1/player/{pid}/landing'
     try:
-        r = requests.get(url, timeout=20, allow_redirects=True)
+        r = requests.get(
+            url,
+            timeout=timeout_s,
+            allow_redirects=True,
+            headers={'User-Agent': 'Mozilla/5.0'},
+        )
     except Exception:
+        fallback = _fallback_response()
+        if fallback is not None:
+            return fallback
         return jsonify({'error': 'fetch_failed'}), 502
     if r.status_code != 200:
+        fallback = _fallback_response()
+        if fallback is not None:
+            return fallback
         return jsonify({'error': 'upstream_error', 'status': r.status_code}), 502
     try:
         data = r.json()
     except Exception:
+        fallback = _fallback_response()
+        if fallback is not None:
+            return fallback
         return jsonify({'error': 'invalid_upstream'}), 502
     if not isinstance(data, dict):
+        fallback = _fallback_response()
+        if fallback is not None:
+            return fallback
         return jsonify({'error': 'invalid_upstream'}), 502
 
     _cache_set_multi_bounded(_PLAYER_LANDING_CACHE, pid, data, ttl_s=ttl_s, max_items=max_items)
-    j = jsonify(data)
-    try:
-        j.headers['Cache-Control'] = 'no-store'
-    except Exception:
-        pass
-    return j
+    return _json_no_store(data)
 
 
 @main_bp.route('/api/player-projections/<int:player_id>')
@@ -19518,7 +19617,7 @@ def api_skaters_shooting():
     )
     _cache_prune_ttl_and_size(_SKATERS_SHOOTING_CACHE, ttl_s=shoot_ttl_s, max_items=shoot_max_items)
     shoot_cached = _cache_get(_SKATERS_SHOOTING_CACHE, shoot_cache_key, shoot_ttl_s)
-    if shoot_cached is not None and _pbp_rows_have_expected_game_coverage(team, season_ids, ss, shoot_cached.get('events') or []):
+    if shoot_cached is not None:
         j = jsonify(shoot_cached)
         try:
             j.headers['Cache-Control'] = 'no-store'
@@ -19534,27 +19633,29 @@ def api_skaters_shooting():
     if ss and ss != 'all':
         filters_base['season_state'] = f'eq.{ss}'
 
-    all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
+    all_events: List[Dict[str, Any]] = []
+    sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
+    if not sb_failed:
+        try:
+            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,event,highlight_url,period"
+            for season_id in season_ids:
+                rows = _sb_read('pbp', columns=cols, order='event_index', filters={
+                    **filters_base,
+                    'season': f'eq.{int(season_id)}',
+                    'corsi': 'eq.1',
+                })
+                if rows is None:
+                    sb_failed = True
+                    all_events = []
+                    break
+                if rows:
+                    all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
+        except Exception:
+            sb_failed = True
+            all_events = []
+
     if not all_events:
-        sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
-        if not sb_failed:
-            try:
-                cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,event,highlight_url,period"
-                for season_id in season_ids:
-                    rows = _sb_read('pbp', columns=cols, order='event_index', filters={
-                        **filters_base,
-                        'season': f'eq.{int(season_id)}',
-                        'corsi': 'eq.1',
-                    })
-                    if rows is None:
-                        sb_failed = True
-                        all_events = []
-                        break
-                    if rows:
-                        all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
-            except Exception:
-                sb_failed = True
-                all_events = []
+        all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
 
     if player_id:
         player_id_int = _safe_int(player_id)
@@ -19693,8 +19794,7 @@ def api_skaters_shooting():
         'events': events_out,
         'zones': zone_agg,
     }
-    if _pbp_rows_have_expected_game_coverage(team, season_ids, ss, payload.get('events') or []):
-        _cache_set_multi_bounded(_SKATERS_SHOOTING_CACHE, shoot_cache_key, payload, ttl_s=shoot_ttl_s, max_items=shoot_max_items)
+    _cache_set_multi_bounded(_SKATERS_SHOOTING_CACHE, shoot_cache_key, payload, ttl_s=shoot_ttl_s, max_items=shoot_max_items)
     j = jsonify(payload)
     try:
         j.headers['Cache-Control'] = 'no-store'
@@ -19765,7 +19865,7 @@ def api_goalies_goaltending():
     )
     _cache_prune_ttl_and_size(_GOALIES_GOALTENDING_CACHE, ttl_s=gt_ttl_s, max_items=gt_max_items)
     gt_cached = _cache_get(_GOALIES_GOALTENDING_CACHE, gt_cache_key, gt_ttl_s)
-    if gt_cached is not None and _pbp_rows_have_expected_game_coverage(team, season_ids, ss, gt_cached.get('events') or []):
+    if gt_cached is not None:
         j = jsonify(gt_cached)
         try:
             j.headers['Cache-Control'] = 'no-store'
@@ -19779,28 +19879,30 @@ def api_goalies_goaltending():
     if ss and ss != 'all':
         filters_base['season_state'] = f'eq.{ss}'
 
-    all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
+    all_events: List[Dict[str, Any]] = []
+    sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
+    if not sb_failed:
+        try:
+            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,highlight_url,period"
+            for season_id in season_ids:
+                rows = _sb_read('pbp', columns=cols, order='event_index', filters={
+                    **filters_base,
+                    'season': f'eq.{int(season_id)}',
+                    'opponent': f'eq.{team}',
+                    'corsi': 'eq.1',
+                })
+                if rows is None:
+                    sb_failed = True
+                    all_events = []
+                    break
+                if rows:
+                    all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
+        except Exception:
+            sb_failed = True
+            all_events = []
+
     if not all_events:
-        sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
-        if not sb_failed:
-            try:
-                cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,highlight_url,period"
-                for season_id in season_ids:
-                    rows = _sb_read('pbp', columns=cols, order='event_index', filters={
-                        **filters_base,
-                        'season': f'eq.{int(season_id)}',
-                        'opponent': f'eq.{team}',
-                        'corsi': 'eq.1',
-                    })
-                    if rows is None:
-                        sb_failed = True
-                        all_events = []
-                        break
-                    if rows:
-                        all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
-            except Exception:
-                sb_failed = True
-                all_events = []
+        all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
 
     if goalie_id:
         goalie_id_int = _safe_int(goalie_id)
@@ -19944,8 +20046,7 @@ def api_goalies_goaltending():
         'events': events_out,
         'zones': zone_agg,
     }
-    if _pbp_rows_have_expected_game_coverage(team, season_ids, ss, payload.get('events') or []):
-        _cache_set_multi_bounded(_GOALIES_GOALTENDING_CACHE, gt_cache_key, payload, ttl_s=gt_ttl_s, max_items=gt_max_items)
+    _cache_set_multi_bounded(_GOALIES_GOALTENDING_CACHE, gt_cache_key, payload, ttl_s=gt_ttl_s, max_items=gt_max_items)
     j = jsonify(payload)
     try:
         j.headers['Cache-Control'] = 'no-store'
