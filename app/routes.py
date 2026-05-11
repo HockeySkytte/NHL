@@ -1674,6 +1674,7 @@ _SKATER_PROJECTION_COEFS = {
 _SEASONSTATS_AGG_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[int, Dict[str, Any]], Dict[int, str]]] = {}
 _SKATERS_SCATTER_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
 _GOALIES_SCATTER_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
+_SKATERS_SHOOTING_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
 _GOALIES_GOALTENDING_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
 _TEAM_SEASON_PBP_FALLBACK_CACHE: Dict[Tuple[Any, ...], Tuple[float, List[Dict[str, Any]]]] = {}
 _PLAYOFF_BRACKET_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
@@ -6455,6 +6456,7 @@ def _fetch_club_schedule_games(team_abbrev: str, season: int) -> List[Dict[str, 
         out.append({
             'id': g.get('id') or g.get('gamePk') or g.get('gameId'),
             'gameType': game_type,
+            'status': g.get('gameState') or g.get('gameStatus') or '',
             'date': date_iso,
             'away': away_abbrev,
             'home': home_abbrev,
@@ -19386,6 +19388,47 @@ def _load_team_season_pbp_fallback_rows(team: str, season_ids: Iterable[int], se
     _cache_set_multi_bounded(_TEAM_SEASON_PBP_FALLBACK_CACHE, cache_key, rows, ttl_s=ttl_s, max_items=max_items)
     return rows
 
+
+def _team_season_started_game_ids(team: str, season_ids: Iterable[int], season_state: str) -> set[int]:
+    team_norm = str(team or '').strip().upper()
+    season_key = tuple(_normalize_season_id_list(season_ids))
+    if not team_norm or not season_key:
+        return set()
+
+    allowed_game_types = _allowed_game_types_for_season_state(season_state)
+    today_iso = datetime.utcnow().date().isoformat()
+    started_ids: set[int] = set()
+    for season_id in season_key:
+        games = _fetch_club_schedule_games(team_norm, int(season_id))
+        for game in games:
+            gid = _safe_int(game.get('id'))
+            game_type = _safe_int(game.get('gameType'))
+            if not gid or game_type not in allowed_game_types:
+                continue
+            status = str(game.get('status') or '').strip().upper()
+            date_iso = str(game.get('date') or '').strip()
+            if status and status not in ('FUT', 'PRE'):
+                started_ids.add(int(gid))
+                continue
+            if date_iso and date_iso < today_iso:
+                started_ids.add(int(gid))
+    return started_ids
+
+
+def _pbp_rows_have_expected_game_coverage(team: str, season_ids: Iterable[int], season_state: str, rows: Iterable[Dict[str, Any]]) -> bool:
+    expected_ids = _team_season_started_game_ids(team, season_ids, season_state)
+    if not expected_ids:
+        return True
+
+    actual_ids: set[int] = set()
+    for row in rows or []:
+        gid = _safe_int((row or {}).get('game_id'))
+        if gid:
+            actual_ids.add(int(gid))
+    if not actual_ids:
+        return False
+    return expected_ids.issubset(actual_ids)
+
 @main_bp.route('/api/skaters/shooting')
 def api_skaters_shooting():
     """Aggregate shot events for a team+season from the pbp table.
@@ -19428,6 +19471,34 @@ def api_skaters_shooting():
         except Exception:
             roster_ids = None
 
+    roster_key = tuple(sorted(int(x) for x in roster_ids)) if roster_ids else ()
+    try:
+        shoot_ttl_s = max(30, int(os.getenv('SKATERS_SHOOTING_CACHE_TTL_SECONDS', '180') or '180'))
+    except Exception:
+        shoot_ttl_s = 180
+    try:
+        shoot_max_items = max(1, int(os.getenv('SKATERS_SHOOTING_CACHE_MAX_ITEMS', '128') or '128'))
+    except Exception:
+        shoot_max_items = 128
+    shoot_cache_key = (
+        str(team),
+        tuple(_normalize_season_id_list(season_ids)),
+        str(ss),
+        str(strength),
+        str(xg_model),
+        str(player_id or ''),
+        roster_key,
+    )
+    _cache_prune_ttl_and_size(_SKATERS_SHOOTING_CACHE, ttl_s=shoot_ttl_s, max_items=shoot_max_items)
+    shoot_cached = _cache_get(_SKATERS_SHOOTING_CACHE, shoot_cache_key, shoot_ttl_s)
+    if shoot_cached is not None:
+        j = jsonify(shoot_cached)
+        try:
+            j.headers['Cache-Control'] = 'no-store'
+        except Exception:
+            pass
+        return j
+
     filters_base: Dict[str, str] = {
         'event_team': f'eq.{team}',
     }
@@ -19456,6 +19527,10 @@ def api_skaters_shooting():
         except Exception:
             sb_failed = True
             all_events = []
+
+    if (not sb_failed) and (not player_id) and (not roster_ids) and (not _pbp_rows_have_expected_game_coverage(team, season_ids, ss, all_events)):
+        sb_failed = True
+        all_events = []
 
     if sb_failed:
         all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
@@ -19582,7 +19657,7 @@ def api_skaters_shooting():
     for z in zone_agg.values():
         z['xG'] = round(z['xG'], 2)
 
-    return jsonify({
+    payload = {
         'kpis': {
             'shots': total_shots,
             'xG': round(total_xg, 2),
@@ -19595,7 +19670,14 @@ def api_skaters_shooting():
         'goalies': goalies_list,
         'events': events_out,
         'zones': zone_agg,
-    })
+    }
+    _cache_set_multi_bounded(_SKATERS_SHOOTING_CACHE, shoot_cache_key, payload, ttl_s=shoot_ttl_s, max_items=shoot_max_items)
+    j = jsonify(payload)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
 
 
 @main_bp.route('/api/goalies/goaltending')
@@ -19695,6 +19777,10 @@ def api_goalies_goaltending():
         except Exception:
             sb_failed = True
             all_events = []
+
+    if (not sb_failed) and (not goalie_id) and (not roster_ids) and (not _pbp_rows_have_expected_game_coverage(team, season_ids, ss, all_events)):
+        sb_failed = True
+        all_events = []
 
     if sb_failed:
         all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)

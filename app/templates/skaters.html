@@ -5172,6 +5172,7 @@ async function loadProjectionsPanel(){
 
 async function loadPlayers(){
   if(!teamSelect || !seasonSelect || !playerSelect) return;
+  const reqVer = (loadPlayers.__reqVer = (Number(loadPlayers.__reqVer || 0) + 1));
   const team = teamSelect.value;
   const season = seasonSelect.value;
   const seasonState = String(cardSeasonState?.value || 'regular');
@@ -5184,6 +5185,7 @@ async function loadPlayers(){
   try{
     const r = await fetch(`/api/skaters/players?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&seasonState=${encodeURIComponent(seasonState)}`);
     const data = await r.json();
+    if(reqVer !== Number(loadPlayers.__reqVer || 0)) return;
     const list = Array.isArray(data?.players) ? data.players : [];
     list.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||'')));
     __skaterPlayerMetaById = new Map(list.map((p)=> [String(p.playerId), { pos: String(p.pos || '') }]));
@@ -5198,9 +5200,10 @@ async function loadPlayers(){
       playerSelect.value = saved;
     }
   }catch(e){
+    if(reqVer !== Number(loadPlayers.__reqVer || 0)) return;
     playerSelect.innerHTML = '<option value="">Error loading players</option>';
   }finally{
-    playerSelect.disabled = false;
+    if(reqVer === Number(loadPlayers.__reqVer || 0)) playerSelect.disabled = false;
   }
 }
 
@@ -5210,6 +5213,7 @@ async function loadPlayerCard(){
   const season = seasonSelect.value;
   const playerId = playerSelect.value;
   if(!playerId){
+    loadPlayerCard.__reqVer = Number(loadPlayerCard.__reqVer || 0) + 1;
     if(team) setTeamLogo(team);
     else setDefaultHeadshot();
     skaterName.textContent = getSelectedTeamName(team) || 'Team';
@@ -5218,12 +5222,15 @@ async function loadPlayerCard(){
     setMsg('');
     return;
   }
+  const reqVer = (loadPlayerCard.__reqVer = (Number(loadPlayerCard.__reqVer || 0) + 1));
+  const selectedPlayerId = String(playerId);
   localStorage.setItem(`skaters_player_${team}`, String(playerId));
   setHeadshot(team, season, playerId);
   setMsg('Loading player info...');
   try{
     const r = await fetch(`/api/player/${encodeURIComponent(playerId)}/landing`);
     const data = await r.json();
+    if(reqVer !== Number(loadPlayerCard.__reqVer || 0) || String(playerSelect.value || '') !== selectedPlayerId) return;
     if(data?.error){
       setMsg('Could not load player info.', true);
       skaterInfo.innerHTML = '';
@@ -5238,6 +5245,7 @@ async function loadPlayerCard(){
     loadRAPMPanel();
     if(projectionsEnabled()) loadProjectionsPanel();
   }catch(e){
+    if(reqVer !== Number(loadPlayerCard.__reqVer || 0) || String(playerSelect.value || '') !== selectedPlayerId) return;
     setMsg('Could not load player info.', true);
     setDefaultHeadshot();
     __updateProjectionKpiFromCardData(null, null);
