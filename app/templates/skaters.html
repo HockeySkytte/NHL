@@ -1521,7 +1521,7 @@ function getActiveTabKey(){
 }
 
 function chartsViewActive(){
-  return !!(tabCharts?.classList.contains('active') || tabShooting?.classList.contains('active'));
+  return !!tabCharts?.classList.contains('active');
 }
 
 function getActiveProjSubtabKey(){
@@ -5229,6 +5229,24 @@ function loadActiveSkaterPanel(){
     loadCardPanel();
     return;
   }
+  if(isTableActive()){
+    __tableLastKey = '';
+    loadTablePanel();
+    return;
+  }
+  if(tabShooting?.classList.contains('active')){
+    loadShootingPanel();
+    return;
+  }
+  if(chartsViewActive()){
+    __chartsLastKey = '';
+    renderCharts();
+    return;
+  }
+  if(tabEdge?.classList.contains('active')){
+    loadEdgePanel();
+    return;
+  }
   if(tabRAPM?.classList.contains('active')){
     loadRAPMPanel();
     return;
@@ -5252,6 +5270,7 @@ async function loadPlayerCard(){
     skaterInfo.innerHTML = '';
     __updateProjectionKpiFromCardData(null, null);
     setMsg('');
+    loadActiveSkaterPanel();
     return;
   }
   const reqVer = (loadPlayerCard.__reqVer = (Number(loadPlayerCard.__reqVer || 0) + 1));
@@ -8388,7 +8407,6 @@ teamSelect?.addEventListener('change', async ()=>{
   await loadPlayerCard();
   applyRAPMSelectTextColor();
   applyExportButtonTextColor();
-  if(projectionsEnabled()) loadProjectionsPanel();
   updateCardSlicerSummary();
   saveSkatersState();
 });

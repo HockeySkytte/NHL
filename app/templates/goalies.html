@@ -5979,6 +5979,24 @@ function loadActiveGoaliePanel(){
     loadCardPanel();
     return;
   }
+  if(isTableActive()){
+    __tableLastKey = '';
+    loadTablePanel();
+    return;
+  }
+  if(chartsViewActive()){
+    __chartsLastKey = '';
+    renderCharts();
+    return;
+  }
+  if(tabGoaltending?.classList.contains('active')){
+    loadGoaltendingPanel();
+    return;
+  }
+  if(tabEdge?.classList.contains('active')){
+    loadEdgePanel();
+    return;
+  }
   if(tabRAPM?.classList.contains('active')){
     loadRAPMPanel();
     return;
@@ -6034,6 +6052,7 @@ async function loadPlayerCard(){
     skaterName.textContent = getSelectedTeamName(team) || 'Team';
     skaterInfo.innerHTML = '';
     setMsg('');
+    loadActiveGoaliePanel();
     return;
   }
   const reqVer = (loadPlayerCard.__reqVer = (Number(loadPlayerCard.__reqVer || 0) + 1));
