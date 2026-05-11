@@ -6658,18 +6658,42 @@ function getFilteredGtendEvents(){
   return getGtendEventsForFilters();
 }
 
+function getGtendKpiMode(){
+  return String(cardXgModel?.value || 'xG_F').trim() === 'xG_S' ? 'shots' : 'fenwick';
+}
+
+function getGtendKpiEvents(evts){
+  const baseEvents = Array.isArray(evts) ? evts : [];
+  return getGtendKpiMode() === 'shots'
+    ? baseEvents.filter(e => Number(e?.shot || 0) === 1)
+    : baseEvents.filter(e => getGtendOutcome(e) !== 'Block');
+}
+
+function updateGtendKpiLabels(){
+  const isShotsMode = getGtendKpiMode() === 'shots';
+  const labelMap = {
+    gtendKpiSa: isShotsMode ? 'Shots on Net Against' : 'Fenwick Against',
+    gtendKpiSvPct: isShotsMode ? 'Sv%' : 'FSv%',
+    gtendKpiXSvPct: isShotsMode ? 'xSv%' : 'xFSv%',
+    gtendKpiDSvPct: isShotsMode ? 'dSv%' : 'dFSv%',
+  };
+  for(const [valueId, label] of Object.entries(labelMap)){
+    const lbl = document.getElementById(valueId)?.previousElementSibling;
+    if(lbl) lbl.textContent = label;
+  }
+}
+
 function computeGtendKpis(evts){
+  const kpiEvents = getGtendKpiEvents(evts);
   let sa=0, xga=0, ga=0, distanceSum=0, distanceCount=0;
-  for(const e of evts){
+  for(const e of kpiEvents){
     sa++;
     xga += Number(e.xG) || 0;
     if(e.goal) ga++;
-    if(getGtendOutcome(e) !== 'Block'){
-      const distance = Number(e.shotDistance);
-      if(Number.isFinite(distance)){
-        distanceSum += distance;
-        distanceCount++;
-      }
+    const distance = Number(e.shotDistance);
+    if(Number.isFinite(distance)){
+      distanceSum += distance;
+      distanceCount++;
     }
   }
   const svPct = sa? ((sa-ga)/sa*100):0;
@@ -6680,6 +6704,7 @@ function computeGtendKpis(evts){
 function renderGtendKpis(){
   const evts = getFilteredGtendEvents();
   const k = computeGtendKpis(evts);
+  updateGtendKpiLabels();
   const set = (id, v, cls) => {
     const el = document.getElementById(id);
     if(el){ el.textContent = v; el.className = 'val' + (cls?' '+cls:''); }

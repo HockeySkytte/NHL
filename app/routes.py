@@ -6426,12 +6426,10 @@ def _fetch_club_schedule_games(team_abbrev: str, season: int) -> List[Dict[str, 
     try:
         r = requests.get(url, timeout=25)
         if r.status_code != 200:
-            _CLUB_SCHEDULE_CACHE[cache_key] = (now, [])
-            return []
+            return cached[1] if cached else []
         js = r.json() or {}
     except Exception:
-        _CLUB_SCHEDULE_CACHE[cache_key] = (now, [])
-        return []
+        return cached[1] if cached else []
 
     out: List[Dict[str, Any]] = []
     games = js.get('games') if isinstance(js, dict) else []
@@ -19323,23 +19321,16 @@ def _load_team_season_pbp_fallback_rows(team: str, season_ids: Iterable[int], se
     except Exception:
         max_items = 32
 
+    existing_cached_entry = _TEAM_SEASON_PBP_FALLBACK_CACHE.get(cache_key)
     _cache_prune_ttl_and_size(_TEAM_SEASON_PBP_FALLBACK_CACHE, ttl_s=ttl_s, max_items=max_items)
     cached = _cache_get(_TEAM_SEASON_PBP_FALLBACK_CACHE, cache_key, ttl_s)
-    if cached is not None:
+    if cached is not None and _pbp_rows_have_expected_game_coverage(team_norm, season_key, ss, cached):
         return cached
 
-    allowed_game_types = _allowed_game_types_for_season_state(ss)
-    game_ids: List[int] = []
-    seen_game_ids: set[int] = set()
-    for season_id in season_key:
-        games = _fetch_club_schedule_games(team_norm, int(season_id))
-        for game in games:
-            gid = _safe_int(game.get('id'))
-            game_type = _safe_int(game.get('gameType'))
-            if not gid or game_type not in allowed_game_types or gid in seen_game_ids:
-                continue
-            seen_game_ids.add(gid)
-            game_ids.append(int(gid))
+    game_ids = sorted(_team_season_started_game_ids(team_norm, season_key, ss))
+    if not game_ids:
+        stale_rows = existing_cached_entry[1] if existing_cached_entry else None
+        return stale_rows or []
 
     try:
         app_obj = current_app._get_current_object()
@@ -19349,21 +19340,51 @@ def _load_team_season_pbp_fallback_rows(team: str, season_ids: Iterable[int], se
         worker_count = max(1, min(12, int(os.getenv('TEAM_SEASON_PBP_FALLBACK_WORKERS', '8') or '8')))
     except Exception:
         worker_count = 8
+    try:
+        retry_count = max(0, min(10, int(os.getenv('TEAM_SEASON_PBP_FALLBACK_RETRY_COUNT', '10') or '10')))
+    except Exception:
+        retry_count = 10
+    try:
+        retry_worker_count = max(1, min(4, int(os.getenv('TEAM_SEASON_PBP_FALLBACK_RETRY_WORKERS', '2') or '2')))
+    except Exception:
+        retry_worker_count = 2
 
-    payload_by_game: Dict[int, Optional[Dict[str, Any]]] = {}
-    if game_ids and worker_count > 1 and app_obj is not None:
-        try:
-            from concurrent.futures import ThreadPoolExecutor
+    def _load_payload_batch(target_game_ids: Iterable[int], *, max_workers_override: Optional[int] = None) -> Dict[int, Optional[Dict[str, Any]]]:
+        game_id_list = [int(gid) for gid in (target_game_ids or []) if gid]
+        if not game_id_list:
+            return {}
 
-            def _load_one_payload(game_id_value: int) -> Tuple[int, Optional[Dict[str, Any]]]:
-                payload = _load_game_pbp_payload(int(game_id_value), xg_model=xg_model_name, app_obj=app_obj)
-                return int(game_id_value), payload
+        def _load_one_payload(game_id_value: int) -> Tuple[int, Optional[Dict[str, Any]]]:
+            payload = _load_game_pbp_payload(int(game_id_value), xg_model=xg_model_name, app_obj=app_obj)
+            return int(game_id_value), payload
 
-            with ThreadPoolExecutor(max_workers=min(worker_count, len(game_ids))) as executor:
-                for loaded_game_id, payload in executor.map(_load_one_payload, game_ids):
-                    payload_by_game[int(loaded_game_id)] = payload
-        except Exception:
-            payload_by_game = {}
+        effective_worker_count = max_workers_override if max_workers_override is not None else worker_count
+        if effective_worker_count > 1 and app_obj is not None and len(game_id_list) > 1:
+            try:
+                from concurrent.futures import ThreadPoolExecutor
+
+                loaded: Dict[int, Optional[Dict[str, Any]]] = {}
+                with ThreadPoolExecutor(max_workers=min(effective_worker_count, len(game_id_list))) as executor:
+                    for loaded_game_id, payload in executor.map(_load_one_payload, game_id_list):
+                        loaded[int(loaded_game_id)] = payload
+                return loaded
+            except Exception:
+                pass
+
+        loaded = {}
+        for game_id_value in game_id_list:
+            loaded_game_id, payload = _load_one_payload(int(game_id_value))
+            loaded[int(loaded_game_id)] = payload
+        return loaded
+
+    payload_by_game: Dict[int, Optional[Dict[str, Any]]] = _load_payload_batch(game_ids, max_workers_override=worker_count)
+
+    missing_game_ids = [gid for gid in game_ids if not isinstance((payload_by_game.get(int(gid)) or {}).get('plays'), list)]
+    for _ in range(retry_count):
+        if not missing_game_ids:
+            break
+        payload_by_game.update(_load_payload_batch(missing_game_ids, max_workers_override=retry_worker_count))
+        missing_game_ids = [gid for gid in game_ids if not isinstance((payload_by_game.get(int(gid)) or {}).get('plays'), list)]
 
     rows: List[Dict[str, Any]] = []
     for game_id in game_ids:
@@ -19377,7 +19398,7 @@ def _load_team_season_pbp_fallback_rows(team: str, season_ids: Iterable[int], se
             continue
         for play in plays:
             row = _map_game_pbp_play_to_pbp_row(play)
-            if row is not None:
+            if row is not None and int(row.get('corsi') or 0) == 1 and int(row.get('period') or 0) != 5:
                 rows.append(row)
 
     try:
@@ -19385,7 +19406,13 @@ def _load_team_season_pbp_fallback_rows(team: str, season_ids: Iterable[int], se
     except Exception:
         pass
 
-    _cache_set_multi_bounded(_TEAM_SEASON_PBP_FALLBACK_CACHE, cache_key, rows, ttl_s=ttl_s, max_items=max_items)
+    if _pbp_rows_have_expected_game_coverage(team_norm, season_key, ss, rows):
+        _cache_set_multi_bounded(_TEAM_SEASON_PBP_FALLBACK_CACHE, cache_key, rows, ttl_s=ttl_s, max_items=max_items)
+        return rows
+
+    stale_rows = existing_cached_entry[1] if existing_cached_entry else None
+    if stale_rows and _pbp_rows_have_expected_game_coverage(team_norm, season_key, ss, stale_rows):
+        return stale_rows
     return rows
 
 
@@ -19422,7 +19449,7 @@ def _pbp_rows_have_expected_game_coverage(team: str, season_ids: Iterable[int], 
 
     actual_ids: set[int] = set()
     for row in rows or []:
-        gid = _safe_int((row or {}).get('game_id'))
+        gid = _safe_int((row or {}).get('game_id')) or _safe_int((row or {}).get('gameId'))
         if gid:
             actual_ids.add(int(gid))
     if not actual_ids:
@@ -19491,7 +19518,7 @@ def api_skaters_shooting():
     )
     _cache_prune_ttl_and_size(_SKATERS_SHOOTING_CACHE, ttl_s=shoot_ttl_s, max_items=shoot_max_items)
     shoot_cached = _cache_get(_SKATERS_SHOOTING_CACHE, shoot_cache_key, shoot_ttl_s)
-    if shoot_cached is not None:
+    if shoot_cached is not None and _pbp_rows_have_expected_game_coverage(team, season_ids, ss, shoot_cached.get('events') or []):
         j = jsonify(shoot_cached)
         try:
             j.headers['Cache-Control'] = 'no-store'
@@ -19666,7 +19693,8 @@ def api_skaters_shooting():
         'events': events_out,
         'zones': zone_agg,
     }
-    _cache_set_multi_bounded(_SKATERS_SHOOTING_CACHE, shoot_cache_key, payload, ttl_s=shoot_ttl_s, max_items=shoot_max_items)
+    if _pbp_rows_have_expected_game_coverage(team, season_ids, ss, payload.get('events') or []):
+        _cache_set_multi_bounded(_SKATERS_SHOOTING_CACHE, shoot_cache_key, payload, ttl_s=shoot_ttl_s, max_items=shoot_max_items)
     j = jsonify(payload)
     try:
         j.headers['Cache-Control'] = 'no-store'
@@ -19737,7 +19765,7 @@ def api_goalies_goaltending():
     )
     _cache_prune_ttl_and_size(_GOALIES_GOALTENDING_CACHE, ttl_s=gt_ttl_s, max_items=gt_max_items)
     gt_cached = _cache_get(_GOALIES_GOALTENDING_CACHE, gt_cache_key, gt_ttl_s)
-    if gt_cached is not None:
+    if gt_cached is not None and _pbp_rows_have_expected_game_coverage(team, season_ids, ss, gt_cached.get('events') or []):
         j = jsonify(gt_cached)
         try:
             j.headers['Cache-Control'] = 'no-store'
@@ -19916,7 +19944,8 @@ def api_goalies_goaltending():
         'events': events_out,
         'zones': zone_agg,
     }
-    _cache_set_multi_bounded(_GOALIES_GOALTENDING_CACHE, gt_cache_key, payload, ttl_s=gt_ttl_s, max_items=gt_max_items)
+    if _pbp_rows_have_expected_game_coverage(team, season_ids, ss, payload.get('events') or []):
+        _cache_set_multi_bounded(_GOALIES_GOALTENDING_CACHE, gt_cache_key, payload, ttl_s=gt_ttl_s, max_items=gt_max_items)
     j = jsonify(payload)
     try:
         j.headers['Cache-Control'] = 'no-store'

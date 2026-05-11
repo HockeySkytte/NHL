@@ -5883,18 +5883,42 @@ function getFilteredShootEvents(){
   return getShootEventsForFilters();
 }
 
+function getShootingKpiMode(){
+  return String(cardXgModel?.value || 'xG_F').trim() === 'xG_S' ? 'shots' : 'fenwick';
+}
+
+function getShootingKpiEvents(evts){
+  const baseEvents = Array.isArray(evts) ? evts : [];
+  return getShootingKpiMode() === 'shots'
+    ? baseEvents.filter(e => Number(e?.shot || 0) === 1)
+    : baseEvents.filter(e => getShootOutcome(e) !== 'Block');
+}
+
+function updateShootingKpiLabels(){
+  const isShotsMode = getShootingKpiMode() === 'shots';
+  const labelMap = {
+    shootKpiShots: isShotsMode ? 'Shots on Net' : 'Fenwick',
+    shootKpiShPct: isShotsMode ? 'Sh%' : 'FSh%',
+    shootKpiXShPct: isShotsMode ? 'xSh%' : 'xFSh%',
+    shootKpiDShPct: isShotsMode ? 'dSh%' : 'dFSh%',
+  };
+  for(const [valueId, label] of Object.entries(labelMap)){
+    const lbl = document.getElementById(valueId)?.previousElementSibling;
+    if(lbl) lbl.textContent = label;
+  }
+}
+
 function computeKpisFromEvents(evts){
+  const kpiEvents = getShootingKpiEvents(evts);
   let shots=0, xg=0, goals=0, distanceSum=0, distanceCount=0;
-  for(const e of evts){
+  for(const e of kpiEvents){
     shots++;
     xg += Number(e.xG) || 0;
     if(e.goal) goals++;
-    if(getShootOutcome(e) !== 'Block'){
-      const distance = Number(e.shotDistance);
-      if(Number.isFinite(distance)){
-        distanceSum += distance;
-        distanceCount++;
-      }
+    const distance = Number(e.shotDistance);
+    if(Number.isFinite(distance)){
+      distanceSum += distance;
+      distanceCount++;
     }
   }
   const shPct = shots? (goals/shots*100):0;
@@ -5905,6 +5929,7 @@ function computeKpisFromEvents(evts){
 function renderShootingKpis(){
   const evts = getFilteredShootEvents();
   const k = computeKpisFromEvents(evts);
+  updateShootingKpiLabels();
   const set = (id, v, cls) => {
     const el = document.getElementById(id);
     if(el){ el.textContent = v; el.className = 'val' + (cls?' '+cls:''); }
