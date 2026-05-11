@@ -61,6 +61,7 @@
   .skater-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:14px 12px 10px; min-width:0; overflow-x:hidden; }
   .skater-top{ display:flex; gap:22px; align-items:center; }
   .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
+  .skater-img.team-logo{ object-fit:contain; padding:16px; background:rgba(255,255,255,0.04); }
   .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
   .skater-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
   .skater-proj-kpi{
@@ -322,6 +323,20 @@
   .shoot-kpi .val{ margin-top:4px; font-size:22px; font-weight:950; color:var(--text); font-variant-numeric:tabular-nums; }
   .shoot-kpi .val.pos{ color:#4da3ff; }
   .shoot-kpi .val.neg{ color:#ff6a6a; }
+  .shoot-details-panel{ display:none; gap:14px; margin-bottom:14px; }
+  #shootContent.details-visible .shoot-details-panel{ display:grid; }
+  .shoot-details-grid{ display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:10px; }
+  @media (max-width:1080px){ .shoot-details-grid{ grid-template-columns:repeat(3, minmax(0, 1fr)); } }
+  @media (max-width:760px){ .shoot-details-grid{ grid-template-columns:1fr; } }
+  .shoot-detail-field{ display:grid; gap:6px; padding:0; border:none; border-radius:0; background:transparent; font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
+  .shoot-detail-field select{ width:100%; min-width:0; padding:10px 11px; border-radius:10px; border:1px solid #2a3142; background:#0f1522; color:var(--text); font-size:13px; font-weight:700; text-transform:none; letter-spacing:0; }
+  .shoot-detail-field[hidden]{ display:none !important; }
+  .shoot-details-charts{ display:grid; grid-template-columns:minmax(0, 1.3fr) minmax(0, 1fr); gap:14px; }
+  @media (max-width:980px){ .shoot-details-charts{ grid-template-columns:1fr; } }
+  .shoot-detail-chart-card{ display:grid; gap:10px; padding:0; border:none; border-radius:0; background:transparent; min-width:0; }
+  .shoot-detail-chart-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:11px; letter-spacing:.9px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
+  .shoot-detail-chart-note{ font-size:11px; letter-spacing:0; text-transform:none; color:var(--text-dim); font-weight:700; }
+  .shoot-detail-chart-canvas{ width:100%; height:260px !important; max-height:260px; }
   .shoot-tbl .val.pos{ color:#4da3ff; }
   .shoot-tbl .val.neg{ color:#ff6a6a; }
   .shoot-body{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
@@ -368,13 +383,13 @@
   .shoot-export-card .k{ font-size:16px; }
   .shoot-export-card .v{ font-size:25px; }
   .shoot-export-summary{ color:rgba(255,255,255,0.95); font-size:36px; font-style:italic; font-weight:800; letter-spacing:.2px; }
-  .shoot-export-body{ display:grid; grid-template-columns:minmax(0, 0.42fr) minmax(0, 0.58fr); width:100%; gap:14px; align-items:start; }
+  .shoot-export-body{ display:grid; grid-template-columns:minmax(0, 0.42fr) minmax(0, 0.58fr); width:100%; gap:18px; align-items:stretch; }
   .shoot-export-left,
   .shoot-export-right{ min-width:0; border:none; background:transparent; box-shadow:none; }
-  .shoot-export-left{ padding:0; }
-  .shoot-export-right{ display:grid; gap:10px; padding:0; justify-self:stretch; width:100%; }
+  .shoot-export-left{ display:grid; padding:0; align-self:stretch; }
+  .shoot-export-right{ display:grid; gap:12px; padding:0; justify-self:stretch; width:100%; align-self:stretch; }
   .shoot-export-card .shoot-left-inner{ position:static; inset:auto; overflow:visible; }
-  .shoot-export-card .shoot-tbl-wrap{ overflow-x:hidden; overflow-y:auto; max-height:none; }
+  .shoot-export-card .shoot-tbl-wrap{ overflow-x:hidden; overflow-y:auto; max-height:none; align-self:start; }
   .shoot-export-card .shoot-kpis{ gap:14px; }
   .shoot-export-card .shoot-kpi{ padding:15px 12px; }
   .shoot-export-card .shoot-kpi .lbl{ font-size:18px; }
@@ -382,10 +397,20 @@
   .shoot-export-card .shoot-tbl{ min-width:0; width:100%; font-size:20px; }
   .shoot-export-card .shoot-tbl th{ font-size:18px; padding:12px 10px; }
   .shoot-export-card .shoot-tbl td{ font-size:20px; padding:11px 10px; }
-  .shoot-export-map-title{ font-size:24px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); }
+  .shoot-export-map-title{ font-size:28px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); }
+  .shoot-export-block{ display:grid; gap:16px; padding:22px; border-radius:22px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); }
+  .shoot-export-block h3{ margin:0; font-size:34px; letter-spacing:.8px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
+  .shoot-export-map-block{ display:grid; gap:12px; align-content:start; }
+  .shoot-export-map-block .shoot-rink-wrap{ max-width:none; margin:0; aspect-ratio:75 / 85; }
+  .shoot-export-img-wrap{ display:flex; align-items:center; justify-content:center; border-radius:20px; overflow:hidden; background:rgba(0,0,0,0.16); border:1px solid rgba(255,255,255,0.06); }
+  .shoot-export-img{ display:block; width:100%; height:100%; object-fit:contain; }
+  .shoot-export-details{ display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(0, 1fr); gap:18px; }
+  .shoot-export-details .shoot-export-block{ min-height:360px; }
+  .shoot-export-details .shoot-export-img-wrap{ min-height:300px; }
   .shoot-export-overlay{ position:absolute; inset:0; width:100%; height:100%; object-fit:fill; }
   .shoot-export-card .zone-label{ font-size:2.8px; }
   .shoot-export-shot-svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .shoot-export-card .skater-export-hero .skater-img.team-logo{ padding:0; object-fit:contain; background:transparent; border:none; }
   .shoot-export-shot-svg .shot{ fill:rgba(59,130,246,0.82); }
   .shoot-export-shot-svg .goal{ fill:#22c55e; }
   .card-export-surface{ position:fixed; left:-10000px; top:0; width:1680px; padding:44px; background:radial-gradient(circle at top left, rgba(77,163,255,0.14), transparent 26%), linear-gradient(180deg, rgba(11,15,24,0.995), rgba(9,12,20,0.995)); z-index:-1; pointer-events:none; }
@@ -833,6 +858,7 @@
       <div class="card-panel-hd" style="padding-bottom: 8px;">
         <div id="shootSlicerSummary" class="card-panel-meta"></div>
         <div class="shoot-panel-actions">
+          <button id="btnToggleShootingDetails" class="config-btn" type="button">Show Details</button>
           <button id="btnExportShootingPng" class="config-btn" type="button">Export PNG</button>
           <button id="btnShareShootingPng" class="config-btn" type="button">Share</button>
         </div>
@@ -847,6 +873,40 @@
           <div class="shoot-kpi"><div class="lbl">Sh%</div><div id="shootKpiShPct" class="val">0</div></div>
           <div class="shoot-kpi"><div class="lbl">xSh%</div><div id="shootKpiXShPct" class="val">0</div></div>
           <div class="shoot-kpi"><div class="lbl">dSh%</div><div id="shootKpiDShPct" class="val">0</div></div>
+          <div class="shoot-kpi"><div class="lbl">Shot Distance</div><div id="shootKpiShotDistance" class="val">-- ft</div></div>
+        </div>
+        <div id="shootDetailsPanel" class="shoot-details-panel">
+          <div class="shoot-details-grid">
+            <label class="shoot-detail-field">Opposing Team
+              <select id="shootDetailOpponent"><option value="">All teams</option></select>
+            </label>
+            <label class="shoot-detail-field">Last Games
+              <select id="shootDetailGames"><option value="">All games</option></select>
+            </label>
+            <label class="shoot-detail-field">Score State
+              <select id="shootDetailScoreState"><option value="">All score states</option></select>
+            </label>
+            <label id="shootDetailPositionWrap" class="shoot-detail-field" hidden>Shooter Position
+              <select id="shootDetailPosition"><option value="">All positions</option></select>
+            </label>
+            <label id="shootDetailShootsWrap" class="shoot-detail-field" hidden>Shooter Handedness
+              <select id="shootDetailShoots"><option value="">All handedness</option></select>
+            </label>
+          </div>
+          <div class="shoot-details-charts">
+            <section class="shoot-detail-chart-card">
+              <div class="shoot-detail-chart-head">
+                <span>Shot Type</span>
+              </div>
+              <canvas id="shootDetailTypeChart" class="shoot-detail-chart-canvas"></canvas>
+            </section>
+            <section class="shoot-detail-chart-card">
+              <div class="shoot-detail-chart-head">
+                <span>Shot Outcome</span>
+              </div>
+              <canvas id="shootDetailOutcomeChart" class="shoot-detail-chart-canvas"></canvas>
+            </section>
+          </div>
         </div>
         <div class="shoot-body">
           <div class="shoot-left">
@@ -956,7 +1016,7 @@
       </div>
     </div>
 
-    <div id="skaterMsg" class="skater-empty" style="margin-top:10px;">Choose Team, Season, and Player.</div>
+    <div id="skaterMsg" class="skater-empty" style="margin-top:10px;"></div>
   </div>
 </div>
 
@@ -1175,6 +1235,7 @@ const btnExportEdgePng = document.getElementById('btnExportEdgePng');
 const btnShareEdgePng = document.getElementById('btnShareEdgePng');
 const btnExportShootingPng = document.getElementById('btnExportShootingPng');
 const btnShareShootingPng = document.getElementById('btnShareShootingPng');
+const btnToggleShootingDetails = document.getElementById('btnToggleShootingDetails');
 const tableLoading = document.getElementById('tableLoading');
 const tableError = document.getElementById('tableError');
 const skatersTable = document.getElementById('skatersTable');
@@ -1279,6 +1340,34 @@ function getPlayerMugImage(season, team, playerId){
   img.src = primary || fallback;
   __playerMugCache.set(pid, img);
   return img;
+}
+
+function getSelectedTeamName(teamAbbrev){
+  const team = String(teamAbbrev || teamSelect?.value || '').trim().toUpperCase();
+  if(!team) return '';
+  const row = Array.isArray(teams) ? teams.find((entry)=> String(entry?.Team || '').trim().toUpperCase() === team) : null;
+  return String(row?.Name || team);
+}
+
+function setHeroImageMode(mode){
+  if(!skaterImg) return;
+  skaterImg.classList.toggle('team-logo', mode === 'team');
+}
+
+function setTeamLogo(teamAbbrev){
+  if(!skaterImg) return;
+  const team = String(teamAbbrev || '').trim().toUpperCase();
+  const name = getSelectedTeamName(team);
+  const src = team ? teamLogoUrl(team) : '';
+  try{ skaterImg.onerror = null; }catch(_){/*noop*/}
+  try{ skaterImg.dataset.fallbackDone = '0'; }catch(_){/*noop*/}
+  setHeroImageMode('team');
+  skaterImg.alt = name ? `${name} logo` : 'Team logo';
+  if(src){
+    skaterImg.src = src;
+  }else{
+    setDefaultHeadshot();
+  }
 }
 
 const PLAY_DRIVING_METRICS = [
@@ -1983,6 +2072,8 @@ function setDefaultHeadshot(){
   if(!skaterImg) return;
   try{ skaterImg.onerror = null; }catch(_){/*noop*/}
   try{ skaterImg.dataset.fallbackDone = '0'; }catch(_){/*noop*/}
+  setHeroImageMode('player');
+  skaterImg.alt = 'Player';
   skaterImg.src = DEFAULT_SKATER_IMG;
 }
 
@@ -1991,9 +2082,11 @@ function setHeadshot(team, season, playerId){
   const t = String(team||'').trim();
   const pid = String(playerId||'').trim();
   if(!pid){
-    setDefaultHeadshot();
+    setTeamLogo(t);
     return;
   }
+  setHeroImageMode('player');
+  skaterImg.alt = 'Player';
   const primary = `/api/player-headshot/${encodeURIComponent(pid)}.png?season=${encodeURIComponent(s)}&team=${encodeURIComponent(t)}`;
   const fallback = `/api/player-headshot/${encodeURIComponent(pid)}.png`;
   skaterImg.onerror = () => {
@@ -5096,7 +5189,8 @@ async function loadPlayers(){
     __skaterPlayerMetaById = new Map(list.map((p)=> [String(p.playerId), { pos: String(p.pos || '') }]));
     const savedKey = `skaters_player_${team}`;
     const saved = localStorage.getItem(savedKey);
-    playerSelect.innerHTML = '<option value="">Select player</option>' + list.map(p=>`<option value="${p.playerId}">${p.name}</option>`).join('');
+    const teamName = getSelectedTeamName(team) || 'Team';
+    playerSelect.innerHTML = `<option value="">${teamName}</option>` + list.map(p=>`<option value="${p.playerId}">${p.name}</option>`).join('');
     if(__restorePlayerId && list.some(p=>String(p.playerId)===String(__restorePlayerId))){
       playerSelect.value = String(__restorePlayerId);
       __restorePlayerId = null;
@@ -5116,11 +5210,12 @@ async function loadPlayerCard(){
   const season = seasonSelect.value;
   const playerId = playerSelect.value;
   if(!playerId){
-    setDefaultHeadshot();
-    skaterName.textContent = 'Select a player';
+    if(team) setTeamLogo(team);
+    else setDefaultHeadshot();
+    skaterName.textContent = getSelectedTeamName(team) || 'Team';
     skaterInfo.innerHTML = '';
     __updateProjectionKpiFromCardData(null, null);
-    setMsg('Choose Team, Season, and Player.');
+    setMsg('');
     return;
   }
   localStorage.setItem(`skaters_player_${team}`, String(playerId));
@@ -5158,6 +5253,12 @@ let __shootActiveGoalie = null;  // selected goalie ID filter
 let __shootActiveZone = null;    // selected zone filter
 let __shootMapMode = 'shot';     // 'shot' | 'heat'
 let __shootShotType = 'all';     // 'all' | 'miss' | 'shot' | 'goal'
+let __shootDetailsVisible = false;
+let __shootDetailFilters = { opponent:'', games:'', scoreState:'', position:'', shoots:'' };
+let __shootDetailShotType = '';
+let __shootDetailOutcome = '';
+let __shootDetailTypeChart = null;
+let __shootDetailOutcomeChart = null;
 
 const shootContent = document.getElementById('shootContent');
 const shootEmpty = document.getElementById('shootEmpty');
@@ -5168,6 +5269,320 @@ const shootRinkWrap = document.getElementById('shootRinkWrap');
 const shootSlicerSummary = document.getElementById('shootSlicerSummary');
 const shootVideoBtn = document.getElementById('shootVideoBtn');
 const shootVideoList = document.getElementById('shootVideoList');
+const shootDetailsPanel = document.getElementById('shootDetailsPanel');
+const shootDetailOpponent = document.getElementById('shootDetailOpponent');
+const shootDetailGames = document.getElementById('shootDetailGames');
+const shootDetailScoreState = document.getElementById('shootDetailScoreState');
+const shootDetailPosition = document.getElementById('shootDetailPosition');
+const shootDetailShoots = document.getElementById('shootDetailShoots');
+const shootDetailPositionWrap = document.getElementById('shootDetailPositionWrap');
+const shootDetailShootsWrap = document.getElementById('shootDetailShootsWrap');
+const shootDetailTypeCanvas = document.getElementById('shootDetailTypeChart');
+const shootDetailOutcomeCanvas = document.getElementById('shootDetailOutcomeChart');
+
+const SHOOT_DETAIL_GAME_VALUES = ['5', '10', '20', '40'];
+const SHOOT_DETAIL_TYPE_ORDER = ['Wrist', 'Snap', 'Slap', 'Backhand', 'Tip-In', 'Deflected', 'Wrap-Around', 'Other'];
+
+function getShootPlayerSelected(){
+  return !!String(playerSelect?.value || '').trim();
+}
+
+function getShootOutcome(e){
+  const outcome = String(e?.outcome || '').trim();
+  if(outcome) return outcome;
+  if(Number(e?.goal || 0) === 1) return 'Goal';
+  if(Number(e?.shot || 0) === 1) return 'On Net';
+  if(Number(e?.isBlocked || 0) === 1 || (Number(e?.corsi || 0) === 1 && Number(e?.fenwick || 0) !== 1)) return 'Block';
+  return 'Miss';
+}
+
+function formatShootTypeLabel(raw){
+  const value = String(raw || '').trim().toLowerCase();
+  if(!value) return 'Other';
+  return value
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean)
+    .map(part => part.length <= 2 ? part.toUpperCase() : (part.charAt(0).toUpperCase() + part.slice(1)))
+    .join('-') || 'Other';
+}
+
+function getShootTypeKey(e){
+  return formatShootTypeLabel(e?.shotType);
+}
+
+function normalizeShootScoreStateValue(value){
+  const num = Number(value);
+  if(!Number.isFinite(num)) return '';
+  return String(num < -2 ? -3 : num > 2 ? 3 : Math.trunc(num));
+}
+
+function formatShootScoreStateLabel(value){
+  const num = Number(value);
+  if(!Number.isFinite(num)) return String(value || '');
+  if(num === 0) return 'Tied';
+  const display = Math.abs(num) >= 3 ? '3+' : String(Math.abs(Math.trunc(num)));
+  return `${num > 0 ? 'Leading' : 'Trailing'} ${display}`;
+}
+
+function normalizeShootHandednessValue(value){
+  const raw = String(value || '').trim().toUpperCase();
+  if(!raw) return '';
+  if(raw.startsWith('L')) return 'L';
+  if(raw.startsWith('R')) return 'R';
+  return raw.slice(0, 1);
+}
+
+function getShootRecentGameIds(events, limit){
+  const maxGames = Number(limit);
+  if(!Number.isFinite(maxGames) || maxGames <= 0) return new Set();
+  const gameIds = Array.from(new Set((events || []).map(e => Number(e?.gameId || 0)).filter(v => Number.isFinite(v) && v > 0))).sort((a, b) => b - a);
+  return new Set(gameIds.slice(0, maxGames));
+}
+
+function setShootSelectOptions(selectEl, options, currentValue, allLabel){
+  if(!selectEl) return '';
+  const fragment = document.createDocumentFragment();
+  const baseOption = document.createElement('option');
+  baseOption.value = '';
+  baseOption.textContent = allLabel;
+  fragment.appendChild(baseOption);
+  const allowed = new Set();
+  for(const option of options){
+    const node = document.createElement('option');
+    node.value = String(option.value);
+    node.textContent = String(option.label);
+    fragment.appendChild(node);
+    allowed.add(String(option.value));
+  }
+  selectEl.innerHTML = '';
+  selectEl.appendChild(fragment);
+  const nextValue = allowed.has(String(currentValue || '')) ? String(currentValue) : '';
+  selectEl.value = nextValue;
+  return nextValue;
+}
+
+function updateShootDetailFieldVisibility(){
+  const showSkaterFields = !getShootPlayerSelected();
+  if(shootDetailPositionWrap) shootDetailPositionWrap.hidden = !showSkaterFields;
+  if(shootDetailShootsWrap) shootDetailShootsWrap.hidden = !showSkaterFields;
+}
+
+function destroyShootDetailCharts(){
+  try{ __shootDetailTypeChart?.destroy(); }catch(_){/* noop */}
+  try{ __shootDetailOutcomeChart?.destroy(); }catch(_){/* noop */}
+  __shootDetailTypeChart = null;
+  __shootDetailOutcomeChart = null;
+}
+
+function getShootEventsForFilters(options = {}){
+  if(!__shootData) return [];
+  const ignoreGoalie = !!options.ignoreGoalie;
+  const ignoreZone = !!options.ignoreZone;
+  const ignoreMapShotType = !!options.ignoreMapShotType;
+  const ignoreDetails = !!options.ignoreDetails;
+  const ignoreDetailType = !!options.ignoreDetailType;
+  const ignoreOutcome = !!options.ignoreOutcome;
+  const includeBlocked = !!options.includeBlocked;
+
+  let evts = Array.isArray(__shootData.events) ? __shootData.events.slice() : [];
+  if(!ignoreGoalie && __shootActiveGoalie) evts = evts.filter(e => e.goalieId === __shootActiveGoalie);
+  if(!ignoreZone && __shootActiveZone) evts = evts.filter(e => e.boxId === __shootActiveZone);
+
+  if(__shootDetailsVisible && !ignoreDetails){
+    if(__shootDetailFilters.games){
+      const recentGameIds = getShootRecentGameIds(evts, __shootDetailFilters.games);
+      if(recentGameIds.size) evts = evts.filter(e => recentGameIds.has(Number(e?.gameId || 0)));
+    }
+    if(__shootDetailFilters.opponent) evts = evts.filter(e => String(e?.opponent || '').toUpperCase() === __shootDetailFilters.opponent);
+    if(__shootDetailFilters.scoreState !== '') evts = evts.filter(e => normalizeShootScoreStateValue(e?.scoreState) === __shootDetailFilters.scoreState);
+    if(!getShootPlayerSelected()){
+      if(__shootDetailFilters.position) evts = evts.filter(e => String(e?.position || '').toUpperCase() === __shootDetailFilters.position);
+      if(__shootDetailFilters.shoots) evts = evts.filter(e => normalizeShootHandednessValue(e?.shoots) === __shootDetailFilters.shoots);
+    }
+    if(!ignoreDetailType && __shootDetailShotType) evts = evts.filter(e => getShootTypeKey(e) === __shootDetailShotType);
+    if(!ignoreOutcome && __shootDetailOutcome) evts = evts.filter(e => getShootOutcome(e) === __shootDetailOutcome);
+  }
+
+  const allowBlocked = includeBlocked || (__shootDetailsVisible && __shootDetailOutcome === 'Block' && !ignoreOutcome);
+  if(!allowBlocked) evts = evts.filter(e => getShootOutcome(e) !== 'Block');
+
+  if(!ignoreMapShotType){
+    if(__shootShotType === 'goal') evts = evts.filter(e => getShootOutcome(e) === 'Goal');
+    else if(__shootShotType === 'shot') evts = evts.filter(e => getShootOutcome(e) === 'On Net');
+    else if(__shootShotType === 'miss') evts = evts.filter(e => getShootOutcome(e) === 'Miss');
+  }
+  return evts;
+}
+
+function populateShootDetailsControls(){
+  if(!shootDetailsPanel) return;
+  updateShootDetailFieldVisibility();
+  const baseEvents = getShootEventsForFilters({ ignoreDetails: true, includeBlocked: true });
+  const opponents = Array.from(new Set(baseEvents.map(e => String(e?.opponent || '').toUpperCase()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const scoreStates = Array.from(new Set(baseEvents.map(e => normalizeShootScoreStateValue(e?.scoreState)).filter(v => v !== '')))
+    .map(v => Number(v))
+    .filter(v => Number.isFinite(v))
+    .sort((a, b) => a - b);
+  const positions = ['F', 'D'].filter(pos => baseEvents.some(e => String(e?.position || '').toUpperCase() === pos));
+  const shoots = ['L', 'R'].filter(side => baseEvents.some(e => normalizeShootHandednessValue(e?.shoots) === side));
+
+  __shootDetailFilters.opponent = setShootSelectOptions(
+    shootDetailOpponent,
+    opponents.map(value => ({ value, label: value })),
+    __shootDetailFilters.opponent,
+    'All teams'
+  );
+  __shootDetailFilters.games = setShootSelectOptions(
+    shootDetailGames,
+    SHOOT_DETAIL_GAME_VALUES.map(value => ({ value, label: `Last ${value}` })),
+    __shootDetailFilters.games,
+    'All games'
+  );
+  __shootDetailFilters.scoreState = setShootSelectOptions(
+    shootDetailScoreState,
+    scoreStates.map(value => ({ value: String(value), label: formatShootScoreStateLabel(value) })),
+    __shootDetailFilters.scoreState,
+    'All score states'
+  );
+  __shootDetailFilters.position = setShootSelectOptions(
+    shootDetailPosition,
+    positions.map(value => ({ value, label: value })),
+    __shootDetailFilters.position,
+    'All positions'
+  );
+  __shootDetailFilters.shoots = setShootSelectOptions(
+    shootDetailShoots,
+    shoots.map(value => ({ value, label: value })),
+    __shootDetailFilters.shoots,
+    'All handedness'
+  );
+}
+
+function updateShootSlicerSummary(){
+  if(!shootSlicerSummary) return;
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || seasonSelect?.value || '';
+  const ss = cardSeasonState?.value || 'regular';
+  const str = cardStrengthState?.value || '5v5';
+  const xm = cardXgModel?.value || 'xG_F';
+  const sn = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : (season ? (season.slice(0, 4) + '/' + season.slice(4)) : '');
+  const parts = [sn, ss === 'playoffs' ? 'Playoffs' : ss === 'all' ? 'All' : 'Regular', str, xm.replace('_', ' ')].filter(Boolean);
+  if(__shootDetailsVisible){
+    if(__shootDetailFilters.opponent) parts.push(`Opp ${__shootDetailFilters.opponent}`);
+    if(__shootDetailFilters.games) parts.push(`Last ${__shootDetailFilters.games}`);
+    if(__shootDetailFilters.scoreState !== '') parts.push(formatShootScoreStateLabel(__shootDetailFilters.scoreState));
+    if(!getShootPlayerSelected()){
+      if(__shootDetailFilters.position) parts.push(`Shooter ${__shootDetailFilters.position}`);
+      if(__shootDetailFilters.shoots) parts.push(`Shoots ${__shootDetailFilters.shoots}`);
+    }
+    if(__shootDetailShotType) parts.push(`Type ${__shootDetailShotType}`);
+    if(__shootDetailOutcome) parts.push(`Outcome ${__shootDetailOutcome}`);
+  }
+  shootSlicerSummary.textContent = parts.join(' – ');
+  shootSlicerSummary.style.fontStyle = 'italic';
+}
+
+function renderShootDetailCharts(){
+  if(!__shootDetailsVisible || !shootDetailTypeCanvas || !shootDetailOutcomeCanvas || typeof Chart === 'undefined'){
+    destroyShootDetailCharts();
+    return;
+  }
+
+  const typeEvents = getShootEventsForFilters({ ignoreDetailType: true }).filter(evt => getShootOutcome(evt) !== 'Block');
+  const outcomeEvents = getShootEventsForFilters({ includeBlocked: true, ignoreOutcome: true });
+
+  const typeCounts = new Map();
+  for(const evt of typeEvents){
+    const label = getShootTypeKey(evt);
+    typeCounts.set(label, (typeCounts.get(label) || 0) + 1);
+  }
+  let typeLabels = Array.from(typeCounts.keys());
+  typeLabels.sort((left, right) => {
+    const leftIdx = SHOOT_DETAIL_TYPE_ORDER.indexOf(left);
+    const rightIdx = SHOOT_DETAIL_TYPE_ORDER.indexOf(right);
+    if(leftIdx !== -1 || rightIdx !== -1) return (leftIdx === -1 ? 999 : leftIdx) - (rightIdx === -1 ? 999 : rightIdx);
+    const diff = (typeCounts.get(right) || 0) - (typeCounts.get(left) || 0);
+    return diff || left.localeCompare(right);
+  });
+  if(!typeLabels.length) typeLabels = ['No Data'];
+  const typeValues = typeLabels.map(label => typeCounts.get(label) || 0);
+
+  const outcomeLabels = ['Block', 'Miss', 'On Net', 'Goal'];
+  const outcomeValues = outcomeLabels.map(label => outcomeEvents.filter(evt => getShootOutcome(evt) === label).length);
+
+  destroyShootDetailCharts();
+
+  __shootDetailTypeChart = new Chart(shootDetailTypeCanvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: typeLabels,
+      datasets: [{
+        data: typeValues,
+        borderWidth: 1,
+        borderRadius: 8,
+        maxBarThickness: 52,
+        borderColor: typeLabels.map(label => label === __shootDetailShotType ? 'rgba(77,163,255,1)' : 'rgba(77,163,255,0.45)'),
+        backgroundColor: typeLabels.map(label => label === __shootDetailShotType ? 'rgba(77,163,255,0.95)' : 'rgba(77,163,255,0.35)')
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.raw || 0} attempts` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: 'rgba(255,255,255,0.82)' } },
+        y: { beginAtZero: true, ticks: { precision: 0, color: 'rgba(255,255,255,0.82)' }, grid: { color: 'rgba(255,255,255,0.08)' } }
+      },
+      onClick: (_evt, elements) => {
+        if(!elements?.length || typeLabels[elements[0].index] === 'No Data') return;
+        const label = typeLabels[elements[0].index];
+        __shootDetailShotType = (__shootDetailShotType === label) ? '' : label;
+        renderShootingFull();
+      }
+    }
+  });
+
+  __shootDetailOutcomeChart = new Chart(shootDetailOutcomeCanvas.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: outcomeLabels,
+      datasets: [{
+        data: outcomeValues,
+        borderWidth: 1,
+        hoverOffset: 8,
+        borderColor: ['rgba(148,163,184,0.95)', 'rgba(245,158,11,0.95)', 'rgba(59,130,246,0.95)', 'rgba(34,197,94,0.95)'],
+        backgroundColor: outcomeLabels.map(label => {
+          const isActive = __shootDetailOutcome === label;
+          if(label === 'Block') return isActive ? 'rgba(148,163,184,0.92)' : 'rgba(148,163,184,0.42)';
+          if(label === 'Miss') return isActive ? 'rgba(245,158,11,0.92)' : 'rgba(245,158,11,0.42)';
+          if(label === 'On Net') return isActive ? 'rgba(59,130,246,0.92)' : 'rgba(59,130,246,0.42)';
+          return isActive ? 'rgba(34,197,94,0.92)' : 'rgba(34,197,94,0.42)';
+        })
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      cutout: '58%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.82)', boxWidth: 12 } },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.raw || 0}` } }
+      },
+      onClick: (_evt, elements) => {
+        if(!elements?.length) return;
+        const label = outcomeLabels[elements[0].index];
+        __shootDetailOutcome = (__shootDetailOutcome === label) ? '' : label;
+        renderShootingFull();
+      }
+    }
+  });
+}
 
 // ── Shared Video Player (native <video> + Brightcove Playback API) ───
 const _vOverlay = document.getElementById('videoOverlay');
@@ -5339,9 +5754,33 @@ document.querySelectorAll('.shoot-type-btn').forEach(btn => {
     document.querySelectorAll('.shoot-type-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     __shootShotType = btn.dataset.stype;
-    renderShootingVisuals();
-    updateShootVideoBtn();
+    renderShootingFull();
   });
+});
+
+shootDetailOpponent?.addEventListener('change', () => {
+  __shootDetailFilters.opponent = shootDetailOpponent.value || '';
+  renderShootingFull();
+});
+
+shootDetailGames?.addEventListener('change', () => {
+  __shootDetailFilters.games = shootDetailGames.value || '';
+  renderShootingFull();
+});
+
+shootDetailScoreState?.addEventListener('change', () => {
+  __shootDetailFilters.scoreState = shootDetailScoreState.value || '';
+  renderShootingFull();
+});
+
+shootDetailPosition?.addEventListener('change', () => {
+  __shootDetailFilters.position = shootDetailPosition.value || '';
+  renderShootingFull();
+});
+
+shootDetailShoots?.addEventListener('change', () => {
+  __shootDetailFilters.shoots = shootDetailShoots.value || '';
+  renderShootingFull();
 });
 
 async function loadGeoJson(){
@@ -5364,18 +5803,12 @@ async function loadShootingPanel(){
   const xm = cardXgModel?.value || 'xG_F';
   const pid = playerSelect?.value || '';
   const key = `${team}|${season}|${ss}|${str}|${xm}|${pid}`;
-
-  if(shootSlicerSummary){
-    const sn = (typeof window.formatSeasonSelectionLabel === 'function')
-      ? window.formatSeasonSelectionLabel()
-      : (season ? (season.slice(0,4)+'/'+season.slice(4)) : '');
-    shootSlicerSummary.textContent = `${sn} – ${ss==='playoffs'?'Playoffs':ss==='all'?'All':'Regular'} – ${str} – ${xm.replace('_',' ')}`;
-    shootSlicerSummary.style.fontStyle = 'italic';
-  }
+  updateShootSlicerSummary();
 
   if(!team || !season){
     if(shootEmpty) shootEmpty.style.display = '';
     if(shootContent) shootContent.style.display = 'none';
+    destroyShootDetailCharts();
     return;
   }
 
@@ -5405,6 +5838,9 @@ async function loadShootingPanel(){
     __shootActiveGoalie = null;
     __shootActiveZone = null;
     __shootShotType = 'all';
+    __shootDetailFilters = { opponent:'', games:'', scoreState:'', position:'', shoots:'' };
+    __shootDetailShotType = '';
+    __shootDetailOutcome = '';
     document.querySelectorAll('.shoot-type-btn').forEach(b => b.classList.toggle('active', b.dataset.stype==='all'));
     await loadGeoJson();
     renderShootingFull();
@@ -5414,33 +5850,48 @@ async function loadShootingPanel(){
   }
 }
 
+function setShootingDetailsVisible(visible){
+  __shootDetailsVisible = !!visible;
+  if(btnToggleShootingDetails) btnToggleShootingDetails.textContent = __shootDetailsVisible ? 'Hide Details' : 'Show Details';
+  shootContent?.classList.toggle('details-visible', __shootDetailsVisible);
+  if(!__shootDetailsVisible) destroyShootDetailCharts();
+  if(__shootData) renderShootingFull();
+}
+
 function renderShootingFull(){
   if(!__shootData) return;
   if(shootEmpty) shootEmpty.style.display = 'none';
   if(shootContent) shootContent.style.display = '';
+  populateShootDetailsControls();
+  updateShootSlicerSummary();
   renderShootingKpis();
   renderShootingTable();
   renderShootingVisuals();
+  renderShootDetailCharts();
   updateShootVideoBtn();
 }
 
 function getFilteredShootEvents(){
-  if(!__shootData) return [];
-  let evts = __shootData.events || [];
-  if(__shootActiveGoalie) evts = evts.filter(e => e.goalieId === __shootActiveGoalie);
-  if(__shootActiveZone) evts = evts.filter(e => e.boxId === __shootActiveZone);
-  if(__shootShotType === 'goal') evts = evts.filter(e => e.goal === 1);
-  else if(__shootShotType === 'shot') evts = evts.filter(e => e.shot === 1 && e.goal !== 1);
-  else if(__shootShotType === 'miss') evts = evts.filter(e => e.shot !== 1 && e.goal !== 1);
-  return evts;
+  return getShootEventsForFilters();
 }
 
 function computeKpisFromEvents(evts){
-  let shots=0, xg=0, goals=0;
-  for(const e of evts){ shots++; xg += e.xG||0; if(e.goal) goals++; }
+  let shots=0, xg=0, goals=0, distanceSum=0, distanceCount=0;
+  for(const e of evts){
+    shots++;
+    xg += Number(e.xG) || 0;
+    if(e.goal) goals++;
+    if(getShootOutcome(e) !== 'Block'){
+      const distance = Number(e.shotDistance);
+      if(Number.isFinite(distance)){
+        distanceSum += distance;
+        distanceCount++;
+      }
+    }
+  }
   const shPct = shots? (goals/shots*100):0;
   const xShPct = shots? (xg/shots*100):0;
-  return {shots, xG:xg, goals, gax:goals-xg, shPct, xShPct, dShPct:shPct-xShPct};
+  return {shots, xG:xg, goals, gax:goals-xg, shPct, xShPct, dShPct:shPct-xShPct, shotDistance: distanceCount ? (distanceSum / distanceCount) : null};
 }
 
 function renderShootingKpis(){
@@ -5459,25 +5910,28 @@ function renderShootingKpis(){
   set('shootKpiXShPct', k.xShPct.toFixed(1)+'%');
   const dStr = (k.dShPct>=0?'+':'')+k.dShPct.toFixed(1)+'%';
   set('shootKpiDShPct', dStr, k.dShPct>=0?'pos':'neg');
+  set('shootKpiShotDistance', k.shotDistance == null ? '-- ft' : `${k.shotDistance.toFixed(1)} ft`);
 }
 
 function renderShootingTable(){
   if(!shootGoalieTbody || !__shootData) return;
-  let goalies = __shootData.goalies || [];
-  // If zone filter is active, recompute goalie stats from filtered events
-  if(__shootActiveZone){
-    const evts = __shootData.events.filter(e => e.boxId === __shootActiveZone);
-    const nameMap = {};
-    for(const og of (__shootData.goalies||[])) nameMap[og.goalieId] = og.name || String(og.goalieId);
-    const agg = {};
-    for(const e of evts){
-      const gid = e.goalieId; if(!gid) continue;
-      if(!agg[gid]) agg[gid] = {goalieId:gid, name:nameMap[gid]||String(gid), shots:0, xG:0, goals:0};
-      agg[gid].shots++; agg[gid].xG += e.xG||0; if(e.goal) agg[gid].goals++;
-    }
-    goalies = Object.values(agg).map(g => ({...g, gax:+(g.goals-g.xG).toFixed(2), xG:+g.xG.toFixed(2)}));
-    goalies.sort((a,b) => b.gax - a.gax);
+  const evts = getShootEventsForFilters({ ignoreGoalie: true });
+  const nameMap = {};
+  for(const goalie of (__shootData.goalies || [])) nameMap[goalie.goalieId] = goalie.name || String(goalie.goalieId);
+  for(const evt of (__shootData.events || [])){
+    if(evt.goalieId && evt.goalieName && !nameMap[evt.goalieId]) nameMap[evt.goalieId] = evt.goalieName;
   }
+  const agg = {};
+  for(const e of evts){
+    const gid = e.goalieId;
+    if(!gid) continue;
+    if(!agg[gid]) agg[gid] = {goalieId:gid, name:nameMap[gid] || String(gid), shots:0, xG:0, goals:0};
+    agg[gid].shots++;
+    agg[gid].xG += Number(e.xG) || 0;
+    if(e.goal) agg[gid].goals++;
+  }
+  const goalies = Object.values(agg).map(g => ({ ...g, gax:+(g.goals-g.xG).toFixed(2), xG:+g.xG.toFixed(2) }))
+    .sort((a,b) => (b.gax - a.gax) || (b.shots - a.shots) || String(a.name).localeCompare(String(b.name)));
   shootGoalieTbody.innerHTML = '';
   for(const g of goalies){
     const tr = document.createElement('tr');
@@ -5487,10 +5941,7 @@ function renderShootingTable(){
     tr.innerHTML = `<td>${g.name||g.goalieId}</td><td class="num">${g.shots}</td><td class="num">${g.xG.toFixed(2)}</td><td class="num">${g.goals}</td><td class="num"><span class="val ${gaxCls}" style="font-size:13px;">${g.gax>=0?'+':''}${g.gax.toFixed(2)}</span></td>`;
     tr.addEventListener('click', () => {
       __shootActiveGoalie = (__shootActiveGoalie === g.goalieId) ? null : g.goalieId;
-      renderShootingKpis();
-      renderShootingTable();
-      renderShootingVisuals();
-      updateShootVideoBtn();
+      renderShootingFull();
     });
     shootGoalieTbody.appendChild(tr);
   }
@@ -5516,7 +5967,7 @@ function renderShotMap(){
   ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
   ctx.clearRect(0, 0, W, H);
 
-  const evts = getFilteredShootEvents();
+  const evts = getFilteredShootEvents().filter(e => getShootOutcome(e) !== 'Block');
 
   // Map NHL coordinates to canvas pixels
   // Offensive zone: x in [25, 100], y in [-42.5, 42.5]
@@ -5559,12 +6010,7 @@ function renderHeatMap(){
   if(!shootHeatSvg || !__shootData || !__shootGeoJson) return;
   shootHeatSvg.innerHTML = '';
 
-  // Heat map always shows ALL events (filtered by goalie + shot type, but NOT by zone)
-  let heatEvts = __shootData.events || [];
-  if(__shootActiveGoalie) heatEvts = heatEvts.filter(e => e.goalieId === __shootActiveGoalie);
-  if(__shootShotType === 'goal') heatEvts = heatEvts.filter(e => e.goal === 1);
-  else if(__shootShotType === 'shot') heatEvts = heatEvts.filter(e => e.shot === 1 && e.goal !== 1);
-  else if(__shootShotType === 'miss') heatEvts = heatEvts.filter(e => e.shot !== 1 && e.goal !== 1);
+  const heatEvts = getShootEventsForFilters({ ignoreZone: true }).filter(e => getShootOutcome(e) !== 'Block');
 
   const zoneCounts = {};
   for(const e of heatEvts){
@@ -5597,10 +6043,7 @@ function renderHeatMap(){
     if(__shootActiveZone === id) poly.classList.add('zone-selected');
     poly.addEventListener('click', () => {
       __shootActiveZone = (__shootActiveZone === id) ? null : id;
-      renderShootingKpis();
-      renderShootingTable();
-      renderHeatMap();
-      updateShootVideoBtn();
+      renderShootingFull();
     });
     shootHeatSvg.appendChild(poly);
 
@@ -5836,8 +6279,13 @@ function __shootShareStateKey(){
     player: String(playerSelect?.value || ''),
     summary: String(shootSlicerSummary?.textContent || '').trim(),
     goalie: String(__shootActiveGoalie || ''),
+    zone: String(__shootActiveZone || ''),
     shotType: String(__shootShotType || ''),
     mapMode: String(__shootMapMode || ''),
+    detailsVisible: !!__shootDetailsVisible,
+    detailFilters: JSON.stringify(__shootDetailFilters || {}),
+    detailShotType: String(__shootDetailShotType || ''),
+    detailOutcome: String(__shootDetailOutcome || ''),
   });
 }
 
@@ -6150,6 +6598,7 @@ async function __buildShootingPngBlob(){
   if(!__shootData) throw new Error('No shooting data is loaded for export.');
 
   renderShootingVisuals();
+  renderShootDetailCharts();
 
   const surface = __buildShootingExportSurface();
   document.body.appendChild(surface);
@@ -6383,6 +6832,19 @@ function __buildSkaterExportHero(topClone, opts){
   try{
     const existingKpi = topClone.querySelector('#skaterProjectionKpi');
     if(existingKpi) existingKpi.remove();
+  }catch(_){/*noop*/}
+  try{
+    const heroImg = topClone.querySelector('.skater-img');
+    if(heroImg?.classList?.contains('team-logo')){
+      heroImg.style.width = 'auto';
+      heroImg.style.height = '132px';
+      heroImg.style.maxWidth = '198px';
+      heroImg.style.padding = '0';
+      heroImg.style.borderRadius = '0';
+      heroImg.style.display = 'block';
+      heroImg.style.background = 'transparent';
+      heroImg.style.border = 'none';
+    }
   }catch(_){/*noop*/}
   inner.appendChild(topClone);
 
@@ -7283,7 +7745,7 @@ function __buildShootingExportMap(){
     svg.setAttribute('viewBox', '25 -42.5 75 85');
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.setAttribute('aria-label', 'Shot map overlay');
-    const evts = getFilteredShootEvents();
+    const evts = getFilteredShootEvents().filter(e => getShootOutcome(e) !== 'Block');
     for(const e of evts){
       const x = Number(e?.x);
       const y = Number(e?.y);
@@ -7307,6 +7769,129 @@ function __buildShootingExportMap(){
     wrap.appendChild(svg);
   }
 
+  return wrap;
+}
+
+function __buildShootingExportChartDataUrl(canvasEl, chartObj, chartKind){
+  if(chartObj && typeof Chart !== 'undefined'){
+    try{
+      const isOutcome = chartKind === 'outcome';
+      const width = isOutcome ? 660 : 860;
+      const height = 400;
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = width;
+      exportCanvas.height = height;
+      const ctx = exportCanvas.getContext('2d');
+      if(ctx){
+        const exportData = JSON.parse(JSON.stringify(chartObj.data || {}));
+        if(Array.isArray(exportData?.datasets)){
+          exportData.datasets = exportData.datasets.map((dataset)=>{
+            const next = { ...dataset };
+            next.borderWidth = Math.max(Number(next.borderWidth) || 0, 2);
+            if(!isOutcome) next.maxBarThickness = 98;
+            return next;
+          });
+        }
+        const exportOptions = isOutcome
+          ? {
+              responsive: false,
+              maintainAspectRatio: false,
+              animation: false,
+              cutout: '58%',
+              layout: { padding: { top: 8, right: 8, bottom: 8, left: 8 } },
+              plugins: {
+                legend: {
+                  position: 'bottom',
+                  labels: {
+                    color: 'rgba(255,255,255,0.88)',
+                    boxWidth: 18,
+                    boxHeight: 18,
+                    padding: 20,
+                    font: { size: 20, weight: '700' }
+                  }
+                },
+                tooltip: { enabled: false }
+              }
+            }
+          : {
+              responsive: false,
+              maintainAspectRatio: false,
+              animation: false,
+              layout: { padding: { top: 8, right: 12, bottom: 4, left: 2 } },
+              plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+              },
+              scales: {
+                x: {
+                  grid: { display: false },
+                  ticks: {
+                    color: 'rgba(255,255,255,0.86)',
+                    font: { size: 18, weight: '700' },
+                    maxRotation: 34,
+                    minRotation: 34
+                  }
+                },
+                y: {
+                  beginAtZero: true,
+                  ticks: {
+                    precision: 0,
+                    color: 'rgba(255,255,255,0.86)',
+                    font: { size: 18, weight: '700' }
+                  },
+                  grid: { color: 'rgba(255,255,255,0.09)' }
+                }
+              }
+            };
+        const exportChart = new Chart(ctx, {
+          type: chartObj.config.type,
+          data: exportData,
+          options: exportOptions,
+        });
+        try{ exportChart.update('none'); }catch(_){/*noop*/}
+        const exportUrl = exportCanvas.toDataURL('image/png');
+        exportChart.destroy();
+        if(exportUrl && exportUrl !== 'data:,') return exportUrl;
+      }
+    }catch(_){/*noop*/}
+  }
+  if(!canvasEl) return '';
+  try{
+    return canvasEl.toDataURL('image/png');
+  }catch(_){
+    return '';
+  }
+}
+
+function __buildShootingExportChartCard(title, canvasEl, chartObj, chartKind){
+  const dataUrl = __buildShootingExportChartDataUrl(canvasEl, chartObj, chartKind);
+  if(!dataUrl || dataUrl === 'data:,') return null;
+  const block = document.createElement('div');
+  block.className = 'shoot-export-block';
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+  block.appendChild(heading);
+  const imgWrap = document.createElement('div');
+  imgWrap.className = 'shoot-export-img-wrap';
+  const img = document.createElement('img');
+  img.className = 'shoot-export-img';
+  img.alt = title;
+  img.src = dataUrl;
+  imgWrap.appendChild(img);
+  block.appendChild(imgWrap);
+  return block;
+}
+
+function __buildShootingExportDetails(){
+  if(!__shootDetailsVisible) return null;
+  const cards = [
+    __buildShootingExportChartCard('Shot Type', shootDetailTypeCanvas, __shootDetailTypeChart, 'type'),
+    __buildShootingExportChartCard('Shot Outcome', shootDetailOutcomeCanvas, __shootDetailOutcomeChart, 'outcome'),
+  ].filter(Boolean);
+  if(!cards.length) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'shoot-export-details';
+  cards.forEach(card => wrap.appendChild(card));
   return wrap;
 }
 
@@ -7393,6 +7978,9 @@ function __buildShootingExportSurface(){
   right.className = 'shoot-export-right';
   body.appendChild(right);
 
+  const mapBlock = document.createElement('div');
+  mapBlock.className = 'shoot-export-block shoot-export-map-block';
+
   const mapTitle = document.createElement('div');
   mapTitle.className = 'shoot-export-map-title';
   const mapLabel = __shootMapMode === 'heat' ? 'Heat Map' : 'Shot Map';
@@ -7404,8 +7992,12 @@ function __buildShootingExportSurface(){
   if(activeGoalie?.name) titleParts.push(activeGoalie.name);
   titleParts.push(typeLabelMap[__shootShotType] || 'All Events');
   mapTitle.textContent = titleParts.join(' • ');
-  right.appendChild(mapTitle);
-  right.appendChild(__buildShootingExportMap());
+  mapBlock.appendChild(mapTitle);
+  mapBlock.appendChild(__buildShootingExportMap());
+  right.appendChild(mapBlock);
+
+  const detailCharts = __buildShootingExportDetails();
+  if(detailCharts) card.appendChild(detailCharts);
 
   const watermark = document.createElement('div');
   watermark.className = 'shoot-export-watermark';
@@ -7418,9 +8010,9 @@ function __buildShootingExportSurface(){
 function __syncShootingExportHeights(surface){
   if(!surface) return;
   const tableWrap = surface.querySelector('.shoot-export-left .shoot-tbl-wrap');
-  const mapWrap = surface.querySelector('.shoot-export-right .shoot-rink-wrap');
-  if(!tableWrap || !mapWrap) return;
-  const mapHeight = Math.round(mapWrap.getBoundingClientRect().height || 0);
+  const rinkWrap = surface.querySelector('.shoot-export-map-block .shoot-rink-wrap');
+  if(!tableWrap || !rinkWrap) return;
+  const mapHeight = Math.round(rinkWrap.getBoundingClientRect().height || 0);
   if(mapHeight > 0){
     tableWrap.style.height = `${mapHeight}px`;
   }
@@ -7601,6 +8193,8 @@ btnExportProjLeaguePng?.addEventListener('click', async ()=>{ await exportProjLe
 btnShareProjLeaguePng?.addEventListener('click', ()=>{ openProjLeagueShareModal(); });
 btnExportShootingPng?.addEventListener('click', async ()=>{ await exportShootingPng(); });
 btnShareShootingPng?.addEventListener('click', ()=>{ openShootingShareModal(); });
+btnToggleShootingDetails?.addEventListener('click', ()=>{ setShootingDetailsVisible(!__shootDetailsVisible); });
+setShootingDetailsVisible(false);
 btnCloseTableConfig?.addEventListener('click', ()=> closeTableConfig());
 tableConfigModal?.addEventListener('click', (e)=>{ if(e?.target === tableConfigModal) closeTableConfig(); });
 document.addEventListener('keydown', (e)=>{ if(e?.key === 'Escape' && tableConfigModal && !tableConfigModal.hidden) closeTableConfig(); });

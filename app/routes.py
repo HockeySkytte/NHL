@@ -1639,7 +1639,7 @@ def run_lineups():
 # --- Module-level caches for performance ---
 _MODEL_CACHE: Dict[str, Any] = {}
 _FEATURE_COLS_CACHE: Dict[str, List[str]] = {}
-_PBP_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_PBP_CACHE: Dict[Any, Tuple[float, Dict[str, Any]]] = {}
 
 # Player landing cache: {playerId: (timestamp, json)}
 _PLAYER_LANDING_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
@@ -1675,6 +1675,7 @@ _SEASONSTATS_AGG_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[int, Dict[str, A
 _SKATERS_SCATTER_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
 _GOALIES_SCATTER_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
 _GOALIES_GOALTENDING_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
+_TEAM_SEASON_PBP_FALLBACK_CACHE: Dict[Tuple[Any, ...], Tuple[float, List[Dict[str, Any]]]] = {}
 _PLAYOFF_BRACKET_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 _TEAM_SEASONS_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 
@@ -2210,13 +2211,17 @@ def _disk_cache_base() -> str:
     except Exception:
         return '/tmp/nhl_cache'
 
-def _disk_cache_path_pbp(game_id: int) -> str:
+def _disk_cache_path_pbp(game_id: int, xg_scope: Optional[str] = None) -> str:
     d = _disk_cache_base()
     try:
         os.makedirs(d, exist_ok=True)
     except Exception:
         pass
-    return os.path.join(d, f'pbp_{int(game_id)}.json')
+    scope = str(xg_scope or '').strip().lower()
+    scope_suffix = ''
+    if scope and scope not in ('all', 'full'):
+        scope_suffix = f'_{re.sub(r"[^a-z0-9_]+", "_", scope)}'
+    return os.path.join(d, f'pbp_{int(game_id)}{scope_suffix}.json')
 
 def _disk_cache_path_shifts(game_id: int) -> str:
     d = _disk_cache_base()
@@ -15602,6 +15607,8 @@ def _load_skater_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
                     name = str(row.get('skaterFullName') or '').strip()
                     pos_raw = str(row.get('positionCode') or '').strip().upper()
                     pos = 'D' if pos_raw.startswith('D') else 'F'
+                    shoots_raw = str(row.get('shootsCatches') or row.get('shoots') or row.get('ShootsCatches') or '').strip().upper()
+                    shoots = shoots_raw[:1] if shoots_raw[:1] in ('L', 'R') else ''
                     if pid not in out or (name and not (out.get(pid) or {}).get('name')):
                         out[pid] = {
                             'playerId': str(pid),
@@ -15609,6 +15616,7 @@ def _load_skater_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
                             'team': team,
                             'position': pos,
                             'positionCode': pos_raw,
+                            'shoots': shoots,
                             'birthDate': str(row.get('birthDate') or '').strip(),
                         }
     except Exception:
@@ -15669,12 +15677,15 @@ def _load_goalie_bios_season_cached(season_id: int) -> Dict[int, Dict[str, str]]
                     team = str(row.get('currentTeamAbbrev') or '').strip().upper()
                     name = str(row.get('goalieFullName') or row.get('playerFullName') or row.get('skaterFullName') or '').strip()
                     pos_raw = str(row.get('positionCode') or 'G').strip().upper()
+                    shoots_raw = str(row.get('shootsCatches') or row.get('catches') or '').strip().upper()
+                    shoots = shoots_raw[:1] if shoots_raw[:1] in ('L', 'R') else ''
                     out[pid] = {
                         'playerId': str(pid),
                         'name': name,
                         'team': team,
                         'position': 'G',
                         'positionCode': pos_raw,
+                        'shoots': shoots,
                         'birthDate': str(row.get('birthDate') or '').strip(),
                     }
     except Exception:
@@ -15800,12 +15811,15 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
                 name = (str(fn).strip() + ' ' + str(ln).strip()).strip() or str(pid)
                 pos_raw = str(p.get('positionCode') or p.get('position') or '').strip().upper()
                 pos = 'G' if pos_raw.startswith('G') else ('D' if pos_raw.startswith('D') else 'F')
+                shoots_raw = str(p.get('shootsCatches') or p.get('shoots') or p.get('catches') or '').strip().upper()
+                shoots = shoots_raw[:1] if shoots_raw[:1] in ('L', 'R') else ''
                 out[int(pid)] = {
                     'playerId': str(int(pid)),
                     'name': name,
                     'team': team,
                     'position': pos,
                     'positionCode': pos_raw,
+                    'shoots': shoots,
                 }
         except Exception:
             continue
@@ -15828,12 +15842,15 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
                 team_s = str(info_d.get('team') or '').strip().upper()
                 pos_raw = str(info_d.get('positionCode') or info_d.get('position') or '').strip().upper()
                 pos = 'G' if pos_raw.startswith('G') else ('D' if pos_raw.startswith('D') else ('F' if pos_raw else ''))
+                shoots_raw = str(info_d.get('shoots') or '').strip().upper()
+                shoots = shoots_raw[:1] if shoots_raw[:1] in ('L', 'R') else ''
                 out[pid_i] = {
                     'playerId': str(pid_i),
                     'name': name_s,
                     'team': team_s,
                     'position': pos,
                     'positionCode': pos_raw,
+                    'shoots': shoots,
                 }
             except Exception:
                 out[pid_i] = {
@@ -15842,6 +15859,7 @@ def _load_all_rosters_for_season_cached(season_id: int) -> Dict[int, Dict[str, s
                     'team': '',
                     'position': '',
                     'positionCode': '',
+                    'shoots': '',
                 }
     except Exception:
         pass
@@ -17306,13 +17324,20 @@ def api_game_pbp(game_id: int):
         force = str(request.args.get('force', '')).lower() in ('1', 'true', 'yes', 'y', 'force')
     except Exception:
         force = False
+    try:
+        lite_mode = str(request.args.get('lite', '')).lower() in ('1', 'true', 'yes', 'y', 'lite')
+    except Exception:
+        lite_mode = False
     live_ttl = 5  # seconds for live
     std_ttl = int(os.getenv('PBP_CACHE_TTL_SECONDS', '600'))
+    xg_scope = _normalize_xg_model_name(request.args.get('xgModel')) or 'all'
+    cache_scope = xg_scope if not lite_mode else f'{xg_scope}_lite'
+    cache_key: Any = int(game_id) if cache_scope == 'all' else (int(game_id), cache_scope)
     try:
         max_items = max(1, int(os.getenv('PBP_CACHE_MAX_ITEMS', '24') or '24'))
     except Exception:
         max_items = 24
-    disk_path = _disk_cache_path_pbp(int(game_id))
+    disk_path = _disk_cache_path_pbp(int(game_id), None if cache_scope == 'all' else cache_scope)
     if not force:
         try:
             # Try disk cache first (has metadata such as gameState)
@@ -17327,7 +17352,7 @@ def api_game_pbp(game_id: int):
                     return jsonify({k: v for k, v in js.items() if not k.startswith('_')})
             # Try in-memory cache if disk miss
             _cache_prune_ttl_and_size(_PBP_CACHE, ttl_s=std_ttl, max_items=max_items)
-            cached = _cache_get(_PBP_CACHE, int(game_id), std_ttl)
+            cached = _cache_get(_PBP_CACHE, cache_key, std_ttl)
             if cached:
                 return jsonify(cached)
         except Exception:
@@ -17397,6 +17422,12 @@ def api_game_pbp(game_id: int):
     except Exception:
         rink_venue_value = None
     roster = {r.get('playerId'): r for r in data.get('rosterSpots', [])}
+    season_player_info: Dict[int, Dict[str, str]] = {}
+    if not shoots_map:
+        try:
+            season_player_info = _load_all_rosters_for_season_cached(int(data.get('season') or 0)) or {}
+        except Exception:
+            season_player_info = {}
 
     def player_name(pid: Optional[int]) -> Optional[str]:
         r = roster.get(pid)
@@ -17476,77 +17507,75 @@ def api_game_pbp(game_id: int):
             key_t = (pd_key, owner0)
             period_team_sum_x[key_t] = period_team_sum_x.get(key_t, 0.0) + xx
 
-    # Precompute shift slices and on-ice players from our own shifts endpoint
     slices: List[Tuple[int, int, int]] = []  # (start, end, ShiftIndex)
     starts: List[int] = []
     slice_players: Dict[int, List[Dict]] = {}
-    try:
-        resp_shifts = api_game_shifts(game_id)
-        js = None
-        status_code = 200
-        if isinstance(resp_shifts, tuple):
-            resp_obj, status_code = resp_shifts
-            js = resp_obj.get_json(silent=True) if hasattr(resp_obj, 'get_json') else None
-        else:
-            js = resp_shifts.get_json(silent=True) if hasattr(resp_shifts, 'get_json') else None
-        rows = (js.get('shifts') or []) if isinstance(js, dict) and status_code == 200 else []
-        by_idx: Dict[int, Tuple[int, int]] = {}
-        for r in rows:
-            si = r.get('ShiftIndex'); st = r.get('Start'); en = r.get('End')
-            if si is None or st is None or en is None:
-                continue
-            try:
-                sii = int(si); sti = int(st); eni = int(en)
-            except Exception:
-                continue
-            if sii not in by_idx:
-                by_idx[sii] = (sti, eni)
+    if not lite_mode:
+        try:
+            resp_shifts = api_game_shifts(game_id)
+            js = None
+            status_code = 200
+            if isinstance(resp_shifts, tuple):
+                resp_obj, status_code = resp_shifts
+                js = resp_obj.get_json(silent=True) if hasattr(resp_obj, 'get_json') else None
             else:
-                a, b = by_idx[sii]
-                by_idx[sii] = (min(a, sti), max(b, eni))
-            # collect players for this slice
-            pl_id = r.get('PlayerID'); pl_nm = r.get('Name'); pl_pos = (r.get('Position') or '').upper(); pl_tm = r.get('Team')
-            if pl_id is not None and pl_tm is not None:
-                slice_players.setdefault(sii, []).append({'PlayerID': pl_id, 'Name': pl_nm, 'Position': pl_pos, 'Team': pl_tm})
-        slices = sorted([(v[0], v[1], k) for k, v in by_idx.items()], key=lambda x: x[0])
-        starts = [s for s, _, _ in slices]
-    except Exception:
-        slices = []
-        starts = []
-        slice_players = {}
+                js = resp_shifts.get_json(silent=True) if hasattr(resp_shifts, 'get_json') else None
+            rows = (js.get('shifts') or []) if isinstance(js, dict) and status_code == 200 else []
+            by_idx: Dict[int, Tuple[int, int]] = {}
+            for r in rows:
+                si = r.get('ShiftIndex'); st = r.get('Start'); en = r.get('End')
+                if si is None or st is None or en is None:
+                    continue
+                try:
+                    sii = int(si); sti = int(st); eni = int(en)
+                except Exception:
+                    continue
+                if sii not in by_idx:
+                    by_idx[sii] = (sti, eni)
+                else:
+                    a, b = by_idx[sii]
+                    by_idx[sii] = (min(a, sti), max(b, eni))
+                pl_id = r.get('PlayerID'); pl_nm = r.get('Name'); pl_pos = (r.get('Position') or '').upper(); pl_tm = r.get('Team')
+                if pl_id is not None and pl_tm is not None:
+                    slice_players.setdefault(sii, []).append({'PlayerID': pl_id, 'Name': pl_nm, 'Position': pl_pos, 'Team': pl_tm})
+            slices = sorted([(v[0], v[1], k) for k, v in by_idx.items()], key=lambda x: x[0])
+            starts = [s for s, _, _ in slices]
+        except Exception:
+            slices = []
+            starts = []
+            slice_players = {}
 
     # Precompute on-ice string fields per ShiftIndex
     onice_cache: Dict[int, Dict[str, Optional[str]]] = {}
-    for si, plist in slice_players.items():
-        # Partition by team and position
-        def filter_and_sort(team_abbr: str, pos_code: str):
-            flt = [p for p in plist if (p.get('Team') == team_abbr and (p.get('Position') or '').upper() == pos_code)]
-            # Ensure numeric PlayerID sort
-            def to_int(x):
-                try:
-                    return int(x)
-                except Exception:
-                    return 0
-            flt_sorted = sorted(flt, key=lambda p: to_int(p.get('PlayerID')))
-            ids = ' '.join(str(p.get('PlayerID')) for p in flt_sorted if p.get('PlayerID') is not None)
-            names = ' - '.join(str(p.get('Name')) for p in flt_sorted if p.get('Name'))
-            return ids or None, names or None
+    if not lite_mode:
+        for si, plist in slice_players.items():
+            def filter_and_sort(team_abbr: str, pos_code: str):
+                flt = [p for p in plist if (p.get('Team') == team_abbr and (p.get('Position') or '').upper() == pos_code)]
+                def to_int(x):
+                    try:
+                        return int(x)
+                    except Exception:
+                        return 0
+                flt_sorted = sorted(flt, key=lambda p: to_int(p.get('PlayerID')))
+                ids = ' '.join(str(p.get('PlayerID')) for p in flt_sorted if p.get('PlayerID') is not None)
+                names = ' - '.join(str(p.get('Name')) for p in flt_sorted if p.get('Name'))
+                return ids or None, names or None
 
-        hf_id, hf_nm = filter_and_sort(str(home_abbrev or ''), 'F')
-        hd_id, hd_nm = filter_and_sort(str(home_abbrev or ''), 'D')
-        hg_id, hg_nm = filter_and_sort(str(home_abbrev or ''), 'G')
-        af_id, af_nm = filter_and_sort(str(away_abbrev or ''), 'F')
-        ad_id, ad_nm = filter_and_sort(str(away_abbrev or ''), 'D')
-        ag_id, ag_nm = filter_and_sort(str(away_abbrev or ''), 'G')
+            hf_id, hf_nm = filter_and_sort(str(home_abbrev or ''), 'F')
+            hd_id, hd_nm = filter_and_sort(str(home_abbrev or ''), 'D')
+            hg_id, hg_nm = filter_and_sort(str(home_abbrev or ''), 'G')
+            af_id, af_nm = filter_and_sort(str(away_abbrev or ''), 'F')
+            ad_id, ad_nm = filter_and_sort(str(away_abbrev or ''), 'D')
+            ag_id, ag_nm = filter_and_sort(str(away_abbrev or ''), 'G')
 
-        onice_cache[si] = {
-            'Home_Forwards_ID': hf_id, 'Home_Forwards': hf_nm,
-            'Home_Defenders_ID': hd_id, 'Home_Defenders': hd_nm,
-            'Home_Goalie_ID': hg_id, 'Home_Goalie': hg_nm,
-            'Away_Forwards_ID': af_id, 'Away_Forwards': af_nm,
-            'Away_Defenders_ID': ad_id, 'Away_Defenders': ad_nm,
-            'Away_Goalie_ID': ag_id, 'Away_Goalie': ag_nm,
-        }
+            onice_cache[si] = {
+                'Home_Forwards_ID': hf_id, 'Home_Forwards': hf_nm,
+                'Home_Defenders_ID': hd_id, 'Home_Defenders': hd_nm,
+                'Home_Goalie_ID': hg_id, 'Home_Goalie': hg_nm,
+                'Away_Forwards_ID': af_id, 'Away_Forwards': af_nm,
+                'Away_Defenders_ID': ad_id, 'Away_Defenders': ad_nm,
+                'Away_Goalie_ID': ag_id, 'Away_Goalie': ag_nm,
+            }
 
     def find_shift_index_for_event(gt: int, event_key: Optional[str]) -> Optional[int]:
         if not slices:
@@ -17746,14 +17775,21 @@ def api_game_pbp(game_id: int):
         # Position & shoots from primary player if available
         position = None
         shoots = None
-        if p1_id and p1_id in roster:
-            pos_code = roster[p1_id].get('positionCode')
+        game_player_info = roster.get(p1_id) if p1_id else None
+        season_player = season_player_info.get(int(p1_id)) if p1_id else None
+        player_info = game_player_info if isinstance(game_player_info, dict) else season_player
+        if isinstance(player_info, dict):
+            pos_code = player_info.get('positionCode') or player_info.get('position') or (season_player or {}).get('positionCode') or (season_player or {}).get('position')
             if pos_code:
                 c = str(pos_code).strip().upper()[:1]
                 position = 'F' if c in ('C', 'L', 'R') else c
         # Shoots from bios map (fallback only if present)
         if p1_id and p1_id in shoots_map:
             shoots = shoots_map.get(p1_id)
+        elif isinstance(season_player, dict):
+            shoots_raw = str(season_player.get('shoots') or season_player.get('shootsCatches') or season_player.get('catches') or '').strip().upper()
+            if shoots_raw[:1] in ('L', 'R'):
+                shoots = shoots_raw[:1]
 
         # gameTime calculation in seconds
         secs_elapsed = parse_time_to_seconds(time_in_period) or 0
@@ -17952,6 +17988,11 @@ def api_game_pbp(game_id: int):
     try:
         if not compute_xg:
             raise Exception('xg_disabled')
+        requested_family = {
+            'xG_S': 'xgbs',
+            'xG_F': 'xgb',
+            'xG_F2': 'xgb2',
+        }.get(xg_scope)
 
         # Helper: map season integer like 20142015 to previous, current, next for 3 sliding windows
         def season_prev(s: int) -> int:
@@ -18092,18 +18133,25 @@ def api_game_pbp(game_id: int):
         # 1) Handle ENA upfront
         for row in mapped:
             if row.get('StrengthState') == 'ENA':
-                if row.get('Shot') == 1:
+                if row.get('Shot') == 1 and requested_family in (None, 'xgbs'):
                     row['xG_S'] = 1.0
                 if row.get('Fenwick') == 1:
                     val_en = compute_empty_net_fenwick(row.get('ShotDistance'), row.get('ShotAngle'))
                     if val_en is not None:
-                        row['xG_F'] = round(val_en, 6)
-                        row['xG_F2'] = round(val_en, 6)
+                        if requested_family in (None, 'xgb'):
+                            row['xG_F'] = round(val_en, 6)
+                        if requested_family in (None, 'xgb2'):
+                            row['xG_F2'] = round(val_en, 6)
         # 2) Group remaining rows by family
-        families = {
+        families_all = {
             'xgbs': [i for i, r in enumerate(mapped) if r.get('Shot') == 1 and r.get('StrengthState') != 'ENA'],
             'xgb':  [i for i, r in enumerate(mapped) if r.get('Fenwick') == 1 and r.get('StrengthState') != 'ENA'],
             'xgb2': [i for i, r in enumerate(mapped) if r.get('Fenwick') == 1 and r.get('StrengthState') != 'ENA'],
+        }
+        families = {
+            family: idxs
+            for family, idxs in families_all.items()
+            if requested_family in (None, family)
         }
 
         def window_filenames_for_season(s_cur: int, prefix: str) -> List[str]:
@@ -18244,7 +18292,7 @@ def api_game_pbp(game_id: int):
         'gameState': game_state,
     }
     try:
-        _cache_set_multi_bounded(_PBP_CACHE, int(game_id), out_obj, ttl_s=std_ttl, max_items=max_items)
+        _cache_set_multi_bounded(_PBP_CACHE, cache_key, out_obj, ttl_s=std_ttl, max_items=max_items)
     except Exception:
         pass
     # Write to disk cache with metadata
@@ -19169,6 +19217,175 @@ def api_game_shifts(game_id: int):
 
 # ── Shooting / Goaltending aggregate API ────────────────────────
 
+def _allowed_game_types_for_season_state(season_state: str) -> set[int]:
+    ss = str(season_state or 'regular').strip().lower()
+    if ss == 'playoffs':
+        return {3}
+    if ss == 'all':
+        return {2, 3}
+    return {2}
+
+
+def _normalize_xg_model_name(xg_model: Any) -> Optional[str]:
+    raw = str(xg_model or '').strip().upper().replace('-', '_')
+    return {
+        'XG_F': 'xG_F',
+        'XG_S': 'xG_S',
+        'XG_F2': 'xG_F2',
+    }.get(raw)
+
+
+def _load_game_pbp_payload(game_id: int, xg_model: Optional[str] = None, app_obj: Optional[Any] = None) -> Optional[Dict[str, Any]]:
+    if app_obj is None:
+        try:
+            app_obj = current_app._get_current_object()
+        except Exception:
+            return None
+
+    try:
+        request_path = f'/api/game/{int(game_id)}/play-by-play?xg=1&lite=1'
+        xg_model_name = _normalize_xg_model_name(xg_model)
+        if xg_model_name:
+            request_path += f'&xgModel={xg_model_name}'
+        with app_obj.test_request_context(request_path):
+            resp = api_game_pbp(int(game_id))
+    except Exception:
+        return None
+
+    try:
+        status_code = int(getattr(resp, 'status_code', 500) or 500)
+    except Exception:
+        status_code = 500
+    if status_code >= 400:
+        return None
+
+    try:
+        payload = resp.get_json(silent=True)
+    except Exception:
+        payload = None
+    return payload if isinstance(payload, dict) else None
+
+
+def _map_game_pbp_play_to_pbp_row(play: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(play, dict):
+        return None
+
+    return {
+        'event_index': play.get('EventIndex'),
+        'game_id': play.get('GameID') or play.get('gameId'),
+        'season': play.get('Season'),
+        'season_state': play.get('SeasonState'),
+        'x': play.get('x'),
+        'y': play.get('y'),
+        'box_id': play.get('box_id') or play.get('BoxID'),
+        'shot': play.get('Shot'),
+        'goal': play.get('Goal'),
+        'corsi': play.get('Corsi'),
+        'fenwick': play.get('Fenwick'),
+        'xg_f': play.get('xG_F'),
+        'xg_s': play.get('xG_S'),
+        'xg_f2': play.get('xG_F2'),
+        'goalie_id': play.get('Goalie_ID'),
+        'goalie': play.get('Goalie'),
+        'shot_type': play.get('shotType'),
+        'player1_id': play.get('Player1_ID'),
+        'player1': play.get('Player1'),
+        'position': play.get('Position'),
+        'shoots': play.get('Shoots'),
+        'event_team': play.get('EventTeam'),
+        'opponent': play.get('Opponent'),
+        'score_state': play.get('ScoreState'),
+        'shot_distance': play.get('ShotDistance'),
+        'strength_state': play.get('StrengthState'),
+        'event': play.get('Event'),
+        'highlight_url': play.get('HighlightUrl'),
+        'period': play.get('Period'),
+    }
+
+
+def _load_team_season_pbp_fallback_rows(team: str, season_ids: Iterable[int], season_state: str, xg_model: Optional[str] = None) -> List[Dict[str, Any]]:
+    team_norm = str(team or '').strip().upper()
+    season_key = tuple(_normalize_season_id_list(season_ids))
+    if not team_norm or not season_key:
+        return []
+
+    ss = str(season_state or 'regular').strip().lower()
+    xg_model_name = _normalize_xg_model_name(xg_model) or 'all'
+    cache_key = (team_norm, season_key, ss, xg_model_name)
+    try:
+        ttl_s = max(30, int(os.getenv('TEAM_SEASON_PBP_FALLBACK_CACHE_TTL_SECONDS', '600') or '600'))
+    except Exception:
+        ttl_s = 600
+    try:
+        max_items = max(1, int(os.getenv('TEAM_SEASON_PBP_FALLBACK_CACHE_MAX_ITEMS', '32') or '32'))
+    except Exception:
+        max_items = 32
+
+    _cache_prune_ttl_and_size(_TEAM_SEASON_PBP_FALLBACK_CACHE, ttl_s=ttl_s, max_items=max_items)
+    cached = _cache_get(_TEAM_SEASON_PBP_FALLBACK_CACHE, cache_key, ttl_s)
+    if cached is not None:
+        return cached
+
+    allowed_game_types = _allowed_game_types_for_season_state(ss)
+    game_ids: List[int] = []
+    seen_game_ids: set[int] = set()
+    for season_id in season_key:
+        games = _fetch_club_schedule_games(team_norm, int(season_id))
+        for game in games:
+            gid = _safe_int(game.get('id'))
+            game_type = _safe_int(game.get('gameType'))
+            if not gid or game_type not in allowed_game_types or gid in seen_game_ids:
+                continue
+            seen_game_ids.add(gid)
+            game_ids.append(int(gid))
+
+    try:
+        app_obj = current_app._get_current_object()
+    except Exception:
+        app_obj = None
+    try:
+        worker_count = max(1, min(12, int(os.getenv('TEAM_SEASON_PBP_FALLBACK_WORKERS', '8') or '8')))
+    except Exception:
+        worker_count = 8
+
+    payload_by_game: Dict[int, Optional[Dict[str, Any]]] = {}
+    if game_ids and worker_count > 1 and app_obj is not None:
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _load_one_payload(game_id_value: int) -> Tuple[int, Optional[Dict[str, Any]]]:
+                payload = _load_game_pbp_payload(int(game_id_value), xg_model=xg_model_name, app_obj=app_obj)
+                return int(game_id_value), payload
+
+            with ThreadPoolExecutor(max_workers=min(worker_count, len(game_ids))) as executor:
+                for loaded_game_id, payload in executor.map(_load_one_payload, game_ids):
+                    payload_by_game[int(loaded_game_id)] = payload
+        except Exception:
+            payload_by_game = {}
+
+    rows: List[Dict[str, Any]] = []
+    for game_id in game_ids:
+        payload = payload_by_game.get(int(game_id)) if payload_by_game else None
+        if payload is None:
+            payload = _load_game_pbp_payload(int(game_id), xg_model=xg_model_name, app_obj=app_obj)
+        if not payload:
+            continue
+        plays = payload.get('plays')
+        if not isinstance(plays, list):
+            continue
+        for play in plays:
+            row = _map_game_pbp_play_to_pbp_row(play)
+            if row is not None:
+                rows.append(row)
+
+    try:
+        rows.sort(key=lambda row: ((_safe_int(row.get('game_id')) or 0), (_safe_int(row.get('event_index')) or 0)))
+    except Exception:
+        pass
+
+    _cache_set_multi_bounded(_TEAM_SEASON_PBP_FALLBACK_CACHE, cache_key, rows, ttl_s=ttl_s, max_items=max_items)
+    return rows
+
 @main_bp.route('/api/skaters/shooting')
 def api_skaters_shooting():
     """Aggregate shot events for a team+season from the pbp table.
@@ -19220,18 +19437,35 @@ def api_skaters_shooting():
         filters_base['season_state'] = f'eq.{ss}'
 
     all_events = []
-    try:
-        cols = f"event_index,x,y,box_id,shot,goal,fenwick,{xg_col},goalie_id,shot_type,player1_id,strength_state,event,highlight_url,period"
-        for season_id in season_ids:
-            rows = _sb_read('pbp', columns=cols, order='event_index', filters={
-                **filters_base,
-                'season': f'eq.{int(season_id)}',
-                'fenwick': 'eq.1',
-            })
-            if rows:
-                all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
-    except Exception:
-        pass
+    sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
+    if not sb_failed:
+        try:
+            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,event,highlight_url,period"
+            for season_id in season_ids:
+                rows = _sb_read('pbp', columns=cols, order='event_index', filters={
+                    **filters_base,
+                    'season': f'eq.{int(season_id)}',
+                    'corsi': 'eq.1',
+                })
+                if rows is None:
+                    sb_failed = True
+                    all_events = []
+                    break
+                if rows:
+                    all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
+        except Exception:
+            sb_failed = True
+            all_events = []
+
+    if sb_failed:
+        all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
+        if player_id:
+            player_id_int = _safe_int(player_id)
+            all_events = [e for e in all_events if _safe_int(e.get('player1_id')) == player_id_int]
+        all_events = [
+            e for e in all_events
+            if str(e.get('event_team') or '').strip().upper() == team and int(e.get('corsi') or 0) == 1 and int(e.get('period') or 0) != 5
+        ]
 
     # Restrict to current roster players when roster filter is provided
     if roster_ids:
@@ -19250,6 +19484,11 @@ def api_skaters_shooting():
         else:
             all_events = [e for e in all_events if str(e.get('strength_state', '')) == target]
 
+    try:
+        all_events.sort(key=lambda row: ((_safe_int(row.get('game_id')) or 0), (_safe_int(row.get('event_index')) or 0)))
+    except Exception:
+        pass
+
     # Build response
     goalie_agg: Dict[int, Dict[str, Any]] = {}
     zone_agg: Dict[str, Dict[str, float]] = {}
@@ -19262,16 +19501,24 @@ def api_skaters_shooting():
         xg_val = float(e.get(xg_col) or 0.0)
         is_goal = int(e.get('goal') or 0) == 1
         is_shot = int(e.get('shot') or 0) == 1 or is_goal
+        is_blocked = int(e.get('corsi') or 0) == 1 and int(e.get('fenwick') or 0) != 1 and not is_shot
+        outcome = 'Goal' if is_goal else ('On Net' if is_shot else ('Block' if is_blocked else 'Miss'))
         gid = e.get('goalie_id')
         box = str(e.get('box_id') or '')
+        score_state_val = e.get('score_state')
+        try:
+            score_state_out = int(float(score_state_val)) if score_state_val is not None else None
+        except Exception:
+            score_state_out = None
 
-        total_shots += 1
-        total_xg += xg_val
-        if is_goal:
-            total_goals += 1
+        if not is_blocked:
+            total_shots += 1
+            total_xg += xg_val
+            if is_goal:
+                total_goals += 1
 
         # Goalie aggregation
-        if gid:
+        if gid and not is_blocked:
             gid = int(gid)
             if gid not in goalie_agg:
                 goalie_agg[gid] = {'goalieId': gid, 'shots': 0, 'xG': 0.0, 'goals': 0}
@@ -19281,7 +19528,7 @@ def api_skaters_shooting():
                 goalie_agg[gid]['goals'] += 1
 
         # Zone aggregation
-        if box:
+        if box and not is_blocked:
             if box not in zone_agg:
                 zone_agg[box] = {'shots': 0, 'xG': 0.0, 'goals': 0}
             zone_agg[box]['shots'] += 1
@@ -19290,15 +19537,29 @@ def api_skaters_shooting():
                 zone_agg[box]['goals'] += 1
 
         events_out.append({
+            'eventIndex': int(e.get('event_index')) if e.get('event_index') else None,
+            'gameId': int(e.get('game_id')) if e.get('game_id') else None,
             'x': float(e.get('x') or 0),
             'y': float(e.get('y') or 0),
             'boxId': box,
             'goal': 1 if is_goal else 0,
             'shot': 1 if is_shot else 0,
+            'fenwick': int(e.get('fenwick') or 0),
+            'corsi': int(e.get('corsi') or 0),
+            'isBlocked': 1 if is_blocked else 0,
+            'outcome': outcome,
             'xG': round(xg_val, 4),
             'goalieId': int(gid) if gid else None,
+            'goalieName': str(e.get('goalie') or '').strip(),
             'shotType': str(e.get('shot_type') or ''),
             'playerId': int(e.get('player1_id')) if e.get('player1_id') else None,
+            'playerName': str(e.get('player1') or '').strip(),
+            'position': str(e.get('position') or '').strip().upper(),
+            'shoots': str(e.get('shoots') or '').strip().upper()[:1],
+            'eventTeam': str(e.get('event_team') or '').strip().upper(),
+            'opponent': str(e.get('opponent') or '').strip().upper(),
+            'scoreState': score_state_out,
+            'shotDistance': float(e.get('shot_distance')) if e.get('shot_distance') is not None else None,
             'highlightUrl': e.get('highlight_url') if is_goal else None,
         })
 
@@ -19414,19 +19675,36 @@ def api_goalies_goaltending():
         filters_base['season_state'] = f'eq.{ss}'
 
     all_events = []
-    try:
-        cols = f"event_index,x,y,box_id,shot,goal,fenwick,{xg_col},goalie_id,shot_type,player1_id,strength_state,highlight_url,period"
-        for season_id in season_ids:
-            rows = _sb_read('pbp', columns=cols, order='event_index', filters={
-                **filters_base,
-                'season': f'eq.{int(season_id)}',
-                'opponent': f'eq.{team}',
-                'fenwick': 'eq.1',
-            })
-            if rows:
-                all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
-    except Exception:
-        pass
+    sb_failed = not (_SUPABASE_OK and callable(_sb_auth_is_configured) and _sb_auth_is_configured())
+    if not sb_failed:
+        try:
+            cols = f"event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,goalie,shot_type,player1_id,player1,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,highlight_url,period"
+            for season_id in season_ids:
+                rows = _sb_read('pbp', columns=cols, order='event_index', filters={
+                    **filters_base,
+                    'season': f'eq.{int(season_id)}',
+                    'opponent': f'eq.{team}',
+                    'corsi': 'eq.1',
+                })
+                if rows is None:
+                    sb_failed = True
+                    all_events = []
+                    break
+                if rows:
+                    all_events.extend([e for e in rows if int(e.get('period') or 0) != 5])
+        except Exception:
+            sb_failed = True
+            all_events = []
+
+    if sb_failed:
+        all_events = _load_team_season_pbp_fallback_rows(team, season_ids, ss, xg_model=xg_model)
+        if goalie_id:
+            goalie_id_int = _safe_int(goalie_id)
+            all_events = [e for e in all_events if _safe_int(e.get('goalie_id')) == goalie_id_int]
+        all_events = [
+            e for e in all_events
+            if str(e.get('opponent') or '').strip().upper() == team and int(e.get('corsi') or 0) == 1 and int(e.get('period') or 0) != 5
+        ]
 
     # Restrict to current roster goalies when roster filter is provided
     if roster_ids:
@@ -19450,6 +19728,11 @@ def api_goalies_goaltending():
         else:
             all_events = [e for e in all_events if str(e.get('strength_state', '')) == strength]
 
+    try:
+        all_events.sort(key=lambda row: ((_safe_int(row.get('game_id')) or 0), (_safe_int(row.get('event_index')) or 0)))
+    except Exception:
+        pass
+
     # Build response
     shooter_agg: Dict[int, Dict[str, Any]] = {}
     zone_agg: Dict[str, Dict[str, float]] = {}
@@ -19461,16 +19744,25 @@ def api_goalies_goaltending():
     for e in all_events:
         xg_val = float(e.get(xg_col) or 0.0)
         is_goal = int(e.get('goal') or 0) == 1
+        is_shot = int(e.get('shot') or 0) == 1 or is_goal
+        is_blocked = int(e.get('corsi') or 0) == 1 and int(e.get('fenwick') or 0) != 1 and not is_shot
+        outcome = 'Goal' if is_goal else ('On Net' if is_shot else ('Block' if is_blocked else 'Miss'))
         pid = e.get('player1_id')
         box = str(e.get('box_id') or '')
+        score_state_val = e.get('score_state')
+        try:
+            score_state_out = int(float(score_state_val)) if score_state_val is not None else None
+        except Exception:
+            score_state_out = None
 
-        total_sa += 1
-        total_xga += xg_val
-        if is_goal:
-            total_ga += 1
+        if not is_blocked:
+            total_sa += 1
+            total_xga += xg_val
+            if is_goal:
+                total_ga += 1
 
         # Shooter aggregation
-        if pid:
+        if pid and not is_blocked:
             pid = int(pid)
             if pid not in shooter_agg:
                 shooter_agg[pid] = {'playerId': pid, 'sa': 0, 'xGA': 0.0, 'ga': 0}
@@ -19480,7 +19772,7 @@ def api_goalies_goaltending():
                 shooter_agg[pid]['ga'] += 1
 
         # Zone aggregation
-        if box:
+        if box and not is_blocked:
             if box not in zone_agg:
                 zone_agg[box] = {'sa': 0, 'xGA': 0.0, 'ga': 0}
             zone_agg[box]['sa'] += 1
@@ -19489,15 +19781,29 @@ def api_goalies_goaltending():
                 zone_agg[box]['ga'] += 1
 
         events_out.append({
+            'eventIndex': int(e.get('event_index')) if e.get('event_index') else None,
+            'gameId': int(e.get('game_id')) if e.get('game_id') else None,
             'x': float(e.get('x') or 0),
             'y': float(e.get('y') or 0),
             'boxId': box,
             'goal': 1 if is_goal else 0,
-            'shot': 1 if (int(e.get('shot') or 0) == 1 or is_goal) else 0,
+            'shot': 1 if is_shot else 0,
+            'fenwick': int(e.get('fenwick') or 0),
+            'corsi': int(e.get('corsi') or 0),
+            'isBlocked': 1 if is_blocked else 0,
+            'outcome': outcome,
             'xG': round(xg_val, 4),
             'playerId': int(pid) if pid else None,
+            'playerName': str(e.get('player1') or '').strip(),
             'goalieId': int(e.get('goalie_id')) if e.get('goalie_id') else None,
+            'goalieName': str(e.get('goalie') or '').strip(),
             'shotType': str(e.get('shot_type') or ''),
+            'position': str(e.get('position') or '').strip().upper(),
+            'shoots': str(e.get('shoots') or '').strip().upper()[:1],
+            'eventTeam': str(e.get('event_team') or '').strip().upper(),
+            'opponent': str(e.get('opponent') or '').strip().upper(),
+            'scoreState': score_state_out,
+            'shotDistance': float(e.get('shot_distance')) if e.get('shot_distance') is not None else None,
             'highlightUrl': e.get('highlight_url') if is_goal else None,
         })
 

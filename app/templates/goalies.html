@@ -74,6 +74,7 @@
   .skater-proj-kpi-lbl{ margin-top:8px; color:rgba(255,255,255,0.88); font-size:11px; letter-spacing:.8px; text-transform:uppercase; font-weight:800; line-height:1.25; }
   .skater-proj-kpi[hidden]{ display:none !important; }
   .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
+  .skater-img.team-logo{ object-fit:contain; padding:16px; background:rgba(255,255,255,0.04); }
   .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
   .skater-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
   .kv{ display:flex; gap:6px; align-items:baseline; }
@@ -293,6 +294,20 @@
   .gtend-kpi .val{ margin-top:4px; font-size:22px; font-weight:950; color:var(--text); font-variant-numeric:tabular-nums; }
   .gtend-kpi .val.pos{ color:#4da3ff; }
   .gtend-kpi .val.neg{ color:#ff6a6a; }
+  .gtend-details-panel{ display:none; gap:14px; margin-bottom:14px; }
+  #gtendContent.details-visible .gtend-details-panel{ display:grid; }
+  .gtend-details-grid{ display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:10px; }
+  @media (max-width:1080px){ .gtend-details-grid{ grid-template-columns:repeat(3, minmax(0, 1fr)); } }
+  @media (max-width:760px){ .gtend-details-grid{ grid-template-columns:1fr; } }
+  .gtend-detail-field{ display:grid; gap:6px; padding:0; border:none; border-radius:0; background:transparent; font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
+  .gtend-detail-field select{ width:100%; min-width:0; padding:10px 11px; border-radius:10px; border:1px solid #2a3142; background:#0f1522; color:var(--text); font-size:13px; font-weight:700; text-transform:none; letter-spacing:0; }
+  .gtend-detail-field[hidden]{ display:none !important; }
+  .gtend-details-charts{ display:grid; grid-template-columns:minmax(0, 1.3fr) minmax(0, 1fr); gap:14px; }
+  @media (max-width:980px){ .gtend-details-charts{ grid-template-columns:1fr; } }
+  .gtend-detail-chart-card{ display:grid; gap:10px; padding:0; border:none; border-radius:0; background:transparent; min-width:0; }
+  .gtend-detail-chart-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:11px; letter-spacing:.9px; text-transform:uppercase; color:var(--text-dim); font-weight:900; }
+  .gtend-detail-chart-note{ font-size:11px; letter-spacing:0; text-transform:none; color:var(--text-dim); font-weight:700; }
+  .gtend-detail-chart-canvas{ width:100%; height:260px !important; max-height:260px; }
   .gtend-tbl .val.pos{ color:#4da3ff; }
   .gtend-tbl .val.neg{ color:#ff6a6a; }
   .gtend-body{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
@@ -414,6 +429,7 @@
   .charts-export-block h3, .gtend-export-block h3{ margin:0; font-size:28px; letter-spacing:.7px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .charts-export-img-wrap, .gtend-export-img-wrap{ border-radius:18px; overflow:hidden; background:rgba(0,0,0,0.16); border:1px solid rgba(255,255,255,0.06); }
   .charts-export-img, .gtend-export-img{ display:block; width:100%; height:auto; }
+  .gtend-export-details{ display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(0, 1fr); gap:18px; }
   .table-export-title{ font-size:48px; line-height:1.06; font-weight:900; letter-spacing:-.02em; color:rgba(255,255,255,0.98); }
   .table-export-meta{ color:rgba(255,255,255,0.76); font-size:22px; font-weight:750; letter-spacing:.2px; }
   .table-export-table-wrap{ overflow:hidden; border-radius:24px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.02); }
@@ -428,24 +444,29 @@
   .gtend-export-kpis .gtend-kpi{ min-height:0; padding:15px 12px; }
   .gtend-export-kpis .lbl{ font-size:18px; }
   .gtend-export-kpis .val{ font-size:31px; }
-  .gtend-export-body{ display:grid; grid-template-columns:minmax(0, 0.42fr) minmax(0, 0.58fr); width:100%; gap:14px; align-items:start; }
+  .gtend-export-body{ display:grid; grid-template-columns:minmax(0, 0.42fr) minmax(0, 0.58fr); width:100%; gap:18px; align-items:stretch; }
   .gtend-export-left,
   .gtend-export-right{ min-width:0; border:none; background:transparent; box-shadow:none; }
-  .gtend-export-left{ padding:0; }
-  .gtend-export-right{ display:grid; gap:10px; padding:0; justify-self:stretch; width:100%; }
-  .gtend-export-left .gtend-tbl-wrap{ overflow-x:hidden; overflow-y:auto; max-height:none; }
+  .gtend-export-left{ display:grid; padding:0; align-self:stretch; }
+  .gtend-export-right{ display:grid; gap:12px; padding:0; justify-self:stretch; width:100%; align-self:stretch; }
+  .gtend-export-left .gtend-tbl-wrap{ overflow-x:hidden; overflow-y:auto; max-height:none; align-self:start; }
   .gtend-export-left .gtend-tbl{ min-width:0; width:100%; font-size:20px; }
   .gtend-export-left .gtend-tbl th{ font-size:18px; padding:12px 10px; }
   .gtend-export-left .gtend-tbl td{ font-size:20px; padding:11px 10px; line-height:1.42; }
   .gtend-export-left .gtend-tbl .val{ font-size:20px; }
   .gtend-export-left .gtend-tbl th:last-child{ font-size:20px; }
   .gtend-export-left .gtend-tbl td:last-child .val{ font-size:28px !important; font-weight:900; }
-  .gtend-export-map-title{ font-size:24px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); }
-  .gtend-export-right .gtend-rink-wrap{ max-width:none; margin:0; aspect-ratio:75 / 85; }
+  .gtend-export-map-title{ font-size:28px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); }
+  .gtend-export-map-block{ display:grid; gap:12px; align-content:start; }
+  .gtend-export-right .gtend-rink-wrap, .gtend-export-map-block .gtend-rink-wrap{ max-width:none; margin:0; aspect-ratio:75 / 85; }
   .gtend-export-right .gtend-video-btn, .gtend-export-right .gtend-video-list, .gtend-export-right .gtend-map-toggle, .gtend-export-right .gtend-type-toggle{ display:none !important; }
   .gtend-export-shot-svg{ position:absolute; inset:0; width:100%; height:100%; }
   .gtend-export-shot-svg .shot{ fill:rgba(59,130,246,0.82); }
   .gtend-export-shot-svg .goal{ fill:#22c55e; }
+  .gtend-export-details .gtend-export-block{ min-height:360px; }
+  .gtend-export-details .gtend-export-img-wrap{ display:flex; align-items:center; justify-content:center; min-height:300px; }
+  .gtend-export-details .gtend-export-img{ width:100%; height:100%; object-fit:contain; }
+  .gtend-export-card .card-export-hero .skater-img.team-logo{ padding:0; object-fit:contain; background:transparent; border:none; }
 
   /* Video player dialog */
   .video-overlay{ display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.75); align-items:center; justify-content:center; }
@@ -639,6 +660,7 @@
       <div class="card-panel-hd" style="padding-bottom: 8px;">
         <div id="gtendSlicerSummary" class="card-panel-meta"></div>
         <div class="goalie-panel-actions">
+          <button id="btnToggleGoaltendingDetails" class="config-btn" type="button">Show Details</button>
           <button id="btnExportGoaltendingPng" class="config-btn" type="button">Export PNG</button>
           <button id="btnShareGoaltendingPng" class="config-btn" type="button">Share</button>
         </div>
@@ -653,6 +675,40 @@
           <div class="gtend-kpi"><div class="lbl">Sv%</div><div id="gtendKpiSvPct" class="val">0</div></div>
           <div class="gtend-kpi"><div class="lbl">xSv%</div><div id="gtendKpiXSvPct" class="val">0</div></div>
           <div class="gtend-kpi"><div class="lbl">dSv%</div><div id="gtendKpiDSvPct" class="val">0</div></div>
+          <div class="gtend-kpi"><div class="lbl">Shot Distance</div><div id="gtendKpiShotDistance" class="val">-- ft</div></div>
+        </div>
+        <div id="gtendDetailsPanel" class="gtend-details-panel">
+          <div class="gtend-details-grid">
+            <label class="gtend-detail-field">Opposing Team
+              <select id="gtendDetailOpponent"><option value="">All teams</option></select>
+            </label>
+            <label class="gtend-detail-field">Last Games
+              <select id="gtendDetailGames"><option value="">All games</option></select>
+            </label>
+            <label class="gtend-detail-field">Score State
+              <select id="gtendDetailScoreState"><option value="">All score states</option></select>
+            </label>
+            <label id="gtendDetailPositionWrap" class="gtend-detail-field" hidden>Shooter Position
+              <select id="gtendDetailPosition"><option value="">All positions</option></select>
+            </label>
+            <label id="gtendDetailShootsWrap" class="gtend-detail-field" hidden>Shooter Handedness
+              <select id="gtendDetailShoots"><option value="">All handedness</option></select>
+            </label>
+          </div>
+          <div class="gtend-details-charts">
+            <section class="gtend-detail-chart-card">
+              <div class="gtend-detail-chart-head">
+                <span>Shot Type</span>
+              </div>
+              <canvas id="gtendDetailTypeChart" class="gtend-detail-chart-canvas"></canvas>
+            </section>
+            <section class="gtend-detail-chart-card">
+              <div class="gtend-detail-chart-head">
+                <span>Shot Outcome</span>
+              </div>
+              <canvas id="gtendDetailOutcomeChart" class="gtend-detail-chart-canvas"></canvas>
+            </section>
+          </div>
         </div>
         <div class="gtend-body">
           <div class="gtend-left">
@@ -698,7 +754,7 @@
       </div>
     </div>
 
-    <div id="skaterMsg" class="skater-empty" style="margin-top:10px;">Choose Team, Season, and Player.</div>
+    <div id="skaterMsg" class="skater-empty" style="margin-top:10px;"></div>
   </div>
 </div>
 
@@ -864,6 +920,7 @@ const btnExportChartsPng = document.getElementById('btnExportChartsPng');
 const btnShareChartsPng = document.getElementById('btnShareChartsPng');
 const btnExportGoaltendingPng = document.getElementById('btnExportGoaltendingPng');
 const btnShareGoaltendingPng = document.getElementById('btnShareGoaltendingPng');
+const btnToggleGoaltendingDetails = document.getElementById('btnToggleGoaltendingDetails');
 const btnExportTablePng = document.getElementById('btnExportTablePng');
 const btnShareTablePng = document.getElementById('btnShareTablePng');
 const btnExportTableCsv = document.getElementById('btnExportTableCsv');
@@ -992,6 +1049,34 @@ function getPlayerMugImage(season, team, playerId){
   img.src = primary || fallback;
   __playerMugCache.set(pid, img);
   return img;
+}
+
+function getSelectedTeamName(teamAbbrev){
+  const team = String(teamAbbrev || teamSelect?.value || '').trim().toUpperCase();
+  if(!team) return '';
+  const row = Array.isArray(teams) ? teams.find((entry)=> String(entry?.Team || '').trim().toUpperCase() === team) : null;
+  return String(row?.Name || team);
+}
+
+function setHeroImageMode(mode){
+  if(!skaterImg) return;
+  skaterImg.classList.toggle('team-logo', mode === 'team');
+}
+
+function setTeamLogo(teamAbbrev){
+  if(!skaterImg) return;
+  const team = String(teamAbbrev || '').trim().toUpperCase();
+  const name = getSelectedTeamName(team);
+  const src = team ? teamLogoUrl(team) : '';
+  try{ skaterImg.onerror = null; }catch(_){/*noop*/}
+  try{ skaterImg.dataset.fallbackDone = '0'; }catch(_){/*noop*/}
+  setHeroImageMode('team');
+  skaterImg.alt = name ? `${name} logo` : 'Team logo';
+  if(src){
+    skaterImg.src = src;
+  }else{
+    setDefaultHeadshot();
+  }
 }
 
 async function __ensureGoalieTrendLogosLoaded(series){
@@ -1818,6 +1903,8 @@ function setDefaultHeadshot(){
   if(!skaterImg) return;
   try{ skaterImg.onerror = null; }catch(_){/*noop*/}
   try{ skaterImg.dataset.fallbackDone = '0'; }catch(_){/*noop*/}
+  setHeroImageMode('player');
+  skaterImg.alt = 'Player';
   skaterImg.src = DEFAULT_SKATER_IMG;
 }
 
@@ -1826,9 +1913,11 @@ function setHeadshot(team, season, playerId){
   const t = String(team||'').trim();
   const pid = String(playerId||'').trim();
   if(!pid){
-    setDefaultHeadshot();
+    setTeamLogo(t);
     return;
   }
+  setHeroImageMode('player');
+  skaterImg.alt = 'Player';
   const primary = `/api/player-headshot/${encodeURIComponent(pid)}.png?season=${encodeURIComponent(s)}&team=${encodeURIComponent(t)}`;
   const fallback = `/api/player-headshot/${encodeURIComponent(pid)}.png`;
   skaterImg.onerror = () => {
@@ -2563,7 +2652,7 @@ function __buildGoalieShareText(kind){
 }
 
 function __shootShareStateKey(){
-  const base = [__shootShareKind, teamSelect?.value, seasonSelect?.value, playerSelect?.value, cardSeasonState?.value, cardStrengthState?.value, cardRates?.value, cardXgModel?.value, pdX?.value, pdY?.value, scX?.value, scY?.value, __chartsHighlightMode, __gtendMapMode, __gtendShotType, __gtendActiveShooter, __gtendActiveZone].join('|');
+  const base = [__shootShareKind, teamSelect?.value, seasonSelect?.value, playerSelect?.value, cardSeasonState?.value, cardStrengthState?.value, cardRates?.value, cardXgModel?.value, pdX?.value, pdY?.value, scX?.value, scY?.value, __chartsHighlightMode, __gtendMapMode, __gtendShotType, __gtendActiveShooter, __gtendActiveZone, __gtendDetailsVisible ? '1' : '0', JSON.stringify(__gtendDetailFilters || {}), String(__gtendDetailShotType || ''), String(__gtendDetailOutcome || ''), String(gtendSlicerSummary?.textContent || '').trim()].join('|');
   if(__shootShareKind === 'table'){
     const cfg = ensureTableConfig();
     return `${base}|${JSON.stringify(cfg)}|${String(__tableLastKey || '')}`;
@@ -2698,6 +2787,19 @@ function __buildCardExportHero(topClone){
   hero.style.setProperty('--card-export-team-color-dark', _darkenHex(teamColor, 0.46));
   const inner = document.createElement('div');
   inner.className = 'card-export-hero-inner';
+  try{
+    const heroImg = topClone.querySelector('.skater-img');
+    if(heroImg?.classList?.contains('team-logo')){
+      heroImg.style.width = 'auto';
+      heroImg.style.height = '132px';
+      heroImg.style.maxWidth = '198px';
+      heroImg.style.padding = '0';
+      heroImg.style.borderRadius = '0';
+      heroImg.style.display = 'block';
+      heroImg.style.background = 'transparent';
+      heroImg.style.border = 'none';
+    }
+  }catch(_){/*noop*/}
   inner.appendChild(topClone);
   if(team){
     const logoWrap = document.createElement('div');
@@ -3199,7 +3301,7 @@ function __buildGoaltendingExportMap(){
     svg.setAttribute('viewBox', '25 -42.5 75 85');
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.setAttribute('aria-label', 'Shot map overlay');
-    const evts = getFilteredGtendEvents();
+    const evts = getFilteredGtendEvents().filter(e => getGtendOutcome(e) !== 'Block');
     for(const e of evts){
       const x = Number(e?.x);
       const y = Number(e?.y);
@@ -3225,12 +3327,135 @@ function __buildGoaltendingExportMap(){
   return wrap;
 }
 
+function __buildGoaltendingExportChartDataUrl(canvasEl, chartObj, chartKind){
+  if(chartObj && typeof Chart !== 'undefined'){
+    try{
+      const isOutcome = chartKind === 'outcome';
+      const width = isOutcome ? 660 : 860;
+      const height = 400;
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = width;
+      exportCanvas.height = height;
+      const ctx = exportCanvas.getContext('2d');
+      if(ctx){
+        const exportData = JSON.parse(JSON.stringify(chartObj.data || {}));
+        if(Array.isArray(exportData?.datasets)){
+          exportData.datasets = exportData.datasets.map((dataset)=>{
+            const next = { ...dataset };
+            next.borderWidth = Math.max(Number(next.borderWidth) || 0, 2);
+            if(!isOutcome) next.maxBarThickness = 98;
+            return next;
+          });
+        }
+        const exportOptions = isOutcome
+          ? {
+              responsive: false,
+              maintainAspectRatio: false,
+              animation: false,
+              cutout: '58%',
+              layout: { padding: { top: 8, right: 8, bottom: 8, left: 8 } },
+              plugins: {
+                legend: {
+                  position: 'bottom',
+                  labels: {
+                    color: 'rgba(255,255,255,0.88)',
+                    boxWidth: 18,
+                    boxHeight: 18,
+                    padding: 20,
+                    font: { size: 20, weight: '700' }
+                  }
+                },
+                tooltip: { enabled: false }
+              }
+            }
+          : {
+              responsive: false,
+              maintainAspectRatio: false,
+              animation: false,
+              layout: { padding: { top: 8, right: 12, bottom: 4, left: 2 } },
+              plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+              },
+              scales: {
+                x: {
+                  grid: { display: false },
+                  ticks: {
+                    color: 'rgba(255,255,255,0.86)',
+                    font: { size: 18, weight: '700' },
+                    maxRotation: 34,
+                    minRotation: 34
+                  }
+                },
+                y: {
+                  beginAtZero: true,
+                  ticks: {
+                    precision: 0,
+                    color: 'rgba(255,255,255,0.86)',
+                    font: { size: 18, weight: '700' }
+                  },
+                  grid: { color: 'rgba(255,255,255,0.09)' }
+                }
+              }
+            };
+        const exportChart = new Chart(ctx, {
+          type: chartObj.config.type,
+          data: exportData,
+          options: exportOptions,
+        });
+        try{ exportChart.update('none'); }catch(_){/*noop*/}
+        const exportUrl = exportCanvas.toDataURL('image/png');
+        exportChart.destroy();
+        if(exportUrl && exportUrl !== 'data:,') return exportUrl;
+      }
+    }catch(_){/*noop*/}
+  }
+  if(!canvasEl) return '';
+  try{
+    return canvasEl.toDataURL('image/png');
+  }catch(_){
+    return '';
+  }
+}
+
+function __buildGoaltendingExportChartCard(title, canvasEl, chartObj, chartKind){
+  const dataUrl = __buildGoaltendingExportChartDataUrl(canvasEl, chartObj, chartKind);
+  if(!dataUrl || dataUrl === 'data:,') return null;
+  const block = document.createElement('div');
+  block.className = 'gtend-export-block';
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+  block.appendChild(heading);
+  const imgWrap = document.createElement('div');
+  imgWrap.className = 'gtend-export-img-wrap';
+  const img = document.createElement('img');
+  img.className = 'gtend-export-img';
+  img.alt = title;
+  img.src = dataUrl;
+  imgWrap.appendChild(img);
+  block.appendChild(imgWrap);
+  return block;
+}
+
+function __buildGoaltendingExportDetails(){
+  if(!__gtendDetailsVisible) return null;
+  const cards = [
+    __buildGoaltendingExportChartCard('Shot Type', gtendDetailTypeCanvas, __gtendDetailTypeChart, 'type'),
+    __buildGoaltendingExportChartCard('Shot Outcome', gtendDetailOutcomeCanvas, __gtendDetailOutcomeChart, 'outcome'),
+  ].filter(Boolean);
+  if(!cards.length) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'gtend-export-details';
+  cards.forEach(card => wrap.appendChild(card));
+  return wrap;
+}
+
 function __syncGoaltendingExportHeights(surface){
   if(!surface) return;
   const tableWrap = surface.querySelector('.gtend-export-left .gtend-tbl-wrap');
-  const mapWrap = surface.querySelector('.gtend-export-right .gtend-rink-wrap');
-  if(!tableWrap || !mapWrap) return;
-  const mapHeight = Math.round(mapWrap.getBoundingClientRect().height || 0);
+  const rinkWrap = surface.querySelector('.gtend-export-map-block .gtend-rink-wrap');
+  if(!tableWrap || !rinkWrap) return;
+  const mapHeight = Math.round(rinkWrap.getBoundingClientRect().height || 0);
   if(mapHeight > 0){
     tableWrap.style.height = `${mapHeight}px`;
   }
@@ -3267,18 +3492,20 @@ function __buildGoaltendingExportSurface(){
   body.appendChild(left);
   const right = document.createElement('div');
   right.className = 'gtend-export-right';
+  const mapBlock = document.createElement('div');
+  mapBlock.className = 'gtend-export-block gtend-export-map-block';
   const title = document.createElement('div');
   title.className = 'gtend-export-map-title';
   const mapLabel = __gtendMapMode === 'heat' ? 'Heat Map' : 'Shot Map';
   const typeLabelMap = { all: 'All Events', miss: 'Missed', shot: 'On Net', goal: 'Goals' };
   title.textContent = [mapLabel, typeLabelMap[__gtendShotType] || 'All Events'].join(' • ');
-  right.appendChild(title);
-  const mapWrap = document.createElement('div');
-  mapWrap.className = 'gtend-export-block';
-  mapWrap.appendChild(__buildGoaltendingExportMap());
-  right.appendChild(mapWrap);
+  mapBlock.appendChild(title);
+  mapBlock.appendChild(__buildGoaltendingExportMap());
+  right.appendChild(mapBlock);
   body.appendChild(right);
   card.appendChild(body);
+  const detailCharts = __buildGoaltendingExportDetails();
+  if(detailCharts) card.appendChild(detailCharts);
   const watermark = document.createElement('div');
   watermark.className = 'gtend-export-watermark';
   watermark.textContent = 'Created on https://nhl.hockey-statistics.com/';
@@ -3291,6 +3518,8 @@ async function __buildGoaltendingPngBlob(){
   await loadGoaltendingPanel();
   await __goalieExportDelay(120);
   if(!gtendContent || gtendContent.style.display === 'none') throw new Error('No goaltending data is loaded for export.');
+  renderGtendVisuals();
+  renderGtendDetailCharts();
   const surface = __buildGoaltendingExportSurface();
   document.body.appendChild(surface);
   try{
@@ -5746,7 +5975,8 @@ async function loadPlayers(){
     list.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||'')));
     const savedKey = `goalies_player_${team}`;
     const saved = localStorage.getItem(savedKey);
-    playerSelect.innerHTML = '<option value="">Select player</option>' + list.map(p=>`<option value="${p.playerId}">${p.name}</option>`).join('');
+    const teamName = getSelectedTeamName(team) || 'Team';
+    playerSelect.innerHTML = `<option value="">${teamName}</option>` + list.map(p=>`<option value="${p.playerId}">${p.name}</option>`).join('');
     if(__restorePlayerId && list.some(p=>String(p.playerId)===String(__restorePlayerId))){
       playerSelect.value = String(__restorePlayerId);
       __restorePlayerId = null;
@@ -5766,10 +5996,11 @@ async function loadPlayerCard(){
   const season = seasonSelect.value;
   const playerId = playerSelect.value;
   if(!playerId){
-    setDefaultHeadshot();
-    skaterName.textContent = 'Select a player';
+    if(team) setTeamLogo(team);
+    else setDefaultHeadshot();
+    skaterName.textContent = getSelectedTeamName(team) || 'Team';
     skaterInfo.innerHTML = '';
-    setMsg('Choose Team, Season, and Player.');
+    setMsg('');
     return;
   }
   localStorage.setItem(`goalies_player_${team}`, String(playerId));
@@ -5805,6 +6036,12 @@ let __gtendActiveShooter = null;
 let __gtendActiveZone = null;
 let __gtendMapMode = 'shot';
 let __gtendShotType = 'all';     // 'all' | 'miss' | 'shot' | 'goal'
+let __gtendDetailsVisible = false;
+let __gtendDetailFilters = { opponent:'', games:'', scoreState:'', position:'', shoots:'' };
+let __gtendDetailShotType = '';
+let __gtendDetailOutcome = '';
+let __gtendDetailTypeChart = null;
+let __gtendDetailOutcomeChart = null;
 
 const gtendContent = document.getElementById('gtendContent');
 const gtendEmpty = document.getElementById('gtendEmpty');
@@ -5815,6 +6052,320 @@ const gtendRinkWrap = document.getElementById('gtendRinkWrap');
 const gtendSlicerSummary = document.getElementById('gtendSlicerSummary');
 const gtendVideoBtn = document.getElementById('gtendVideoBtn');
 const gtendVideoList = document.getElementById('gtendVideoList');
+const gtendDetailsPanel = document.getElementById('gtendDetailsPanel');
+const gtendDetailOpponent = document.getElementById('gtendDetailOpponent');
+const gtendDetailGames = document.getElementById('gtendDetailGames');
+const gtendDetailScoreState = document.getElementById('gtendDetailScoreState');
+const gtendDetailPosition = document.getElementById('gtendDetailPosition');
+const gtendDetailShoots = document.getElementById('gtendDetailShoots');
+const gtendDetailPositionWrap = document.getElementById('gtendDetailPositionWrap');
+const gtendDetailShootsWrap = document.getElementById('gtendDetailShootsWrap');
+const gtendDetailTypeCanvas = document.getElementById('gtendDetailTypeChart');
+const gtendDetailOutcomeCanvas = document.getElementById('gtendDetailOutcomeChart');
+
+const GTEND_DETAIL_GAME_VALUES = ['5', '10', '20', '40'];
+const GTEND_DETAIL_TYPE_ORDER = ['Wrist', 'Snap', 'Slap', 'Backhand', 'Tip-In', 'Deflected', 'Wrap-Around', 'Other'];
+
+function getGtendPlayerSelected(){
+  return !!String(playerSelect?.value || '').trim();
+}
+
+function getGtendOutcome(e){
+  const outcome = String(e?.outcome || '').trim();
+  if(outcome) return outcome;
+  if(Number(e?.goal || 0) === 1) return 'Goal';
+  if(Number(e?.shot || 0) === 1) return 'On Net';
+  if(Number(e?.isBlocked || 0) === 1 || (Number(e?.corsi || 0) === 1 && Number(e?.fenwick || 0) !== 1)) return 'Block';
+  return 'Miss';
+}
+
+function formatGtendTypeLabel(raw){
+  const value = String(raw || '').trim().toLowerCase();
+  if(!value) return 'Other';
+  return value
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean)
+    .map(part => part.length <= 2 ? part.toUpperCase() : (part.charAt(0).toUpperCase() + part.slice(1)))
+    .join('-') || 'Other';
+}
+
+function getGtendTypeKey(e){
+  return formatGtendTypeLabel(e?.shotType);
+}
+
+function normalizeGtendScoreStateValue(value){
+  const num = Number(value);
+  if(!Number.isFinite(num)) return '';
+  return String(num < -2 ? -3 : num > 2 ? 3 : Math.trunc(num));
+}
+
+function formatGtendScoreStateLabel(value){
+  const num = Number(value);
+  if(!Number.isFinite(num)) return String(value || '');
+  if(num === 0) return 'Tied';
+  const display = Math.abs(num) >= 3 ? '3+' : String(Math.abs(Math.trunc(num)));
+  return `${num > 0 ? 'Leading' : 'Trailing'} ${display}`;
+}
+
+function normalizeGtendHandednessValue(value){
+  const raw = String(value || '').trim().toUpperCase();
+  if(!raw) return '';
+  if(raw.startsWith('L')) return 'L';
+  if(raw.startsWith('R')) return 'R';
+  return raw.slice(0, 1);
+}
+
+function getGtendRecentGameIds(events, limit){
+  const maxGames = Number(limit);
+  if(!Number.isFinite(maxGames) || maxGames <= 0) return new Set();
+  const gameIds = Array.from(new Set((events || []).map(e => Number(e?.gameId || 0)).filter(v => Number.isFinite(v) && v > 0))).sort((a, b) => b - a);
+  return new Set(gameIds.slice(0, maxGames));
+}
+
+function setGtendSelectOptions(selectEl, options, currentValue, allLabel){
+  if(!selectEl) return '';
+  const fragment = document.createDocumentFragment();
+  const baseOption = document.createElement('option');
+  baseOption.value = '';
+  baseOption.textContent = allLabel;
+  fragment.appendChild(baseOption);
+  const allowed = new Set();
+  for(const option of options){
+    const node = document.createElement('option');
+    node.value = String(option.value);
+    node.textContent = String(option.label);
+    fragment.appendChild(node);
+    allowed.add(String(option.value));
+  }
+  selectEl.innerHTML = '';
+  selectEl.appendChild(fragment);
+  const nextValue = allowed.has(String(currentValue || '')) ? String(currentValue) : '';
+  selectEl.value = nextValue;
+  return nextValue;
+}
+
+function updateGtendDetailFieldVisibility(){
+  const showShooterFields = !getGtendPlayerSelected();
+  if(gtendDetailPositionWrap) gtendDetailPositionWrap.hidden = !showShooterFields;
+  if(gtendDetailShootsWrap) gtendDetailShootsWrap.hidden = !showShooterFields;
+}
+
+function destroyGtendDetailCharts(){
+  try{ __gtendDetailTypeChart?.destroy(); }catch(_){/* noop */}
+  try{ __gtendDetailOutcomeChart?.destroy(); }catch(_){/* noop */}
+  __gtendDetailTypeChart = null;
+  __gtendDetailOutcomeChart = null;
+}
+
+function getGtendEventsForFilters(options = {}){
+  if(!__gtendData) return [];
+  const ignoreShooter = !!options.ignoreShooter;
+  const ignoreZone = !!options.ignoreZone;
+  const ignoreMapShotType = !!options.ignoreMapShotType;
+  const ignoreDetails = !!options.ignoreDetails;
+  const ignoreDetailType = !!options.ignoreDetailType;
+  const ignoreOutcome = !!options.ignoreOutcome;
+  const includeBlocked = !!options.includeBlocked;
+
+  let evts = Array.isArray(__gtendData.events) ? __gtendData.events.slice() : [];
+  if(!ignoreShooter && __gtendActiveShooter) evts = evts.filter(e => e.playerId === __gtendActiveShooter);
+  if(!ignoreZone && __gtendActiveZone) evts = evts.filter(e => e.boxId === __gtendActiveZone);
+
+  if(__gtendDetailsVisible && !ignoreDetails){
+    if(__gtendDetailFilters.games){
+      const recentGameIds = getGtendRecentGameIds(evts, __gtendDetailFilters.games);
+      if(recentGameIds.size) evts = evts.filter(e => recentGameIds.has(Number(e?.gameId || 0)));
+    }
+    if(__gtendDetailFilters.opponent) evts = evts.filter(e => String(e?.eventTeam || '').toUpperCase() === __gtendDetailFilters.opponent);
+    if(__gtendDetailFilters.scoreState !== '') evts = evts.filter(e => normalizeGtendScoreStateValue(e?.scoreState) === __gtendDetailFilters.scoreState);
+    if(!getGtendPlayerSelected()){
+      if(__gtendDetailFilters.position) evts = evts.filter(e => String(e?.position || '').toUpperCase() === __gtendDetailFilters.position);
+      if(__gtendDetailFilters.shoots) evts = evts.filter(e => normalizeGtendHandednessValue(e?.shoots) === __gtendDetailFilters.shoots);
+    }
+    if(!ignoreDetailType && __gtendDetailShotType) evts = evts.filter(e => getGtendTypeKey(e) === __gtendDetailShotType);
+    if(!ignoreOutcome && __gtendDetailOutcome) evts = evts.filter(e => getGtendOutcome(e) === __gtendDetailOutcome);
+  }
+
+  const allowBlocked = includeBlocked || (__gtendDetailsVisible && __gtendDetailOutcome === 'Block' && !ignoreOutcome);
+  if(!allowBlocked) evts = evts.filter(e => getGtendOutcome(e) !== 'Block');
+
+  if(!ignoreMapShotType){
+    if(__gtendShotType === 'goal') evts = evts.filter(e => getGtendOutcome(e) === 'Goal');
+    else if(__gtendShotType === 'shot') evts = evts.filter(e => getGtendOutcome(e) === 'On Net');
+    else if(__gtendShotType === 'miss') evts = evts.filter(e => getGtendOutcome(e) === 'Miss');
+  }
+  return evts;
+}
+
+function populateGtendDetailsControls(){
+  if(!gtendDetailsPanel) return;
+  updateGtendDetailFieldVisibility();
+  const baseEvents = getGtendEventsForFilters({ ignoreDetails: true, includeBlocked: true });
+  const opponents = Array.from(new Set(baseEvents.map(e => String(e?.eventTeam || '').toUpperCase()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const scoreStates = Array.from(new Set(baseEvents.map(e => normalizeGtendScoreStateValue(e?.scoreState)).filter(v => v !== '')))
+    .map(v => Number(v))
+    .filter(v => Number.isFinite(v))
+    .sort((a, b) => a - b);
+  const positions = ['F', 'D'].filter(pos => baseEvents.some(e => String(e?.position || '').toUpperCase() === pos));
+  const shoots = ['L', 'R'].filter(side => baseEvents.some(e => normalizeGtendHandednessValue(e?.shoots) === side));
+
+  __gtendDetailFilters.opponent = setGtendSelectOptions(
+    gtendDetailOpponent,
+    opponents.map(value => ({ value, label: value })),
+    __gtendDetailFilters.opponent,
+    'All teams'
+  );
+  __gtendDetailFilters.games = setGtendSelectOptions(
+    gtendDetailGames,
+    GTEND_DETAIL_GAME_VALUES.map(value => ({ value, label: `Last ${value}` })),
+    __gtendDetailFilters.games,
+    'All games'
+  );
+  __gtendDetailFilters.scoreState = setGtendSelectOptions(
+    gtendDetailScoreState,
+    scoreStates.map(value => ({ value: String(value), label: formatGtendScoreStateLabel(value) })),
+    __gtendDetailFilters.scoreState,
+    'All score states'
+  );
+  __gtendDetailFilters.position = setGtendSelectOptions(
+    gtendDetailPosition,
+    positions.map(value => ({ value, label: value })),
+    __gtendDetailFilters.position,
+    'All positions'
+  );
+  __gtendDetailFilters.shoots = setGtendSelectOptions(
+    gtendDetailShoots,
+    shoots.map(value => ({ value, label: value })),
+    __gtendDetailFilters.shoots,
+    'All handedness'
+  );
+}
+
+function updateGtendSlicerSummary(){
+  if(!gtendSlicerSummary) return;
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : null) || seasonSelect?.value || '';
+  const ss = cardSeasonState?.value || 'regular';
+  const str = cardStrengthState?.value || '5v5';
+  const xm = cardXgModel?.value || 'xG_F';
+  const sn = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : (season ? (season.slice(0, 4) + '/' + season.slice(4)) : '');
+  const parts = [sn, ss === 'playoffs' ? 'Playoffs' : ss === 'all' ? 'All' : 'Regular', str, xm.replace('_', ' ')].filter(Boolean);
+  if(__gtendDetailsVisible){
+    if(__gtendDetailFilters.opponent) parts.push(`Opp ${__gtendDetailFilters.opponent}`);
+    if(__gtendDetailFilters.games) parts.push(`Last ${__gtendDetailFilters.games}`);
+    if(__gtendDetailFilters.scoreState !== '') parts.push(formatGtendScoreStateLabel(__gtendDetailFilters.scoreState));
+    if(!getGtendPlayerSelected()){
+      if(__gtendDetailFilters.position) parts.push(`Shooter ${__gtendDetailFilters.position}`);
+      if(__gtendDetailFilters.shoots) parts.push(`Shoots ${__gtendDetailFilters.shoots}`);
+    }
+    if(__gtendDetailShotType) parts.push(`Type ${__gtendDetailShotType}`);
+    if(__gtendDetailOutcome) parts.push(`Outcome ${__gtendDetailOutcome}`);
+  }
+  gtendSlicerSummary.textContent = parts.join(' – ');
+  gtendSlicerSummary.style.fontStyle = 'italic';
+}
+
+function renderGtendDetailCharts(){
+  if(!__gtendDetailsVisible || !gtendDetailTypeCanvas || !gtendDetailOutcomeCanvas || typeof Chart === 'undefined'){
+    destroyGtendDetailCharts();
+    return;
+  }
+
+  const typeEvents = getGtendEventsForFilters({ ignoreDetailType: true }).filter(evt => getGtendOutcome(evt) !== 'Block');
+  const outcomeEvents = getGtendEventsForFilters({ includeBlocked: true, ignoreOutcome: true });
+
+  const typeCounts = new Map();
+  for(const evt of typeEvents){
+    const label = getGtendTypeKey(evt);
+    typeCounts.set(label, (typeCounts.get(label) || 0) + 1);
+  }
+  let typeLabels = Array.from(typeCounts.keys());
+  typeLabels.sort((left, right) => {
+    const leftIdx = GTEND_DETAIL_TYPE_ORDER.indexOf(left);
+    const rightIdx = GTEND_DETAIL_TYPE_ORDER.indexOf(right);
+    if(leftIdx !== -1 || rightIdx !== -1) return (leftIdx === -1 ? 999 : leftIdx) - (rightIdx === -1 ? 999 : rightIdx);
+    const diff = (typeCounts.get(right) || 0) - (typeCounts.get(left) || 0);
+    return diff || left.localeCompare(right);
+  });
+  if(!typeLabels.length) typeLabels = ['No Data'];
+  const typeValues = typeLabels.map(label => typeCounts.get(label) || 0);
+
+  const outcomeLabels = ['Block', 'Miss', 'On Net', 'Goal'];
+  const outcomeValues = outcomeLabels.map(label => outcomeEvents.filter(evt => getGtendOutcome(evt) === label).length);
+
+  destroyGtendDetailCharts();
+
+  __gtendDetailTypeChart = new Chart(gtendDetailTypeCanvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: typeLabels,
+      datasets: [{
+        data: typeValues,
+        borderWidth: 1,
+        borderRadius: 8,
+        maxBarThickness: 52,
+        borderColor: typeLabels.map(label => label === __gtendDetailShotType ? 'rgba(77,163,255,1)' : 'rgba(77,163,255,0.45)'),
+        backgroundColor: typeLabels.map(label => label === __gtendDetailShotType ? 'rgba(77,163,255,0.95)' : 'rgba(77,163,255,0.35)')
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.raw || 0} attempts` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: 'rgba(255,255,255,0.82)' } },
+        y: { beginAtZero: true, ticks: { precision: 0, color: 'rgba(255,255,255,0.82)' }, grid: { color: 'rgba(255,255,255,0.08)' } }
+      },
+      onClick: (_evt, elements) => {
+        if(!elements?.length || typeLabels[elements[0].index] === 'No Data') return;
+        const label = typeLabels[elements[0].index];
+        __gtendDetailShotType = (__gtendDetailShotType === label) ? '' : label;
+        renderGtendFull();
+      }
+    }
+  });
+
+  __gtendDetailOutcomeChart = new Chart(gtendDetailOutcomeCanvas.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: outcomeLabels,
+      datasets: [{
+        data: outcomeValues,
+        borderWidth: 1,
+        hoverOffset: 8,
+        borderColor: ['rgba(148,163,184,0.95)', 'rgba(245,158,11,0.95)', 'rgba(59,130,246,0.95)', 'rgba(34,197,94,0.95)'],
+        backgroundColor: outcomeLabels.map(label => {
+          const isActive = __gtendDetailOutcome === label;
+          if(label === 'Block') return isActive ? 'rgba(148,163,184,0.92)' : 'rgba(148,163,184,0.42)';
+          if(label === 'Miss') return isActive ? 'rgba(245,158,11,0.92)' : 'rgba(245,158,11,0.42)';
+          if(label === 'On Net') return isActive ? 'rgba(59,130,246,0.92)' : 'rgba(59,130,246,0.42)';
+          return isActive ? 'rgba(34,197,94,0.92)' : 'rgba(34,197,94,0.42)';
+        })
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      cutout: '58%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.82)', boxWidth: 12 } },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.raw || 0}` } }
+      },
+      onClick: (_evt, elements) => {
+        if(!elements?.length) return;
+        const label = outcomeLabels[elements[0].index];
+        __gtendDetailOutcome = (__gtendDetailOutcome === label) ? '' : label;
+        renderGtendFull();
+      }
+    }
+  });
+}
 
 // ── Shared Video Player (native <video> + Brightcove Playback API) ───
 const _vOverlay = document.getElementById('videoOverlay');
@@ -5986,9 +6537,33 @@ document.querySelectorAll('.gtend-type-btn').forEach(btn => {
     document.querySelectorAll('.gtend-type-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     __gtendShotType = btn.dataset.stype;
-    renderGtendVisuals();
-    updateGtendVideoBtn();
+    renderGtendFull();
   });
+});
+
+gtendDetailOpponent?.addEventListener('change', () => {
+  __gtendDetailFilters.opponent = gtendDetailOpponent.value || '';
+  renderGtendFull();
+});
+
+gtendDetailGames?.addEventListener('change', () => {
+  __gtendDetailFilters.games = gtendDetailGames.value || '';
+  renderGtendFull();
+});
+
+gtendDetailScoreState?.addEventListener('change', () => {
+  __gtendDetailFilters.scoreState = gtendDetailScoreState.value || '';
+  renderGtendFull();
+});
+
+gtendDetailPosition?.addEventListener('change', () => {
+  __gtendDetailFilters.position = gtendDetailPosition.value || '';
+  renderGtendFull();
+});
+
+gtendDetailShoots?.addEventListener('change', () => {
+  __gtendDetailFilters.shoots = gtendDetailShoots.value || '';
+  renderGtendFull();
 });
 
 async function loadGtendGeoJson(){
@@ -6011,18 +6586,12 @@ async function loadGoaltendingPanel(){
   const xm = cardXgModel?.value || 'xG_F';
   const pid = playerSelect?.value || '';
   const key = `${team}|${season}|${ss}|${str}|${xm}|${pid}`;
-
-  if(gtendSlicerSummary){
-    const sn = (typeof window.formatSeasonSelectionLabel === 'function')
-      ? window.formatSeasonSelectionLabel()
-      : (season ? (season.slice(0,4)+'/'+season.slice(4)) : '');
-    gtendSlicerSummary.textContent = `${sn} – ${ss==='playoffs'?'Playoffs':ss==='all'?'All':'Regular'} – ${str} – ${xm.replace('_',' ')}`;
-    gtendSlicerSummary.style.fontStyle = 'italic';
-  }
+  updateGtendSlicerSummary();
 
   if(!team || !season){
     if(gtendEmpty) gtendEmpty.style.display = '';
     if(gtendContent) gtendContent.style.display = 'none';
+    destroyGtendDetailCharts();
     return;
   }
 
@@ -6052,6 +6621,9 @@ async function loadGoaltendingPanel(){
     __gtendActiveShooter = null;
     __gtendActiveZone = null;
     __gtendShotType = 'all';
+    __gtendDetailFilters = { opponent:'', games:'', scoreState:'', position:'', shoots:'' };
+    __gtendDetailShotType = '';
+    __gtendDetailOutcome = '';
     document.querySelectorAll('.gtend-type-btn').forEach(b => b.classList.toggle('active', b.dataset.stype==='all'));
     await loadGtendGeoJson();
     renderGtendFull();
@@ -6061,33 +6633,48 @@ async function loadGoaltendingPanel(){
   }
 }
 
+function setGoaltendingDetailsVisible(visible){
+  __gtendDetailsVisible = !!visible;
+  if(btnToggleGoaltendingDetails) btnToggleGoaltendingDetails.textContent = __gtendDetailsVisible ? 'Hide Details' : 'Show Details';
+  gtendContent?.classList.toggle('details-visible', __gtendDetailsVisible);
+  if(!__gtendDetailsVisible) destroyGtendDetailCharts();
+  if(__gtendData) renderGtendFull();
+}
+
 function renderGtendFull(){
   if(!__gtendData) return;
   if(gtendEmpty) gtendEmpty.style.display = 'none';
   if(gtendContent) gtendContent.style.display = '';
+  populateGtendDetailsControls();
+  updateGtendSlicerSummary();
   renderGtendKpis();
   renderGtendTable();
   renderGtendVisuals();
+  renderGtendDetailCharts();
   updateGtendVideoBtn();
 }
 
 function getFilteredGtendEvents(){
-  if(!__gtendData) return [];
-  let evts = __gtendData.events || [];
-  if(__gtendActiveShooter) evts = evts.filter(e => e.playerId === __gtendActiveShooter);
-  if(__gtendActiveZone) evts = evts.filter(e => e.boxId === __gtendActiveZone);
-  if(__gtendShotType === 'goal') evts = evts.filter(e => e.goal === 1);
-  else if(__gtendShotType === 'shot') evts = evts.filter(e => e.shot === 1 && e.goal !== 1);
-  else if(__gtendShotType === 'miss') evts = evts.filter(e => e.shot !== 1 && e.goal !== 1);
-  return evts;
+  return getGtendEventsForFilters();
 }
 
 function computeGtendKpis(evts){
-  let sa=0, xga=0, ga=0;
-  for(const e of evts){ sa++; xga += e.xG||0; if(e.goal) ga++; }
+  let sa=0, xga=0, ga=0, distanceSum=0, distanceCount=0;
+  for(const e of evts){
+    sa++;
+    xga += Number(e.xG) || 0;
+    if(e.goal) ga++;
+    if(getGtendOutcome(e) !== 'Block'){
+      const distance = Number(e.shotDistance);
+      if(Number.isFinite(distance)){
+        distanceSum += distance;
+        distanceCount++;
+      }
+    }
+  }
   const svPct = sa? ((sa-ga)/sa*100):0;
   const xSvPct = sa? ((sa-xga)/sa*100):0;
-  return {sa, xGA:xga, ga, gsax:xga-ga, svPct, xSvPct, dSvPct:svPct-xSvPct};
+  return {sa, xGA:xga, ga, gsax:xga-ga, svPct, xSvPct, dSvPct:svPct-xSvPct, shotDistance: distanceCount ? (distanceSum / distanceCount) : null};
 }
 
 function renderGtendKpis(){
@@ -6106,24 +6693,28 @@ function renderGtendKpis(){
   set('gtendKpiXSvPct', k.xSvPct.toFixed(1)+'%');
   const dStr = (k.dSvPct>=0?'+':'')+k.dSvPct.toFixed(1)+'%';
   set('gtendKpiDSvPct', dStr, k.dSvPct>=0?'pos':'neg');
+  set('gtendKpiShotDistance', k.shotDistance == null ? '-- ft' : `${k.shotDistance.toFixed(1)} ft`);
 }
 
 function renderGtendTable(){
   if(!gtendShooterTbody || !__gtendData) return;
-  let shooters = __gtendData.shooters || [];
-  if(__gtendActiveZone){
-    const evts = __gtendData.events.filter(e => e.boxId === __gtendActiveZone);
-    const nameMap = {};
-    for(const os of (__gtendData.shooters||[])) nameMap[os.playerId] = os.name || String(os.playerId);
-    const agg = {};
-    for(const e of evts){
-      const pid = e.playerId; if(!pid) continue;
-      if(!agg[pid]) agg[pid] = {playerId:pid, name:nameMap[pid]||String(pid), sa:0, xGA:0, ga:0};
-      agg[pid].sa++; agg[pid].xGA += e.xG||0; if(e.goal) agg[pid].ga++;
-    }
-    shooters = Object.values(agg).map(s => ({...s, gsax:+(s.xGA-s.ga).toFixed(2), xGA:+s.xGA.toFixed(2)}));
-    shooters.sort((a,b) => b.gsax - a.gsax);
+  const evts = getGtendEventsForFilters({ ignoreShooter: true });
+  const nameMap = {};
+  for(const shooter of (__gtendData.shooters || [])) nameMap[shooter.playerId] = shooter.name || String(shooter.playerId);
+  for(const evt of (__gtendData.events || [])){
+    if(evt.playerId && evt.playerName && !nameMap[evt.playerId]) nameMap[evt.playerId] = evt.playerName;
   }
+  const agg = {};
+  for(const e of evts){
+    const pid = e.playerId;
+    if(!pid) continue;
+    if(!agg[pid]) agg[pid] = {playerId:pid, name:nameMap[pid] || String(pid), sa:0, xGA:0, ga:0};
+    agg[pid].sa++;
+    agg[pid].xGA += Number(e.xG) || 0;
+    if(e.goal) agg[pid].ga++;
+  }
+  const shooters = Object.values(agg).map(s => ({ ...s, gsax:+(s.xGA-s.ga).toFixed(2), xGA:+s.xGA.toFixed(2) }))
+    .sort((a,b) => (b.gsax - a.gsax) || (b.sa - a.sa) || String(a.name).localeCompare(String(b.name)));
   gtendShooterTbody.innerHTML = '';
   for(const s of shooters){
     const tr = document.createElement('tr');
@@ -6133,10 +6724,7 @@ function renderGtendTable(){
     tr.innerHTML = `<td>${s.name||s.playerId}</td><td class="num">${s.sa}</td><td class="num">${s.xGA.toFixed(2)}</td><td class="num">${s.ga}</td><td class="num"><span class="val ${gsaxCls}" style="font-size:13px;">${s.gsax>=0?'+':''}${s.gsax.toFixed(2)}</span></td>`;
     tr.addEventListener('click', () => {
       __gtendActiveShooter = (__gtendActiveShooter === s.playerId) ? null : s.playerId;
-      renderGtendKpis();
-      renderGtendTable();
-      renderGtendVisuals();
-      updateGtendVideoBtn();
+      renderGtendFull();
     });
     gtendShooterTbody.appendChild(tr);
   }
@@ -6162,7 +6750,7 @@ function renderGtendShotMap(){
   ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
   ctx.clearRect(0, 0, W, H);
 
-  const evts = getFilteredGtendEvents();
+  const evts = getFilteredGtendEvents().filter(e => getGtendOutcome(e) !== 'Block');
   const xMin=25, xMax=100, yMin=-42.5, yMax=42.5;
   const pad = 10;
   const scaleX = (W - 2*pad) / (xMax - xMin);
@@ -6199,12 +6787,7 @@ function renderGtendHeatMap(){
   if(!gtendHeatSvg || !__gtendData || !__gtendGeoJson) return;
   gtendHeatSvg.innerHTML = '';
 
-  // Heat map always shows ALL events (filtered by shooter + shot type, but NOT by zone)
-  let heatEvts = __gtendData.events || [];
-  if(__gtendActiveShooter) heatEvts = heatEvts.filter(e => e.playerId === __gtendActiveShooter);
-  if(__gtendShotType === 'goal') heatEvts = heatEvts.filter(e => e.goal === 1);
-  else if(__gtendShotType === 'shot') heatEvts = heatEvts.filter(e => e.shot === 1 && e.goal !== 1);
-  else if(__gtendShotType === 'miss') heatEvts = heatEvts.filter(e => e.shot !== 1 && e.goal !== 1);
+  const heatEvts = getGtendEventsForFilters({ ignoreZone: true }).filter(e => getGtendOutcome(e) !== 'Block');
 
   const zoneCounts = {};
   for(const e of heatEvts){
@@ -6237,10 +6820,7 @@ function renderGtendHeatMap(){
     if(__gtendActiveZone === id) poly.classList.add('zone-selected');
     poly.addEventListener('click', () => {
       __gtendActiveZone = (__gtendActiveZone === id) ? null : id;
-      renderGtendKpis();
-      renderGtendTable();
-      renderGtendHeatMap();
-      updateGtendVideoBtn();
+      renderGtendFull();
     });
     gtendHeatSvg.appendChild(poly);
 
@@ -6373,6 +6953,8 @@ btnExportChartsPng?.addEventListener('click', async ()=>{ await exportChartsPng(
 btnShareChartsPng?.addEventListener('click', async ()=>{ await openShareModal('charts'); });
 btnExportGoaltendingPng?.addEventListener('click', async ()=>{ await exportGoaltendingPng(); });
 btnShareGoaltendingPng?.addEventListener('click', async ()=>{ await openShareModal('goaltending'); });
+btnToggleGoaltendingDetails?.addEventListener('click', ()=>{ setGoaltendingDetailsVisible(!__gtendDetailsVisible); });
+setGoaltendingDetailsVisible(false);
 btnExportTablePng?.addEventListener('click', async ()=>{ await exportTablePng(); });
 btnShareTablePng?.addEventListener('click', async ()=>{ await openShareModal('table'); });
 btnExportTableCsv?.addEventListener('click', async ()=>{ await exportTableCsv(); });
