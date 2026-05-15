@@ -5681,6 +5681,55 @@ def api_player_current_projections():
     return j
 
 
+@main_bp.route('/api/player-current-projections/public')
+def api_player_current_projections_public():
+    """Public current-projections feed with only selected columns.
+
+    Query params (optional):
+      season=<int>      default: current season id
+      model_key=<text>  default: preseason_updating
+    """
+    season_raw = str(request.args.get('season') or '').strip()
+    model_key = str(request.args.get('model_key') or 'preseason_updating').strip() or 'preseason_updating'
+
+    season_i = _safe_int(season_raw) if season_raw else _safe_int(current_season_id())
+    filters: Dict[str, str] = {}
+    if season_i and season_i > 0:
+        filters['season'] = f'eq.{int(season_i)}'
+    if model_key:
+        filters['model_key'] = f'eq.{model_key}'
+
+    rows = _sb_read(
+        'player_current_projections',
+        columns='player_id,player,raw_projected_value,projected_value,generated_at',
+        filters=filters or None,
+    ) or []
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        try:
+            pid_i = _safe_int((r or {}).get('player_id'))
+            if not pid_i or pid_i <= 0:
+                continue
+            out.append({
+                'player_id': int(pid_i),
+                'player': str((r or {}).get('player') or '').strip(),
+                'raw_projected_value': _parse_locale_float((r or {}).get('raw_projected_value')),
+                'projected_value': _parse_locale_float((r or {}).get('projected_value')),
+                'generated_at': (r or {}).get('generated_at'),
+            })
+        except Exception:
+            continue
+
+    out.sort(key=lambda row: float(row.get('projected_value') or 0.0), reverse=True)
+    j = jsonify({'rows': out})
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
 _PLAYOFF_SERIES_HOME_PATTERN: Tuple[bool, ...] = (True, True, False, False, True, False, True)
 _PLAYOFF_RESTED_RESTED_SITUATION = -0.153396566
 _PLAYOFF_SERIES_ORDER: Tuple[str, ...] = ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O')
