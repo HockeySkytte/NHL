@@ -34,6 +34,37 @@ def get_client() -> Client:
     return create_client(url, key)
 
 
+# Global client cache — call _reset_client() before heavy reads to get
+# a fresh HTTP connection pool (prevents WinError 10035 socket exhaustion).
+_client: Client | None = None
+
+
+def _get_or_create_client() -> Client:
+    global _client
+    if _client is None:
+        _client = get_client()
+    return _client
+
+
+def _reset_client() -> None:
+    """Close the cached Supabase client and create a fresh one.
+
+    Call this before large REST reads (e.g. team stats rebuild) to ensure
+    a clean HTTP connection pool.  Without this, sockets accumulated during
+    bulk exports exhaust the ephemeral port range on Windows.
+    """
+    global _client
+    if _client is not None:
+        try:
+            # Close the underlying httpx transport to free sockets
+            transport = getattr(_client, 'transport', None)
+            if transport is not None and hasattr(transport, 'close'):
+                transport.close()
+        except Exception:
+            pass
+        _client = None
+
+
 def auth_is_configured() -> bool:
     return bool(os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_KEY"))
 
@@ -335,7 +366,10 @@ def read_table(table: str, columns: str = "*", filters: dict | None = None,
     import time as _time
     PAGE = 1000
     MAX_RETRIES = 4
-    sb = get_client()
+    # Small delay between pages to prevent socket exhaustion on Windows
+    # when reading large tables (3M+ rows = 3000+ pages).
+    PAGE_DELAY = 0.05
+    sb = _get_or_create_client()
     rows: list[dict] = []
     offset = 0
     while True:
@@ -364,6 +398,7 @@ def read_table(table: str, columns: str = "*", filters: dict | None = None,
         if len(batch) < PAGE or (limit and len(rows) >= limit):
             break
         offset += PAGE
+        _time.sleep(PAGE_DELAY)
     if limit:
         rows = rows[:limit]
     return pd.DataFrame(rows)

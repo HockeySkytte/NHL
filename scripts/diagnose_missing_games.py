@@ -32,7 +32,7 @@ def _season_date_bounds(season: str) -> tuple:
     s = str(season).strip()
     start_year = int(s[:4])
     end_year = int(s[4:])
-    return date(start_year, 9, 1), date(end_year, 7, 1)
+    return date(start_year, 9, 1), date(end_year, 10, 1)
 
 
 def get_all_games_for_season(season: str) -> List[dict]:

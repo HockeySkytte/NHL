@@ -64,15 +64,16 @@ def _validate_date(d: str) -> str:
 def _season_date_bounds(season: str) -> Tuple[date, date]:
     """Return a conservative inclusive date window for an NHL season code.
 
-    Example: 20242025 -> 2024-09-01 through 2025-07-01.
-    This comfortably covers preseason through the Stanley Cup Final.
+    Example: 20242025 -> 2024-09-01 through 2025-10-01.
+    The end bound is October 1 to cover delayed playoffs (e.g. the 2020
+    Stanley Cup Final was played in September 2020 due to COVID).
     """
     s = str(season).strip()
     if len(s) != 8 or not s.isdigit():
         raise ValueError(f'Invalid season code: {season!r}')
     start_year = int(s[:4])
     end_year = int(s[4:])
-    return date(start_year, 9, 1), date(end_year, 7, 1)
+    return date(start_year, 9, 1), date(end_year, 10, 1)
 
 
 def iter_date_strings(start_date: str, end_date: str) -> List[str]:
@@ -1775,9 +1776,13 @@ def rebuild_team_seasonstats_from_supabase(season: str = '20252026') -> None:
     """
     from dotenv import load_dotenv
     load_dotenv()
-    from app.supabase_client import read_table, upsert_df, delete_rows
+    from app.supabase_client import read_table, upsert_df, delete_rows, _reset_client
 
     season_i = _season_int(str(season).strip())
+
+    # Get a fresh HTTP connection pool to avoid WinError 10035 socket
+    # exhaustion after bulk exports.
+    _reset_client()
 
     # Aggregate via REST API
     print(f"[team-seasonstats] reading PBP for season {season_i} via REST API ...")
@@ -2612,7 +2617,11 @@ def rebuild_line_combos(season: str = '20242025') -> None:
     from collections import defaultdict
     from dotenv import load_dotenv
     load_dotenv()
-    from app.supabase_client import read_table, upsert_df, delete_rows
+    from app.supabase_client import read_table, upsert_df, delete_rows, _reset_client
+
+    # Get a fresh HTTP connection pool to avoid WinError 10035 socket
+    # exhaustion after bulk exports.
+    _reset_client()
 
     season_int = int(season)
     print(f'[lines] rebuilding forward_lines / defense_pairings for season {season} …')
@@ -2847,7 +2856,9 @@ def rebuild_line_combos_date(season: str, game_ids: List[int]) -> None:
     from collections import defaultdict
     from dotenv import load_dotenv
     load_dotenv()
-    from app.supabase_client import read_table, upsert_df
+    from app.supabase_client import read_table, upsert_df, _reset_client
+
+    _reset_client()
 
     season_int = int(season)
     print(f'[lines-date] updating line combos for {len(game_ids)} games …')
