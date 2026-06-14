@@ -332,7 +332,9 @@ def read_table(table: str, columns: str = "*", filters: dict | None = None,
         filters: Dict of PostgREST filters, e.g. {"season": "eq.20252026"}.
         limit:   Max rows to return (None = all).
     """
+    import time as _time
     PAGE = 1000
+    MAX_RETRIES = 4
     sb = get_client()
     rows: list[dict] = []
     offset = 0
@@ -346,7 +348,18 @@ def read_table(table: str, columns: str = "*", filters: dict | None = None,
                     q = q.in_(col, val_list)
                 else:
                     q = getattr(q, op)(col, val)
-        batch = q.execute().data
+        batch = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                batch = q.execute().data
+                break
+            except OSError:
+                if attempt < MAX_RETRIES - 1:
+                    _time.sleep((attempt + 1) * 2.0)
+                else:
+                    raise
+        if batch is None:
+            break
         rows.extend(batch)
         if len(batch) < PAGE or (limit and len(rows) >= limit):
             break

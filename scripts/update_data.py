@@ -1771,26 +1771,15 @@ def rebuild_seasonstats_from_gamedata(season: str = '20252026') -> None:
 def rebuild_team_seasonstats_from_supabase(season: str = '20252026') -> None:
     """Rebuild season_stats_teams from Supabase pbp + shifts tables.
 
-    Uses direct Postgres connection (SUPABASE_DB_URL) if available, otherwise
-    falls back to Supabase REST API (slower but works).
-    Upserts results to season_stats_teams in Supabase.
+    Uses the Supabase REST API.  Upserts results to season_stats_teams.
     """
     from dotenv import load_dotenv
     load_dotenv()
     from app.supabase_client import read_table, upsert_df, delete_rows
 
     season_i = _season_int(str(season).strip())
-    db_url = os.environ.get('SUPABASE_DB_URL', '')
 
-    # Try direct Postgres path first
-    if db_url:
-        try:
-            _rebuild_team_seasonstats_sql(season_i, db_url)
-            return
-        except Exception as e:
-            print(f"[team-seasonstats] Postgres failed ({e}); falling back to REST API ...")
-
-    # Fallback: aggregate via REST API in Python
+    # Aggregate via REST API
     print(f"[team-seasonstats] reading PBP for season {season_i} via REST API ...")
     pbp = read_table("pbp", columns="game_id,season_state,strength_state,event_team,opponent,corsi,fenwick,shot,goal,xg_f,xg_s,xg_f2,pen_duration",
                       filters={"season": f"eq.{season_i}"})
@@ -1875,112 +1864,6 @@ def rebuild_team_seasonstats_from_supabase(season: str = '20252026') -> None:
     for c in df.columns:
         if c not in key_cols:
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-    df['season'] = season_i
-
-    print(f"[team-seasonstats] built {len(df)} team/state rows")
-
-    try:
-        delete_rows("season_stats_teams", {"season": f"eq.{season_i}"})
-    except Exception as e:
-        print(f"[team-seasonstats] delete warning: {e}")
-
-    upsert_df("season_stats_teams", df, on_conflict="season,season_state,strength_state,team")
-    print(f"[team-seasonstats] upserted {len(df)} rows to season_stats_teams")
-
-
-def _rebuild_team_seasonstats_sql(season_i: int, db_url: str) -> None:
-    """Internal: Rebuild team seasonstats using direct Postgres SQL."""
-    from app.supabase_client import upsert_df, delete_rows
-    from sqlalchemy import create_engine, text as sa_text
-    from sqlalchemy.engine.url import make_url
-
-    parsed = make_url(db_url)
-    eng = create_engine(parsed)
-
-    print(f"[team-seasonstats] aggregating PBP via SQL for season {season_i} ...")
-
-    _sb = """
-        CASE
-            WHEN COALESCE(TRIM(strength_state),'') IN ('5v5','6v5','5v6','6v6') THEN '5v5'
-            WHEN COALESCE(TRIM(strength_state),'') IN ('PP','5v4','5v3','4v3','6v4') THEN 'PP'
-            WHEN COALESCE(TRIM(strength_state),'') IN ('SH','4v5','3v5','3v4','4v6') THEN 'SH'
-            ELSE 'Other'
-        END
-    """.strip()
-
-    sql_events = f"""
-        SELECT
-            COALESCE(NULLIF(TRIM(season_state),''),'regular') AS season_state,
-            {_sb} AS strength_state,
-            UPPER(TRIM(event_team)) AS team,
-            COUNT(DISTINCT game_id) AS gp,
-            SUM(COALESCE(corsi,0))        AS cf,
-            SUM(COALESCE(fenwick,0))       AS ff,
-            SUM(COALESCE(shot,0))          AS sf,
-            SUM(COALESCE(goal,0))          AS gf,
-            SUM(COALESCE(xg_f,0.0))       AS xgf_f,
-            SUM(COALESCE(xg_s,0.0))       AS xgf_s,
-            SUM(COALESCE(xg_f2,0.0))      AS xgf_f2,
-            SUM(COALESCE(pen_duration,0))  AS pim_for
-        FROM pbp
-        WHERE season = :season
-          AND event_team IS NOT NULL AND TRIM(event_team) <> ''
-        GROUP BY 1, 2, 3
-    """
-
-    sql_against = f"""
-        SELECT
-            COALESCE(NULLIF(TRIM(season_state),''),'regular') AS season_state,
-            {_sb} AS strength_state,
-            UPPER(TRIM(opponent)) AS team,
-            SUM(COALESCE(corsi,0))        AS ca,
-            SUM(COALESCE(fenwick,0))       AS fa,
-            SUM(COALESCE(shot,0))          AS sa,
-            SUM(COALESCE(goal,0))          AS ga,
-            SUM(COALESCE(xg_f,0.0))       AS xga_f,
-            SUM(COALESCE(xg_s,0.0))       AS xga_s,
-            SUM(COALESCE(xg_f2,0.0))      AS xga_f2,
-            SUM(COALESCE(pen_duration,0))  AS pim_against
-        FROM pbp
-        WHERE season = :season
-          AND opponent IS NOT NULL AND TRIM(opponent) <> ''
-        GROUP BY 1, 2, 3
-    """
-
-    _sb_shifts = _sb.replace('strength_state', 's.strength_state')
-    sql_toi = f"""
-        SELECT
-            COALESCE(NULLIF(TRIM(p.season_state),''),'regular') AS season_state,
-            {_sb_shifts} AS strength_state,
-            UPPER(TRIM(s.team)) AS team,
-            SUM(COALESCE(s.duration,0)) / 60.0 AS toi
-        FROM shifts s
-        JOIN (
-            SELECT DISTINCT game_id,
-                   COALESCE(NULLIF(TRIM(season_state),''),'regular') AS season_state
-            FROM pbp WHERE season = :season
-        ) p ON p.game_id = s.game_id
-        WHERE s.season = :season
-        GROUP BY 1, 2, 3
-    """
-
-    with eng.connect() as conn:
-        params = {"season": season_i}
-        df_for = pd.read_sql(sa_text(sql_events), conn, params=params)
-        df_ag = pd.read_sql(sa_text(sql_against), conn, params=params)
-        df_toi = pd.read_sql(sa_text(sql_toi), conn, params=params)
-
-    if df_for.empty:
-        raise RuntimeError(f"No PBP data for season {season_i}")
-
-    key_cols = ['season_state', 'strength_state', 'team']
-    df = df_for.merge(df_ag, on=key_cols, how='outer')
-    df = df.merge(df_toi, on=key_cols, how='outer')
-
-    for c in df.columns:
-        if c not in key_cols:
-            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-
     df['season'] = season_i
 
     print(f"[team-seasonstats] built {len(df)} team/state rows")
