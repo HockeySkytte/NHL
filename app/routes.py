@@ -17479,6 +17479,7 @@ def api_game_pbp(game_id: int):
     live_ttl = 5  # seconds for live
     std_ttl = int(os.getenv('PBP_CACHE_TTL_SECONDS', '600'))
     xg_scope = _normalize_xg_model_name(request.args.get('xgModel')) or 'all'
+    # xG is always computed; the only cache variation is the model family.
     cache_scope = xg_scope if not lite_mode else f'{xg_scope}_lite'
     cache_key: Any = int(game_id) if cache_scope == 'all' else (int(game_id), cache_scope)
     try:
@@ -18131,8 +18132,9 @@ def api_game_pbp(game_id: int):
         last_event_name = row.get('Event') or last_event_name
         last_game_time = row.get('gameTime') if row.get('gameTime') is not None else last_game_time
 
-    # xG computations using pickled models, skipping ENA strength
-    compute_xg = (request.args.get('xg', '1') != '0') and (os.getenv('XG_DISABLED', '0') != '1')
+    # xG computations using pickled models, skipping ENA strength.
+    # xG is always computed (there is no xg=0 use-case); set XG_DISABLED=1 to skip.
+    compute_xg = (os.getenv('XG_DISABLED', '0') != '1')
     try:
         if not compute_xg:
             raise Exception('xg_disabled')
@@ -19391,7 +19393,7 @@ def _load_game_pbp_payload(game_id: int, xg_model: Optional[str] = None, app_obj
             return None
 
     try:
-        request_path = f'/api/game/{int(game_id)}/play-by-play?xg=1&lite=1'
+        request_path = f'/api/game/{int(game_id)}/play-by-play?lite=1'
         xg_model_name = _normalize_xg_model_name(xg_model)
         if xg_model_name:
             request_path += f'&xgModel={xg_model_name}'

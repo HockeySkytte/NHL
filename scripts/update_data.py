@@ -335,12 +335,12 @@ def export_players_to_mysql(season: str = '20252026') -> None:
 
 def fetch_day(
     date_str: str,
-    with_xg: bool = True,
     *,
     game_ids: Optional[List[int]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Return (df_pbp, df_shifts) for all games played on date_str (YYYY-MM-DD).
     Reuses internal Flask routes via a test client; does not require the dev server to run.
+    xG is always computed (the xg=0 path has been removed).
     """
     game_ids = game_ids if game_ids is not None else get_game_ids_for_date(date_str)
     if not game_ids:
@@ -356,10 +356,10 @@ def fetch_day(
     with app.test_client() as client:
         for gid in game_ids:
             pbp_df = pd.DataFrame()
-            # Play-by-play (optionally compute xG)
+            # Play-by-play (xG always computed); force=1 ensures fresh data.
             resp_pbp = client.get(
                 f'/api/game/{gid}/play-by-play',
-                query_string={'xg': ('1' if with_xg else '0')}
+                query_string={'force': '1'}
             )
             if resp_pbp.status_code == 200:
                 js = resp_pbp.get_json(silent=True) or {}
@@ -1563,13 +1563,14 @@ def export_to_supabase(
         # player_id becomes space-separated string of all player IDs
         group_cols = ['shift_index', 'game_id', 'team', 'season']
         dfs['player_id'] = dfs['player_id'].astype(str)
+        agg_dict: Dict[str, Any] = {
+            'player_id': ('player_id', lambda ids: ' '.join(ids)),
+            'duration': ('duration', 'first'),
+            'strength_state': ('strength_state', 'first'),
+        }
         agg = (
             dfs.groupby(group_cols, dropna=False)
-            .agg(
-                player_id=('player_id', lambda ids: ' '.join(ids)),
-                duration=('duration', 'first'),
-                strength_state=('strength_state', 'first'),
-            )
+            .agg(**agg_dict)
             .reset_index()
         )
         before_shifts = len(dfs)
@@ -1798,12 +1799,19 @@ def rebuild_team_seasonstats_from_supabase(season: str = '20252026') -> None:
         return
     print(f"[team-seasonstats] loaded {len(pbp)} PBP rows; aggregating ...")
 
-    # Bucket strength states
+    # Bucket strength states (must match SQL _sb above AND shifts route logic).
+    # 4v4, 3v3 are NOT even-strength for analytics purposes → 'Other'.
+    # 6v4/4v6 → PP/SH: for PBP data these imply both goalies are in net
+    #   (ENF/ENA are produced separately when a goalie is pulled); for shifts
+    #   the pre-bucketed StrengthStateBucket already accounts for goalie presence.
     def _sb(v):
         s = str(v or '').strip()
-        if s in ('5v5','6v5','5v6','6v6','6v4','4v6'): return '5v5'
-        if s in ('5v4','5v3','4v3'): return 'PP'
-        if s in ('4v5','3v5','3v4'): return 'SH'
+        # Even-strength: only 5+ v 5+ (includes 6v5/5v6 with goalies in)
+        if s in ('5v5','6v5','5v6','6v6'): return '5v5'
+        # Power-play variants (including shifts-route pre-bucketed 'PP')
+        if s in ('PP','5v4','5v3','4v3','6v4'): return 'PP'
+        # Short-handed variants (including shifts-route pre-bucketed 'SH')
+        if s in ('SH','4v5','3v5','3v4','4v6'): return 'SH'
         return 'Other'
 
     pbp['_ss'] = pbp['season_state'].fillna('regular').astype(str).str.strip().replace('', 'regular')
@@ -1893,9 +1901,9 @@ def _rebuild_team_seasonstats_sql(season_i: int, db_url: str) -> None:
 
     _sb = """
         CASE
-            WHEN COALESCE(TRIM(strength_state),'') IN ('5v5','6v5','5v6','6v6','6v4','4v6') THEN '5v5'
-            WHEN COALESCE(TRIM(strength_state),'') IN ('5v4','5v3','4v3') THEN 'PP'
-            WHEN COALESCE(TRIM(strength_state),'') IN ('4v5','3v5','3v4') THEN 'SH'
+            WHEN COALESCE(TRIM(strength_state),'') IN ('5v5','6v5','5v6','6v6') THEN '5v5'
+            WHEN COALESCE(TRIM(strength_state),'') IN ('PP','5v4','5v3','4v3','6v4') THEN 'PP'
+            WHEN COALESCE(TRIM(strength_state),'') IN ('SH','4v5','3v5','3v4','4v6') THEN 'SH'
             ELSE 'Other'
         END
     """.strip()
@@ -3319,7 +3327,7 @@ def main(argv: List[str] | None = None) -> int:
         for idx, (date_str, game_ids) in enumerate(scheduled_days, start=1):
             print(f'[season] {idx}/{len(scheduled_days)} {date_str} ({len(game_ids)} games)')
             try:
-                df_pbp, df_shifts, df_gamedata = fetch_day(date_str, with_xg=True, game_ids=game_ids)
+                df_pbp, df_shifts, df_gamedata = fetch_day(date_str, game_ids=game_ids)
             except Exception as e:
                 failures.append(f'{date_str}: fetch failed: {e}')
                 print(f'[warn] fetch failed for {date_str}: {e}', file=sys.stderr)
@@ -3413,7 +3421,7 @@ def main(argv: List[str] | None = None) -> int:
     date_str = args.date
     print(f'Fetching games for {date_str}...')
     try:
-        df_pbp, df_shifts, df_gamedata = fetch_day(date_str, with_xg=True)
+        df_pbp, df_shifts, df_gamedata = fetch_day(date_str)
     except Exception as e:
         print(f'[error] {e}', file=sys.stderr)
         return 2
