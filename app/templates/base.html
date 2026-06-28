@@ -342,9 +342,7 @@
   <a href="/line-tool" class="{% if active_tab=='Line Tool' %}active{% endif %}">Line Tool</a>
   <a href="/teams" class="{% if active_tab=='Teams' %}active{% endif %}">Teams</a>
   <a href="/community" class="{% if active_tab=='Community' %}active{% endif %}">Community</a>
-  {% if auth_user and auth_user.is_admin %}
   <a href="/gm-mode" class="{% if active_tab=='GM Mode' %}active{% endif %}">GM Mode</a>
-  {% endif %}
   <a href="/about" class="{% if active_tab=='About' %}active{% endif %}">About</a>
   <a href="/donation" class="{% if active_tab=='Donation' %}active{% endif %}">Donation</a>
   <span class="nav-spacer"></span>
