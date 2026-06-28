@@ -106,6 +106,15 @@ _AUTH_PREMIUM_PAGE_PREFIXES = (
 _AUTH_PREMIUM_API_PREFIXES = (
     '/api/projections/',
 )
+
+# GM Mode projection endpoints that are always public (no login required).
+_GM_MODE_PUBLIC_API_PATHS: frozenset = frozenset({
+    '/api/projections/team-season-points-custom',
+    '/api/projections/all-teams-custom',
+    '/api/projections/simulate-season',
+    '/api/projections/simulate-season-batch',
+    '/api/projections/custom-lineups-cache',
+})
 _CRAWLER_UA_TOKENS = (
     'meta-externalagent',
     'facebookexternalhit',
@@ -134,6 +143,9 @@ def _auth_enabled() -> bool:
 
 def _auth_is_premium_path(path: str) -> bool:
     if not path:
+        return False
+    # GM Mode projection/simulation endpoints are always public.
+    if path.rstrip('/') in _GM_MODE_PUBLIC_API_PATHS:
         return False
     for prefix in _AUTH_PREMIUM_PAGE_PREFIXES + _AUTH_PREMIUM_API_PREFIXES:
         if path == prefix or path.startswith(prefix):
