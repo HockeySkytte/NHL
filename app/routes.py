@@ -7744,9 +7744,11 @@ def _standings_from_results(
         gp[h] += 1; gp[a] += 1
         pts[h] += g['homePoints']; pts[a] += g['awayPoints']
         w, l = g['winner'], g['loser']
-        wins[w] += 1; losses[l] += 1
+        wins[w] += 1
         if g['ot']:
             otl[l] += 1
+        else:
+            losses[l] += 1
         gh = int(g.get('homeGoals') or 0)
         ga_val = int(g.get('awayGoals') or 0)
         # Fallback for games without goals (shouldn't happen with new sim).
