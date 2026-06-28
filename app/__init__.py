@@ -57,7 +57,7 @@ def create_app():
     except Exception:
         pass
 
-    from .routes import main_bp, preload_common_models, start_prestart_logger
+    from .routes import main_bp, preload_common_models, preload_gm_mode_caches, start_prestart_logger, start_preload_gm_caches
     app.register_blueprint(main_bp)
 
     # Eager-load common xG models at startup to reduce first-request latency (toggle via XG_PRELOAD=1)
@@ -66,6 +66,14 @@ def create_app():
             preload_common_models()
     except Exception:
         # Never block app startup on preload issues
+        pass
+
+    # Start background preload of GM Mode caches (projections + lineups + rosters).
+    # Toggle via PRELOAD_GM_CACHES=0; threads do NOT block startup.
+    try:
+        if os.getenv('PRELOAD_GM_CACHES', '1') == '1':
+            start_preload_gm_caches()
+    except Exception:
         pass
 
     # Start background prestart snapshot logger (toggle via PRESTART_LOGGER=0)

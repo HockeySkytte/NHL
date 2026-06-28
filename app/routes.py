@@ -6095,13 +6095,29 @@ def api_player_projections_v2():
     return j
 
 
+_V2_PROJECTIONS_BUILD_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+
 def _build_v2_player_projections(season_i: Optional[int] = None) -> List[Dict[str, Any]]:
     """Build V2 player projections from nhl_current_playerprojections.
 
     Single source of truth — used by both the /api/player-projections/v2 endpoint
     and _load_v2_player_projections_cached().  Returns a list of player dicts with
     projections, component fields, and context data.
+
+    Result is cached at the builder level so both the current-season and
+    all-seasons paths avoid re-reading Supabase on every caller.  The cache
+    is invalidated by TTL; no data-calculation logic is changed.
     """
+    cache_key = str(season_i) if season_i is not None else 'ALL'
+    now = time.time()
+    try:
+        ttl_s = max(30, int(os.getenv('V2_PROJECTIONS_BUILD_CACHE_TTL_SECONDS', '300') or '300'))
+    except Exception:
+        ttl_s = 300
+    cached = _V2_PROJECTIONS_BUILD_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < ttl_s:
+        return cached[1]
+
     # Filter by season if provided; GM Mode passes None to include all seasons.
     filters = {}
     if season_i is not None:
@@ -6216,6 +6232,7 @@ def _build_v2_player_projections(season_i: Optional[int] = None) -> List[Dict[st
         result.append(p)
 
     result.sort(key=lambda p: p['player_id'])
+    _V2_PROJECTIONS_BUILD_CACHE[cache_key] = (now, result)
     return result
 
 
@@ -7298,6 +7315,20 @@ def _projected_points_for_team(
     team_games = [g for g in team_games_all if int(g.get('gameType') or 0) == 2]
     if not team_games:
         return 0.0, 0
+
+    # Pre-fetch opponent schedules so the per-game loop never waits on NHL API.
+    # The underlying _fetch_club_schedule_games cache (6h TTL) makes repeated
+    # pre-fetches effectively free.  Does NOT change any data calculation.
+    _unique_opponents: set = set()
+    for g in team_games:
+        away = str(g.get('away') or '').strip().upper()
+        home = str(g.get('home') or '').strip().upper()
+        if away == team:
+            _unique_opponents.add(home)
+        elif home == team:
+            _unique_opponents.add(away)
+    for opp in _unique_opponents:
+        _fetch_club_schedule_games(opp, season)
 
     projected_points = 0.0
     usable_games = 0
@@ -19238,6 +19269,55 @@ def preload_common_models() -> None:
             load_model_file(f"{prefix}_{middle}")
     except Exception:
         pass
+
+
+def preload_gm_mode_caches() -> None:
+    """Eager-load GM Mode caches to avoid cold-start latency on the interactive page.
+
+    Warms: V2 projections builder (both all-seasons and current-season paths),
+    lineups, and player-name rosters.  Designed to be called from a background
+    thread so it never blocks app startup.
+    """
+    try:
+        # Warm the Supabase-backed V2 projections builder for the two
+        # most-used paths: GM Mode (all seasons) and KPI/teams (current).
+        _build_v2_player_projections(None)
+        try:
+            s = int(current_season_id())
+        except Exception:
+            s = 0
+        if s:
+            _build_v2_player_projections(s)
+
+        # Warm lineups (Supabase table) and player rosters (NHL API).
+        _load_lineups_all()
+        _load_all_rosters_cached()
+    except Exception:
+        pass
+
+
+_PRELOAD_GM_CACHES_STARTED = False
+
+def start_preload_gm_caches() -> None:
+    """Public entry to kick off GM-cache preload in a background daemon thread.
+    Safe to call multiple times; only starts once per process.
+    """
+    global _PRELOAD_GM_CACHES_STARTED
+    if _PRELOAD_GM_CACHES_STARTED:
+        return
+    _PRELOAD_GM_CACHES_STARTED = True
+
+    def _runner():
+        # Small delay to let the Flask app finish booting before we hammer
+        # Supabase / NHL APIs from a test-client-like context.
+        try:
+            time.sleep(1.5)
+        except Exception:
+            pass
+        preload_gm_mode_caches()
+
+    t = threading.Thread(target=_runner, name='preload-gm-caches', daemon=True)
+    t.start()
 
 
 @main_bp.route('/api/team/<team_code>/<int:season>/schedule')

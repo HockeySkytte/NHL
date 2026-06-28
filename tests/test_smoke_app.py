@@ -10,6 +10,7 @@ import app.routes as routes
 def app_instance():
     os.environ['XG_PRELOAD'] = '0'
     os.environ['PRESTART_LOGGER'] = '0'
+    os.environ['PRELOAD_GM_CACHES'] = '0'
     app = create_app()
     app.config.update(TESTING=True)
     return app
