@@ -23,7 +23,7 @@
   <div class="auth-card">
     <div class="auth-kicker">Projections Access</div>
     <h2>Start your free trial</h2>
-    <div class="auth-copy"><strong>7 days free</strong> gets you full access to Projections. Paid plans are <strong>$5/month</strong> or <strong>$40/year</strong>.</div>
+    <div class="auth-copy"><strong>14 days free</strong> — no credit card or subscription required. You get full access to Pro features for the trial period. Paid plans are optional afterwards: <strong>$5/month</strong> or <strong>$40/year</strong>.</div>
     <form method="post" class="auth-form">
       <input type="hidden" name="next" value="{{ next_url or '/projections' }}" />
       <label>Name
@@ -43,6 +43,7 @@
       <button type="submit" class="auth-submit">Create account</button>
     </form>
     <div class="auth-links">Already have an account? <a href="{{ url_for('main.login_page', next=next_url or '/projections') }}">Log in</a></div>
+    <div class="auth-note">When your trial ends you will lose access to Pro features, but no payments are required — your account stays active and you keep full access to the Community site.</div>
     {% if not auth_enabled %}
     <div class="auth-note">Auth is not configured in this environment yet. Set the Supabase auth credentials before using login and signup.</div>
     {% endif %}

@@ -8,19 +8,25 @@
   </select>
 </label>
 <div class="gm-filter-actions">
-  <button id="gmSaveConfigBtn" class="gm-filter-btn" type="button">Save</button>
-  <button id="gmLoadConfigBtn" class="gm-filter-btn" type="button">Load</button>
+  <button id="gmSaveConfigBtn" class="gm-filter-btn{% if not auth_user %} gm-requires-auth{% endif %}" type="button"{% if not auth_user %} title="Log in to save your lineups" data-login-url="{{ url_for('main.login_page', next=url_for('main.gm_mode_page')) }}" data-signup-url="{{ url_for('main.signup_page', next=url_for('main.gm_mode_page')) }}"{% endif %}>Save</button>
+  <button id="gmLoadConfigBtn" class="gm-filter-btn{% if not auth_user %} gm-requires-auth{% endif %}" type="button"{% if not auth_user %} title="Log in to load saved lineups" data-login-url="{{ url_for('main.login_page', next=url_for('main.gm_mode_page')) }}" data-signup-url="{{ url_for('main.signup_page', next=url_for('main.gm_mode_page')) }}"{% endif %}>Load</button>
+  {% if auth_user and auth_user.is_admin %}
+  <button id="gmUploadDbBtn" class="gm-filter-btn" type="button" title="Upload current lineups to Supabase lineups table">Upload to Database</button>
+  {% endif %}
 </div>
 {% endblock %}
 
 {% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script id="teams-data" type="application/json">{{ teams|tojson|safe }}</script>
 <style>
-  .gm-shell{ display:grid; gap:12px; width:100%; min-width:0; }
+  .gm-shell{ display:grid; gap:12px; width:100%; min-width:0; overflow-x:hidden; }
   .gm-team-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:10px 0 2px; min-width:0; overflow-x:hidden; }
-  .gm-team-top{ display:flex; gap:22px; align-items:center; justify-content:space-between; }
+  .gm-team-top{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:22px; align-items:center; }
   .gm-team-main{ display:flex; gap:22px; align-items:center; min-width:0; }
   .gm-team-img{ width:190px; height:190px; border-radius:18px; object-fit:contain; object-position:center; background:var(--panel); border:1px solid #2a3142; padding:0; }
+  .gm-team-info{ display:flex; flex-direction:column; gap:10px; min-width:0; }
   .gm-team-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; color:#fff; line-height:1.05; }
   .gm-team-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
   .gm-team-kv{ display:flex; gap:6px; align-items:baseline; }
@@ -57,6 +63,102 @@
     flex:0 0 auto;
   }
   .gm-kpi-points-circle .v{ font-size:56px; }
+  .gm-kpi-points-side{ display:flex; flex-direction:column; align-items:center; gap:12px; flex:0 0 auto; justify-self:end; }
+  .gm-card-actions{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; }
+  .gm-subtabs{ display:flex; gap:12px; align-items:center; margin-top:10px; }
+  .gm-subtab-row{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-top:10px; }
+  .gm-subtab-btn{
+    background:transparent;
+    border:1px solid #2a3142;
+    color:var(--text);
+    padding:8px 14px;
+    border-radius:10px;
+    font-weight:750;
+    letter-spacing:.2px;
+    cursor:pointer;
+  }
+  .gm-subtab-btn.active{ outline:2px solid var(--accent); }
+  .gm-tab-panel{ display:none; min-width:0; }
+  .gm-tab-panel.active{ display:block; }
+  .gm-sim-inline{ display:grid; gap:14px; min-width:0; }
+  .gm-sim-empty{ padding:40px 20px; text-align:center; color:var(--text-dim); font-size:15px; border:1px dashed #2a3142; border-radius:12px; }
+  .gm-sim-empty strong{ color:#fff; font-weight:800; }
+  .gm-sim-status{ padding:24px; text-align:center; color:var(--text-dim); font-size:15px; border:1px solid #2a3142; border-radius:12px; }
+  .gm-sim-error{ padding:14px; border:1px solid rgba(224,90,90,0.4); border-radius:10px; color:#ffd0d0; background:rgba(224,90,90,0.08); font-size:13px; }
+  .gm-sim-champion{ display:flex; align-items:center; gap:16px; padding:14px 16px; border:1px solid rgba(120,200,100,0.35); border-radius:12px; background:rgba(120,200,100,0.06); }
+  .gm-sim-champ-logo{ width:72px; height:72px; object-fit:contain; border-radius:10px; }
+  .gm-sim-champ-label{ font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:800; }
+  .gm-sim-champ-name{ font-size:26px; font-weight:900; color:#fff; margin-top:2px; }
+  .gm-sim-meta{ font-size:12px; color:var(--text-dim); margin-top:4px; }
+  .gm-sim-champion{ margin-top:10px; }
+  .gm-sim-section-title{ margin:6px 0 4px; font-size:15px; font-weight:850; letter-spacing:.4px; text-transform:uppercase; color:rgba(255,255,255,0.9); }
+  .gm-sim-standings-wrap{ display:flex; flex-direction:column; gap:18px; }
+  .gm-sim-standings-col + .gm-sim-standings-col{ margin-top:0; }
+  .bracket-shell{ width:100%; max-width:100%; min-width:0; overflow-x:auto; overflow-y:hidden; padding-bottom:8px; box-sizing:border-box; }
+  .playoff-bracket{ min-width:1320px; display:grid; grid-template-columns: 1.2fr 0.95fr 0.85fr 1fr 0.85fr 0.95fr 1.2fr; gap:14px; align-items:center; }
+  .bracket-column{ display:flex; flex-direction:column; gap:18px; min-width:0; }
+  .bracket-column.center{ justify-content:center; }
+  .bracket-column-title{ text-align:center; color:var(--text-dim); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
+  .bracket-series-card{ background:#0f1522; border:1px solid #2a3142; border-radius:16px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,.22); min-width:0; }
+  .bracket-series-card.projected{ border-style:dashed; }
+  .bracket-series-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 8px 0; min-width:0; }
+  .bracket-series-label{ color:var(--text-dim); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
+  .bracket-scoreline{ color:var(--text); font-size:13px; font-weight:700; }
+  .bracket-team-line{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; border-top:1px solid rgba(255,255,255,.06); min-width:0; }
+  .bracket-team-line:first-of-type{ border-top:none; }
+  .bracket-team-meta{ display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto; }
+  .bracket-team-meta img{ height:40px; width:auto; max-width:none; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); flex:0 0 auto; }
+  .bracket-team-name{ color:var(--text); font-size:13px; font-weight:700; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bracket-team-subtext{ color:var(--text-dim); font-size:11px; }
+  .bracket-wins-chip{ display:inline-flex; align-items:center; justify-content:center; min-width:22px; padding:3px 6px; border-radius:999px; background:#1b2536; color:var(--text); font-size:12px; font-weight:800; }
+  /* Playoffs distribution chart (batch / 100-sim view) */
+  .gm-distrib-wrap{ display:flex; flex-direction:column; gap:14px; }
+  .gm-distrib-filters{ display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid #2a3142; width:fit-content; }
+  .gm-distrib-filters button{ background:transparent; color:var(--text-dim); border:none; padding:8px 16px; font-size:12px; font-weight:750; cursor:pointer; letter-spacing:.3px; }
+  .gm-distrib-filters button:hover{ color:#fff; }
+  .gm-distrib-filters button.active{ background:var(--accent); color:#0b0f16; }
+  .gm-distrib-chart{ background:#0f1522; border:1px solid #2a3142; border-radius:14px; padding:18px; overflow-x:auto; }
+  .gm-distrib-stage-title{ font-size:13px; font-weight:850; text-transform:uppercase; letter-spacing:.4px; color:rgba(255,255,255,0.85); margin:0 0 4px 0; padding-top:2px; }
+  .gm-distrib-canvas-wrap{ position:relative; height:700px; min-height:700px; }
+  .gm-sim-standings-col{ border:1px solid #2a3142; border-radius:10px; overflow:hidden; }
+  .gm-sim-standings-title{ padding:8px 10px; font-size:12px; font-weight:850; text-transform:uppercase; letter-spacing:.6px; color:var(--text-dim); background:rgba(255,255,255,0.03); border-bottom:1px solid #2a3142; }
+  .gm-sim-standings-table{ width:100%; border-collapse:collapse; font-size:12px; }
+  .gm-sim-standings-table th{ padding:6px 8px; text-align:right; font-weight:700; color:var(--text-dim); font-size:10px; text-transform:uppercase; letter-spacing:.4px; }
+  .gm-sim-standings-table th:first-child{ text-align:left; }
+  .gm-sim-standings-table td{ padding:5px 8px; text-align:right; color:var(--text); }
+  .gm-sim-standings-table td:first-child{ text-align:left; font-weight:750; }
+  .gm-sim-standings-table tr:hover{ background:rgba(255,255,255,0.03); }
+  .gm-sim-standings-table .sim-team-cell{ display:flex; align-items:center; gap:6px; }
+  .gm-sim-standings-table .sim-team-logo{ height:20px; width:auto; max-width:none; object-fit:contain; }
+  /* Playoff teams in single-sim standings use a dark blue highlight. */
+  .gm-sim-standings-table .sim-playoff{ border-left:3px solid rgba(70,122,200,0.85); background:rgba(28,49,99,0.12); }
+  /* Skaters-style sortable table look */
+  .gm-table{ width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+  .gm-table th{ position:sticky; top:0; background:#0f1522; text-align:center; font-size:11px; text-transform:uppercase; letter-spacing:.6px; padding:9px 10px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; user-select:none; white-space:nowrap; z-index:2; }
+  .gm-table td{ padding:8px 10px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric:tabular-nums; }
+  .gm-table th:first-child, .gm-table td:first-child{ text-align:left; }
+  .gm-table th[data-col]{ cursor:pointer; user-select:none; }
+  .gm-table th[data-col]:hover{ background:#141a28; }
+  .gm-table th.sort-asc, .gm-table th.sort-desc{ color:#fff; }
+  .gm-table .sort-ind{ display:inline-block; margin-left:4px; font-size:10px; opacity:.85; }
+  .gm-table tbody tr:hover{ background:rgba(255,255,255,0.04); }
+  .gm-table .sim-team-cell{ display:flex; align-items:center; gap:8px; }
+  .gm-table .sim-team-logo{ height:24px; width:auto; max-width:none; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+  /* Playoff teams in single-sim standings use a dark blue highlight. */
+  .gm-table .sim-playoff{ box-shadow: inset 3px 0 0 rgba(70,122,200,0.85); background:rgba(28,49,99,0.12); }
+  .gm-sim-bracket{ display:grid; gap:10px; }
+  .gm-sim-round{ display:grid; gap:8px; }
+  .gm-sim-round-title{ font-size:12px; font-weight:850; text-transform:uppercase; letter-spacing:.5px; color:var(--text-dim); margin-bottom:2px; }
+  .gm-sim-series{ display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid #2a3142; border-radius:8px; font-size:12px; flex-wrap:wrap; }
+  .gm-sim-series-winner{ font-weight:850; color:#fff; }
+  .gm-sim-series-loser{ color:var(--text-dim); display:flex; align-items:center; gap:5px; }
+  .gm-sim-series-score{ margin-left:auto; font-weight:800; color:rgba(120,200,100,0.9); }
+  .gm-sim-series-conf{ font-size:10px; text-transform:uppercase; letter-spacing:.4px; color:var(--text-dim); font-weight:700; width:34px; flex:0 0 auto; }
+  .gm-sim-actions{ display:flex; gap:8px; justify-content:flex-end; }
+  .gm-sim-stats-wrap{ max-height:560px; overflow:auto; border:1px solid #2a3142; border-radius:10px; }
+  .gm-sim-stats-wrap .gm-sim-standings-table th:first-child,
+  .gm-sim-stats-wrap .gm-sim-standings-table td:first-child{ text-align:right; width:36px; font-weight:700; color:var(--text-dim); }
+  .gm-sim-stats-wrap .sim-stat-name{ text-align:left; font-weight:800; min-width:140px; }
   .gm-grid{ display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(0, 1fr); gap:12px; align-items:start; width:100%; }
   .gm-col{ display:grid; gap:14px; min-width:0; }
   .gm-frame{
@@ -72,7 +174,16 @@
   .gm-frame-forwards{ background: transparent; }
   .gm-frame-defense{  background: transparent; }
   .gm-frame-goalies{  background: transparent; }
-  .gm-frame-scratches{ background: transparent; }
+  .gm-frame-scratches{ background: transparent; margin-top: 14px; }
+  .gm-frame-injuries{ background: transparent; margin-top: 14px; }
+  .gm-injury-list{ display:grid; gap:10px; margin-bottom:10px; }
+  .gm-injury-row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px; border:1px solid #2a3142; border-radius:10px; background:rgba(255,255,255,0.02); }
+  .gm-injury-row select{ flex:1; min-width:140px; font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
+  .gm-injury-row input[type=date]{ font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
+  .gm-injury-row .gm-injury-label{ font-size:11px; font-weight:800; color:var(--text-dim); text-transform:uppercase; letter-spacing:.6px; min-width:64px; }
+  .gm-injury-row .gm-injury-remove{ background:transparent; border:1px solid rgba(224,90,90,0.4); color:#ffd0d0; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:12px; font-weight:700; }
+  .gm-injury-row .gm-injury-remove:hover{ background:rgba(224,90,90,0.10); }
+  .gm-injury-empty{ color:var(--text-dim); font-size:12px; padding:8px 0; }
   .gm-frame-full{ width:100%; }
   .gm-frame h2{ margin:0 0 10px; font-size:18px; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
   .gm-lines{ display:grid; gap:12px; }
@@ -82,8 +193,8 @@
   .gm-slot{ display:flex; flex-direction:column; align-items:center; gap:8px; width:auto; flex:1 1 0; min-width:0; }
   .gm-slot-label{ font-size:10px; font-weight:800; color:var(--text-dim); text-transform:uppercase; letter-spacing:.7px; }
   .gm-visual{ width:114px; height:114px; display:grid; place-items:center; cursor:pointer; }
-  .gm-headshot{ width:104px; height:104px; border-radius:50%; background:#1a2236; border:3px solid #2b3648; object-fit:cover; }
-  .gm-proj-kpi{ display:none; width:104px; height:104px; border-radius:50%; border:3px solid var(--gm-proj-color, #59abff); place-items:center; text-align:center; line-height:1; background:#040914; }
+  .gm-headshot{ width:104px; height:104px; border-radius:50%; background:#1a2236; border:2px solid #2b3648; object-fit:cover; }
+  .gm-proj-kpi{ display:none; width:104px; height:104px; border-radius:50%; border:2px solid var(--gm-proj-color, #59abff); place-items:center; text-align:center; line-height:1; background:#040914; }
   .gm-proj-kpi .v{ font-size:32px; font-weight:900; letter-spacing:.2px; color:var(--gm-proj-color, #59abff); }
   .gm-proj-kpi .l{ margin-top:4px; font-size:9px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; color:#f1e9db; }
   .gm-games-note{ min-height:14px; font-size:10px; color:var(--text-dim); letter-spacing:.4px; }
@@ -110,23 +221,34 @@
   .gm-picker-option:hover{ background:#1a2942; }
   .gm-picker-option.active{ background:#2b3648; border-color:#3d4d67; }
   .gm-status{ border:1px solid #2a3142; border-radius:12px; padding:10px 12px; color:var(--text-dim); font-size:13px; }
+  .gm-status:empty{ display:none; }
   .gm-filter-actions{ display:flex; gap:8px; align-items:center; }
   .gm-filter-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
   .gm-filter-btn:hover{ background:rgba(255,255,255,0.05); }
-  .gm-config-modal{ position:fixed; inset:0; background:rgba(0,0,0,0.58); display:flex; align-items:center; justify-content:center; z-index:2100; }
+  .gm-filter-btn.gm-requires-auth{ position:relative; }
+  .gm-filter-btn.gm-requires-auth::after{
+    content:'Log in to use';
+    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%);
+    background:#0f1522; color:var(--text-dim); border:1px solid #2a3142;
+    padding:4px 8px; border-radius:6px; font-size:11px; font-weight:600;
+    letter-spacing:.2px; white-space:nowrap; opacity:0; pointer-events:none;
+    transition:opacity .12s ease;
+  }
+  .gm-filter-btn.gm-requires-auth:hover::after{ opacity:1; }
+  .gm-config-modal{ position:fixed; inset:0; background:#000; display:flex; align-items:center; justify-content:center; z-index:2100; }
   .gm-config-modal[hidden]{ display:none !important; }
-  .gm-config-card{ width:min(760px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:#0f1522; border:1px solid #2a3142; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.6); }
+  .gm-config-card{ width:min(760px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:#101a2e; border:1px solid #2b3648; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.8); }
   .gm-config-hd{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; border-bottom:1px solid #232a3a; }
   .gm-config-title{ font-weight:900; letter-spacing:.2px; }
   .gm-config-bd{ padding:12px 14px; display:grid; gap:10px; }
   .gm-config-note{ color:var(--text-dim); font-size:12px; }
   .gm-config-list{ display:grid; gap:8px; max-height:44vh; overflow:auto; padding-right:2px; }
-  .gm-config-item{ border:1px solid #2a3142; border-radius:10px; padding:9px 10px; background:rgba(255,255,255,0.02); cursor:pointer; display:grid; gap:4px; }
-  .gm-config-item:hover{ background:rgba(255,255,255,0.05); }
-  .gm-config-item.active{ outline:2px solid rgba(77,163,255,0.28); background:rgba(77,163,255,0.12); }
+  .gm-config-item{ border:1px solid #2b3648; border-radius:10px; padding:9px 10px; background:#131b2b; cursor:pointer; display:grid; gap:4px; }
+  .gm-config-item:hover{ background:#1a2942; }
+  .gm-config-item.active{ outline:2px solid rgba(77,163,255,0.6); background:#1a2942; }
   .gm-config-name{ font-size:13px; font-weight:800; color:var(--text); }
   .gm-config-meta{ font-size:11px; color:var(--text-dim); }
-  .gm-config-empty{ border:1px dashed #2a3142; border-radius:10px; padding:14px; text-align:center; color:var(--text-dim); font-size:12px; }
+  .gm-config-empty{ border:1px dashed #2b3648; border-radius:10px; padding:14px; text-align:center; color:var(--text-dim); font-size:12px; background:#131b2b; }
   .gm-config-fields{ display:grid; gap:6px; }
   .gm-config-fields label{ font-size:12px; color:var(--text-dim); font-weight:700; display:grid; gap:4px; }
   .gm-config-fields input{ font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
@@ -135,6 +257,64 @@
   .gm-config-btn:hover{ background:rgba(255,255,255,0.05); }
   .gm-config-btn.danger{ border-color:rgba(224,90,90,0.48); color:#ffd0d0; }
   .gm-config-btn.primary{ border-color:rgba(77,163,255,0.48); color:#d8ebff; }
+
+  .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .config-btn:hover{ background:rgba(255,255,255,0.05); }
+  .config-btn:disabled{ opacity:0.55; cursor:default; }
+
+  /* Export PNG surface */
+  .gm-export-surface{ position:fixed; left:-10000px; top:0; width:1680px; padding:44px;
+    background:radial-gradient(circle at top left, rgba(77,163,255,0.14), transparent 26%),
+               linear-gradient(180deg, rgba(11,15,24,0.995), rgba(9,12,20,0.995));
+    z-index:-1; pointer-events:none; }
+  .gm-export-card{ position:relative; display:grid; gap:24px; padding:36px 36px 30px;
+    color:var(--text); border-radius:34px; border:2px solid rgba(255,255,255,0.12);
+    background:radial-gradient(circle at top left, rgba(77,163,255,0.10), transparent 24%),
+               linear-gradient(160deg, rgba(18,24,38,0.988), rgba(8,11,18,0.988));
+    box-shadow:0 28px 70px rgba(0,0,0,0.36); overflow:hidden; }
+  .gm-export-card .gm-export-hero{ display:block; margin:-36px -36px 0; padding:10px 36px 18px;
+    border:none; border-radius:32px 32px 0 0;
+    background:radial-gradient(circle at top right, rgba(255,255,255,0.14), transparent 34%),
+               linear-gradient(135deg, var(--gm-export-team-color-soft, rgba(77,163,255,0.28)), rgba(11,15,24,0.18) 36%, var(--gm-export-team-color-dark, rgb(24,31,45)) 100%);
+    box-shadow:none; }
+  .gm-export-hero-inner{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:28px; }
+  .gm-export-hero-left{ display:flex; align-items:center; gap:24px; min-width:0; }
+  .gm-export-team-logo-wrap{ flex:0 0 auto; }
+  .gm-export-team-logo{ width:auto; height:132px; max-width:198px; object-fit:contain;
+    filter:drop-shadow(0 0 12px rgba(0,0,0,0.4)); }
+  .gm-export-info{ flex:1 1 auto; min-width:0; }
+  .gm-export-name{ font-size:48px; font-weight:850; letter-spacing:.2px; color:#fff; line-height:1.05; }
+  .gm-export-sub{ margin-top:10px; font-size:20px; color:rgba(255,255,255,0.65); font-weight:600; }
+  .gm-export-kpi{ flex:0 0 auto; margin-left:auto; }
+  .gm-export-watermark{ font-size:14px; color:rgba(255,255,255,0.45); text-align:center;
+    padding-top:12px; border-top:1px solid rgba(255,255,255,0.06); }
+
+  /* Share modal (exact copy from Skaters) */
+  .modal{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:2200; }
+  .modal[hidden]{ display:none !important; }
+  .modal-card{ width:min(1100px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:#0f1522; border:1px solid #2a3142; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.6); }
+  .modal-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid #232a3a; }
+  .modal-title{ font-weight:900; letter-spacing:.2px; }
+  .modal-bd{ padding:14px 16px; }
+  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .btn:hover{ background:rgba(255,255,255,0.05); }
+  .cc-help{ color:var(--text-dim); font-size:13px; margin-bottom:12px; }
+  .visually-hidden{ position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  .shoot-share-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; }
+  .shoot-share-card{ width:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; text-align:left; min-height:132px; padding:14px; border-radius:12px; border:1px solid #2a3142; background:rgba(255,255,255,0.02); color:var(--value-text, var(--text)); cursor:pointer; }
+  .shoot-share-card:hover{ background:rgba(255,255,255,0.05); }
+  .shoot-share-card:disabled{ opacity:.55; cursor:not-allowed; }
+  .shoot-share-card.logo-only{ align-items:center; text-align:center; }
+  .shoot-share-card.logo-only .shoot-share-name,
+  .shoot-share-card.logo-only .shoot-share-desc{ display:none; }
+  .shoot-share-logo{ display:grid; place-items:center; width:54px; height:54px; color:currentColor; }
+  .shoot-share-card.logo-only .shoot-share-logo{ width:78px; height:78px; }
+  .shoot-share-logo svg{ display:block; width:100%; height:100%; }
+  .shoot-share-name{ font-size:15px; font-weight:850; letter-spacing:.2px; }
+  .shoot-share-desc{ font-size:12px; line-height:1.45; color:var(--text-dim); }
+  .shoot-share-status{ margin-top:14px; font-size:13px; color:var(--text-dim); }
+  .shoot-share-status:empty{ display:none; }
+  .shoot-share-note{ margin-bottom:14px; line-height:1.55; }
 
   @media (max-width: 1080px){
     .gm-team-top{ gap:14px; }
@@ -147,16 +327,21 @@
     .gm-grid{ grid-template-columns:1fr; }
     .gm-row{ flex-wrap:wrap; }
     .gm-rank-slot{ margin-left:0; }
+    .gm-sim-standings-wrap{ grid-template-columns:1fr; }
   }
   @media (max-width: 640px){
-    .gm-team-top{ flex-direction:column; align-items:center; gap:12px; }
+    .gm-team-top{ grid-template-columns:1fr; justify-items:center; gap:12px; }
     .gm-team-main{ width:100%; display:grid; grid-template-columns:1fr; grid-template-areas:"name" "logo" "info"; gap:10px; justify-items:center; }
-    .gm-team-main > div{ display:contents; }
+    .gm-team-main > .gm-team-info{ display:contents; }
     .gm-team-name{ font-size:26px; margin:0; grid-area:name; text-align:center; }
     .gm-team-img{ width:120px; height:120px; border-radius:14px; grid-area:logo; }
     .gm-team-sub{ gap:10px 14px; font-size:14px; grid-area:info; justify-content:center; text-align:center; }
     .gm-kpi-points-circle{ width:126px; height:126px; align-self:center; }
     .gm-kpi-points-circle .v{ font-size:36px; }
+    .gm-kpi-points-side{ justify-self:center; }
+    .gm-subtab-row{ flex-direction:column; align-items:stretch; gap:10px; }
+    .gm-subtab-row .gm-subtabs{ justify-content:center; flex-wrap:wrap; margin-top:0; }
+    .gm-subtab-row .gm-card-actions{ justify-content:center; }
     .gm-row{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; width:100%; }
     .gm-slot,
     .gm-rank-slot{ width:100%; margin-left:0; }
@@ -173,6 +358,15 @@
     .gm-slot .gm-visual,
     .gm-rank-slot .gm-rank-kpi{ margin-left:auto; margin-right:auto; }
     .gm-shell{ overflow-x:hidden; }
+
+    /* Standings: scroll the column instead of letting the page scroll. */
+    .gm-sim-standings-col{ max-height: 560px; overflow: auto; }
+
+    /* Distribution filter buttons: shrink padding + font on mobile portrait so
+       all 5 fit on a single row without clipping. */
+    .gm-distrib-filters{ width:100%; }
+    .gm-distrib-filters button{ flex:1 1 0; padding:8px 6px; font-size:10px; letter-spacing:0; text-align:center; line-height:1.15; }
+    .gm-distrib-canvas-wrap{ height:520px; min-height:520px; }
   }
 
   @media (min-width: 641px){
@@ -181,51 +375,93 @@
 </style>
 
 <section id="gmShell" class="gm-shell">
+  <!-- DIAGNOSTIC: gm_mode.html v2 with gp_est support 2026-06-28 -->
   <section class="gm-team-card" aria-label="Team header">
     <div class="gm-team-top">
       <div class="gm-team-main">
         <img id="gmTeamLogo" class="gm-team-img" alt="" loading="lazy" />
-        <div>
+        <div class="gm-team-info">
           <h1 id="gmTeamName" class="gm-team-name">-</h1>
           <div class="gm-team-sub">
             <span class="gm-team-kv"><span class="gm-team-k">Team</span><span id="gmTeamAbbr" class="gm-team-v">--</span></span>
           </div>
         </div>
       </div>
-      <div id="gmKpiPoints" class="gm-kpi-points-circle"><div><div class="v">--</div><div class="l">Projected Points</div></div></div>
+      <div class="gm-kpi-points-side">
+        <div id="gmKpiPoints" class="gm-kpi-points-circle"><div><div class="v">--</div><div class="l">Projected Points</div></div></div>
+      </div>
+    </div>
+    <div class="gm-subtab-row">
+      <div class="gm-subtabs" role="tablist" aria-label="GM Mode views">
+        <button id="gmTabLineup" class="gm-subtab-btn active" type="button" role="tab" aria-selected="true">Lineup</button>
+        <button id="gmTabStandings" class="gm-subtab-btn" type="button" role="tab" aria-selected="false">Standings</button>
+        <button id="gmTabBracket" class="gm-subtab-btn" type="button" role="tab" aria-selected="false">Playoffs</button>
+        <button id="gmTabStats" class="gm-subtab-btn" type="button" role="tab" aria-selected="false">Player Stats</button>
+      </div>
+      <div class="gm-card-actions">
+        <button id="gmSimBtn" class="config-btn" type="button">Run Simulation</button>
+        <button id="gmSim100Btn" class="config-btn gm-sim-btn" type="button">Run 100 Simulations</button>
+        <button id="gmExportPngBtn" class="config-btn" type="button">Export PNG</button>
+        <button id="gmShareBtn" class="config-btn" type="button">Share</button>
+      </div>
     </div>
   </section>
 
-  <div class="gm-grid">
-    <section class="gm-col" aria-label="Forward side">
-      <section class="gm-frame gm-frame-forwards" aria-label="Forward lines">
-        <h2>Forward Lines</h2>
-        <div id="gmForwards" class="gm-lines"></div>
+  <div id="gmTabPanelLineup" class="gm-tab-panel active">
+    <div class="gm-grid">
+      <section class="gm-col" aria-label="Forward side">
+        <section class="gm-frame gm-frame-forwards" aria-label="Forward lines">
+          <h2>Forward Lines</h2>
+          <div id="gmForwards" class="gm-lines"></div>
+        </section>
       </section>
+
+      <section class="gm-col" aria-label="Defense and goalies side">
+        <section class="gm-frame gm-frame-defense" aria-label="Defense pairs">
+          <h2>Defense Pairs</h2>
+          <div id="gmDefense" class="gm-lines"></div>
+        </section>
+        <section class="gm-frame gm-frame-goalies" aria-label="Goalies">
+          <h2>Goalies</h2>
+          <div id="gmGoalies" class="gm-lines"></div>
+        </section>
+      </section>
+    </div>
+
+    <section class="gm-frame gm-frame-full gm-frame-scratches" aria-label="Scratches">
+      <h2>Scratches</h2>
+      <div id="gmScratches" class="gm-lines"></div>
     </section>
 
-    <section class="gm-col" aria-label="Defense and goalies side">
-      <section class="gm-frame gm-frame-defense" aria-label="Defense pairs">
-        <h2>Defense Pairs</h2>
-        <div id="gmDefense" class="gm-lines"></div>
-      </section>
-      <section class="gm-frame gm-frame-goalies" aria-label="Goalies">
-        <h2>Goalies</h2>
-        <div id="gmGoalies" class="gm-lines"></div>
-      </section>
+    <section class="gm-frame gm-frame-full gm-frame-injuries" aria-label="Injuries">
+      <h2>Injured Players</h2>
+      <div id="gmInjuries" class="gm-injury-list"></div>
+      <button id="gmAddInjuryBtn" class="gm-config-btn" type="button">+ Add Injury</button>
     </section>
+
+    <div id="gmStatus" class="gm-status">Loading lineup data...</div>
   </div>
 
-  <section class="gm-frame gm-frame-full gm-frame-scratches" aria-label="Scratches">
-    <h2>Scratches</h2>
-    <div id="gmScratches" class="gm-lines"></div>
-  </section>
+  <div id="gmTabPanelStandings" class="gm-tab-panel" hidden>
+    <div class="gm-sim-inline">
+      <div class="gm-sim-empty">No simulation run yet. Click <strong>Run Simulation</strong> above.</div>
+    </div>
+  </div>
 
-  <div id="gmStatus" class="gm-status">Loading lineup data...</div>
+  <div id="gmTabPanelBracket" class="gm-tab-panel" hidden>
+    <div class="gm-sim-inline">
+      <div class="gm-sim-empty">No simulation run yet. Click <strong>Run Simulation</strong> above.</div>
+    </div>
+  </div>
+
+  <div id="gmTabPanelStats" class="gm-tab-panel" hidden>
+    <div class="gm-sim-inline">
+      <div class="gm-sim-empty">No simulation run yet. Click <strong>Run Simulation</strong> above.</div>
+    </div>
+  </div>
 </section>
 
 <div id="gmConfigModal" class="gm-config-modal" hidden>
-  <div class="gm-config-card" role="dialog" aria-modal="true" aria-labelledby="gmConfigTitle">
     <div class="gm-config-hd">
       <div id="gmConfigTitle" class="gm-config-title">Configurations</div>
       <button id="gmConfigCloseBtn" class="gm-config-btn" type="button">Close</button>
@@ -244,6 +480,20 @@
         <button id="gmConfigOverwriteBtn" class="gm-config-btn primary" type="button">Overwrite Selected</button>
         <button id="gmConfigSaveNewBtn" class="gm-config-btn primary" type="button">Save As New</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="shootShareModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="shootShareTitle">
+    <div class="modal-hd">
+      <div id="shootShareTitle" class="modal-title">Share GM Mode</div>
+      <button id="btnCloseShootShare" class="btn" type="button">Close</button>
+    </div>
+    <div class="modal-bd">
+      <div class="cc-help shoot-share-note">Image saved to clipboard - Remember to paste the image in the Post</div>
+      <div id="shootShareGrid" class="shoot-share-grid"></div>
+      <div id="shootShareStatus" class="shoot-share-status" aria-live="polite"></div>
     </div>
   </div>
 </div>
@@ -283,6 +533,8 @@
   const defenseWrap = document.getElementById('gmDefense');
   const goaliesWrap = document.getElementById('gmGoalies');
   const scratchWrap = document.getElementById('gmScratches');
+  const injuriesWrap = document.getElementById('gmInjuries');
+  const addInjuryBtn = document.getElementById('gmAddInjuryBtn');
   const statusEl = document.getElementById('gmStatus');
 
   if(!teamSelect || !shell || !forwardsWrap || !defenseWrap || !goaliesWrap || !scratchWrap || !statusEl){
@@ -310,6 +562,7 @@
   let leagueGroupScores = {};
   let leagueTeamKpiScores = { overall: [], forwards: [], defense: [], goalies: [] };
   let teamConfigs = {};
+  let teamInjuries = {};  // key -> [{injuredPid, replacementPid, startDate, endDate, pos}]
   let activeLayoutId = '';
   let activeLayoutName = '';
   let dialogMode = 'load';
@@ -327,15 +580,15 @@
     def2: { size: 2, pos: 'D' },
     def3: { size: 2, pos: 'D' },
     goalies: { size: 2, pos: 'G' },
-    scratches: { size: 5, pos: '' },
+    scratches: { size: 10, pos: '' },
   };
   const GROUP_KEYS = Object.keys(GROUP_SPECS);
   const ROOKIE_FALLBACK_BY_POS = { D: -0.031768511, F: -0.024601581, G: -0.12 };
-  const POINTS_SEASON = '20252026';
+  const POINTS_SEASON = '20262027';
   const POINTS_RED = 75;
   const POINTS_NEUTRAL = 92.4;
   const POINTS_BLUE = 110;
-  const POINTS_CONSERVATIVE_FACTOR = 0.55;
+  const POINTS_CONSERVATIVE_FACTOR = 1.00;
   const CSRF_TOKEN = {{ csrf_token|tojson|safe }};
   const teamsData = (function(){
     const tag = document.getElementById('teams-data');
@@ -363,7 +616,7 @@
   }
 
   function headshotUrl(pid){
-    return pid > 0 ? 'https://assets.nhle.com/mugs/nhl/latest/' + String(pid) + '.png' : DEFAULT_IMG;
+    return pid > 0 ? '/api/player-headshot/' + String(pid) + '.png' : DEFAULT_IMG;
   }
 
   function normalizePos(rawPos){
@@ -414,7 +667,9 @@
     const key = pid > 0 ? ('p:' + String(pid)) : ('n:' + name.toLowerCase());
     const inferred = unit.startsWith('G') ? 'G' : (unit.startsWith('LD') || unit.startsWith('RD') ? 'D' : 'F');
     const pos = normalizePos(rec && rec.pos ? rec.pos : inferred);
-    return { name: name || ('#' + String(pid)), pid, unit, key, pos };
+    const gpEst = (rec && (rec.gp_est || rec.games)) ? (rec.gp_est || rec.games) : null;
+    const gpEstNote = (rec && rec.gp_est_note) ? rec.gp_est_note : '';
+    return { name: name || ('#' + String(pid)), pid, unit, key, pos, gp_est: gpEst, gp_est_note: gpEstNote };
   }
 
   function uniquePlayers(records){
@@ -525,8 +780,10 @@
 
   function percentileFromPool(arr, value){
     if(!arr.length || !Number.isFinite(value)) return null;
-    const rank = upperBound(arr, value);
-    const pct = 100 * (rank / arr.length);
+    if(arr.length === 1) return 100;
+    const countLe = upperBound(arr, value);  // count of elements ≤ value
+    // Match the Skaters page _computePct formula: 100*(countLe-1)/(N-1)
+    const pct = 100 * ((countLe - 1) / (arr.length - 1));
     return Math.max(0, Math.min(100, pct));
   }
 
@@ -541,11 +798,13 @@
 
   function projectionValueForRow(row, posHint){
     if(!row || typeof row !== 'object') return null;
-    // Use ONLY projected_value field; no fallback to legacy metrics.
-    // Match backend field search order (case-insensitive key names).
+    // Use GP-weighted projected_value (matches Skaters Card / Projections tab).
     const projected = firstNum(row, ['projected_value', 'projection', 'projectedValue', 'Projection', 'ProjectedValue']);
     if(projected !== null) return projected;
-    // If projected_value is missing, use ROOKIE_FALLBACK for this position.
+    // Fallback: raw unweighted V2 value.
+    const raw = firstNum(row, ['raw_projected_value', 'rawProjectedValue']);
+    if(raw !== null) return raw;
+    // If no value at all, use ROOKIE_FALLBACK for this position.
     const pos = normalizePos((row && row.Position) || (row && row.position) || posHint);
     return ROOKIE_FALLBACK_BY_POS[pos] || ROOKIE_FALLBACK_BY_POS.F;
   }
@@ -771,6 +1030,216 @@
     return sum;
   }
 
+  // Position-group GP budget totals (constant across the league).
+  // 12 forwards × 82 games, 6 defensemen × 82 games, 2 goalies × 82 games.
+  const GROUP_GP_BUDGET = {
+    F: 12 * 82,
+    D: 6 * 82,
+    G: 2 * 82,  // but we cap to 82 for goalie starts in sim (one starter per game)
+  };
+
+  // For goalies, there's 1 starter per game → 82 total starts.
+  // Use 82 as budget so the two goalies split 82 games between them.
+  const GROUP_GP_TARGET = {
+    F: 12 * 82,
+    D: 6 * 82,
+    G: 82,
+  };
+
+  function groupMembersByKey(key){
+    const g = interactiveGroups.find((x)=> x && x.key === key);
+    if(!g || typeof g.getMembers !== 'function') return [];
+    return g.getMembers();
+  }
+
+  function posOfGroup(key){
+    if(key === 'goalies') return 'G';
+    if(key.indexOf('fwd') === 0) return 'F';
+    if(key.indexOf('def') === 0) return 'D';
+    return '';
+  }
+
+  function allMembersForPos(pos){
+    const all = [];
+    if(pos === 'F'){
+      ['fwd1','fwd2','fwd3','fwd4'].forEach((k)=>{ const m = groupMembersByKey(k); if(Array.isArray(m)) all.push.apply(all, m); });
+      // Forwards in scratches count toward forward GP budget too.
+      const scs = groupMembersByKey('scratches');
+      for(const s of scs){
+        if(normalizePos(s && s.pos) === 'F') all.push(s);
+      }
+    } else if(pos === 'D'){
+      ['def1','def2','def3'].forEach((k)=>{ const m = groupMembersByKey(k); if(Array.isArray(m)) all.push.apply(all, m); });
+      const scs = groupMembersByKey('scratches');
+      for(const s of scs){
+        if(normalizePos(s && s.pos) === 'D') all.push(s);
+      }
+    } else if(pos === 'G'){
+      const m = groupMembersByKey('goalies');
+      if(Array.isArray(m)) all.push.apply(all, m);
+      const scs = groupMembersByKey('scratches');
+      for(const s of scs){
+        if(normalizePos(s && s.pos) === 'G') all.push(s);
+      }
+    }
+    return all;
+  }
+
+  // Pick which scratch should absorb the missing games.  Shows an inline
+  // dialog with clickable rows — no more typing numbers into window.prompt.
+  // Returns a Promise that resolves to the chosen card, or null if cancelled.
+  function pickScratchToAdjust(scratchCards, label){
+    return new Promise(function(resolve){
+      if(!scratchCards.length){ resolve(null); return; }
+      if(scratchCards.length === 1){ resolve(scratchCards[0]); return; }
+
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:3000;display:flex;align-items:center;justify-content:center;';
+
+      const dialog = document.createElement('div');
+      dialog.style.cssText = 'background:#101a2e;border:1px solid #2b3648;border-radius:14px;padding:18px 20px;max-width:520px;width:90vw;box-shadow:0 18px 44px rgba(0,0,0,0.6);max-height:80vh;overflow-y:auto;';
+
+      const title = document.createElement('div');
+      title.style.cssText = 'font-size:15px;font-weight:800;color:#fff;margin-bottom:4px;';
+      title.textContent = 'Choose scratched ' + label + ' to receive the games';
+      dialog.appendChild(title);
+
+      const subtitle = document.createElement('div');
+      subtitle.style.cssText = 'font-size:12px;color:var(--text-dim);margin-bottom:14px;';
+      subtitle.textContent = 'Click a player, or press Escape / click outside to cancel.';
+      dialog.appendChild(subtitle);
+
+      function close(result){
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        resolve(result);
+      }
+
+      function onKey(e){ if(e.key === 'Escape'){ close(null); } }
+      document.addEventListener('keydown', onKey);
+      overlay.addEventListener('click', function(e){ if(e.target === overlay) close(null); });
+
+      scratchCards.forEach(function(card){
+        const m = card.getMember();
+        const name = (m.pid > 0) ? (m.name || ('#' + String(m.pid))) : ('Empty slot');
+        const gpInfo = (m.pid > 0) ? ('  \u2014  GP ' + String(m.games || 0)) : '';
+
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.style.cssText = 'display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:6px;background:#131b2b;border:1px solid #2b3648;border-radius:10px;color:#fff;font-size:13px;cursor:pointer;';
+        row.textContent = name + gpInfo;
+
+        row.addEventListener('mouseenter', function(){ row.style.background = '#1a2942'; });
+        row.addEventListener('mouseleave', function(){ row.style.background = '#131b2b'; });
+        row.addEventListener('click', function(){ close(card); });
+        dialog.appendChild(row);
+      });
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.style.cssText = 'display:block;width:100%;text-align:center;padding:8px 12px;background:transparent;border:1px solid rgba(224,90,90,0.4);border-radius:10px;color:#ffd0d0;font-size:12px;cursor:pointer;margin-top:4px;';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', function(){ close(null); });
+      dialog.appendChild(cancelBtn);
+
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+    });
+  }
+
+  // Rebalance lineup+scratch GP after a player GP edit.
+  // When a lineup player's GP is changed (by `delta` games), the same amount
+  // is moved to/from a scratched player of the same position.
+  function rebalanceAfterGpChange(changedPos, allowWarnings, eventData){
+    // We need the async pickScratchToAdjust, so wrap in an async IIFE.
+    (async function(){
+    const target = GROUP_GP_TARGET[changedPos];
+    if(!target) return;
+    if(changedPos !== 'F' && changedPos !== 'D' && changedPos !== 'G') return;
+
+    // Forwards: 4 line groups (fwd1..fwd4). Defensemen: 3 (def1..def3). Goalies: 1.
+    let onIceGroups = [];
+    if(changedPos === 'F') onIceGroups = ['fwd1', 'fwd2', 'fwd3', 'fwd4'];
+    else if(changedPos === 'D') onIceGroups = ['def1', 'def2', 'def3'];
+    else if(changedPos === 'G') onIceGroups = ['goalies'];
+
+    const onIceCards = onIceGroups
+      .map((k)=> (interactiveGroups.find((g)=> g && g.key === k) || {}).cards || [])
+      .reduce((a,b)=> a.concat(b), []);
+    const onIceFilled = onIceCards.filter((c)=> parsePid(c.getMember().pid) > 0);
+    const scratchGroup = interactiveGroups.find((g)=> g && g.key === 'scratches');
+    const scratchCards = (scratchGroup && scratchGroup.cards) ? scratchGroup.cards : [];
+    const scratchPosCards = scratchCards.filter((c)=> {
+      const m = c.getMember();
+      return parsePid(m.pid) > 0 && normalizePos(m.pos) === changedPos;
+    });
+    const emptyScratchCards = scratchCards.filter((c)=> {
+      const m = c.getMember();
+      return parsePid(m.pid) <= 0;
+    });
+
+    // Delta = how many games the changed player gave up or gained.
+    // eventData.delta is the change in GP (negative = reduced, positive = increased).
+    const delta = (eventData && Number.isFinite(eventData.delta)) ? eventData.delta : 0;
+    if(delta === 0) return;
+    const absDelta = Math.abs(delta);
+
+    // Player REDUCED their GP → slack goes TO scratches (positive slack).
+    // Player INCREASED their GP → slack comes FROM scratches (negative).
+    const givingGames = delta < 0;  // starter gave up games → give to scratch
+
+    if(givingGames){
+      // Starter reduced GP → give games to a scratch
+      if(scratchPosCards.length === 0 && emptyScratchCards.length === 0){
+        if(allowWarnings){
+          window.alert('Select a ' + (changedPos === 'G' ? 'goalie' : (changedPos === 'F' ? 'forward' : 'defenseman')) + ' in Scratches first so the missing games have somewhere to go.');
+          if(eventData && eventData.reset) eventData.reset();
+        }
+        return;
+      }
+
+      let targetCard = null;
+      const candidates = scratchPosCards.length > 0 ? scratchPosCards : emptyScratchCards;
+      if(candidates.length === 1){
+        targetCard = candidates[0];
+      } else {
+        targetCard = await pickScratchToAdjust(candidates, changedPos === 'G' ? 'goalie' : (changedPos === 'F' ? 'forward' : 'defenseman'));
+      }
+      if(!targetCard){
+        if(allowWarnings && eventData && eventData.reset) eventData.reset();
+        return;
+      }
+      const cur = Number.isFinite(targetCard.getMember().games) ? targetCard.getMember().games : 0;
+      targetCard.setGames(Math.min(82, cur + absDelta));
+    } else {
+      // Starter increased GP → take games from a scratch
+      if(scratchPosCards.length === 0){
+        if(allowWarnings){
+          window.alert('No scratched ' + (changedPos === 'G' ? 'goalie' : (changedPos === 'F' ? 'forward' : 'defenseman')) + ' to take games from.');
+          if(eventData && eventData.reset) eventData.reset();
+        }
+        return;
+      }
+
+      let targetCard = null;
+      if(scratchPosCards.length === 1){
+        targetCard = scratchPosCards[0];
+      } else {
+        targetCard = await pickScratchToAdjust(scratchPosCards, changedPos === 'G' ? 'goalie' : (changedPos === 'F' ? 'forward' : 'defenseman'));
+      }
+      if(!targetCard){
+        if(allowWarnings && eventData && eventData.reset) eventData.reset();
+        return;
+      }
+      const cur = Number.isFinite(targetCard.getMember().games) ? targetCard.getMember().games : 0;
+      targetCard.setGames(Math.max(0, cur - absDelta));
+    }
+
+    schedulePointsUpdate();
+    updateGroupRanks();
+    })();  // close async IIFE
+  }
+
   function rankFromPool(pool, score){
     if(!Array.isArray(pool) || !pool.length || !Number.isFinite(score)) return null;
     let higher = 0;
@@ -780,7 +1249,8 @@
     return higher + 1;
   }
 
-  function updateGroupRanks(){
+  let _rebalancing = false;  // guard against infinite recursion.
+  function updateGroupRanks(eventData){
     persistCurrentTeamConfig();
     rebuildLeagueGroupScores();
 
@@ -798,6 +1268,15 @@
     updateProjectionKpis();
     scheduleCustomLineupsCacheSync();
     schedulePointsUpdate();
+
+    // Rebalance forward GP when a player's games change (if caused by a games edit).
+    if(eventData && eventData.changedGames && eventData.changedPos && !_rebalancing){
+      _rebalancing = true;
+      try{
+        rebalanceAfterGpChange(eventData.changedPos, true, eventData);
+      }catch(_){/*noop*/}
+      _rebalancing = false;
+    }
   }
 
   function membersForKeys(keys){
@@ -850,7 +1329,7 @@
   function setTeamKpiMeta(teamKey){
     const key = String(teamKey || '').trim().toUpperCase();
     const row = teamsData.find((t)=> String((t || {}).Team || '').trim().toUpperCase() === key) || null;
-    const logo = row ? String(row.Logo || '').trim() : '';
+    const logo = teamLogoUrl(key);
     const name = row ? String(row.Name || key).trim() : key;
 
     if(teamName) teamName.textContent = name || '-';
@@ -873,11 +1352,16 @@
     for(const key of GROUP_KEYS){
       const rows = Array.isArray(conf[key]) ? conf[key] : [];
       const spec = GROUP_SPECS[key] || { pos: 'F' };
+      const isScratch = (key === 'scratches');
       for(const row of rows){
         const pid = parsePid(row && row.pid);
         if(!pid) continue;
         const pos = normalizePos((row && row.pos) || spec.pos) || 'F';
-        out.push({ pid: pid, pos: pos });
+        const gRaw = parseNum(row && row.games);
+        const games = (Number.isFinite(gRaw) && gRaw >= 0) ? Math.round(gRaw) : 82;
+        const entry = { pid: pid, pos: pos, games: games };
+        if(isScratch) entry.scratch = true;
+        out.push(entry);
       }
     }
     return out;
@@ -914,18 +1398,12 @@
   }
 
   function buildLineupPayload(){
-    const out = [];
-    for(const key of GROUP_KEYS){
-      const g = interactiveGroups.find((x)=> x && x.key === key);
-      if(!g || typeof g.getMembers !== 'function') continue;
-      for(const m of g.getMembers()){
-        const pid = parsePid(m && m.pid);
-        if(!pid) continue;
-        const pos = normalizePos(m && m.pos) || 'F';
-        out.push({ pid: pid, pos: pos });
-      }
-    }
-    return out;
+    // Read from teamConfigs (same source as syncCustomLineupsCache) so the
+    // KPI is computed from the same data regardless of render timing.
+    const teamKey = getCurrentTeamKey();
+    if(!teamKey) return [];
+    const cfg = teamConfigs[teamKey] || defaultTeamConfig(lineupsByTeam[teamKey]);
+    return buildLineupPayloadFromConfig(cfg);
   }
 
   async function updateProjectedPointsKpi(teamKey){
@@ -942,11 +1420,13 @@
     if(loadingV) loadingV.textContent = '...';
     kpiPoints.style.setProperty('--gm-kpi-points-color', '#ffffff');
     try{
+      // Ensure config is synced from current interactive groups before building payload
+      persistCurrentTeamConfig();
       const lineup = buildLineupPayload();
       const res = await fetch('/api/projections/team-season-points-custom', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
-        body: JSON.stringify({ team: team, season: Number(POINTS_SEASON), lineup: lineup }),
+        body: JSON.stringify({ team: team, season: Number(POINTS_SEASON), lineup: lineup, injuries: buildInjuriesPayload() }),
       });
       const data = await res.json().catch(()=>({}));
       if(reqId !== pointsReqSeq) return;
@@ -968,7 +1448,9 @@
     }
   }
 
-  function createSlotCard(slot, candidates, selectedKey, allowNone, onChange, initialGames){
+  function createSlotCard(slot, candidates, selectedKey, allowNone, onChange, initialGames, opts){
+    opts = opts || {};
+    const isScratch = !!opts.isScratch;
     const card = document.createElement('div');
     card.className = 'gm-slot';
 
@@ -1119,7 +1601,7 @@
 
     const ensureDefaultGames = function(pid){
       if(pid > 0){
-        if(!(Number.isFinite(estGames) && estGames > 0)) estGames = 82;
+        if(!(Number.isFinite(estGames) && estGames >= 0)) estGames = isScratch ? 0 : 82;
       }else{
         estGames = 0;
       }
@@ -1144,7 +1626,7 @@
     if(Number.isFinite(initialParsedGames) && initialParsedGames >= 0){
       estGames = Math.round(initialParsedGames);
     }else{
-      estGames = initialPid > 0 ? 82 : 0;
+      estGames = initialPid > 0 ? (isScratch ? 0 : 82) : 0;
     }
 
     setButtonLabel();
@@ -1181,21 +1663,30 @@
       }
       const label = String(option.name || 'player').trim();
       const current = Number.isFinite(estGames) ? String(estGames) : '';
+      const oldGames = Number.isFinite(estGames) ? estGames : (isScratch ? 0 : 82);
       const entered = window.prompt('Estimated games for ' + label + ' (blank to clear):', current);
       if(entered === null) return;
       const trimmed = String(entered).trim();
+      let newGames;
       if(!trimmed){
-        estGames = 82;
+        newGames = isScratch ? 0 : 82;
       }else{
         const n = parseNum(trimmed);
         if(!(Number.isFinite(n) && n >= 0)){
           window.alert('Enter a non-negative number.');
           return;
         }
-        estGames = Math.round(n);
+        newGames = Math.round(n);
       }
+      estGames = newGames;
       refreshVisual();
-      if(typeof onChange === 'function') onChange();
+      if(typeof onChange === 'function'){
+        // Determine position of this slot from the currently selected option.
+        const opt = selectedMeta();
+        const slotPos = normalizePos(opt && opt.pos) || 'F';
+        const delta = newGames - oldGames;
+        onChange({ changedGames: true, changedPos: slotPos, delta: delta, reset: function(){ estGames = isScratch ? 0 : 82; refreshVisual(); } });
+      }
     });
     slotVisualUpdaters.push(refreshVisual);
 
@@ -1209,7 +1700,13 @@
         const option = selectedMeta();
         const pid = parsePid(option ? option.pid : 0);
         const pos = option ? String(option.pos || '') : '';
-        return { pid: pid, pos: pos, games: Number.isFinite(estGames) ? estGames : (pid > 0 ? 82 : 0) };
+        const name = option ? String(option.name || '') : '';
+        return { pid: pid, pos: pos, name: name, games: Number.isFinite(estGames) ? estGames : (pid > 0 ? 82 : 0) };
+      },
+      setGames: function(n){
+        if(!Number.isFinite(n)) return;
+        estGames = Math.max(0, Math.min(82, Math.round(n)));
+        refreshVisual();
       },
     };
   }
@@ -1250,6 +1747,7 @@
     interactiveGroups.push({
       key: key,
       rankKpi: lineObj.rankKpi,
+      cards: cards,
       getMembers: function(){ return cards.map((c)=> c.getMember()); },
     });
   }
@@ -1259,7 +1757,7 @@
     const line = createLine('', 'Projection');
     const cards = [];
     for(let i = 1; i <= 5; i += 1){
-      const cardObj = createSlotCard('S' + String(i), candidates, '', true, updateGroupRanks);
+      const cardObj = createSlotCard('S' + String(i), candidates, '', true, updateGroupRanks, undefined, { isScratch: true });
       cards.push(cardObj);
       line.row.appendChild(cardObj.element);
     }
@@ -1281,12 +1779,18 @@
     const groups = { fwd1: [], fwd2: [], fwd3: [], fwd4: [], def1: [], def2: [], def3: [], goalies: [], scratches: [] };
     const used = new Set();
 
+    function playerToMember(p, defaultPos, defaultGames){
+      if(!p) return { pid: 0, pos: defaultPos, games: 0 };
+      used.add(p.key);
+      const estGames = (p.gp_est || p.games) ? (p.gp_est || p.games) : defaultGames;
+      return { pid: p.pid, pos: p.pos, games: estGames };
+    }
+
     FWD_ROWS.forEach(function(rowSlots, idx){
       const key = 'fwd' + String(idx + 1);
       groups[key] = rowSlots.map(function(slot){
         const p = bySlot[slot] || null;
-        if(p) used.add(p.key);
-        return p ? { pid: p.pid, pos: p.pos, games: 82 } : { pid: 0, pos: 'F', games: 0 };
+        return playerToMember(p, 'F', 82);
       });
     });
 
@@ -1294,23 +1798,149 @@
       const key = 'def' + String(idx + 1);
       groups[key] = rowSlots.map(function(slot){
         const p = bySlot[slot] || null;
-        if(p) used.add(p.key);
-        return p ? { pid: p.pid, pos: p.pos, games: 82 } : { pid: 0, pos: 'D', games: 0 };
+        return playerToMember(p, 'D', 82);
       });
     });
 
     groups.goalies = GOALIE_SLOTS.map(function(slot){
       const p = bySlot[slot] || null;
-      if(p) used.add(p.key);
-      return p ? { pid: p.pid, pos: p.pos, games: 82 } : { pid: 0, pos: 'G', games: 0 };
+      return playerToMember(p, 'G', 82);
     });
 
-    const leftovers = forwards.concat(defense, goalies).filter((p)=> !used.has(p.key)).slice(0, 5);
-    groups.scratches = [];
-    for(let i = 0; i < 5; i += 1){
-      const p = leftovers[i] || null;
-      groups.scratches.push(p ? { pid: p.pid, pos: p.pos, games: 82 } : { pid: 0, pos: '', games: 0 });
+    // Collect leftovers (unused players) by position
+    const leftoverF = forwards.filter(function(p){ return !used.has(p.key); });
+    const leftoverD = defense.filter(function(p){ return !used.has(p.key); });
+    const leftoverG = goalies.filter(function(p){ return !used.has(p.key); });
+
+    // Fill empty slots (pid=0) from leftover players of matching position
+    function fillEmptySlots(lineGroups, leftoverPool, posLabel){
+      for(const key of Object.keys(lineGroups)){
+        const line = lineGroups[key];
+        for(let i = 0; i < line.length; i += 1){
+          if(line[i].pid === 0 && leftoverPool.length > 0){
+            const fill = leftoverPool.shift();
+            used.add(fill.key);
+            const estGames = (fill.gp_est || fill.games) ? (fill.gp_est || fill.games) : 82;
+            line[i] = { pid: fill.pid, pos: fill.pos || posLabel, games: estGames };
+          }
+        }
+      }
     }
+
+    var fwdLineGroups = { fwd1: groups.fwd1, fwd2: groups.fwd2, fwd3: groups.fwd3, fwd4: groups.fwd4 };
+    fillEmptySlots(fwdLineGroups, leftoverF, 'F');
+    var defLineGroups = { def1: groups.def1, def2: groups.def2, def3: groups.def3 };
+    fillEmptySlots(defLineGroups, leftoverD, 'D');
+
+    // Fill empty goalie slots from leftover goalies
+    for(let i = 0; i < groups.goalies.length; i += 1){
+      if(groups.goalies[i].pid === 0 && leftoverG.length > 0){
+        var fill = leftoverG.shift();
+        used.add(fill.key);
+        var estGames = (fill.gp_est || fill.games) ? (fill.gp_est || fill.games) : 82;
+        groups.goalies[i] = { pid: fill.pid, pos: 'G', games: estGames };
+      }
+    }
+
+    // ── Normalize GP to position budgets ──────────────────────────
+    // Done BEFORE building scratches, so all leftover players are included.
+    var BUDGET_F = 12 * 82;   // 984
+    var BUDGET_D = 6 * 82;    // 492
+    var BUDGET_G = 82;        // one starter per game
+
+    var remainingF = forwards.filter(function(p){ return !used.has(p.key); });
+    var remainingD = defense.filter(function(p){ return !used.has(p.key); });
+    var remainingG = goalies.filter(function(p){ return !used.has(p.key); });
+
+    // Map to store normalized GP by playerId
+    var normalizedGpByPid = {};
+
+    function collectAllMembers(posFilter){
+      var members = [];
+      if(posFilter === 'F'){
+        ['fwd1','fwd2','fwd3','fwd4'].forEach(function(k){
+          (groups[k] || []).forEach(function(m){ if(m.pid > 0) members.push(m); });
+        });
+        remainingF.forEach(function(p){ members.push({ pid: p.pid, pos: 'F', games: (p.gp_est || p.games) || 0 }); });
+      } else if(posFilter === 'D'){
+        ['def1','def2','def3'].forEach(function(k){
+          (groups[k] || []).forEach(function(m){ if(m.pid > 0) members.push(m); });
+        });
+        remainingD.forEach(function(p){ members.push({ pid: p.pid, pos: 'D', games: (p.gp_est || p.games) || 0 }); });
+      } else if(posFilter === 'G'){
+        (groups.goalies || []).forEach(function(m){ if(m.pid > 0) members.push(m); });
+        remainingG.forEach(function(p){ members.push({ pid: p.pid, pos: 'G', games: (p.gp_est || p.games) || 0 }); });
+      }
+      return members;
+    }
+
+    function normalizeGpBudget(members, budget, maxGp){
+      if(!members.length) return;
+      var totalGp = 0;
+      members.forEach(function(m){ totalGp += (m.games || 0); });
+      if(totalGp <= 0) return;
+
+      var remaining = members.slice();
+      var remainingBudget = budget;
+      var iterations = 0;
+      while(remaining.length > 0 && iterations < 10){
+        iterations += 1;
+        var totalRemaining = 0;
+        remaining.forEach(function(m){ totalRemaining += (m.games || 0); });
+        if(totalRemaining <= 0) break;
+        var scale = remainingBudget / totalRemaining;
+        var nextRemaining = [];
+        remaining.forEach(function(m){
+          var scaled = Math.round((m.games || 0) * scale);
+          if(scaled > maxGp){
+            scaled = maxGp;
+            m.games = scaled;
+            remainingBudget -= scaled;
+          } else {
+            nextRemaining.push(m);
+          }
+        });
+        if(nextRemaining.length === remaining.length){
+          var allocated = 0;
+          nextRemaining.sort(function(a,b){ return (b.games || 0) - (a.games || 0); });
+          nextRemaining.forEach(function(m, i){
+            var scaled = Math.round((m.games || 0) * scale);
+            if(scaled < 0) scaled = 0;
+            if(i === nextRemaining.length - 1){
+              scaled = remainingBudget - allocated;
+              if(scaled < 0) scaled = 0;
+            }
+            allocated += scaled;
+            m.games = scaled;
+          });
+          remainingBudget -= allocated;
+          break;
+        }
+        remaining = nextRemaining;
+      }
+      // Store normalized GP by playerId for scratch lookup
+      members.forEach(function(m){
+        if(m.pid > 0) normalizedGpByPid[String(m.pid)] = m.games;
+      });
+    }
+
+    normalizeGpBudget(collectAllMembers('F'), BUDGET_F, 82);
+    normalizeGpBudget(collectAllMembers('D'), BUDGET_D, 82);
+    normalizeGpBudget(collectAllMembers('G'), BUDGET_G, 82);
+
+    // ── Build scratches from ALL remaining players ────────────────
+    // Show all leftover players (not just 5) so budgets balance visibly.
+    var allLeftovers = remainingF.concat(remainingD, remainingG);
+    groups.scratches = [];
+    for(var i = 0; i < allLeftovers.length; i += 1){
+      var p = allLeftovers[i] || null;
+      if(p){
+        used.add(p.key);
+        var gpVal = (p.pid && normalizedGpByPid[String(p.pid)] != null) ? normalizedGpByPid[String(p.pid)] : ((p.gp_est || p.games) || 0);
+        groups.scratches.push({ pid: p.pid, pos: p.pos, games: gpVal });
+      }
+    }
+
     return groups;
   }
 
@@ -1344,7 +1974,6 @@
   function renderTeam(team){
     const teamKey = String(team || '').trim().toUpperCase();
     setTeamKpiMeta(teamKey);
-    updateProjectedPointsKpi(teamKey);
     forwardsWrap.innerHTML = '';
     defenseWrap.innerHTML = '';
     goaliesWrap.innerHTML = '';
@@ -1423,29 +2052,188 @@
     addInteractiveGroup('goalies', goalieLine, goalieCards);
 
     scratchWrap.innerHTML = '';
-    const scratchLine = createLine('', 'Projection');
     const scratchCards = [];
     const sCfg = cfg.scratches || [];
-    for(let i = 0; i < 5; i += 1){
-      const entry = sCfg[i] || {};
-      const selected = keyByPid(scratchCandidates, entry.pid) || '';
-      const cardObj = createSlotCard('S' + String(i + 1), scratchCandidates, selected, true, updateGroupRanks, entry.games);
-      scratchCards.push(cardObj);
-      scratchLine.row.appendChild(cardObj.element);
+    const scratchCount = Math.max(sCfg.length, 5);
+
+    // Split scratches into rows of at most 5 per row
+    const MAX_PER_SCRATCH_ROW = 5;
+    const scratchRows = [];
+    for(let i = 0; i < scratchCount; i += MAX_PER_SCRATCH_ROW){
+      scratchRows.push(sCfg.slice(i, i + MAX_PER_SCRATCH_ROW));
     }
-    scratchLine.row.appendChild(scratchLine.rankSlot);
-    scratchWrap.appendChild(scratchLine.line);
-    addInteractiveGroup('scratches', scratchLine, scratchCards);
+
+    // Create the rank KPI element (shared)
+    const rankLine = createLine('', 'Projection');
+    const rankKpi = rankLine.rankKpi;
+    const rankSlotEl = rankLine.rankSlot;
+
+    scratchRows.forEach(function(rowEntries, rowIdx){
+      const scratchLine = createLine('', 'Projection');
+      const cards = [];
+      for(let j = 0; j < rowEntries.length; j += 1){
+        const entry = rowEntries[j] || {};
+        const globalIdx = rowIdx * MAX_PER_SCRATCH_ROW + j;
+        const selected = keyByPid(scratchCandidates, entry.pid) || '';
+        const cardObj = createSlotCard('S' + String(globalIdx + 1), scratchCandidates, selected, true, updateGroupRanks, entry.games);
+        cards.push(cardObj);
+        scratchCards.push(cardObj);
+        scratchLine.row.appendChild(cardObj.element);
+      }
+      // Last row gets the real Rank KPI; other rows get an invisible spacer
+      const isLastRow = rowIdx === scratchRows.length - 1;
+      if(isLastRow){
+        scratchLine.row.appendChild(rankSlotEl);
+      } else {
+        const spacer = document.createElement('div');
+        spacer.className = 'gm-rank-slot';
+        spacer.style.visibility = 'hidden';
+        scratchLine.row.appendChild(spacer);
+      }
+      scratchWrap.appendChild(scratchLine.line);
+    });
+
+    // Register interactive group with the shared rank KPI
+    addInteractiveGroup('scratches', { rankKpi: rankKpi, rankSlot: rankSlotEl }, scratchCards);
+
+    // If no scratches at all, add one empty line
+    if(scratchRows.length === 0){
+      const emptyLine = createLine('', 'Projection');
+      scratchWrap.appendChild(emptyLine.line);
+      addInteractiveGroup('scratches', emptyLine, []);
+    }
+
+    // Render injuries for this team.
+    renderInjuries();
 
     for(const fn of slotVisualUpdaters){
       try{ fn(); }catch(_){/*noop*/}
     }
     updateGroupRanks();
 
-    const generatedAt = String(teamNode.generated_at || '').trim();
-    statusEl.textContent = generatedAt
-      ? ('Daily Faceoff lineup snapshot loaded. Updated: ' + generatedAt)
-      : 'Daily Faceoff lineup snapshot loaded.';
+    // KPI must be computed AFTER interactive groups are built so
+    // buildLineupPayload() sees the correct roster + GP values.
+    updateProjectedPointsKpi(teamKey);
+
+    statusEl.textContent = '';
+  }
+
+  // ── Injuries ──
+  // Each injury: { injuredPid, replacementPid, startDate, endDate, pos }
+  // For games whose date falls in [startDate, endDate], the simulation/KPI
+  // uses the replacement player's projection instead of the injured player's.
+  function getCurrentInjuries(){
+    const teamKey = getCurrentTeamKey();
+    if(!teamKey) return [];
+    return Array.isArray(teamInjuries[teamKey]) ? teamInjuries[teamKey] : [];
+  }
+
+  function buildInjuryPlayerOptions(selectedPid){
+    const teamKey = getCurrentTeamKey();
+    if(!teamKey) return '';
+    const candidates = buildTeamFirstCandidates(teamKey, ['F', 'D', 'G']);
+    let html = '<option value="">— Select —</option>';
+    for(const c of candidates){
+      const sel = (Number(c.pid) === Number(selectedPid)) ? ' selected' : '';
+      html += '<option value="' + c.pid + '"' + sel + '>' + c.name + ' (' + c.pos + ')</option>';
+    }
+    return html;
+  }
+
+  function renderInjuries(){
+    if(!injuriesWrap) return;
+    const injuries = getCurrentInjuries();
+    injuriesWrap.innerHTML = '';
+    if(!injuries.length){
+      injuriesWrap.innerHTML = '<div class="gm-injury-empty">No injuries. Click "+ Add Injury" to add one.</div>';
+      return;
+    }
+    injuries.forEach((inj, idx) => {
+      const row = document.createElement('div');
+      row.className = 'gm-injury-row';
+
+      const injuredLabel = document.createElement('div');
+      injuredLabel.className = 'gm-injury-label';
+      injuredLabel.textContent = 'Injured';
+      const injuredSel = document.createElement('select');
+      injuredSel.innerHTML = buildInjuryPlayerOptions(inj.injuredPid);
+      injuredSel.addEventListener('change', function(){
+        inj.injuredPid = Number(this.value) || 0;
+        renderInjuries();
+        schedulePointsUpdate();
+        scheduleCustomLineupsCacheSync();
+      });
+
+      const replacementLabel = document.createElement('div');
+      replacementLabel.className = 'gm-injury-label';
+      replacementLabel.textContent = 'Replacement';
+      const replacementSel = document.createElement('select');
+      replacementSel.innerHTML = buildInjuryPlayerOptions(inj.replacementPid);
+      replacementSel.addEventListener('change', function(){
+        inj.replacementPid = Number(this.value) || 0;
+        schedulePointsUpdate();
+        scheduleCustomLineupsCacheSync();
+      });
+
+      const startLabel = document.createElement('div');
+      startLabel.className = 'gm-injury-label';
+      startLabel.textContent = 'From';
+      const startInput = document.createElement('input');
+      startInput.type = 'date';
+      startInput.value = inj.startDate || '';
+      startInput.addEventListener('change', function(){
+        inj.startDate = this.value;
+        schedulePointsUpdate();
+        scheduleCustomLineupsCacheSync();
+      });
+
+      const endLabel = document.createElement('div');
+      endLabel.className = 'gm-injury-label';
+      endLabel.textContent = 'Until';
+      const endInput = document.createElement('input');
+      endInput.type = 'date';
+      endInput.value = inj.endDate || '';
+      endInput.addEventListener('change', function(){
+        inj.endDate = this.value;
+        schedulePointsUpdate();
+        scheduleCustomLineupsCacheSync();
+      });
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'gm-injury-remove';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', function(){
+        injuries.splice(idx, 1);
+        renderInjuries();
+        schedulePointsUpdate();
+        scheduleCustomLineupsCacheSync();
+      });
+
+      row.appendChild(injuredLabel); row.appendChild(injuredSel);
+      row.appendChild(replacementLabel); row.appendChild(replacementSel);
+      row.appendChild(startLabel); row.appendChild(startInput);
+      row.appendChild(endLabel); row.appendChild(endInput);
+      row.appendChild(removeBtn);
+      injuriesWrap.appendChild(row);
+    });
+  }
+
+  function addInjury(){
+    const teamKey = getCurrentTeamKey();
+    if(!teamKey){
+      window.alert('Select a team first.');
+      return;
+    }
+    if(!teamInjuries[teamKey]) teamInjuries[teamKey] = [];
+    teamInjuries[teamKey].push({ injuredPid: 0, replacementPid: 0, startDate: '', endDate: '' });
+    renderInjuries();
+  }
+
+  function buildInjuriesPayload(){
+    const teamKey = getCurrentTeamKey();
+    if(!teamKey) return [];
+    return (teamInjuries[teamKey] || []).filter((inj) => inj.injuredPid > 0 && inj.replacementPid > 0);
   }
 
   function renderFromSelectedTeam(){
@@ -1590,6 +2378,10 @@
     const chosen = layout || {};
     const cfg = (chosen.config && typeof chosen.config === 'object') ? chosen.config : {};
     teamConfigs = normalizeAllTeamConfigs(cfg.teamConfigs);
+    // Restore injuries if present (v2+ format)
+    if(cfg.teamInjuries && typeof cfg.teamInjuries === 'object'){
+      teamInjuries = cfg.teamInjuries;
+    }
     ensureAllTeamConfigs();
     activeLayoutId = String(chosen.id || '');
     activeLayoutName = String(chosen.name || '');
@@ -1610,10 +2402,11 @@
       name: name,
       cardType: 'team',
       config: {
-        version: 1,
+        version: 2,
         cardType: 'team',
         gmMode: true,
         teamConfigs: teamConfigs,
+        teamInjuries: teamInjuries || {},
       },
     };
     const res = await fetch('/api/card-builder/layouts', {
@@ -1660,11 +2453,66 @@
     statusEl.textContent = 'Configuration deleted.';
   }
 
+  // Public visitors (not logged in) get a friendly prompt to sign in before
+  // using Save/Load. Buttons marked with .gm-requires-auth carry data-login-url
+  // and data-signup-url (rendered by the template when auth_user is falsy).
+  function promptLoginForRequiresAuth(btn){
+    if(!btn) return false;
+    if(!btn.classList.contains('gm-requires-auth')) return false;
+    const loginUrl = btn.getAttribute('data-login-url') || '/login?next=/gm-mode';
+    const signupUrl = btn.getAttribute('data-signup-url') || '/signup?next=/gm-mode';
+    const action = window.confirm(
+      'You need to log in or create an account to save and load lineups.\n\n' +
+      'Click OK to log in, or Cancel to stay on this page.'
+    );
+    if(action){
+      window.location.href = loginUrl;
+    }else{
+      // Offer signup as a secondary path via a second confirm.
+      if(window.confirm('Would you like to create a free account instead?\n\nClick OK to sign up, or Cancel to stay on this page.')){
+        window.location.href = signupUrl;
+      }
+    }
+    return true;
+  }
+
   if(saveBtn){
-    saveBtn.addEventListener('click', function(){ openConfigDialog('save'); });
+    saveBtn.addEventListener('click', function(ev){
+      if(promptLoginForRequiresAuth(saveBtn)){ ev.preventDefault(); ev.stopPropagation(); return; }
+      openConfigDialog('save');
+    });
   }
   if(loadBtn){
-    loadBtn.addEventListener('click', function(){ openConfigDialog('load'); });
+    loadBtn.addEventListener('click', function(ev){
+      if(promptLoginForRequiresAuth(loadBtn)){ ev.preventDefault(); ev.stopPropagation(); return; }
+      openConfigDialog('load');
+    });
+  }
+
+  const uploadDbBtn = document.getElementById('gmUploadDbBtn');
+  if(uploadDbBtn){
+    uploadDbBtn.addEventListener('click', async function(){
+      if(!confirm('Upload all current custom lineups to the Supabase lineups table? This overwrites the default lineups for ALL teams.')) return;
+      uploadDbBtn.disabled = true;
+      uploadDbBtn.textContent = 'Uploading...';
+      try{
+        const payload = buildAllTeamsLineupsPayload();
+        const res = await fetch('/api/admin/lineups/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+          body: JSON.stringify({ season: Number(POINTS_SEASON), lineupsByTeam: payload }),
+        });
+        const data = await res.json().catch(function(){ return {}; });
+        if(!res.ok) throw new Error(String((data || {}).error || 'upload_failed'));
+        statusEl.textContent = 'Uploaded ' + String(data.count || 0) + ' rows to lineups table.';
+      }catch(e){
+        statusEl.textContent = 'Upload failed: ' + String(e.message || e);
+        console.error(e);
+      }finally{
+        uploadDbBtn.disabled = false;
+        uploadDbBtn.textContent = 'Upload to Database';
+      }
+    });
   }
   if(configCloseBtn){
     configCloseBtn.addEventListener('click', function(){ modalShow(false); });
@@ -1727,19 +2575,1422 @@
       .then(function(res){ return res.ok ? res.json() : {}; })
       .catch(function(){ return {}; }),
   ])
-    .then(function(results){
+    .then(async function(results){
       lineupsByTeam = results[0] && typeof results[0] === 'object' ? results[0] : {};
       projectionsByPid = results[1] && typeof results[1] === 'object' ? results[1] : {};
       buildProjectionPools(projectionsByPid);
       buildProjectionPlayersByPos(projectionsByPid);
       ensureAllTeamConfigs();
-      scheduleCustomLineupsCacheSync();
+      // Sync all custom lineups to the server BEFORE the first KPI computation,
+      // so opponents' projections use the same GP-weighted lineups consistently.
+      await syncCustomLineupsCache();
       rebuildLeagueGroupScores();
       waitForTeamSelection(0);
     })
     .catch(function(){
       statusEl.textContent = 'Unable to load Daily Faceoff lineup data right now.';
     });
+
+  // ── Season Simulation ───────────────────────────────────────────────
+  const simBtn = document.getElementById('gmSimBtn');
+  const sim100Btn = document.getElementById('gmSim100Btn');
+  const tabLineup = document.getElementById('gmTabLineup');
+  const tabStandings = document.getElementById('gmTabStandings');
+  const tabBracket = document.getElementById('gmTabBracket');
+  const tabStats = document.getElementById('gmTabStats');
+  const panelLineup = document.getElementById('gmTabPanelLineup');
+  const panelStandings = document.getElementById('gmTabPanelStandings');
+  const panelBracket = document.getElementById('gmTabPanelBracket');
+  const panelStats = document.getElementById('gmTabPanelStats');
+  let simRunning = false;
+  let lastSimData = null;      // single-sim result
+  let lastBatchData = null;    // batch (100-sim) result
+  let lastMode = null;         // 'single' or 'batch'
+  let activeTab = 'lineup';
+
+  // ── Sortable table helper (Skaters-style header arrows) ──
+  //   table       — <table> element with .gm-table class
+  //   key         — localStorage key for remembering sort
+  //   defaultCol  — column to sort by default (e.g. 'points')
+  //   defaultDir  — 'asc' or 'desc'
+  // The table must use <th data-col="..."> for sortable columns and
+  // <tr data-row="<JSON>"> on body rows. The JSON encodes the values
+  // for each column (used to re-sort without a server roundtrip).
+  function __gmLoadTableSort(key, defaultCol, defaultDir){
+    try{
+      const raw = sessionStorage.getItem(key);
+      if(!raw) return { col: defaultCol, dir: defaultDir };
+      const obj = JSON.parse(raw);
+      if(obj && typeof obj === 'object' && obj.col){ return { col: String(obj.col), dir: (obj.dir === 'asc' ? 'asc' : 'desc') }; }
+    }catch(_){/*noop*/}
+    return { col: defaultCol, dir: defaultDir };
+  }
+  function __gmSaveTableSort(key, col, dir){
+    try{ sessionStorage.setItem(key, JSON.stringify({ col: col, dir: dir })); }catch(_){/*noop*/}
+  }
+  function __gmApplyTableSort(table, sort){
+    if(!table) return;
+    const tbody = table.tBodies[0];
+    if(!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr[data-row]'));
+    rows.sort(function(a, b){
+      const ar = {}; const br = {};
+      try{ Object.assign(ar, JSON.parse(a.getAttribute('data-row') || '{}')); }catch(_){}
+      try{ Object.assign(br, JSON.parse(b.getAttribute('data-row') || '{}')); }catch(_){}
+      const av = ar[sort.col]; const bv = br[sort.col];
+      if(sort.col === 'team' || sort.col === 'name' || sort.col === 'pos'){
+        const sa = String(av == null ? '' : av).toLowerCase();
+        const sb = String(bv == null ? '' : bv).toLowerCase();
+        if(sa !== sb) return (sort.dir === 'asc') ? sa.localeCompare(sb) : sb.localeCompare(sa);
+        return 0;
+      }
+      const aN = Number(av); const bN = Number(bv);
+      const aOk = Number.isFinite(aN); const bOk = Number.isFinite(bN);
+      if(aOk && bOk && aN !== bN) return (sort.dir === 'asc') ? (aN - bN) : (bN - aN);
+      if(aOk !== bOk) return aOk ? -1 : 1;
+      return 0;
+    });
+    const frag = document.createDocumentFragment();
+    for(const r of rows) frag.appendChild(r);
+    tbody.appendChild(frag);
+    // Update header arrows.
+    const ths = table.querySelectorAll('thead th[data-col]');
+    ths.forEach(function(th){
+      th.classList.remove('sort-asc', 'sort-desc');
+      const ind = th.querySelector('.sort-ind');
+      if(th.getAttribute('data-col') === sort.col){
+        th.classList.add(sort.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+        if(ind){ ind.textContent = sort.dir === 'asc' ? '▲' : '▼'; }
+      } else if(ind){
+        ind.textContent = '';
+      }
+    });
+  }
+  function __gmWireTable(table, key, defaultCol, defaultDir){
+    if(!table) return;
+    const sort = __gmLoadTableSort(key, defaultCol, defaultDir);
+    __gmApplyTableSort(table, sort);
+    table.querySelectorAll('thead th[data-col]').forEach(function(th){
+      th.addEventListener('click', function(){
+        const col = th.getAttribute('data-col');
+        if(!col) return;
+        const cur = __gmLoadTableSort(key, defaultCol, defaultDir);
+        const newDir = (cur.col === col && cur.dir === 'desc') ? 'asc' : 'desc';
+        __gmSaveTableSort(key, col, newDir);
+        __gmApplyTableSort(table, { col: col, dir: newDir });
+      });
+    });
+  }
+
+  // ── Persist last simulation across navigation ──
+  // Save the most recent simulation result (single or batch) and the active tab
+  // in sessionStorage. On page load we rehydrate them so the user lands back
+  // on the same tab with the same numbers.
+  const __GM_LAST_SIM_KEY = 'nhlGmLastSim_v1';
+  const __GM_LAST_TAB_KEY = 'nhlGmLastTab_v1';
+  function __gmTruncatePlayerList(list, max){
+    if(!Array.isArray(list)) return [];
+    if(!Number.isFinite(max) || max <= 0) return list.slice(0);
+    return list.slice(0, Math.min(max, list.length));
+  }
+  function __gmSaveLastSim(mode, data){
+    try{
+      if(!data) return;
+      // Reject non-finite numeric values that JSON.stringify chokes on (e.g. NaN/Infinity).
+      const sanitize = function(v){
+        if(v == null) return v;
+        if(typeof v === 'number'){
+          if(!Number.isFinite(v)) return null;
+          return v;
+        }
+        if(Array.isArray(v)) return v.map(sanitize);
+        if(typeof v === 'object'){
+          const out = {};
+          for(const k of Object.keys(v)){
+            const val = sanitize(v[k]);
+            if(val !== undefined) out[k] = val;
+          }
+          return out;
+        }
+        return v;
+      };
+      const safe = {
+        mode: String(mode || ''),
+        numSims: data.numSims,
+        season: data.season,
+        teamAgg: sanitize(data.teamAgg),
+        // Truncate player lists to keep sessionStorage under quota.
+        playerAgg: sanitize(__gmTruncatePlayerList(data.playerAgg, 300)),
+        // Single-sim fields.
+        standings: sanitize(data.standings),
+        playoffSeeds: sanitize(data.playoffSeeds),
+        playoffs: sanitize(data.playoffs),
+        playerStats: sanitize(__gmTruncatePlayerList(data.playerStats, 300)),
+        simulatedGames: data.simulatedGames,
+        model: data.model,
+      };
+      sessionStorage.setItem(__GM_LAST_SIM_KEY, JSON.stringify(safe));
+    }catch(err){
+      try{ console.warn('__gmSaveLastSim failed', err); }catch(_){/*noop*/}
+    }
+  }
+  function __gmLoadLastSim(){
+    try{
+      const raw = sessionStorage.getItem(__GM_LAST_SIM_KEY);
+      if(!raw) return null;
+      const obj = JSON.parse(raw);
+      if(!obj || !obj.mode) return null;
+      return obj;
+    }catch(_){ return null; }
+  }
+  function __gmSaveLastTab(tab){
+    try{ sessionStorage.setItem(__GM_LAST_TAB_KEY, String(tab || 'lineup')); }catch(_){/*noop*/}
+  }
+  function __gmLoadLastTab(){
+    try{ return String(sessionStorage.getItem(__GM_LAST_TAB_KEY) || 'lineup'); }catch(_){ return 'lineup'; }
+  }
+
+  function teamLogoUrl(abbr){
+    const a = String(abbr || '').trim().toUpperCase();
+    return a ? '/api/team-logo/' + encodeURIComponent(a) + '.svg' : '';
+  }
+  function teamNameOf(abbr){
+    const row = teamsData.find(function(t){ return String((t || {}).Team || '').trim().toUpperCase() === String(abbr || '').trim().toUpperCase(); });
+    return row ? String(row.Name || abbr).trim() : abbr;
+  }
+
+  function setTab(name){
+    activeTab = name;
+    const tabs = [tabLineup, tabStandings, tabBracket, tabStats];
+    const panels = [panelLineup, panelStandings, panelBracket, panelStats];
+    const keyMap = { 'lineup': tabLineup, 'standings': tabStandings, 'bracket': tabBracket, 'stats': tabStats };
+    const panelMap = { 'lineup': panelLineup, 'standings': panelStandings, 'bracket': panelBracket, 'stats': panelStats };
+    for(const t of tabs){ if(t){ t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); } }
+    for(const p of panels){ if(p){ p.classList.remove('active'); p.hidden = true; } }
+    const at = keyMap[name]; const ap = panelMap[name];
+    if(at){ at.classList.add('active'); at.setAttribute('aria-selected', 'true'); }
+    if(ap){ ap.classList.add('active'); ap.hidden = false; }
+    __gmSaveLastTab(name);
+  }
+
+  // ── Standings tab: single-sim (with playoff highlight) ──
+  function renderSimStandings(standings, playoffSeeds){
+    if(!panelStandings) return;
+    const eastTeams = playoffSeeds && Array.isArray(playoffSeeds.East) ? playoffSeeds.East : [];
+    const westTeams = playoffSeeds && Array.isArray(playoffSeeds.West) ? playoffSeeds.West : [];
+    function buildCol(rows, confTeams, title){
+      const playoffSet = {};
+      for(const t of confTeams){ playoffSet[String(t).toUpperCase()] = true; }
+      let html = '<div class="gm-sim-standings-title">' + title + '</div>';
+      html += '<table class="gm-table gm-sim-standings-col-table"><thead><tr>';
+      html += '<th data-col="team">Team <span class="sort-ind"></span></th>';
+      html += '<th data-col="gp">GP <span class="sort-ind"></span></th>';
+      html += '<th data-col="wins">W <span class="sort-ind"></span></th>';
+      html += '<th data-col="losses">L <span class="sort-ind"></span></th>';
+      html += '<th data-col="otLosses">OT <span class="sort-ind"></span></th>';
+      html += '<th data-col="points">PTS <span class="sort-ind"></span></th>';
+      html += '<th data-col="goalsFor">GF <span class="sort-ind"></span></th>';
+      html += '<th data-col="goalsAgainst">GA <span class="sort-ind"></span></th>';
+      html += '<th data-col="diff">DIFF <span class="sort-ind"></span></th>';
+      html += '</tr></thead><tbody>';
+      for(const r of rows){
+        const isPlayoff = playoffSet[String(r.team || '').toUpperCase()];
+        const diff = (Number(r.goalsFor || 0) - Number(r.goalsAgainst || 0));
+        const diffStr = diff > 0 ? ('+' + diff) : String(diff);
+        const dataRow = JSON.stringify({
+          team: r.team, gp: r.gp, wins: r.wins, losses: r.losses, otLosses: r.otLosses,
+          points: r.points, goalsFor: r.goalsFor, goalsAgainst: r.goalsAgainst, diff: diff,
+        });
+        html += '<tr class="' + (isPlayoff ? 'sim-playoff' : '') + '" data-row=\'' + dataRow + '\'>';
+        html += '<td><div class="sim-team-cell"><img class="sim-team-logo" src="' + teamLogoUrl(r.team) + '" alt="" loading="lazy" />' + String(r.team || '') + '</div></td>';
+        html += '<td>' + r.gp + '</td><td>' + r.wins + '</td><td>' + r.losses + '</td><td>' + r.otLosses + '</td><td>' + r.points + '</td>';
+        html += '<td>' + (r.goalsFor || 0) + '</td><td>' + (r.goalsAgainst || 0) + '</td><td>' + diffStr + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      return html;
+    }
+    const eastRows = standings.filter(function(r){ return r.conference === 'East'; });
+    const westRows = standings.filter(function(r){ return r.conference === 'West'; });
+    // Preserve any pre-existing champion banner (added by renderResults).
+    let prefix = '';
+    const existingBanner = panelStandings.querySelector('.gm-sim-champion');
+    if(existingBanner) prefix = existingBanner.outerHTML;
+    panelStandings.innerHTML =
+      prefix +
+      '<div class="gm-sim-section-title">Standings</div>' +
+      '<div class="gm-sim-meta">Single simulation (1 run).</div>' +
+      '<div class="gm-sim-standings-wrap">' +
+      '<div class="gm-sim-standings-col">' + buildCol(eastRows, eastTeams, 'Eastern Conference') + '</div>' +
+      '<div class="gm-sim-standings-col">' + buildCol(westRows, westTeams, 'Western Conference') + '</div></div>';
+    panelStandings.querySelectorAll('table.gm-table').forEach(function(t){
+      __gmWireTable(t, 'nhlGmStandings_single_' + t.parentElement.querySelector('.gm-sim-standings-title').textContent, 'points', 'desc');
+    });
+  }
+
+  // ── Standings tab: batch (100-sim averages + playoff sums) ──
+  function renderBatchStandings(teamAgg, numSims){
+    if(!panelStandings || !teamAgg) return;
+    function buildCol(rows, title){
+      let html = '<div class="gm-sim-standings-title">' + title + '</div>';
+      html += '<table class="gm-table gm-sim-standings-col-table"><thead><tr>';
+      html += '<th data-col="team">Team <span class="sort-ind"></span></th>';
+      html += '<th data-col="gp">GP <span class="sort-ind"></span></th>';
+      html += '<th data-col="wins">W <span class="sort-ind"></span></th>';
+      html += '<th data-col="losses">L <span class="sort-ind"></span></th>';
+      html += '<th data-col="otLosses">OT <span class="sort-ind"></span></th>';
+      html += '<th data-col="points">PTS <span class="sort-ind"></span></th>';
+      html += '<th data-col="goalsFor">GF <span class="sort-ind"></span></th>';
+      html += '<th data-col="goalsAgainst">GA <span class="sort-ind"></span></th>';
+      html += '<th data-col="diff">DIFF <span class="sort-ind"></span></th>';
+      html += '<th data-col="po">PO <span class="sort-ind"></span></th>';
+      html += '<th data-col="r2">R2 <span class="sort-ind"></span></th>';
+      html += '<th data-col="r3">R3 <span class="sort-ind"></span></th>';
+      html += '<th data-col="fin">FIN <span class="sort-ind"></span></th>';
+      html += '<th data-col="cup">CUP <span class="sort-ind"></span></th>';
+      html += '</tr></thead><tbody>';
+      for(const r of rows){
+        const diff = Number(r.avgGoalDifferential || 0);
+        const diffStr = diff > 0 ? ('+' + diff.toFixed(1)) : diff.toFixed(1);
+        const dataRow = JSON.stringify({
+          team: r.team,
+          gp: r.avgGp, wins: r.avgWins, losses: r.avgLosses, otLosses: r.avgOtLosses,
+          points: r.avgPoints, goalsFor: r.avgGoalsFor, goalsAgainst: r.avgGoalsAgainst, diff: diff,
+          po: r.sumPlayoffs, r2: r.sumSecondRound, r3: r.sumThirdRound, fin: r.sumFinal, cup: r.sumChampion,
+        });
+        html += '<tr data-row=\'' + dataRow + '\'>';
+        html += '<td><div class="sim-team-cell"><img class="sim-team-logo" src="' + teamLogoUrl(r.team) + '" alt="" loading="lazy" />' + String(r.team || '') + '</div></td>';
+        html += '<td>' + r.avgGp.toFixed(0) + '</td><td>' + r.avgWins.toFixed(1) + '</td><td>' + r.avgLosses.toFixed(1) + '</td><td>' + r.avgOtLosses.toFixed(1) + '</td><td>' + r.avgPoints.toFixed(1) + '</td>';
+        html += '<td>' + r.avgGoalsFor.toFixed(0) + '</td><td>' + r.avgGoalsAgainst.toFixed(0) + '</td><td>' + diffStr + '</td>';
+        html += '<td>' + r.sumPlayoffs + '</td><td>' + r.sumSecondRound + '</td><td>' + r.sumThirdRound + '</td><td>' + r.sumFinal + '</td><td>' + r.sumChampion + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      return html;
+    }
+    const eastRows = teamAgg.filter(function(r){ return r.conference === 'East'; });
+    const westRows = teamAgg.filter(function(r){ return r.conference === 'West'; });
+    let prefix = '';
+    const existingBanner = panelStandings.querySelector('.gm-sim-champion');
+    if(existingBanner) prefix = existingBanner.outerHTML;
+    panelStandings.innerHTML =
+      prefix +
+      '<div class="gm-sim-section-title">Standings</div>' +
+      '<div class="gm-sim-meta">Averages over ' + numSims + ' simulations. PO=Playoffs, R2=2nd Round, R3=Conf Finals, FIN=Cup Final, CUP=Champion. Playoff columns show count of sims reaching that stage.</div>' +
+      '<div class="gm-sim-standings-wrap">' +
+      '<div class="gm-sim-standings-col">' + buildCol(eastRows, 'Eastern Conference') + '</div>' +
+      '<div class="gm-sim-standings-col">' + buildCol(westRows, 'Western Conference') + '</div></div>';
+    panelStandings.querySelectorAll('table.gm-table').forEach(function(t){
+      __gmWireTable(t, 'nhlGmStandings_batch_' + t.parentElement.querySelector('.gm-sim-standings-title').textContent, 'points', 'desc');
+    });
+  }
+
+  // ── Playoff tab: single-sim bracket (Projections-style 7-column layout) ──
+  function gmBracketTeamLine(teamName, wins, confLabel){
+    if(!teamName){ return '<div class="bracket-team-line"><div class="bracket-team-name">TBD</div></div>'; }
+    const logo = teamLogoUrl(teamName);
+    const winsHtml = Number.isFinite(Number(wins)) ? `<span class="bracket-wins-chip">${Number(wins)}</span>` : '';
+    return `<div class="bracket-team-line">
+      <div class="bracket-team-meta">
+        ${logo ? `<img src="${logo}" alt="${teamName}" />` : ''}
+        <div>
+          <div class="bracket-team-name">${teamName}</div>
+          <div class="bracket-team-subtext">${confLabel || ''}</div>
+        </div>
+      </div>
+      <div>${winsHtml}</div>
+    </div>`;
+  }
+
+  function gmBracketSeriesCard(s, confLabel){
+    if(!s || !s.winner) return '';
+    const topWins = Number(s.topWins) || 0;
+    const bottomWins = Number(s.bottomWins) || 0;
+    const winnerWins = (s.winner === s.top) ? topWins : bottomWins;
+    const loserWins = (s.loser === s.top) ? topWins : bottomWins;
+    const topIsWinner = s.winner === s.top;
+    return `<article class="bracket-series-card">
+      <div class="bracket-series-head">
+        <div class="bracket-series-label">${confLabel || ''}</div>
+        <div class="bracket-scoreline">${winnerWins}-${loserWins}</div>
+      </div>
+      ${gmBracketTeamLine(s.top, topWins, confLabel)}
+      ${gmBracketTeamLine(s.bottom, bottomWins, confLabel)}
+    </article>`;
+  }
+
+  function renderSimBracket(playoffs){
+    if(!playoffs || !panelBracket) return;
+    const r1 = (playoffs.round1 || {});
+    const r2 = (playoffs.round2 || {});
+    const cf = (playoffs.conferenceFinals || {});
+    const fin = playoffs.stanleyFinal;
+    const column = (title, nodes, extraClass) => {
+      const list = (nodes || []).filter(Boolean);
+      return `<section class="bracket-column ${extraClass || ''}"><div class="bracket-column-title">${title}</div>${list.join('') || ''}</section>`;
+    };
+    const westR1 = (r1.West || []).map(s => gmBracketSeriesCard(s, 'West'));
+    const westR2 = (r2.West || []).map(s => gmBracketSeriesCard(s, 'West'));
+    const westFinal = cf.West ? [gmBracketSeriesCard(cf.West, 'West')] : [];
+    const eastFinal = cf.East ? [gmBracketSeriesCard(cf.East, 'East')] : [];
+    const eastR2 = (r2.East || []).map(s => gmBracketSeriesCard(s, 'East'));
+    const eastR1 = (r1.East || []).map(s => gmBracketSeriesCard(s, 'East'));
+    const finalCard = fin ? [gmBracketSeriesCard(fin, 'Stanley Cup')] : [];
+    panelBracket.innerHTML =
+      '<div class="gm-sim-section-title">Playoffs</div>' +
+      '<div class="gm-sim-meta">Single simulation bracket.</div>' +
+      `<div class="bracket-shell"><div class="playoff-bracket">
+        ${column('West First Round', westR1)}
+        ${column('West Second Round', westR2)}
+        ${column('West Final', westFinal)}
+        ${column('Stanley Cup Final', finalCard, 'center')}
+        ${column('East Final', eastFinal)}
+        ${column('East Second Round', eastR2)}
+        ${column('East First Round', eastR1)}
+      </div></div>`;
+  }
+
+  // ── Playoffs tab: batch distribution (horizontal bar chart + filter buttons) ──
+  let __gmDistribChart = null;
+  function renderBatchDistribution(teamAgg, numSims){
+    if(!panelBracket || !teamAgg) return;
+    const stages = [
+      { key: 'sumPlayoffs', label: 'Make Playoffs' },
+      { key: 'sumSecondRound', label: '2nd Round' },
+      { key: 'sumThirdRound', label: '3rd Round' },
+      { key: 'sumFinal', label: 'Cup Final' },
+      { key: 'sumChampion', label: 'Champion' },
+    ];
+    const currentKey = (function(){
+      try{ return String(sessionStorage.getItem('nhlGmDistribStage') || ''); }catch(_){ return ''; }
+    })();
+    const activeKey = stages.some(function(s){ return s.key === currentKey; }) ? currentKey : 'sumChampion';
+    // Sort teams by current stage count, desc.
+    const sorted = teamAgg.slice().sort(function(a, b){ return (b[activeKey] || 0) - (a[activeKey] || 0); });
+    const activeLabel = (stages.find(function(s){ return s.key === activeKey; }) || {}).label || '';
+    const labels = sorted.map(function(t){ return String(t.team || ''); });
+    const values = sorted.map(function(t){ return Number(t[activeKey] || 0); });
+    const maxCount = Math.max.apply(null, values.concat([1]));
+
+    // Preserve the champion banner (if present).
+    let prefix = '';
+    const existingBanner = panelBracket.querySelector('.gm-sim-champion');
+    if(existingBanner) prefix = existingBanner.outerHTML;
+
+    const html =
+      '<div class="gm-sim-section-title">Playoffs</div>' +
+      '<div class="gm-sim-meta">' + numSims + ' simulations. Filter the chart by playoff stage.</div>' +
+      '<div class="gm-distrib-wrap">' +
+        '<div class="gm-distrib-filters" role="tablist">' +
+          stages.map(function(s){
+            return '<button type="button" data-stage="' + s.key + '"' + (s.key === activeKey ? ' class="active"' : '') + '>' + s.label + '</button>';
+          }).join('') +
+        '</div>' +
+        '<div class="gm-distrib-chart">' +
+          '<div class="gm-distrib-stage-title">' + activeLabel + ' — count of simulations (out of ' + numSims + ')</div>' +
+          '<div class="gm-distrib-canvas-wrap"><canvas id="gmDistribCanvas"></canvas></div>' +
+        '</div>' +
+      '</div>';
+    panelBracket.innerHTML = prefix + html;
+
+    // Wire filter buttons.
+    const filterWrap = panelBracket.querySelector('.gm-distrib-filters');
+    if(filterWrap){
+      filterWrap.querySelectorAll('button[data-stage]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          const key = btn.getAttribute('data-stage');
+          try{ sessionStorage.setItem('nhlGmDistribStage', key); }catch(_){/*noop*/}
+          renderBatchDistribution(teamAgg, numSims);
+        });
+      });
+    }
+
+    // Draw Chart.js horizontal bar chart with team logos on y-axis.
+    const canvas = document.getElementById('gmDistribCanvas');
+    if(!canvas) return;
+    if(__gmDistribChart){ try{ __gmDistribChart.destroy(); }catch(_){/*noop*/} __gmDistribChart = null; }
+    const ctx = canvas.getContext('2d');
+    if(!ctx) return;
+    const tick = '#9aa4b1';
+    const grid = 'rgba(154,164,177,0.14)';
+
+    // Pre-load team logo images keyed by team abbreviation.
+    const logoImages = {};
+    sorted.forEach(function(t){
+      const abbr = String(t.team || '');
+      if(!logoImages[abbr]){
+        const url = teamLogoUrl(abbr);
+        const img = new Image();
+        img.src = url || '';
+        logoImages[abbr] = img;
+      }
+    });
+
+    // Plugin: draw team logos on the y-axis (preserving natural aspect ratio).
+    const logoPlugin = {
+      id: 'gmTeamLogos',
+      afterDraw: function(chart){
+        const meta = chart.getDatasetMeta(0);
+        if(!meta || !meta.data || !meta.data.length) return;
+        const yScale = chart.scales.y;
+        const ctx2 = chart.ctx;
+        const logoH = 18;
+        const gap = 6;
+        meta.data.forEach(function(bar, i){
+          const label = String(chart.data.labels[i] || '');
+          const y = bar.y;
+          const img = logoImages[label];
+          if(img && img.complete && img.naturalWidth > 0){
+            const ratio = img.naturalWidth / Math.max(1, img.naturalHeight);
+            const logoW = logoH * ratio;
+            const logoX = (yScale.left || chart.chartArea.left) - logoW - gap;
+            ctx2.drawImage(img, logoX, y - logoH/2, logoW, logoH);
+          }
+        });
+      }
+    };
+
+    __gmDistribChart = new Chart(ctx, {
+      type: 'bar',
+      plugins: [logoPlugin],
+      data: {
+        labels: labels,
+        datasets: [{
+          label: activeLabel,
+          data: values,
+          backgroundColor: 'rgba(77,163,255,0.78)',
+          borderColor: 'rgba(77,163,255,0.9)',
+          borderWidth: 1,
+          borderRadius: 0,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        indexAxis: 'y',
+        layout: {
+          padding: { left: 40 },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(item){
+                const v = Number(item?.parsed?.x);
+                if(!Number.isFinite(v)) return activeLabel + ': -';
+                return activeLabel + ': ' + v + ' / ' + numSims;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Simulations', color: tick, font: { size: 12, weight: '800' } },
+            ticks: { color: tick },
+            grid: { color: grid },
+            suggestedMax: maxCount,
+          },
+          y: {
+            ticks: { color: tick, autoSkip: false },
+            grid: { display: false },
+          },
+        },
+      },
+    });
+  }
+
+  // ── Player stats tab: single-sim ──
+  function renderSimPlayerStats(stats){
+    if(!panelStats) return;
+    if(!stats || !stats.length){ panelStats.innerHTML = '<div class="gm-sim-empty">No player stats available.</div>'; return; }
+    let html = '<h3 class="gm-sim-section-title">Player Stats — Single Simulation (Regular Season)</h3>';
+    html += '<div class="gm-sim-stats-wrap"><table class="gm-table"><thead><tr>';
+    html += '<th data-col="name">Player <span class="sort-ind"></span></th>';
+    html += '<th data-col="team">Team <span class="sort-ind"></span></th>';
+    html += '<th data-col="pos">Pos <span class="sort-ind"></span></th>';
+    html += '<th data-col="gp">GP <span class="sort-ind"></span></th>';
+    html += '<th data-col="goals">G <span class="sort-ind"></span></th>';
+    html += '<th data-col="a1">A1 <span class="sort-ind"></span></th>';
+    html += '<th data-col="a2">A2 <span class="sort-ind"></span></th>';
+    html += '<th data-col="points">PTS <span class="sort-ind"></span></th>';
+    html += '</tr></thead><tbody>';
+    for(let i = 0; i < stats.length; i++){
+      const r = stats[i];
+      const dataRow = JSON.stringify({
+        name: r.name, team: r.team, pos: r.position, gp: r.gp || 82,
+        goals: r.goals || 0, a1: r.a1 || 0, a2: r.a2 || 0, points: r.points || 0,
+      });
+      html += '<tr data-row=\'' + dataRow + '\'>';
+      html += '<td class="sim-stat-name"><div class="sim-team-cell"><img class="sim-team-logo" src="' + teamLogoUrl(r.team) + '" alt="" loading="lazy" />' + String(r.name || '') + '</div></td>';
+      html += '<td>' + (r.team || '') + '</td><td>' + (r.position || '') + '</td>';
+      html += '<td>' + (r.gp != null ? r.gp : 82) + '</td><td>' + (r.goals || 0) + '</td><td>' + (r.a1 || 0) + '</td><td>' + (r.a2 || 0) + '</td><td>' + (r.points || 0) + '</td></tr>';
+    }
+    html += '</tbody></table></div>';
+    panelStats.innerHTML = html;
+    __gmWireTable(panelStats.querySelector('table.gm-table'), 'nhlGmPlayerStats_single', 'points', 'desc');
+  }
+
+  // ── Player stats tab: batch averages ──
+  function renderBatchPlayerStats(playerAgg, numSims){
+    if(!panelStats) return;
+    if(!playerAgg || !playerAgg.length){ panelStats.innerHTML = '<div class="gm-sim-empty">No player stats available.</div>'; return; }
+    let html = '<h3 class="gm-sim-section-title">Player Stats — Average over ' + numSims + ' Simulations (Regular Season)</h3>';
+    html += '<div class="gm-sim-stats-wrap"><table class="gm-table"><thead><tr>';
+    html += '<th data-col="name">Player <span class="sort-ind"></span></th>';
+    html += '<th data-col="team">Team <span class="sort-ind"></span></th>';
+    html += '<th data-col="pos">Pos <span class="sort-ind"></span></th>';
+    html += '<th data-col="gp">GP <span class="sort-ind"></span></th>';
+    html += '<th data-col="goals">G <span class="sort-ind"></span></th>';
+    html += '<th data-col="a1">A1 <span class="sort-ind"></span></th>';
+    html += '<th data-col="a2">A2 <span class="sort-ind"></span></th>';
+    html += '<th data-col="points">PTS <span class="sort-ind"></span></th>';
+    html += '</tr></thead><tbody>';
+    for(let i = 0; i < playerAgg.length; i++){
+      const r = playerAgg[i];
+      const dataRow = JSON.stringify({
+        name: r.name, team: r.team, pos: r.position, gp: r.gp || 82,
+        goals: r.avgGoals || 0, a1: r.avgA1 || 0, a2: r.avgA2 || 0, points: r.avgPoints || 0,
+      });
+      html += '<tr data-row=\'' + dataRow + '\'>';
+      html += '<td class="sim-stat-name"><div class="sim-team-cell"><img class="sim-team-logo" src="' + teamLogoUrl(r.team) + '" alt="" loading="lazy" />' + String(r.name || '') + '</div></td>';
+      html += '<td>' + (r.team || '') + '</td><td>' + (r.position || '') + '</td>';
+      html += '<td>' + (r.gp != null ? r.gp : 82) + '</td><td>' + (r.avgGoals || 0).toFixed(1) + '</td><td>' + (r.avgA1 || 0).toFixed(1) + '</td><td>' + (r.avgA2 || 0).toFixed(1) + '</td><td>' + (r.avgPoints || 0).toFixed(1) + '</td></tr>';
+    }
+    html += '</tbody></table></div>';
+    panelStats.innerHTML = html;
+    __gmWireTable(panelStats.querySelector('table.gm-table'), 'nhlGmPlayerStats_batch', 'points', 'desc');
+  }
+
+  // ── Render results for whichever mode was last run ──
+  function renderResults(){
+    if(lastMode === 'batch' && lastBatchData){
+      const sortedChamp = lastBatchData.teamAgg ? lastBatchData.teamAgg.slice().sort(function(a,b){ return (b.sumChampion||0)-(a.sumChampion||0); }) : [];
+      const champ = sortedChamp[0];
+      const champBanner = champ && champ.sumChampion > 0
+        ? '<div class="gm-sim-champion"><img class="gm-sim-champ-logo" src="' + teamLogoUrl(champ.team) + '" alt="" /><div>' +
+        '<div class="gm-sim-champ-label">Most Likely Champion</div>' +
+        '<div class="gm-sim-champ-name">' + teamNameOf(champ.team) + ' (' + champ.sumChampion + '/' + lastBatchData.numSims + ')</div></div></div>' : '';
+      // Seed the panels with the banner so the renderers can preserve it
+      // when they replace the panel HTML.
+      if(panelStandings) panelStandings.innerHTML = champBanner;
+      if(panelBracket) panelBracket.innerHTML = champBanner;
+      renderBatchStandings(lastBatchData.teamAgg, lastBatchData.numSims);
+      renderBatchDistribution(lastBatchData.teamAgg, lastBatchData.numSims);
+      renderBatchPlayerStats(lastBatchData.playerAgg, lastBatchData.numSims);
+    } else if(lastMode === 'single' && lastSimData){
+      const champ = lastSimData.playoffs && lastSimData.playoffs.champion;
+      const champBanner = champ
+        ? '<div class="gm-sim-champion"><img class="gm-sim-champ-logo" src="' + teamLogoUrl(champ) + '" alt="" /><div>' +
+        '<div class="gm-sim-champ-label">Stanley Cup Champion</div>' +
+        '<div class="gm-sim-champ-name">' + teamNameOf(champ) + '</div></div></div>' : '';
+      if(panelStandings) panelStandings.innerHTML = champBanner;
+      if(panelBracket) panelBracket.innerHTML = champBanner;
+      renderSimStandings(lastSimData.standings || [], lastSimData.playoffSeeds || {});
+      renderSimBracket(lastSimData.playoffs || {});
+      renderSimPlayerStats(lastSimData.playerStats || []);
+    }
+  }
+
+  function showSimEmpty(){
+    const empty = '<div class="gm-sim-inline"><div class="gm-sim-empty">No simulation run yet. Click <strong>Run Simulation</strong> or <strong>Run 100 Simulations</strong> above.</div></div>';
+    if(panelStandings) panelStandings.innerHTML = empty;
+    if(panelBracket) panelBracket.innerHTML = empty;
+    if(panelStats) panelStats.innerHTML = empty;
+  }
+
+  function showSimStatus(msg){
+    const html = '<div class="gm-sim-status">' + msg + '</div>';
+    if(panelStandings) panelStandings.innerHTML = html;
+    if(panelBracket) panelBracket.innerHTML = html;
+    if(panelStats) panelStats.innerHTML = html;
+  }
+
+  function showSimError(msg){
+    const html = '<div class="gm-sim-error">' + msg + '</div>';
+    if(panelStandings) panelStandings.innerHTML = html;
+    if(panelBracket) panelBracket.innerHTML = html;
+    if(panelStats) panelStats.innerHTML = html;
+  }
+
+  function buildSimPayload(){
+    const lineupsByTeamPayload = buildAllTeamsLineupsPayload();
+    const currentTeam = getCurrentTeamKey();
+    const currentLineup = buildLineupPayload();
+    const payload = { season: Number(POINTS_SEASON), lineupsByTeam: lineupsByTeamPayload };
+    if(currentTeam && currentLineup.length){ payload.team = currentTeam; payload.lineup = currentLineup; }
+    // Add injuries only for the currently-editing team.
+    const injuries = buildInjuriesPayload();
+    if(currentTeam && injuries.length){ payload.injuries = injuries; }
+    return payload;
+  }
+
+  async function runSimulation(mode){
+    if(simRunning) return;
+    simRunning = true;
+    const isBatch = (mode === 'batch');
+    const btn = isBatch ? sim100Btn : simBtn;
+    const otherBtn = isBatch ? simBtn : sim100Btn;
+    if(btn){ btn.disabled = true; btn.textContent = 'Running…'; }
+    if(otherBtn){ otherBtn.disabled = true; }
+    showSimStatus(isBatch ? 'Running 100 simulations…' : 'Simulating full season &amp; playoffs…');
+    if(activeTab === 'lineup') setTab('standings');
+    try{
+      const payload = buildSimPayload();
+      const url = isBatch ? '/api/projections/simulate-season-batch' : '/api/projections/simulate-season';
+      if(isBatch) payload.numSims = 100;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(function(){ return {}; });
+      if(!res.ok) throw new Error(String((data || {}).error || 'simulation_failed'));
+      if(isBatch){ lastBatchData = data; lastMode = 'batch'; lastSimData = null; }
+      else { lastSimData = data; lastMode = 'single'; lastBatchData = null; }
+      __gmSaveLastSim(lastMode, data);
+      renderResults();
+    }catch(err){
+      showSimError('Simulation failed: ' + String((err && err.message) || 'unknown error'));
+    }finally{
+      simRunning = false;
+      if(btn){ btn.disabled = false; btn.textContent = isBatch ? 'Run 100 Simulations' : 'Run Simulation'; }
+      if(otherBtn){ otherBtn.disabled = false; }
+    }
+  }
+
+  // Tab wiring
+  if(tabLineup) tabLineup.addEventListener('click', function(){ setTab('lineup'); });
+  if(tabStandings) tabStandings.addEventListener('click', function(){ setTab('standings'); if(!lastMode) showSimEmpty(); });
+  if(tabBracket) tabBracket.addEventListener('click', function(){ setTab('bracket'); if(!lastMode) showSimEmpty(); });
+  if(tabStats) tabStats.addEventListener('click', function(){ setTab('stats'); if(!lastMode) showSimEmpty(); });
+  if(simBtn) simBtn.addEventListener('click', function(){ runSimulation('single'); });
+  if(sim100Btn) sim100Btn.addEventListener('click', function(){ runSimulation('batch'); });
+  if(addInjuryBtn) addInjuryBtn.addEventListener('click', addInjury);
+
+  // Rehydrate last simulation and last active tab from sessionStorage.
+  try{
+    const savedSim = __gmLoadLastSim();
+    if(savedSim){
+      if(savedSim.mode === 'batch'){ lastBatchData = savedSim; lastMode = 'batch'; lastSimData = null; }
+      else if(savedSim.mode === 'single'){ lastSimData = savedSim; lastMode = 'single'; lastBatchData = null; }
+      renderResults();
+    }
+  }catch(_){/*noop*/}
+  try{
+    const savedTab = __gmLoadLastTab();
+    if(savedTab && ['lineup', 'standings', 'bracket', 'stats'].indexOf(savedTab) !== -1){
+      setTab(savedTab);
+    }
+  }catch(_){/*noop*/}
+
+  // ── Export PNG & Share ──────────────────────────────────────────
+
+  const gmExportPngBtn = document.getElementById('gmExportPngBtn');
+  const gmShareBtn = document.getElementById('gmShareBtn');
+  const shootShareModal = document.getElementById('shootShareModal');
+  const shootShareTitle = document.getElementById('shootShareTitle');
+  const shootShareGrid = document.getElementById('shootShareGrid');
+  const shootShareStatus = document.getElementById('shootShareStatus');
+  const btnCloseShootShare = document.getElementById('btnCloseShootShare');
+
+  const GM_SHARE_PLATFORMS = [
+    { id: 'x', name: 'X', mode: 'composer',
+      buildUrl: function(a){ return 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(a.text); },
+      color: '#ffffff' },
+    { id: 'bluesky', name: 'Bluesky', mode: 'composer',
+      buildUrl: function(a){ return 'https://bsky.app/intent/compose?text=' + encodeURIComponent(a.text); },
+      color: '#1185fe' },
+    { id: 'linkedin', name: 'LinkedIn', mode: 'composer',
+      buildUrl: function(a){ return 'https://www.linkedin.com/feed/?shareActive=true&text=' + encodeURIComponent(a.text); },
+      color: '#0a66c2' },
+    { id: 'facebook', name: 'Facebook', mode: 'composer',
+      buildUrl: function(){ return 'https://www.facebook.com/'; },
+      color: '#1877f2' },
+    { id: 'reddit', name: 'Reddit', mode: 'composer',
+      buildUrl: function(a){ return 'https://www.reddit.com/submit?title=' + encodeURIComponent(a.text.slice(0, 300)); },
+      color: '#ff4500' },
+    { id: 'whatsapp', name: 'WhatsApp', mode: 'composer',
+      buildUrl: function(a){ return 'https://wa.me/?text=' + encodeURIComponent(a.text); },
+      color: '#25d366' },
+    { id: 'telegram', name: 'Telegram', mode: 'composer',
+      buildUrl: function(a){ return 'https://t.me/share/url?text=' + encodeURIComponent(a.text); },
+      color: '#26a5e4' },
+    { id: 'more-apps', name: 'More Apps', mode: 'native', showText: true,
+      description: 'Uses your device share sheet and can attach the PNG directly to installed apps.',
+      color: '#ffffff' },
+  ];
+
+  var __shootShareAsset = null;
+  var __shootShareAssetKey = '';
+  var __shootSharePreparePromise = null;
+  var __shootShareBusy = false;
+
+  // ── helpers ──
+
+  function __gmClampByte(v){ return Math.max(0, Math.min(255, Number(v) || 0)); }
+  function __gmHexToRgb(hex){
+    var raw = String(hex || '').trim().replace(/^#/, '');
+    if(!raw) return null;
+    var norm = raw.length === 3 ? raw.split('').map(function(ch){ return ch + ch; }).join('') : raw;
+    if(norm.length !== 6) return null;
+    var r = parseInt(norm.slice(0, 2), 16), g = parseInt(norm.slice(2, 4), 16), b = parseInt(norm.slice(4, 6), 16);
+    if(!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return null;
+    return { r: r, g: g, b: b };
+  }
+  function __gmDarkenHex(hex, amount){
+    var rgb = __gmHexToRgb(hex);
+    if(!rgb) return '#18202f';
+    var scale = Math.max(0, Math.min(1, 1 - Math.max(0, Number(amount) || 0)));
+    return '#' + Math.round(__gmClampByte(rgb.r * scale)).toString(16).padStart(2, '0') +
+           Math.round(__gmClampByte(rgb.g * scale)).toString(16).padStart(2, '0') +
+           Math.round(__gmClampByte(rgb.b * scale)).toString(16).padStart(2, '0');
+  }
+  function __gmRgba(hex, alpha){
+    var rgb = __gmHexToRgb(hex);
+    var a = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 0.28;
+    if(!rgb) return 'rgba(77,163,255,' + a + ')';
+    return 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + a + ')';
+  }
+  function __gmGetTeamColor(){
+    var teamKey = getCurrentTeamKey() || '';
+    var row = teamsData.find(function(t){ return String((t || {}).Team || '').trim().toUpperCase() === teamKey; });
+    return String((row || {}).Color || '').trim() || '#4da3ff';
+  }
+
+  function __gmShareStateKey(){
+    return JSON.stringify({ team: getCurrentTeamKey() || '', tab: String(activeTab || 'lineup'), simMode: String(lastMode || 'none'), season: POINTS_SEASON });
+  }
+
+  function __gmExportFileName(){
+    var team = getCurrentTeamKey() || 'NHL';
+    var tab = String(activeTab || 'lineup');
+    return 'gm-mode-' + team.toLowerCase() + '-' + tab + '.png';
+  }
+
+  function __gmShareText(){
+    var team = getCurrentTeamKey() || '';
+    var teamName = teamNameOf(team) || team;
+    var parts = [teamName + ' GM Mode'];
+    var tab = String(activeTab || 'lineup');
+    if(tab === 'lineup') parts.push('Lineup & Projections');
+    else if(tab === 'standings') parts.push('Standings');
+    else if(tab === 'bracket') parts.push('Playoffs');
+    else if(tab === 'stats') parts.push('Player Stats');
+    if(lastMode === 'batch') parts.push('100 simulations');
+    parts.push('Created on NHL Analytics');
+    return parts.join(' | ');
+  }
+
+  function __canCopyPngToClipboard(){
+    return !!(window.isSecureContext && navigator.clipboard && navigator.clipboard.write && typeof window.ClipboardItem !== 'undefined');
+  }
+  function __canNativeSharePng(){
+    return !!(window.isSecureContext && typeof navigator.share === 'function' && typeof window.File !== 'undefined');
+  }
+
+  function __gmExportNextFrame(){
+    return new Promise(function(resolve){ requestAnimationFrame(function(){ resolve(); }); });
+  }
+  function __gmExportDelay(ms){
+    return new Promise(function(resolve){ setTimeout(resolve, Math.max(0, Number(ms) || 0)); });
+  }
+  async function __gmExportWaitFrames(count){
+    var n = Math.max(0, Number(count) || 0);
+    while(n-- > 0){ await __gmExportNextFrame(); }
+  }
+
+  async function __gmExportWaitForImages(root){
+    var imgs = Array.from(root.querySelectorAll('img')).filter(function(img){ return !img.complete; });
+    if(!imgs.length) return;
+    await Promise.allSettled(imgs.map(function(img){
+      return new Promise(function(resolve){
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', resolve, { once: true });
+      });
+    }));
+  }
+
+  function __gmCanvasToBlob(canvas){
+    return new Promise(function(resolve, reject){
+      try{
+        canvas.toBlob(function(blob){
+          if(blob) resolve(blob);
+          else reject(new Error('Could not build PNG.'));
+        }, 'image/png');
+      }catch(e){ reject(e); }
+    });
+  }
+
+  function __gmDownloadBlob(blob, fileName){
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url; link.download = fileName;
+    link.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  async function __gmRenderExportCanvas(element){
+    if(typeof window.html2canvas !== 'function') throw new Error('PNG export is unavailable.');
+    return window.html2canvas(element, {
+      backgroundColor: '#0b0f16', scale: 2, useCORS: true, logging: false,
+      windowWidth: 1600, windowHeight: 1200,
+    });
+  }
+
+  // ── Chart.js snapshot (for playoffs bar chart) ──
+  function __gmChartSnapshotUrl(canvasEl){
+    try{ return canvasEl && canvasEl.toDataURL ? canvasEl.toDataURL('image/png') : ''; }catch(_){ return ''; }
+  }
+  async function __gmSnapshotChartForExport(chart, canvasEl){
+    if(chart && canvasEl){
+      try{ chart.resize(1120, 620); }catch(_){/*noop*/}
+      try{ if(chart.stop) chart.stop(); }catch(_){/*noop*/}
+      try{ chart.update('none'); }catch(_){/*noop*/}
+      await __gmExportWaitFrames(2);
+      await __gmExportDelay(80);
+      try{ chart.update('none'); }catch(_){/*noop*/}
+      await __gmExportWaitFrames(1);
+    }
+    return __gmChartSnapshotUrl(canvasEl);
+  }
+
+  // ── build export surface ──
+  function __gmBuildExportSurface(){
+    var surface = document.createElement('div');
+    surface.className = 'gm-export-surface';
+    var card = document.createElement('div');
+    card.className = 'gm-export-card';
+
+    // ── Hero section with team-color gradient (matches Skaters pattern) ──
+    var teamColor = __gmGetTeamColor();
+    var hero = document.createElement('div');
+    hero.className = 'gm-export-hero';
+    hero.style.setProperty('--gm-export-team-color-soft', __gmRgba(teamColor, 0.30));
+    hero.style.setProperty('--gm-export-team-color-dark', __gmDarkenHex(teamColor, 0.52));
+
+    var heroInner = document.createElement('div');
+    heroInner.className = 'gm-export-hero-inner';
+
+    // Left side: team logo + name together in column 1
+    var leftWrap = document.createElement('div');
+    leftWrap.className = 'gm-export-hero-left';
+
+    var teamKey = getCurrentTeamKey() || '';
+    if(teamKey){
+      var logoWrap = document.createElement('div');
+      logoWrap.className = 'gm-export-team-logo-wrap';
+      var logoImg = document.createElement('img');
+      logoImg.className = 'gm-export-team-logo';
+      logoImg.src = teamLogoUrl(teamKey);
+      logoImg.alt = (teamNameOf(teamKey) || teamKey) + ' logo';
+      logoWrap.appendChild(logoImg);
+      leftWrap.appendChild(logoWrap);
+    }
+
+    var infoWrap = document.createElement('div');
+    infoWrap.className = 'gm-export-info';
+    var nameEl = document.createElement('div');
+    nameEl.className = 'gm-export-name';
+    nameEl.textContent = teamNameOf(teamKey) || teamKey || 'Team';
+    infoWrap.appendChild(nameEl);
+    var subEl = document.createElement('div');
+    subEl.className = 'gm-export-sub';
+    var tab = String(activeTab || 'lineup');
+    if(tab === 'lineup') subEl.textContent = 'Lineup & Projections';
+    else if(tab === 'standings') subEl.textContent = 'Standings';
+    else if(tab === 'bracket') subEl.textContent = 'Playoffs';
+    else if(tab === 'stats') subEl.textContent = 'Player Stats';
+    if(lastMode === 'batch') subEl.textContent += ' · 100 Simulations';
+    infoWrap.appendChild(subEl);
+    leftWrap.appendChild(infoWrap);
+
+    heroInner.appendChild(leftWrap);
+
+    // KPI circle (projected points) — column 2
+    var kpiEl = document.getElementById('gmKpiPoints');
+    if(kpiEl){
+      var kpiClone = kpiEl.cloneNode(true);
+      kpiClone.classList.add('gm-export-kpi');
+      kpiClone.style.width = '170px'; kpiClone.style.height = '170px';
+      var v = kpiClone.querySelector('.v');
+      if(v) v.style.fontSize = '50px';
+      var l = kpiClone.querySelector('.l');
+      if(l) l.style.fontSize = '11px';
+      heroInner.appendChild(kpiClone);
+    }
+
+    hero.appendChild(heroInner);
+    card.appendChild(hero);
+
+    // ── Body: clone the main shell ──
+    var shell = document.querySelector('.gm-shell');
+    if(shell){
+      var clone = shell.cloneNode(true);
+      // Strip buttons and duplicate hero elements
+      var actions = clone.querySelector('.gm-card-actions');
+      if(actions) actions.remove();
+      var filterActions = clone.querySelector('.gm-filter-actions');
+      if(filterActions) filterActions.remove();
+      var subtabRow = clone.querySelector('.gm-subtab-row');
+      if(subtabRow) subtabRow.remove();
+      var subtabs = clone.querySelector('.gm-subtabs');
+      if(subtabs) subtabs.remove();
+      var teamTop = clone.querySelector('.gm-team-top');
+      if(teamTop) teamTop.remove();
+      // Upsize headshots
+      clone.querySelectorAll('.gm-headshot').forEach(function(img){
+        img.style.width = '130px'; img.style.height = '130px';
+      });
+      clone.querySelectorAll('.gm-visual').forEach(function(el){
+        el.style.width = '130px'; el.style.height = '130px';
+      });
+      clone.querySelectorAll('.gm-proj-kpi').forEach(function(el){
+        el.style.width = '130px'; el.style.height = '130px';
+      });
+      clone.querySelectorAll('.gm-proj-kpi .v').forEach(function(el){
+        el.style.fontSize = '36px';
+      });
+      clone.querySelectorAll('.gm-rank-kpi').forEach(function(el){
+        el.style.width = '140px'; el.style.height = '140px';
+      });
+      clone.querySelectorAll('.gm-rank-kpi .v').forEach(function(el){
+        el.style.fontSize = '56px';
+      });
+
+      // ── Cleanup for export: remove empty sections ──
+      // Remove injury frame if empty
+      var injuryFrame = clone.querySelector('.gm-frame-injuries');
+      if(injuryFrame){
+        var injuryEmpty = injuryFrame.querySelector('.gm-injury-empty');
+        var injuryRows = injuryFrame.querySelectorAll('.gm-injury-row');
+        if(injuryEmpty && (!injuryRows || injuryRows.length === 0)){
+          injuryFrame.remove();
+        }
+      }
+      // Rebuild scratches section for export so it looks decent in the PNG:
+      //   - Rows of up to 5 player cards (matches live page)
+      //   - Rank KPI on the LAST row, in the rightmost position, visually
+      //     identical to the upsized rank KPIs in the other lines
+      //   - Players on partial last rows are followed by invisible
+      //     spacers so the rank KPI stays flush with the right edge.
+      var scratchFrame = clone.querySelector('.gm-frame-scratches');
+      if(scratchFrame){
+        // The live page renders scratches as multiple rows, and only the
+        // LAST row carries the real scratches rank KPI (a .gm-rank-slot
+        // that contains a .gm-rank-kpi). All other rows get placeholder
+        // .gm-rank-slot spacers WITHOUT a .gm-rank-kpi (visibility:hidden).
+        // So we must select the rank slot that actually holds a .gm-rank-kpi
+        // — using querySelector('.gm-rank-slot') alone would return one of
+        // the empty hidden spacers and the real rank KPI would be lost.
+        var existingRankSlot = null;
+        scratchFrame.querySelectorAll('.gm-rank-slot').forEach(function(slot){
+          if(slot.querySelector('.gm-rank-kpi') && !existingRankSlot){
+            existingRankSlot = slot;
+          }
+        });
+        if(existingRankSlot && existingRankSlot.parentNode){
+          existingRankSlot.parentNode.removeChild(existingRankSlot);
+        }
+        // Now strip the leftover placeholder rank slots (the hidden spacers
+        // the live page added to the non-final scratches rows) so they don't
+        // leave stray invisible columns in the rebuilt grid.
+        scratchFrame.querySelectorAll('.gm-rank-slot').forEach(function(slot){
+          if(slot.parentNode) slot.parentNode.removeChild(slot);
+        });
+
+        // Collect non-empty scratch slots BEFORE clearing the container.
+        var validSlots = [];
+        scratchFrame.querySelectorAll('.gm-slot').forEach(function(slot){
+          var btn = slot.querySelector('.gm-picker-btn');
+          if(!btn) return;
+          var txt = (btn.textContent || '').trim();
+          if(txt && txt !== 'Select player' && txt !== '— None —' && txt !== 'None' && txt !== '-'){
+            validSlots.push(slot);
+          }
+        });
+
+        var scratchesContainer = scratchFrame.querySelector('#gmScratches');
+        if(scratchesContainer){
+          scratchesContainer.innerHTML = '';
+          var MAX_PER_SCRATCH_ROW = 5;
+          var scratchesWrap = document.createElement('div');
+          scratchesWrap.style.cssText = 'display:grid; gap:12px;';
+
+          function buildScratchSpacer(){
+            // Invisible placeholder that grows like a real .gm-slot so the
+            // rank KPI stays in the rightmost slot with the same width it
+            // would have if a player were there (keeps right padding equal).
+            var spacer = document.createElement('div');
+            spacer.className = 'gm-slot';
+            spacer.style.cssText = 'visibility:hidden; height:1px;';
+            return spacer;
+          }
+
+          // Restore the live rank slot to its default CSS-driven layout so it
+          // behaves identically to the rank slots in the other lines (which
+          // rely on .gm-rank-slot{ flex:1 1 0 } to grow and center the circle
+          // with equal left/right padding). Do NOT use margin-left:auto here:
+          // that would pin the circle flush to the right edge with no right
+          // padding, which is what made the scratches rank look different.
+          if(existingRankSlot){
+            existingRankSlot.style.visibility = '';
+            existingRankSlot.style.removeProperty('width');
+            existingRankSlot.style.removeProperty('min-width');
+            existingRankSlot.style.removeProperty('margin-left');
+            existingRankSlot.style.removeProperty('marginLeft');
+            existingRankSlot.style.removeProperty('flex');
+            // Tag this slot so __gmAlignScratchesRankKpi (run after the
+            // export surface is in the DOM) can measure its right offset
+            // against the defense/goalies rank KPI and add padding so the
+            // two rank KPIs end up at the same right offset.
+            existingRankSlot.classList.add('gm-export-scratches-rank-slot');
+          }
+
+          if(validSlots.length === 0){
+            // No scratches: show a single row with the rank KPI on the right.
+            var emptyRow = document.createElement('div');
+            emptyRow.className = 'gm-row';
+            emptyRow.style.cssText = 'display:flex; gap:14px; align-items:flex-start; width:100%;';
+            for(var sp0 = 0; sp0 < MAX_PER_SCRATCH_ROW; sp0 += 1){
+              emptyRow.appendChild(buildScratchSpacer());
+            }
+            if(existingRankSlot) emptyRow.appendChild(existingRankSlot);
+            scratchesWrap.appendChild(emptyRow);
+            scratchesContainer.appendChild(scratchesWrap);
+          } else {
+            // Layout: scratches flow into rows of at most 5 player cards each.
+            // The rank KPI lives at the end of the FIRST row (top), in the
+            // rightmost slot. If the first row has fewer than 5 scratches it
+            // is padded with invisible spacers so the rank KPI keeps the same
+            // rightmost-slot position it has on the other lines. Subsequent
+            // rows just hold the remaining scratch players (no rank on them).
+            var totalRows = Math.ceil(validSlots.length / MAX_PER_SCRATCH_ROW);
+            for(var rowIdx = 0; rowIdx < totalRows; rowIdx += 1){
+              var row = document.createElement('div');
+              row.className = 'gm-row';
+              row.style.cssText = 'display:flex; gap:14px; align-items:flex-start; width:100%;';
+              var start = rowIdx * MAX_PER_SCRATCH_ROW;
+              var end = Math.min(start + MAX_PER_SCRATCH_ROW, validSlots.length);
+              for(var k = start; k < end; k += 1){
+                // IMPORTANT: do not set a fixed width on the player slots.
+                // The .gm-slot CSS uses flex:1 1 0 so each slot grows to fill
+                // 1/N of the row, matching how the forwards/defense/goalies
+                // rows distribute their slots (and how their rank KPI ends
+                // up centered in the rightmost slot with equal left/right
+                // padding). Setting width:130px here would break that and make
+                // the scratches rank KPI sit at a different right offset than
+                // the other rank KPIs.
+                row.appendChild(validSlots[k]);
+              }
+              if(rowIdx === 0){
+                // Rank KPI lives on the TOP row so it lines up with the rank
+                // KPIs of the other lines, regardless of how many scratches
+                // there are. Pad row 1 up to 5 player slots so the rank KPI
+                // always occupies the rightmost (6th) slot.
+                var filled0 = end - start;
+                for(var sp0b = filled0; sp0b < MAX_PER_SCRATCH_ROW; sp0b += 1){
+                  row.appendChild(buildScratchSpacer());
+                }
+                if(existingRankSlot) row.appendChild(existingRankSlot);
+              }
+              scratchesWrap.appendChild(row);
+            }
+            scratchesContainer.appendChild(scratchesWrap);
+          }
+        }
+      }
+
+      // ── Snapshot Chart.js bar chart and replace with static img ──
+      var chartCanvas = clone.querySelector('#gmDistribCanvas');
+      if(chartCanvas && __gmDistribChart){
+        var dataUrl = '';
+        try{
+          var origCanvas = document.getElementById('gmDistribCanvas');
+          if(origCanvas){
+            __gmSnapshotChartForExport(__gmDistribChart, origCanvas).then(function(url){
+              // This runs async — the surface is already captured by then.
+              // We pre-render synchronously below.
+            });
+            // Synchronous snapshot for immediate capture
+            dataUrl = __gmChartSnapshotUrl(origCanvas);
+          }
+        }catch(e){/*noop*/}
+        if(dataUrl){
+          var chartImg = document.createElement('img');
+          chartImg.src = dataUrl;
+          chartImg.alt = 'Playoffs chart';
+          chartImg.style.width = '100%';
+          chartImg.style.maxWidth = '1120px';
+          chartImg.style.display = 'block';
+          var chartWrap = chartCanvas.parentNode;
+          if(chartWrap){
+            chartCanvas.remove();
+            chartWrap.appendChild(chartImg);
+          }
+        }
+      }
+
+      card.appendChild(clone);
+    }
+
+    // Watermark
+    var watermark = document.createElement('div');
+    watermark.className = 'gm-export-watermark';
+    watermark.textContent = 'Created on https://nhl.hockey-statistics.com/';
+    card.appendChild(watermark);
+
+    surface.appendChild(card);
+    return surface;
+  }
+
+  // After the export surface is attached to the DOM, measure the right-edge
+  // offset of the scratches rank KPI against the defense/goalies rank KPI and
+  // add right padding to the scratches rank slot so its KPI circle ends up at
+  // the same right offset. This is needed because the scratches frame spans
+  // the full export-card width (its 6-slot rows give each rank slot a wider
+  // share than the narrower right-column rows of the defense/goalies frames),
+  // so without nudging the scratches rank KPI sits a few pixels farther from
+  // the right edge than the others.
+  function __gmAlignScratchesRankKpi(surface){
+    try{
+      var refSlot = surface.querySelector('.gm-frame-defense .gm-rank-slot, .gm-frame-goalies .gm-rank-slot');
+      // Fallbacks: forwards rank slot sits on the right edge of the left
+      // column; consider ranks on defense/goalies on the right column more
+      // authoritative, but fall back to forwards if defense/goalies' rank
+      // element is somehow missing.
+      if(!refSlot) refSlot = surface.querySelector('.gm-frame-forwards .gm-rank-slot');
+      var scratchSlot = surface.querySelector('.gm-export-scratches-rank-slot');
+      if(!refSlot || !scratchSlot) return;
+      var refKpi = refSlot.querySelector('.gm-rank-kpi');
+      var scratchKpi = scratchSlot.querySelector('.gm-rank-kpi');
+      if(!refKpi || !scratchKpi) return;
+      // Use the right edge (rect.right) of the KPI circles, measured
+      // relative to the export-card right edge. We compare right-edges
+      // (not centers) so the scratches rank KPI's right side lines up
+      // exactly with the reference rank KPI's right side.
+      var card = surface.querySelector('.gm-export-card');
+      if(!card) return;
+      var cardRect = card.getBoundingClientRect();
+      var refRect = refKpi.getBoundingClientRect();
+      var scratchRect = scratchKpi.getBoundingClientRect();
+      var refRightFromEdge = (cardRect.right - refRect.right);
+      var scratchRightFromEdge = (cardRect.right - scratchRect.right);
+      var delta = refRightFromEdge - scratchRightFromEdge;
+      if(Number.isFinite(delta) && delta > 0.5){
+        // The scratches rank KPI sits a few pixels too close to the right
+        // edge of the card compared to the reference rank KPI, because the
+        // scratches frame spans the full export-card width and its rank slot
+        // (1 of 6 evenly-grown flex slots) is wider than the reference rank
+        // slot (1 of 3 slots in the narrower right column).
+        //
+        // Fix it by giving the scratches rank slot the SAME width as the
+        // reference rank slot (flex:0 0 <refWidth>) so flex stops growing it
+        // to 1/6 of the row. The KPI is centered inside the slot by
+        // align-items:center, so equal slot widths -> equal right padding
+        // -> matching right edges. Other player slots keep flex:1 1 0 and
+        // absorb the leftover row width.
+        var refSlotWidth = refSlot.getBoundingClientRect().width;
+        if(Number.isFinite(refSlotWidth) && refSlotWidth > 0){
+          scratchSlot.style.flex = '0 0 ' + refSlotWidth.toFixed(1) + 'px';
+          scratchSlot.style.width = refSlotWidth.toFixed(1) + 'px';
+          scratchSlot.style.minWidth = refSlotWidth.toFixed(1) + 'px';
+        }
+      }
+    }catch(e){/*noop*/}
+  }
+
+  // ── build PNG blob ──
+  async function __gmBuildPngBlob(){
+    if(typeof window.html2canvas !== 'function') throw new Error('PNG export is unavailable right now.');
+    var surface = __gmBuildExportSurface();
+    document.body.appendChild(surface);
+    try{
+      if(document.fonts && document.fonts.ready){
+        try{ await document.fonts.ready; }catch(e){/*noop*/}
+      }
+      await __gmExportWaitForImages(surface);
+      await __gmExportNextFrame();
+      // Layout-dependent fixups that need the surface to be in the DOM
+      // so getBoundingClientRect() returns real measurements.
+      __gmAlignScratchesRankKpi(surface);
+      // Stabilize the live chart before capture (for the surface that still has the canvas)
+      var liveCanvas = document.getElementById('gmDistribCanvas');
+      if(liveCanvas && __gmDistribChart){
+        await __gmSnapshotChartForExport(__gmDistribChart, liveCanvas);
+      }
+      await __gmExportNextFrame();
+      var canvas = await __gmRenderExportCanvas(surface.firstElementChild);
+      return await __gmCanvasToBlob(canvas);
+    }finally{
+      surface.remove();
+    }
+  }
+
+  // ── Export PNG button ──
+  async function exportGmPng(){
+    try{
+      var blob = await __gmBuildPngBlob();
+      __gmDownloadBlob(blob, __gmExportFileName());
+    }catch(e){
+      alert(e && e.message ? e.message : 'Could not export PNG.');
+    }
+  }
+
+  // ── Share ──
+  async function __gmPrepareShareAsset(){
+    var key = __gmShareStateKey();
+    if(__shootShareAsset && __shootShareAssetKey === key) return __shootShareAsset;
+    if(__shootSharePreparePromise && __shootShareAssetKey === key) return __shootSharePreparePromise;
+    __shootShareAssetKey = key;
+    __shootSharePreparePromise = (async function(){
+      var text = __gmShareText();
+      var fileName = __gmExportFileName();
+      var blob = await __gmBuildPngBlob();
+      var asset = { blob: blob, text: text, fileName: fileName, url: window.location.href };
+      __shootShareAsset = asset;
+      return asset;
+    })().catch(function(e){
+      __shootShareAsset = null; __shootShareAssetKey = '';
+      throw e;
+    }).finally(function(){
+      __shootSharePreparePromise = null;
+    });
+    return __shootSharePreparePromise;
+  }
+
+  async function __copyPngBlobToClipboard(blob){
+    if(!__canCopyPngToClipboard()) throw new Error('This browser cannot copy PNG images directly.');
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+  }
+
+  function __setShootShareBusy(isBusy){
+    __shootShareBusy = !!isBusy;
+    __renderShootShareOptions();
+  }
+
+  function __setShootShareStatus(message, isError){
+    if(!shootShareStatus) return;
+    shootShareStatus.textContent = message || '';
+    shootShareStatus.classList.toggle('err', !!isError);
+  }
+
+  function __shootShareIconSvg(platformId){
+    switch(platformId){
+      case 'more-apps':
+        return '<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="10" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"/><rect x="36" y="10" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"/><rect x="10" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.72"/><rect x="36" y="36" width="18" height="18" rx="5" fill="currentColor" opacity="0.95"/></svg>';
+      case 'x':
+        return '<svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" d="M12 12h11.6l11.2 15 13-15H52L37.5 28.7 54 52H42.4L30.8 36.4 17.2 52H12l15.8-18.2z"/></svg>';
+      case 'bluesky':
+        return '<svg viewBox="0 0 64 64" aria-hidden="true"><path fill="currentColor" d="M15.5 17.5c5.6 4.2 11.6 12.8 16.5 22.2 4.9-9.4 10.9-18 16.5-22.2 4.1-3.1 10.5-5.5 10.5 2.2 0 1.5-.8 12.5-1.3 14.3-1.8 6.4-8.1 8-13.8 7.1 10.1 1.7 12.7 7.4 7.1 13.1-10.7 10.8-15.4-2.7-16.6-6.2-.2-.6-.3-.8-.4-.8s-.2.2-.4.8c-1.2 3.5-5.9 17-16.6 6.2-5.5-5.6-2.9-11.4 7.1-13.1-5.8.9-12-0.7-13.8-7.1-.5-1.8-1.3-12.8-1.3-14.3 0-7.8 6.4-5.4 10.5-2.2z"/></svg>';
+      case 'linkedin':
+        return '<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="48" height="48" rx="10" fill="currentColor"/><rect x="18" y="26" width="7" height="20" fill="#0f1522"/><circle cx="21.5" cy="19.5" r="4" fill="#0f1522"/><path fill="#0f1522" d="M31 26h6.4v2.8h.1c1-1.8 3.5-3.8 7.2-3.8 7.7 0 9.1 5.1 9.1 11.7V46h-7V37.8c0-3.9-.1-8.9-5.4-8.9-5.4 0-6.2 4.2-6.2 8.6V46h-7z"/></svg>';
+      case 'facebook':
+        return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><path fill="#0f1522" d="M35.6 52V34.5h5.9l.9-6.8h-6.8v-4.3c0-2 1-3.8 4.3-3.8H43v-5.8c-1-.1-2.9-.3-5.6-.3-5.5 0-9.2 3.3-9.2 9.5v4.7h-6.2v6.8h6.2V52z"/></svg>';
+      case 'reddit':
+        return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><circle cx="24" cy="33" r="3.2" fill="#0f1522"/><circle cx="40" cy="33" r="3.2" fill="#0f1522"/><path d="M24 41c2.2 2 4.9 3 8 3s5.8-1 8-3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M25 24l3.8-8.2 9.8 2.1" stroke="#0f1522" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="42.8" cy="19.6" r="3.6" fill="#0f1522"/><path d="M19 28.5c-2.7 0-5 2.2-5 5 0 1.9 1 3.5 2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M45 28.5c2.7 0 5 2.2 5 5 0 1.9-1 3.5-2.6 4.3" stroke="#0f1522" stroke-width="3" stroke-linecap="round" fill="none"/></svg>';
+      case 'whatsapp':
+        return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><path fill="#0f1522" d="M32 19c-7.3 0-13.2 5.7-13.2 12.8 0 2.7.8 5.2 2.4 7.3l-1.8 6.2 6.4-1.7c2 1.3 4.2 2 6.6 2 7.3 0 13.2-5.7 13.2-12.8S39.3 19 32 19zm7.8 17.3c-.3.9-1.8 1.6-2.6 1.7-.7.1-1.6.2-5.2-1.3-4.6-1.9-7.5-6.5-7.7-6.8-.2-.3-1.9-2.5-1.9-4.8 0-2.2 1.2-3.3 1.6-3.8.4-.4.9-.5 1.2-.5h.9c.3 0 .8-.1 1.2.9.4 1 .4 3.2.1 3.5-.2.4-.4.6-.8 1-.4.4-.8.7-.4 1.4.4.7 1.8 2.9 3.8 4.7 2.6 2.3 4.6 3 5.3 3.3.5.2.9.2 1.3-.2.4-.5 1.5-1.7 2-2.3.4-.5.9-.5 1.4-.3.5.2 3.2 1.5 3.7 1.8.5.3.9.5 1 .8.1.3.1 1.5-.2 2.4z"/></svg>';
+      case 'telegram':
+        return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="currentColor"/><path fill="#0f1522" d="M46.7 20.4 19.8 30.8c-1.8.7-1.8 1.7-.3 2.1l6.9 2.2 2.7 8.7c.3.9.2 1.3 1.1 1.3.7 0 1-.3 1.4-.7l3.4-3.3 7.2 5.3c1.3.7 2.3.3 2.6-1.3l4.6-21.7c.5-1.9-.7-2.8-2.7-2zM28 34.6l14.7-9.3c.7-.4 1.4-.2.9.3L31.3 36.7l-.5 5.6z"/></svg>';
+      default:
+        return '';
+    }
+  }
+
+  function __renderShootShareOptions(){
+    if(!shootShareGrid) return;
+    shootShareGrid.innerHTML = GM_SHARE_PLATFORMS.map(function(platform){
+      var disabled = __shootShareBusy || (platform.mode === 'native' ? !__canNativeSharePng() : !__canCopyPngToClipboard());
+      var showText = !!platform.showText;
+      var icon = __shootShareIconSvg(platform.id);
+      return '<button type="button" class="shoot-share-card' + (showText ? '' : ' logo-only') + '" data-platform="' + platform.id + '" aria-label="' + platform.name + '"' +
+        (disabled ? ' disabled' : '') + '><span class="shoot-share-logo" style="color:' + (platform.color || '#ffffff') + ';">' + icon + '</span><span class="shoot-share-name">' + platform.name + '</span>' +
+        (showText ? '<span class="shoot-share-desc">' + (platform.description || '') + '</span>' : '<span class="visually-hidden">' + platform.name + '</span>') + '</button>';
+    }).join('');
+  }
+
+  async function openGmShareModal(){
+    if(!shootShareModal) return;
+    if(shootShareTitle) shootShareTitle.textContent = 'Share GM Mode';
+    shootShareModal.hidden = false;
+    __setShootShareBusy(true);
+    __setShootShareStatus('');
+    void __gmPrepareShareClipboard();
+  }
+
+  async function __gmPrepareShareClipboard(){
+    try{
+      var asset = await __gmPrepareShareAsset();
+      if(__canCopyPngToClipboard()){
+        await __copyPngBlobToClipboard(asset.blob);
+      }
+      __setShootShareBusy(false);
+      __setShootShareStatus('');
+      return asset;
+    }catch(error){
+      __setShootShareBusy(false);
+      __setShootShareStatus(error && error.message ? error.message : 'Could not prepare the PNG for sharing.', true);
+      throw error;
+    }
+  }
+
+  function closeGmShareModal(){
+    if(shootShareModal) shootShareModal.hidden = true;
+    __setShootShareStatus('');
+  }
+
+  async function shareGmPng(platformId){
+    var platform = GM_SHARE_PLATFORMS.find(function(p){ return p.id === platformId; });
+    if(!platform) return;
+    var popup = null;
+    try{
+      if(platform.mode === 'composer'){
+        popup = window.open('about:blank', '_blank');
+        if(!popup) throw new Error('Allow pop-ups for this site to open the selected platform.');
+        try{
+          popup.document.write('<title>Preparing share…</title><body style="margin:0;display:grid;place-items:center;min-height:100vh;background:#0f1522;color:#f5f7fa;font:600 16px system-ui,sans-serif;">Preparing share…</body>');
+          popup.document.close();
+        }catch(_){/*noop*/}
+      }
+      var asset = await __gmPrepareShareAsset();
+      if(platform.mode === 'native'){
+        if(!__canNativeSharePng()) throw new Error('Native sharing is not available in this browser.');
+        var shareFile = new File([asset.blob], asset.fileName, { type: 'image/png' });
+        if(typeof navigator.canShare === 'function' && !navigator.canShare({ files: [shareFile] })){
+          throw new Error('This browser cannot share PNG files directly.');
+        }
+        await navigator.share({ files: [shareFile], title: asset.fileName.replace(/\.png$/i, ''), text: asset.text });
+        closeGmShareModal();
+        return;
+      }
+      var shareUrl = platform.buildUrl(asset);
+      if(popup) popup.location.replace(shareUrl);
+      closeGmShareModal();
+    }catch(e){
+      if(e && e.name === 'AbortError') return;
+      try{ if(popup) popup.close(); }catch(_){/*noop*/}
+      __setShootShareStatus((e && e.message) || 'Could not start the share flow.', true);
+    }
+  }
+
+  // Wire up buttons
+  if(gmExportPngBtn) gmExportPngBtn.addEventListener('click', function(){ exportGmPng(); });
+  if(gmShareBtn) gmShareBtn.addEventListener('click', function(){ openGmShareModal(); });
+  if(btnCloseShootShare) btnCloseShootShare.addEventListener('click', function(){ closeGmShareModal(); });
+  if(shootShareModal){
+    shootShareModal.addEventListener('click', function(e){
+      if(e.target === shootShareModal) closeGmShareModal();
+    });
+  }
+  // Share grid click delegation
+  if(shootShareGrid){
+    shootShareGrid.addEventListener('click', function(e){
+      var btn = e.target && e.target.closest ? e.target.closest('[data-platform]') : null;
+      if(!btn || btn.disabled) return;
+      shareGmPng(btn.getAttribute('data-platform') || '');
+    });
+  }
 })();
 </script>
 {% endblock %}

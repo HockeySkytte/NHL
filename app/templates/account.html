@@ -117,7 +117,7 @@
     </div>
     {% endif %}
     {% if not auth_user.has_access %}
-    <div class="account-note">Your trial has ended, so Projections stays locked until billing is connected to one of the plans above.</div>
+    <div class="account-note">Your trial has ended, so Pro features are now locked. No payment is required — you keep your account and still have full access to the Community site. To unlock Projections again later, choose one of the plans above.</div>
     {% endif %}
     <div class="account-sections">
       {% if auth_user.subscription_plan == 'free' and auth_user.subscription_status == 'active' %}

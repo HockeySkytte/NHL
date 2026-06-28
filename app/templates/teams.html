@@ -616,7 +616,6 @@ let __pdChart = null;
 let __scChart = null;
 let __scatterCache = new Map();
 let __chartsLastKey = '';
-let __projLeaguePlayersBySeason = new Map();
 let __projTeamChart = null;
 let __projLeagueSort = { key: 'projTotal', dir: 'desc' };
 let __projLeagueMode = 'all';
@@ -2443,22 +2442,59 @@ try{
 }catch(_){/*noop*/}
 
 async function ensureProjLeaguePlayers(){
-  const season = String(seasonSelect?.value || '').trim() || 'current';
-  if(__projLeaguePlayersBySeason.has(season)) return __projLeaguePlayersBySeason.get(season) || [];
-  let js = null;
+  let js = null, lineups = null;
   try{
-    const r = await fetch(`/api/teams/current-projections?season=${encodeURIComponent(season)}`, { cache:'no-store' });
-    if(!r.ok){
-      __projLeaguePlayersBySeason.set(season, []);
-      return [];
-    }
+    const [r, lr] = await Promise.all([
+      fetch('/api/player-projections/v2', { cache:'no-store' }),
+      fetch('/api/lineups/all', { cache:'no-store' }),
+    ]);
+    if(!r.ok) return [];
     js = await r.json();
+    try{ lineups = await lr.json(); }catch(_){ lineups = null; }
   }catch(e){
-    __projLeaguePlayersBySeason.set(season, []);
     return [];
   }
-  const players = Array.isArray(js?.players) ? js.players : [];
-  __projLeaguePlayersBySeason.set(season, players);
+  // Build per-team sets of player IDs in current lineups (matching Card logic).
+  const lineupPidsByTeam = {};
+  if(lineups && typeof lineups === 'object'){
+    for(const [teamAbbr, node] of Object.entries(lineups)){
+      if(!node || typeof node !== 'object') continue;
+      const ids = new Set();
+      for(const bucket of ['forwards','defense','goalies']){
+        for(const player of (node[bucket] || [])){
+          const pid = Number(player?.playerId);
+          if(pid > 0) ids.add(pid);
+        }
+      }
+      lineupPidsByTeam[String(teamAbbr).toUpperCase()] = ids;
+    }
+  }
+  // Map V2 format
+  const rawPlayers = js?.players || [];
+  const players = rawPlayers.map(p => {
+    const gp = Number(p.gp || 0);
+    const gpWeight = (gp > 0 && gp < 41) ? (gp / 41) : 1.0;
+    const evo = Number(p.evo || 0) * gpWeight;
+    const evd = Number(p.evd || 0) * gpWeight;
+    const pp = Number(p.pp_raw || 0) * gpWeight;
+    const sh = Number(p.sh_raw || 0) * gpWeight;
+    const finishing = Number(p.gax || 0) * gpWeight;
+    const gsax = Number(p.gsax || 0) * gpWeight;   // goaltending, weighted
+    const rookie = Number(p.rookie || 0);  // no weight
+    const total = evo + evd + pp + sh + finishing + rookie + gsax;
+    const playerTeam = String(p.team || '').toUpperCase();
+    const teamLineupSet = lineupPidsByTeam[playerTeam] || new Set();
+    return {
+      playerId: p.player_id,
+      name: p.name,
+      team: p.team,
+      position: p.position,
+      gp,
+      projection: total,
+      evo, evd, pp, sh, finishing, rookie, gsax,
+      inCurrentLineup: teamLineupSet.has(Number(p.player_id)),
+    };
+  });
   return players;
 }
 
@@ -2473,33 +2509,30 @@ function buildTeamAggsFromLeague(leaguePlayers, mode='all'){
         team,
         teamName: teamNameByAbbrev[team] || team,
         players: 0,
-        ageSum: 0,
-        ageCount: 0,
-        projForwards: 0,
-        projDefenders: 0,
-        projGoalies: 0,
         projTotal: 0,
+        evo: 0, evd: 0, pp: 0, sh: 0, finishing: 0, rookie: 0, gsax: 0,
       });
     }
     const row = teamsMap.get(team);
     row.players += 1;
-    const age = Number(p?.age);
-    if(Number.isFinite(age) && age > 0){
-      row.ageSum += age;
-      row.ageCount += 1;
-    }
-    const projection = Number(p?.projection);
-    if(Number.isFinite(projection)){
-      const pos = String(p?.position||'').toUpperCase();
-      if(pos === 'D') row.projDefenders += projection;
-      else if(pos === 'G') row.projGoalies += projection;
-      else row.projForwards += projection;
-      row.projTotal += projection;
-    }
+    row.evo += p.evo || 0;
+    row.evd += p.evd || 0;
+    row.pp += p.pp || 0;
+    row.sh += p.sh || 0;
+    row.finishing += p.finishing || 0;
+    row.rookie += p.rookie || 0;
+    row.gsax += p.gsax || 0;
+    row.projTotal += p.projection || 0;  // already includes gsax + all components
   }
   const out = Array.from(teamsMap.values());
-  out.forEach(t=>{ t.avgAge = t.ageCount ? (t.ageSum / t.ageCount) : null; });
-  out.sort((a,b)=> Number(b.projTotal||0) - Number(a.projTotal||0));
+  out.sort((a,b)=>{
+    const ap = Number(b.projTotal||0) - Number(a.projTotal||0);
+    if(ap !== 0) return ap;
+    // Tie-breakers for deterministic ordering
+    const bp = Number(b.players||0) - Number(a.players||0);
+    if(bp !== 0) return bp;
+    return String(a.team||'').localeCompare(String(b.team||''));
+  });
   out.forEach((t,i)=>{ t.rank = i+1; });
   return out;
 }
@@ -2519,21 +2552,30 @@ function __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, options
   const tick = themeTextDim();
   const isExport = options.export === true;
   const grid = 'rgba(154,164,177,0.14)';
-  const datasets = [{
-    label: 'Projection',
-    data: list.map(p=> Number.isFinite(Number(p.projection)) ? Number(p.projection) : 0),
-    backgroundColor: list.map(p=>{
-      const pos = String(p.position||'').toUpperCase();
-      if(pos === 'D') return 'rgba(77,163,255,0.78)';
-      if(pos === 'G') return 'rgba(255,206,84,0.82)';
-      return 'rgba(255,255,255,0.74)';
+
+  // Stacked bar segments: EVO, EVD, PP, SH, Finishing, Rookie, Goaltending
+  const STACK_COLORS = {
+    evo: 'rgba(77,163,255,0.82)',
+    evd: 'rgba(255,106,106,0.78)',
+    pp:  'rgba(255,206,84,0.82)',
+    sh:  'rgba(130,200,130,0.78)',
+    finishing: 'rgba(200,140,255,0.80)',
+    rookie: 'rgba(255,180,100,0.78)',
+    goaltending: 'rgba(100,200,200,0.78)',
+  };
+  const datasets = ['evo','evd','pp','sh','finishing','rookie','goaltending'].map(key => ({
+    label: key === 'goaltending' ? 'Goaltending' : key.toUpperCase(),
+    data: list.map(p => {
+      if(key === 'goaltending') return Number(p?.gsax || 0);
+      return Number(p?.[key] || 0);
     }),
-    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: STACK_COLORS[key],
+    borderColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     barPercentage: isExport ? 0.58 : 0.68,
     categoryPercentage: isExport ? 0.80 : 0.86,
     maxBarThickness: isExport ? 20 : 18,
-  }];
+  }));
 
   return new Chart(ctx, {
     type: 'bar',
@@ -2544,37 +2586,20 @@ function __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, options
       maintainAspectRatio: false,
       indexAxis: 'y',
       plugins: {
-        legend: { display: false },
+        legend: { display: true, labels: { color: tick, font:{ size: 11, weight:'700' } } },
         tooltip: { callbacks: {
-          label: (context)=> `Projection: ${fmt3(context.raw)}`,
-          footer: (items)=>{
-            const i = items?.[0]?.dataIndex;
-            if(i == null) return '';
-            const parts = [];
-            const pos = String(list[i]?.position || '').toUpperCase();
-            if(pos) parts.push(`Position: ${pos}`);
-            const age = Number(list[i]?.age);
-            if(Number.isFinite(age)) parts.push(`Age: ${age.toFixed(1)}`);
-            if(list[i]?.inCurrentLineup) parts.push('Current lineup');
-            return parts.join(' · ');
-          },
+          label: (context)=> `${context.dataset.label}: ${fmt3(context.raw)}`,
         } }
       },
       scales: {
         x: {
-          ticks: {
-            color: tick,
-            font: { size: isExport ? 18 : 12, weight: isExport ? '700' : '500' },
-          },
+          stacked: true,
+          ticks: { color: tick, font: { size: isExport ? 18 : 12, weight: isExport ? '700' : '500' } },
           grid: { color: grid },
         },
         y: {
-          offset: true,
-          ticks: {
-            color: tick,
-            autoSkip: false,
-            font: { size: isExport ? 20 : 12, weight: isExport ? '700' : '500' },
-          },
+          stacked: true,
+          ticks: { color: tick, autoSkip: false, font: { size: isExport ? 20 : 12, weight: isExport ? '700' : '500' } },
           grid: { display:false },
         },
       }
@@ -2627,11 +2652,14 @@ function renderLeagueTable(teamAgg){
     { key:'rank', label:'Rank', cls:'num' },
     { key:'teamName', label:'Team', cls:'name' },
     { key:'players', label:'Players', cls:'num' },
-    { key:'avgAge', label:'Avg. Age', cls:'num' },
-    { key:'projForwards', label:'Proj. Forwards', cls:'num' },
-    { key:'projDefenders', label:'Proj. Defenders', cls:'num' },
-    { key:'projGoalies', label:'Proj. Goalies', cls:'num' },
-    { key:'projTotal', label:'Proj. Total', cls:'num' },
+    { key:'evo', label:'EVO', cls:'num' },
+    { key:'evd', label:'EVD', cls:'num' },
+    { key:'pp', label:'PP', cls:'num' },
+    { key:'sh', label:'SH', cls:'num' },
+    { key:'finishing', label:'Finishing', cls:'num' },
+    { key:'rookie', label:'Rookie', cls:'num' },
+    { key:'gsax', label:'Goaltending', cls:'num' },
+    { key:'projTotal', label:'Overall', cls:'num' },
   ];
 
   const th = cols.map(c=>{
@@ -2693,11 +2721,14 @@ try{
       Rank: row.rank,
       Team: row.teamName,
       Players: row.players,
-      'Avg. Age': Number.isFinite(Number(row.avgAge)) ? fmt3(row.avgAge) : '',
-      'Proj. Forwards': fmt3(row.projForwards),
-      'Proj. Defenders': fmt3(row.projDefenders),
-      'Proj. Goalies': fmt3(row.projGoalies),
-      'Proj. Total': fmt3(row.projTotal),
+      EVO: fmt3(row.evo),
+      EVD: fmt3(row.evd),
+      PP: fmt3(row.pp),
+      SH: fmt3(row.sh),
+      Finishing: fmt3(row.finishing),
+      Rookie: fmt3(row.rookie),
+      Goaltending: fmt3(row.gsax),
+      Overall: fmt3(row.projTotal),
     })));
   });
 }catch(_){/*noop*/}

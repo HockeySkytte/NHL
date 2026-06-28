@@ -229,21 +229,10 @@ def fetch_recent_roster(team_abbrev: str, season: Optional[int]) -> List[Dict]:
     return roster
 
 
-def fetch_current_roster(team_abbrev: str) -> List[Dict]:
-    """Fetch the current roster for a team using NHL API: /v1/roster/<TEAM>/current
-    Returns list of dicts: { playerId, name, sweaterNumber, pos }
+def _parse_roster_payload(js: Dict, out: List[Dict]) -> None:
+    """Parse a roster JSON payload from /v1/roster/<team> into out list.
+    Handles both the current-season and season-specific response shapes.
     """
-    team = (team_abbrev or '').upper()
-    if not team:
-        return []
-    url = f"https://api-web.nhle.com/v1/roster/{team}/current"
-    try:
-        r = requests.get(url, timeout=20, headers=REQUEST_HEADERS_JSON)
-        r.raise_for_status()
-        js = r.json() or {}
-    except Exception:
-        return []
-
     def get_name(p: Dict) -> str:
         fn = p.get('firstName'); ln = p.get('lastName')
         if isinstance(fn, dict): fn = fn.get('default')
@@ -251,7 +240,6 @@ def fetch_current_roster(team_abbrev: str) -> List[Dict]:
         parts = [str(fn or '').strip(), str(ln or '').strip()]
         return ' '.join([x for x in parts if x])
 
-    out: List[Dict] = []
     groups = [
         ('forwards', 'F'), ('forward', 'F'),
         ('defensemen', 'D'), ('defencemen', 'D'), ('defense', 'D'), ('defence', 'D'),
@@ -260,7 +248,6 @@ def fetch_current_roster(team_abbrev: str) -> List[Dict]:
         ('roster.forwards', 'F'), ('roster.defense', 'D'), ('roster.defence', 'D'), ('roster.goalies', 'G')
     ]
     for key, pos in groups:
-        # Support dotted key paths
         cur = js
         if '.' in key:
             parts = key.split('.')
@@ -285,6 +272,51 @@ def fetch_current_roster(team_abbrev: str) -> List[Dict]:
                 })
             except Exception:
                 continue
+
+
+def fetch_current_roster(team_abbrev: str) -> List[Dict]:
+    """Fetch the current roster for a team using NHL API: /v1/roster/<TEAM>/current
+    Returns list of dicts: { playerId, name, sweaterNumber, pos }
+    """
+    team = (team_abbrev or '').upper()
+    if not team:
+        return []
+    url = f"https://api-web.nhle.com/v1/roster/{team}/current"
+    try:
+        r = requests.get(url, timeout=20, headers=REQUEST_HEADERS_JSON)
+        r.raise_for_status()
+        js = r.json() or {}
+    except Exception:
+        return []
+    out: List[Dict] = []
+    _parse_roster_payload(js, out)
+    return out
+
+
+def fetch_season_roster(team_abbrev: str, season: int) -> List[Dict]:
+    """Fetch the roster for a team for a specific season using NHL API:
+    /v1/roster/<TEAM>/<SEASON>  (e.g. 20252026).
+
+    This is preferred over fetch_recent_roster during the offseason because
+    it reflects the team's official roster for that season — players traded
+    mid-season appear on their final team, not their old one.
+    Returns list of dicts: { playerId, name, sweaterNumber, pos }
+    """
+    team = (team_abbrev or '').upper()
+    if not team:
+        return []
+    url = f"https://api-web.nhle.com/v1/roster/{team}/{season}"
+    try:
+        r = requests.get(url, timeout=20, headers=REQUEST_HEADERS_JSON)
+        r.raise_for_status()
+        js = r.json() or {}
+    except Exception:
+        return []
+    out: List[Dict] = []
+    _parse_roster_payload(js, out)
+    # Fallback to /current if season-specific roster is empty (early season)
+    if not out:
+        return fetch_current_roster(team)
     return out
 
 
@@ -699,42 +731,168 @@ def scrape_dailyfaceoff_lineup(url: str, team_abbrev: Optional[str] = None) -> D
     return out
 
 
-def map_lineup_to_player_ids(lineup: Dict[str, List[Dict]], roster: List[Dict], team_abbrev: Optional[str]) -> Dict[str, object]:
-    """Map scraped lineup entries to NHL playerIds using ONLY the provided current roster.
+# Nickname / diminutive table — common short forms used by Daily Faceoff that
+# don't match the NHL roster's official first name.  Maps lowercased nickname
+# → lowercased full first name.  Add entries as needed.
+# Each key maps to a LIST of possible full-form first names (lowercased).
+# The matcher tries each in order against the roster until one matches.
+NICKNAMES: Dict[str, List[str]] = {
+    'jj': ['joshua'],
+    'aj': ['anthony'],
+    'tj': ['terrence', 'timothy'],
+    'cj': ['christopher'],
+    'dj': ['donald'],
+    'pj': ['peter'],
+    'bj': ['brian'],
+    'matt': ['matthew'],
+    'mike': ['michael'],
+    'mitch': ['mitchell'],
+    'nick': ['nicholas'],
+    'nik': ['nikolaj'],
+    'chris': ['christopher', 'christian'],
+    'alex': ['alexander', 'alexey', 'aleksander'],
+    'gabe': ['gabriel'],
+    'bobby': ['robert'],
+    'bob': ['robert'],
+    'brad': ['bradley'],
+    'greg': ['gregory'],
+    'andy': ['andrew'],
+    'drew': ['andrew'],
+    'sam': ['samuel', 'samantha'],
+    'tom': ['thomas'],
+    'tommy': ['thomas'],
+    'jake': ['jacob'],
+    'josh': ['joshua'],
+    'ben': ['benjamin'],
+    'dan': ['daniel'],
+    'danny': ['daniel'],
+    'jim': ['james'],
+    'jimmy': ['james', 'jimmy'],
+    'jon': ['jonathan'],
+    'jonas': ['jonas'],
+    'max': ['maxwell', 'maxim'],
+    'ole': ['oliver'],
+    'pat': ['patrick'],
+    'rick': ['richard'],
+    'ricky': ['richard'],
+    'dave': ['david'],
+    'davy': ['david'],
+    'phil': ['philip'],
+    'philip': ['philip'],
+    'steve': ['steven'],
+    'steven': ['steven'],
+    'tony': ['anthony'],
+    'vince': ['vincent', 'vincenzo'],
+    'vinny': ['vincent', 'vincenzo'],
+    'will': ['william'],
+    'willie': ['william'],
+    'billy': ['william'],
+    'bill': ['william'],
+}
 
-    Strict rules:
-      * No roster backfill: players not scraped are not added.
-      * A name is matched case-insensitively to full roster name first.
-      * If full name fails, try last-name-only when it yields exactly ONE roster candidate.
-      * Ambiguous or unmatched entries are dropped.
-    Returned structure mirrors lineup but each item gains playerId.
+
+def _levenshtein(a: str, b: str) -> int:
+    """Lightweight Levenshtein distance for short strings (names)."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+        prev = cur
+    return prev[-1]
+
+
+def map_lineup_to_player_ids(lineup: Dict[str, List[Dict]], roster: List[Dict], team_abbrev: Optional[str]) -> Dict[str, object]:
+    """Map scraped lineup entries to NHL playerIds using the provided roster.
+
+    Matching order:
+      1. Exact full name (case-insensitive, punctuation-stripped)
+      2. Last-name-only match when exactly ONE candidate exists
+      3. Nickname expansion ("JJ" → "Joshua") on first name, then full name
+      4. Fuzzy last name match (Levenshtein <= 2) when exactly ONE candidate exists
+      5. Unmatched entries are logged and dropped.
+
+    Roster backfill: players in the roster but not in the scraped lineup are
+    appended as EXT (extras / scratches) so the GM Mode has a complete pool.
     """
+    unmatched: List[str] = []
+
     def norm_name(s: str) -> str:
         return ' '.join(re.sub(r"[^a-zA-Z\s\-']", '', (s or '')).strip().split()).lower()
 
-    # Build lookup maps
+    def first_name(s: str) -> str:
+        parts = norm_name(s).split()
+        return parts[0] if parts else ''
+
+    def last_name(s: str) -> str:
+        parts = norm_name(s).split()
+        return parts[-1] if parts else ''
+
+    # Expand a first name token via the nickname table (returns the list of
+    # full forms to try, or just the input unchanged as a single-element list).
+    def expand_nick(token: str) -> List[str]:
+        candidates = NICKNAMES.get(token.lower())
+        if candidates:
+            return candidates
+        return [token.lower()]
+
+    # Build lookup maps from roster
     by_full: Dict[str, Dict] = {}
     by_last: Dict[str, List[Dict]] = {}
+    by_first_last: Dict[str, List[Dict]] = {}  # "<first>|<last>" → list
     for p in roster:
         nm = p.get('name') or ''
         nm_norm = norm_name(nm)
         if nm_norm:
             by_full[nm_norm] = p
-        last = nm_norm.split(' ')[-1]
-        if last:
-            by_last.setdefault(last, []).append(p)
+        ln = last_name(nm)
+        if ln:
+            by_last.setdefault(ln, []).append(p)
+        fn = first_name(nm)
+        if fn and ln:
+            by_first_last.setdefault(f"{fn}|{ln}", []).append(p)
 
     def resolve_pid(scraped_name: str) -> Optional[int]:
         nm_norm = norm_name(scraped_name)
         if not nm_norm:
             return None
+        # 1. Exact full name
         p = by_full.get(nm_norm)
         if p and p.get('playerId') is not None:
             return p.get('playerId')
-        last = nm_norm.split(' ')[-1]
-        cands = by_last.get(last, [])
+        # 2. Last name only (unique)
+        ln = last_name(scraped_name)
+        cands = by_last.get(ln, [])
         if len(cands) == 1 and cands[0].get('playerId') is not None:
             return cands[0].get('playerId')
+        # 3. Nickname expansion on first name (try each candidate)
+        fn = first_name(scraped_name)
+        for full_form in expand_nick(fn):
+            if full_form == fn.lower():
+                continue  # no expansion needed
+            key = f"{full_form}|{ln}"
+            cands2 = by_first_last.get(key, [])
+            if len(cands2) == 1 and cands2[0].get('playerId') is not None:
+                return cands2[0].get('playerId')
+            # Also try by_full with expanded name
+            expanded = f"{full_form} {ln}"
+            p2 = by_full.get(expanded)
+            if p2 and p2.get('playerId') is not None:
+                return p2.get('playerId')
+        # 4. Fuzzy last name (Levenshtein <= 2), unique
+        if ln:
+            fuzzy: List[Dict] = []
+            for rln, rps in by_last.items():
+                if _levenshtein(ln, rln) <= 2:
+                    fuzzy.extend(rps)
+            if len(fuzzy) == 1 and fuzzy[0].get('playerId') is not None:
+                return fuzzy[0].get('playerId')
         return None
 
     def map_section(items: List[Dict]) -> List[Dict]:
@@ -742,13 +900,17 @@ def map_lineup_to_player_ids(lineup: Dict[str, List[Dict]], roster: List[Dict], 
         for it in items:
             pid = resolve_pid(it.get('name') or '')
             if pid is None:
-                continue  # strict: skip unmatched
+                unmatched.append(it.get('name') or '')
+                continue  # skip unmatched
             out_items.append({'name': it.get('name'), 'playerId': pid, 'unit': it.get('unit'), 'pos': it.get('pos')})
         return out_items
 
     starters_forwards = map_section(lineup.get('forwards', []))
     starters_defense = map_section(lineup.get('defense', []))
     starters_goalies = map_section(lineup.get('goalies', []))
+
+    if unmatched:
+        print(f"  [map] unmatched for {(team_abbrev or '')}: {unmatched}", file=sys.stderr)
 
     included_ids = {it['playerId'] for it in starters_forwards + starters_defense + starters_goalies if it.get('playerId') is not None}
 
@@ -767,7 +929,6 @@ def map_lineup_to_player_ids(lineup: Dict[str, List[Dict]], roster: List[Dict], 
         elif pos == 'D':
             ext_defense.append({'name': name, 'playerId': pid, 'unit': 'EXT', 'pos': 'D'})
         elif pos == 'G':
-            # Only non-starter goalies added as EXT
             ext_goalies.append({'name': name, 'playerId': pid, 'unit': 'EXT', 'pos': 'G'})
 
     result: Dict[str, object] = {
@@ -775,7 +936,6 @@ def map_lineup_to_player_ids(lineup: Dict[str, List[Dict]], roster: List[Dict], 
         'forwards': starters_forwards + ext_forwards,
         'defense': starters_defense + ext_defense,
         'goalies': starters_goalies + ext_goalies,
-        # metadata keys like generated_at added by caller
     }
     return result
 
@@ -823,7 +983,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"[warn] scrape failed for {t}: {e}")
                 lineup = {'forwards': [], 'defense': [], 'goalies': []}
             try:
-                roster = fetch_current_roster(t)
+                # Use season-specific roster in the offseason so traded players
+                # appear on their final team (not their mid-season team).
+                roster = fetch_season_roster(t, season_int) or fetch_current_roster(t)
                 mapped = map_lineup_to_player_ids(lineup, roster, t)
                 # Attach generation timestamp for downstream consumers
                 try:

@@ -333,6 +333,50 @@ def upsert_card_builder_layout(record: dict) -> dict | None:
     return get_card_builder_layout(auth_user_id, layout_id)
 
 
+def upsert_lineups(rows: list[dict], on_conflict: str = "team,player_id,season") -> int:
+    """Upsert lineup rows into the `lineups` table in batches of 500.
+
+    Args:
+        rows: List of dicts with keys matching the lineups table columns:
+              team, player_id, player_name, position, line_unit, starter,
+              estimated_gp, gp_note, is_injured, injury_start, injury_end,
+              replacement_id, replacement_name, season, source.
+    Returns: number of rows upserted.
+    """
+    if not rows:
+        return 0
+    client = get_client()
+    import math
+    batch = 500
+    total = 0
+    for i in range(0, len(rows), batch):
+        chunk = rows[i : i + batch]
+        # Clean NaN / None
+        clean = []
+        for r in chunk:
+            c = {}
+            for k, v in r.items():
+                if isinstance(v, float) and math.isnan(v):
+                    c[k] = None
+                else:
+                    c[k] = v
+            clean.append(c)
+        client.table('lineups').upsert(clean, on_conflict=on_conflict).execute()
+        total += len(clean)
+    return total
+
+
+def delete_lineups(team: str | None = None, season: str | None = None) -> None:
+    """Delete lineup rows. If team/season provided, only delete matching rows."""
+    client = get_client()
+    q = client.table('lineups').delete()
+    if team:
+        q = q.eq('team', team)
+    if season:
+        q = q.eq('season', season)
+    q.execute()
+
+
 def delete_card_builder_layout(auth_user_id: str, layout_id: str) -> None:
     if not auth_user_id or not layout_id:
         return

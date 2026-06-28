@@ -509,7 +509,7 @@ Important rules:
 
 - Premium gating is route-prefix based in `app/routes.py`.
 - The gating only matters when auth is configured in the environment.
-- Signup creates a 7-day free trial.
+- Signup creates a 14-day free trial with no credit card required; trials can be upgraded to paid plans (Pro Monthly / Pro Yearly) but never require payment. When the trial ends, Pro features lock and the account reverts to the Community site experience.
 - Stripe billing runs server-side and subscription state is synced back through `/stripe/webhook`.
 - Auth routes also contain crawler-hardening logic and safe-next handling to avoid redirect abuse.
 

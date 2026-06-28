@@ -24,6 +24,9 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Large data files (exceeds GitHub 100 MB limit)
+data/player_projections/
+
 # Environment
 .env
 .env.*

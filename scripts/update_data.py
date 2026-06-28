@@ -1565,7 +1565,7 @@ def export_to_supabase(
         group_cols = ['shift_index', 'game_id', 'team', 'season']
         dfs['player_id'] = dfs['player_id'].astype(str)
         agg_dict: Dict[str, Any] = {
-            'player_id': ('player_id', lambda ids: ' '.join(ids)),
+            'player_id': ('player_id', lambda ids: ' '.join(str(i) for i in ids)),
             'duration': ('duration', 'first'),
             'strength_state': ('strength_state', 'first'),
         }
@@ -1844,10 +1844,26 @@ def rebuild_team_seasonstats_from_supabase(season: str = '20252026') -> None:
         pim_against=('pen_duration', 'sum'),
     ).reset_index().rename(columns={'_ss': 'season_state', '_st': 'strength_state', '_opp': 'team'})
 
-    # TOI from shifts
-    print(f"[team-seasonstats] reading shifts for TOI ...")
-    shifts = read_table("shifts", columns="game_id,team,duration,strength_state",
-                        filters={"season": f"eq.{season_i}"})
+    # TOI from shifts – read team-by-team to avoid socket exhaustion
+    # (4M+ shift rows = 4000+ REST pages in one sweep kills Windows sockets).
+    print(f"[team-seasonstats] reading shifts for TOI (by team) ...")
+    shift_parts: List[pd.DataFrame] = []
+    teams_list = sorted(pbp['_team'].unique())
+    if not teams_list:
+        teams_list = sorted({str(t).upper() for t in _season_team_codes(str(season_i))})
+    for idx, tm in enumerate(teams_list, 1):
+        if not tm:
+            continue
+        print(f"[team-seasonstats]   shifts {idx}/{len(teams_list)} {tm} ...", end=' ')
+        df_tm = read_table("shifts",
+                           columns="game_id,team,duration,strength_state",
+                           filters={"season": f"eq.{season_i}", "team": f"eq.{tm}"})
+        if df_tm.empty:
+            print("0 rows")
+            continue
+        print(f"{len(df_tm)} rows")
+        shift_parts.append(df_tm)
+    shifts = pd.concat(shift_parts, ignore_index=True) if shift_parts else pd.DataFrame()
     if not shifts.empty:
         shifts['_team'] = shifts['team'].fillna('').astype(str).str.strip().str.upper()
         shifts['_st'] = shifts['strength_state'].fillna('').apply(_sb)

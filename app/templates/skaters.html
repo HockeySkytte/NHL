@@ -233,9 +233,42 @@
   #projPlayerRadar{ height:500px; }
   .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
   .proj-player-empty{ margin-bottom:10px; }
+
+  /* KPI row */
+  .proj-kpi-row{ display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin:0 0 12px 0; }
+  .proj-kpi-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:15px; flex:1 1 auto; }
+  .proj-kpi-card{ background:rgba(15,21,34,0.88); border:2px solid #2a3142; border-radius:10px; padding:10px 8px 8px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60px; transition:border-color 0.2s; box-shadow:0 4px 12px rgba(0,0,0,0.25); }
+  .proj-kpi-card .proj-kpi-label{ font-size:14px; letter-spacing:.5px; text-transform:uppercase; font-weight:700; color:rgba(255, 255, 255, 0.88); }
+  .proj-kpi-card .proj-kpi-value{ font-size:30px; font-weight:850; line-height:1; margin-top:2px; }
+  /* Overall circle — larger */
+  .proj-kpi-overall{ width:180px; height:180px; flex:0 0 auto; }
+  .proj-kpi-overall .skater-proj-kpi-val{ font-size:40px; }
+  .proj-kpi-overall .skater-proj-kpi-lbl{ font-size:16px; }
   .proj-export-wrap{ display:flex; justify-content:flex-end; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
   .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
   .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
+
+  /* ── Mobile: portrait ── */
+  @media (max-width: 768px) and (orientation: portrait){
+    /* Player tab: 2-col grid, Overall centered below, hide chart & toolbar */
+    .proj-kpi-grid{ grid-template-columns:repeat(2, 1fr); }
+    .proj-kpi-row{ flex-direction:column; align-items:center; }
+    .proj-kpi-overall{ margin:8px auto 0; }
+    .proj-player-toolbar,
+    .proj-chart-frame.player{ display:none !important; }
+    /* Team tab: hide chart, show rotate prompt */
+    .proj-chart-frame.team{ display:none !important; }
+    .proj-team-rotate{ display:flex !important; }
+  }
+
+  /* Rotate prompt (hidden by default, shown on mobile portrait) */
+  .proj-team-rotate{ display:none; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:40px 20px; text-align:center; color:var(--text-dim); }
+  .proj-team-rotate-icon{ font-size:48px; animation:proj-rotate-pulse 1.8s ease-in-out infinite; }
+  @keyframes proj-rotate-pulse{
+    0%,100%{ transform:rotate(0deg); opacity:0.5; }
+    50%{ transform:rotate(90deg); opacity:1; }
+  }
+  .proj-team-rotate-text{ font-size:15px; font-weight:600; }
   .proj-table{ width:100%; border-collapse:collapse; font-size:14px; }
   .proj-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
   .proj-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; }
@@ -986,6 +1019,66 @@
             <button id="btnExportProjPlayerPng" class="proj-export-btn" type="button">Export PNG</button>
             <button id="btnShareProjPlayerPng" class="proj-export-btn" type="button">Share</button>
           </div>
+          <!-- KPI row: small cards in a grid left, Overall circle right -->
+          <div id="projKpiRow" class="proj-kpi-row" hidden>
+            <div class="proj-kpi-grid">
+              <div id="projKpiEvo" class="proj-kpi-card">
+                <div class="proj-kpi-label">EVO</div>
+                <div class="proj-kpi-value">--</div>
+              </div>
+              <div id="projKpiEvd" class="proj-kpi-card">
+                <div class="proj-kpi-label">EVD</div>
+                <div class="proj-kpi-value">--</div>
+              </div>
+              <div id="projKpiPp" class="proj-kpi-card">
+                <div class="proj-kpi-label">PP</div>
+                <div class="proj-kpi-value">--</div>
+              </div>
+              <div id="projKpiSh" class="proj-kpi-card">
+                <div class="proj-kpi-label">SH</div>
+                <div class="proj-kpi-value">--</div>
+              </div>
+              <div id="projKpiFinishing" class="proj-kpi-card">
+                <div class="proj-kpi-label">Finishing</div>
+                <div class="proj-kpi-value">--</div>
+              </div>
+              <div id="projKpiQot" class="proj-kpi-card">
+                <div class="proj-kpi-label">QoT</div>
+                <div class="proj-kpi-value">--</div>
+              </div>
+              <div id="projKpiQoc" class="proj-kpi-card">
+                <div class="proj-kpi-label">QoC</div>
+                <div class="proj-kpi-value">--</div>
+              </div>
+              <div id="projKpiZs" class="proj-kpi-card">
+                <div class="proj-kpi-label">ZS</div>
+                <div class="proj-kpi-value">--</div>
+              </div>
+            </div>
+            <div id="projKpiOverall" class="skater-proj-kpi proj-kpi-overall">
+              <div class="skater-proj-kpi-val">--%</div>
+              <div class="skater-proj-kpi-lbl">Overall</div>
+            </div>
+          </div>
+          <div class="proj-player-toolbar" style="display:flex;gap:10px;align-items:center;margin:0 0 8px 0;flex-wrap:wrap;">
+            <label for="projTrendMetric" style="font-size:13px;color:var(--text-dim);font-weight:600;">Metric</label>
+            <select id="projTrendMetric" style="background:var(--panel-alt);border:1px solid #2a3142;color:#fff;padding:4px 8px;border-radius:6px;font-size:13px;font-weight:600;">
+              <option value="overall" selected>Overall</option>
+              <option value="evo">EVO</option>
+              <option value="evd">EVD</option>
+              <option value="pp">PP</option>
+              <option value="sh">SH</option>
+              <option value="finishing">Finishing</option>
+            </select>
+            <label for="projPerfMA" style="font-size:13px;color:var(--text-dim);font-weight:600;margin-left:8px;">Perf MA</label>
+            <select id="projPerfMA" style="background:var(--panel-alt);border:1px solid #2a3142;color:#fff;padding:4px 8px;border-radius:6px;font-size:13px;font-weight:600;">
+              <option value="1">1 game</option>
+              <option value="3">3 games</option>
+              <option value="5" selected>5 games</option>
+              <option value="10">10 games</option>
+              <option value="20">20 games</option>
+            </select>
+          </div>
           <div id="projPlayerEmpty" class="skater-empty proj-player-empty" hidden>No season projection history found for this player.</div>
           <div class="proj-chart-frame player">
             <canvas id="projPlayerTrend" class="proj-canvas"></canvas>
@@ -998,6 +1091,10 @@
             <button id="btnShareProjTeamPng" class="proj-export-btn" type="button">Share</button>
           </div>
           <div id="projTeamEmpty" class="skater-empty" hidden>No current projections found for this roster.</div>
+          <div class="proj-team-rotate">
+            <div class="proj-team-rotate-icon">📱</div>
+            <div class="proj-team-rotate-text">Rotate your phone to landscape to view the chart</div>
+          </div>
           <div class="proj-chart-frame team">
             <canvas id="projTeamStack" class="proj-canvas"></canvas>
           </div>
@@ -1217,6 +1314,18 @@ const projPanelTeam = document.getElementById('projPanelTeam');
 const projPanelLeague = document.getElementById('projPanelLeague');
 const projPlayerEmpty = document.getElementById('projPlayerEmpty');
 const projPlayerTrend = document.getElementById('projPlayerTrend');
+const projPerfMA = document.getElementById('projPerfMA');
+const projTrendMetric = document.getElementById('projTrendMetric');
+const projKpiRow = document.getElementById('projKpiRow');
+const projKpiOverall = document.getElementById('projKpiOverall');
+const projKpiEvo = document.getElementById('projKpiEvo');
+const projKpiEvd = document.getElementById('projKpiEvd');
+const projKpiPp = document.getElementById('projKpiPp');
+const projKpiSh = document.getElementById('projKpiSh');
+const projKpiFinishing = document.getElementById('projKpiFinishing');
+const projKpiQot = document.getElementById('projKpiQot');
+const projKpiQoc = document.getElementById('projKpiQoc');
+const projKpiZs = document.getElementById('projKpiZs');
 const projTeamEmpty = document.getElementById('projTeamEmpty');
 const projTeamStack = document.getElementById('projTeamStack');
 const projLeagueTable = document.getElementById('projLeagueTable');
@@ -1259,7 +1368,8 @@ const shootShareStatus = document.getElementById('shootShareStatus');
 let __projLeaguePlayers = null;
 let __projLeaguePlayersKey = '';
 let __projPlayerTrendChart = null;
-let __projPlayerTrendCache = new Map();
+let __projPlayerTrendData = null;
+let __projPlayerTrendColor = null;
 let __projRadarChart = null;
 let __projTeamChart = null;
 let __projLeagueSort = { key: 'projection', dir: 'desc' };
@@ -2167,14 +2277,6 @@ function __renderProjectionKpi(enabled, pct, positionGroup){
 function __updateProjectionKpiFromCardData(data, cfg){
   const enabled = __isProjectionSeasonAllowed() && __isProjectionMetricEnabledInConfig(cfg);
   __cardProjectionEnabled = enabled;
-  const metric = data?.metrics?.['Projection|Percentile'];
-  const rawPct = metric?.pct;
-  let pct = (rawPct == null || rawPct === '') ? NaN : Number(rawPct);
-  if(!Number.isFinite(pct)){
-    const rawVal = metric?.value;
-    pct = (rawVal == null || rawVal === '') ? NaN : Number(rawVal);
-  }
-  __cardProjectionPct = Number.isFinite(pct) ? clamp(pct, 0, 100) : null;
 
   let group = __positionToGroup(data?.positionGroup);
   if(!group){
@@ -2182,7 +2284,35 @@ function __updateProjectionKpiFromCardData(data, cfg){
     group = __positionToGroup(meta?.pos);
   }
   __cardProjectionPositionGroup = group;
-  __renderProjectionKpi(enabled, __cardProjectionPct, __cardProjectionPositionGroup);
+
+  // Try V2 projection first (async). Rank by position group (F vs F, D vs D)
+  // so the Card KPI matches the GM Mode and the Projections Player tab.
+  if(enabled && data?.playerId){
+    ensureProjV2Players().then(players => {
+      if(!players || !players.length){ __cardProjectionPct = null; __renderProjectionKpi(enabled, null, __cardProjectionPositionGroup); return; }
+      let league = __buildProjLeagueFromV2(players, true, 'All');
+      // Filter to the same position group as this player
+      const pg = __cardProjectionPositionGroup;
+      if(pg === 'F' || pg === 'D'){
+        league = league.filter(p => {
+          const pos = String(p.position || '').toUpperCase();
+          if(pg === 'D') return pos === 'D';
+          return pos !== 'D' && pos !== 'G';
+        });
+      }
+      const ranked = __rankProjectionLeaguePlayers(league);
+      const self = ranked.find(p => String(p.playerId) === String(data.playerId));
+      const pct = __rankToPercentile(self?._rank, ranked.length);
+      __cardProjectionPct = Number.isFinite(pct) ? clamp(pct, 0, 100) : null;
+      __renderProjectionKpi(enabled, __cardProjectionPct, __cardProjectionPositionGroup);
+    }).catch(() => {
+      __cardProjectionPct = null;
+      __renderProjectionKpi(enabled, null, __cardProjectionPositionGroup);
+    });
+    return;
+  }
+  __cardProjectionPct = null;
+  __renderProjectionKpi(enabled, null, __cardProjectionPositionGroup);
 }
 
 function __updateProjectionToggleBtn(){
@@ -2234,8 +2364,12 @@ function setActiveTab(which){
   if(tabPanelRAPM) tabPanelRAPM.style.display = finalR ? '' : 'none';
   if(tabPanelProjections) tabPanelProjections.style.display = finalP ? '' : 'none';
 
-  // Card slicers are shared by Card + Table + Charts + Shooting.
-  setCardSlicersVisible(finalC || finalT || finalH || finalS, { showConfig: finalC });
+  // Card slicers are shared by Card + Table + Charts + Shooting + Projections.
+  // Projections hides slicers it doesn't use: rates, xgModel, minGp, minToi, scope.
+  setCardSlicersVisible(finalC || finalT || finalH || finalS || finalP, {
+    showConfig: finalC,
+    hideSet: finalP ? ['rates','xgModel','minGp','minToi','scope','strengthState'] : null,
+  });
   setEdgeSlicersVisible(finalE);
 
   // Keep Edge season state in sync with Card selection when possible.
@@ -2513,16 +2647,17 @@ async function loadEdgePanel(){
 function setCardSlicersVisible(on, opts){
   const show = !!on;
   const showConfig = !!(opts && opts.showConfig);
+  const hideSet = (opts && Array.isArray(opts.hideSet)) ? new Set(opts.hideSet.map(s=>String(s).toLowerCase())) : null;
   // Configure button lives in the Card panel header; only show it on Card.
   if(btnConfigureCard) btnConfigureCard.style.display = showConfig ? '' : 'none';
   if(cardSlicerSummary) cardSlicerSummary.style.display = showConfig ? '' : 'none';
-  if(cardScopeWrap) cardScopeWrap.style.display = show ? '' : 'none';
+  if(cardScopeWrap) cardScopeWrap.style.display = (show && !hideSet?.has('scope')) ? '' : 'none';
   if(cardSeasonStateWrap) cardSeasonStateWrap.style.display = show ? '' : 'none';
-  if(cardMinGpWrap) cardMinGpWrap.style.display = show ? '' : 'none';
-  if(cardMinToiWrap) cardMinToiWrap.style.display = show ? '' : 'none';
-  if(cardStrengthStateWrap) cardStrengthStateWrap.style.display = show ? '' : 'none';
-  if(cardRatesWrap) cardRatesWrap.style.display = show ? '' : 'none';
-  if(cardXgModelWrap) cardXgModelWrap.style.display = show ? '' : 'none';
+  if(cardMinGpWrap) cardMinGpWrap.style.display = (show && !hideSet?.has('mingp')) ? '' : 'none';
+  if(cardMinToiWrap) cardMinToiWrap.style.display = (show && !hideSet?.has('mintoi')) ? '' : 'none';
+  if(cardStrengthStateWrap) cardStrengthStateWrap.style.display = (show && !hideSet?.has('strengthstate')) ? '' : 'none';
+  if(cardRatesWrap) cardRatesWrap.style.display = (show && !hideSet?.has('rates')) ? '' : 'none';
+  if(cardXgModelWrap) cardXgModelWrap.style.display = (show && !hideSet?.has('xgmodel')) ? '' : 'none';
 }
 
 function updateCardSlicerSummary(){
@@ -3137,8 +3272,8 @@ async function loadCardPanel(){
     if(String(rates) === 'PerGame' && metricIds.includes('Ice Time|TOI') && !metricIds.includes('Ice Time|GP')){
       metricIds.push('Ice Time|GP');
     }
-    if(__isProjectionSeasonAllowed() && __isProjectionMetricEnabledInConfig(cfg) && !metricIds.includes('Projection|Percentile')){
-      metricIds.push('Projection|Percentile');
+    if(__isProjectionSeasonAllowed() && __isProjectionMetricEnabledInConfig(cfg)){
+      // V2 projection is loaded separately — no need to request from card API
     }
 
     const url = `/api/skaters/card?season=${encodeURIComponent(season)}&playerId=${encodeURIComponent(playerId)}&seasonState=${encodeURIComponent(seasonState)}&strengthState=${encodeURIComponent(strengthState)}&xgModel=${encodeURIComponent(xgModel)}&rates=${encodeURIComponent(rates)}&scope=${encodeURIComponent(scope)}&minGP=${encodeURIComponent(String(minGP))}&minTOI=${encodeURIComponent(String(minTOI))}&metricIds=${encodeURIComponent(metricIds.join(','))}`;
@@ -3865,41 +4000,49 @@ async function __renderActiveProjectionSubtab(which){
   const playerId = playerSelect?.value;
   const season = String(seasonSelect?.value || '').trim();
   const { teamAbbrev, teamColor } = __getCurrentProjectionTeamMeta();
-  const league = await ensureProjLeaguePlayers();
-  if(active === 'league'){
-    renderLeagueTable(league, playerId);
-    return;
+
+  // Use V2 projections for team/league
+  if(active === 'league' || active === 'team'){
+    const ss = 'All';  // Always use All strengths on Projections tabs
+    const ssMap = {'5v5':'5v5','PP':'PP','SH':'SH','Other':'Other','4v4':'Other','3v3':'Other','5v4':'PP','5v3':'PP','4v3':'PP','4v5':'SH','3v4':'SH','3v5':'SH'};
+    const ssGroup = ssMap[ss] || ss;
+    const useAll = true;
+    const v2players = await ensureProjV2Players();
+    const league = __buildProjLeagueFromV2(v2players, useAll, ssGroup);
+    __projLeaguePlayers = league;
+    __projLeaguePlayersKey = `v2|${season}|${ss}`;
+    if(active === 'league'){ renderLeagueTable(league, playerId); return; }
+    if(active === 'team'){ renderTeamStackFromLeague(teamAbbrev, league, teamColor); try{ __projTeamChart?.resize(); }catch(_){/*noop*/} return; }
   }
-  if(active === 'team'){
-    renderTeamStackFromLeague(teamAbbrev, league, teamColor);
-    try{ __projTeamChart?.resize(); }catch(_){/*noop*/}
-    return;
-  }
-  const playerTrend = await ensureProjPlayerTrend(playerId, season);
+
+  const playerTrend = await ensureProjPlayerTrend(playerId, season,
+    'All',
+    String(cardSeasonState?.value || 'regular'));
   renderProjPlayerTrend(playerTrend, teamColor);
+  // Render KPIs (uses V2 data for percentile pools)
+  const v2forKpi = await ensureProjV2Players();
+  renderProjPlayerKpis(v2forKpi, playerId, playerTrend?.position);
   try{ __projPlayerTrendChart?.resize(); }catch(_){/*noop*/}
 }
 
-async function ensureProjPlayerTrend(playerId, season){
+async function ensureProjPlayerTrend(playerId, season, strengthState, seasonState){
   const pid = String(playerId || '').trim();
   const seasonId = String(season || '').trim();
   if(!pid || !seasonId) return null;
-  const cacheKey = `${seasonId}|${pid}`;
-  if(__projPlayerTrendCache.has(cacheKey)) return __projPlayerTrendCache.get(cacheKey);
+  const ss = String(strengthState || 'all').trim();
+  const stg = String(seasonState || 'regular').trim();
   try{
-    const url = `/api/skaters/player-projection-trend/${encodeURIComponent(pid)}?season=${encodeURIComponent(seasonId)}`;
+    let url = `/api/skaters/player-projection-trend/${encodeURIComponent(pid)}?season=${encodeURIComponent(seasonId)}`;
+    if(ss && ss.toLowerCase() !== 'all') url += `&strengthState=${encodeURIComponent(ss)}`;
+    if(stg && stg.toLowerCase() !== 'all') url += `&seasonState=${encodeURIComponent(stg)}`;
     const r = await fetch(url, { cache:'no-store' });
     if(!r.ok){
       if(r.status !== 404) console.error('[projections] player trend failed:', r.status);
-      __projPlayerTrendCache.set(cacheKey, null);
       return null;
     }
-    const js = await r.json();
-    __projPlayerTrendCache.set(cacheKey, js);
-    return js;
+    return await r.json();
   }catch(e){
     console.error('[projections] player trend failed:', e);
-    __projPlayerTrendCache.set(cacheKey, null);
     return null;
   }
 }
@@ -3917,6 +4060,35 @@ function renderProjPlayerTrend(trend, teamColor){
     return;
   }
 
+  // Store for re-renders
+  __projPlayerTrendData = trend;
+  __projPlayerTrendColor = teamColor;
+
+  // ── Selected metric ──
+  const metric = String(projTrendMetric?.value || 'overall').trim().toLowerCase();
+  const METRIC_LABELS = { overall:'Overall', evo:'EVO', evd:'EVD', pp:'PP', sh:'SH', finishing:'Finishing', rookie:'Rookie' };
+  const metricLabel = METRIC_LABELS[metric] || 'Overall';
+
+  // Get values for the selected metric
+  let projValues, perfValues;
+  // Map frontend metric names to API component keys
+  const COMP_KEY_MAP = { evo:'evo', evd:'evd', pp:'pp', sh:'sh', finishing:'gax' };
+  if(metric === 'overall'){
+    projValues = points.map(p => p.projection);
+    perfValues = points.map(p => p.performance);
+  } else {
+    const compKey = COMP_KEY_MAP[metric] || metric;
+    // Projection line: rolling-based components (with game_weight)
+    projValues = points.map(p => Number((p.components || {})[compKey] || 0));
+    // Performance line: gs_-based per-game components (no game_weight, no rookie)
+    perfValues = points.map(p => Number((p.perf_components || {})[compKey] || 0));
+  }
+
+  // Moving average window (applied to performance/dashed line only)
+  const maWindow = Math.max(1, parseInt(String(projPerfMA?.value || '5'), 10) || 5);
+  const projMA = _computeMovingAverage(projValues, 1);   // projection = raw (solid)
+  const perfMA = _computeMovingAverage(perfValues, maWindow);  // performance = MA (dashed)
+
   const accent = teamColor || themeAccent();
   const tick = themeTextDim();
   const grid = 'rgba(154,164,177,0.14)';
@@ -3930,8 +4102,8 @@ function renderProjPlayerTrend(trend, teamColor){
       labels,
       datasets: [
         {
-          label: 'Projection',
-          data: points.map(p=>p.projection),
+          label: `${metricLabel}`,
+          data: projMA,
           borderColor: projectionColor,
           backgroundColor: projectionColor,
           borderWidth: 3,
@@ -3941,8 +4113,8 @@ function renderProjPlayerTrend(trend, teamColor){
           spanGaps: true,
         },
         {
-          label: 'Performance',
-          data: points.map(p=>p.performance),
+          label: `${metricLabel} (${maWindow}g MA)`,
+          data: perfMA,
           borderColor: performanceColor,
           backgroundColor: performanceColor,
           borderWidth: 2,
@@ -3981,7 +4153,7 @@ function renderProjPlayerTrend(trend, teamColor){
           grid: { color: grid },
         },
         y: {
-          title: { display:true, text:'Value', color: tick, font:{ size: 12, weight:'800' } },
+          title: { display:true, text:metricLabel, color: tick, font:{ size: 12, weight:'800' } },
           ticks: { color: tick },
           grid: { color: grid },
         },
@@ -3993,37 +4165,255 @@ function renderProjPlayerTrend(trend, teamColor){
   });
 }
 
-async function ensureProjLeaguePlayers(){
-  const season = String(seasonSelect?.value || '').trim();
-  const cacheKey = season || 'current';
-  if(__projLeaguePlayers && __projLeaguePlayersKey === cacheKey) return __projLeaguePlayers;
-  let js = null;
-  try{
-    const url = `/api/skaters/current-projections?season=${encodeURIComponent(season)}`;
-    const r = await fetch(url, { cache:'no-store' });
-    if(!r.ok){
-      console.error('[projections] /api/skaters/current-projections failed:', r.status);
-      __projLeaguePlayers = [];
-      __projLeaguePlayersKey = cacheKey;
-      return __projLeaguePlayers;
+// ── Simple moving average ────────────────────────────────────────
+function _computeMovingAverage(values, window){
+  const w = Math.max(1, parseInt(window, 10) || 1);
+  const out = new Array(values.length);
+  for(let i = 0; i < values.length; i++){
+    let sum = 0, n = 0;
+    for(let j = Math.max(0, i - w + 1); j <= i; j++){
+      const v = values[j];
+      if(Number.isFinite(v)){ sum += v; n++; }
     }
-    js = await r.json();
-  }catch(e){
-    console.error('[projections] /api/skaters/current-projections failed:', e);
-    __projLeaguePlayers = [];
-    __projLeaguePlayersKey = cacheKey;
-    return __projLeaguePlayers;
+    out[i] = n > 0 ? sum / n : null;
   }
-  const rawPlayers = Array.isArray(js?.players) ? js.players : (Array.isArray(js) ? js : []);
-  __projLeaguePlayers = rawPlayers.map(p=>({
-    ...p,
-    QoT: p?.QoT ?? p?.contextData?.QoT ?? null,
-    QoC: p?.QoC ?? p?.contextData?.QoC ?? null,
-    ZS: p?.ZS ?? p?.contextData?.ZS ?? null,
-    projection: Number.isFinite(Number(p?.projection)) ? Number(p.projection) : (Number.isFinite(Number(p?.projectedValue)) ? Number(p.projectedValue) : null),
-  }));
-  __projLeaguePlayersKey = cacheKey;
-  return __projLeaguePlayers;
+  return out;
+}
+
+// ── KPI percentile helpers ───────────────────────────────────────
+function _percentileColor(pct){
+  // 0→coral, 50→white, 100→soft blue — linear interpolation
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  let r, g, b;
+  if(p <= 50){
+    const t = p / 50;
+    r = Math.round(220 + 35 * t);    // 220→255
+    g = Math.round(95 + 160 * t);    // 95→255
+    b = Math.round(85 + 170 * t);    // 85→255
+  } else {
+    const t = (p - 50) / 50;
+    r = Math.round(255 - 170 * t);   // 255→85
+    g = Math.round(255 - 125 * t);   // 255→130
+    b = Math.round(255 - 35 * t);    // 255→220
+  }
+  const luminance = 0.299*r + 0.587*g + 0.114*b;
+  const txt = luminance < 140 ? '#fff' : '#0b1017';
+  return { bg: `rgb(${r},${g},${b})`, text: txt };
+}
+
+function _computePct(value, pool){
+  if(!pool.length || !Number.isFinite(value)) return null;
+  if(pool.length === 1) return 100;
+  const sorted = pool.slice().sort((a,b)=>a-b);
+  let lo=0, hi=sorted.length;
+  while(lo<hi){ const mid=(lo+hi)>>1; if(sorted[mid]<=value) lo=mid+1; else hi=mid; }
+  return 100 * ((lo - 1) / (sorted.length - 1));
+}
+
+function __rankToPercentile(rank, total){
+  const r = Number(rank);
+  const n = Number(total);
+  if(!Number.isFinite(r) || !Number.isFinite(n) || n <= 0) return null;
+  if(n === 1) return 100;
+  return 100 * ((n - r) / (n - 1));
+}
+
+function renderProjPlayerKpis(v2players, playerId, position){
+  if(!projKpiRow) return;
+  const pos = String(position || '').toUpperCase();
+  const posGroup = (pos === 'D') ? 'D' : 'F';  // goalies excluded
+  if(!posGroup || posGroup === 'G'){ projKpiRow.hidden = true; return; }
+
+  // Build pools per metric for this position group
+  const METRICS = [
+    { key:'overall', label:'Overall', el:projKpiOverall, apiKey:null },
+    { key:'evo', label:'EVO', el:projKpiEvo, apiKey:'evo' },
+    { key:'evd', label:'EVD', el:projKpiEvd, apiKey:'evd' },
+    { key:'pp', label:'PP', el:projKpiPp, apiKey:'pp_raw' },
+    { key:'sh', label:'SH', el:projKpiSh, apiKey:'sh_raw' },
+    { key:'finishing', label:'Finishing', el:projKpiFinishing, apiKey:'gax' },
+    { key:'qot', label:'QoT', el:projKpiQot, apiKey:'qot' },
+    { key:'qoc', label:'QoC', el:projKpiQoc, apiKey:'qoc' },
+    { key:'zs', label:'ZS', el:projKpiZs, apiKey:'zs' },
+  ];
+
+  let league = __buildProjLeagueFromV2(v2players, true, 'All');
+  // Rank within the same position group (matches GM Mode and Card KPI).
+  if(posGroup === 'F' || posGroup === 'D'){
+    league = league.filter(p => {
+      const pp = String(p.position || '').toUpperCase();
+      if(posGroup === 'D') return pp === 'D';
+      return pp !== 'D' && pp !== 'G';
+    });
+  }
+  const rankedLeague = __rankProjectionLeaguePlayers(league);
+  const selfLeagueRow = rankedLeague.find(p => String(p.playerId) === String(playerId));
+  const leagueOverallPct = __rankToPercentile(selfLeagueRow?._rank, rankedLeague.length);
+
+  const pools = {};
+  const selfVals = {};
+  const self = (v2players || []).find(p => String(p.player_id) === String(playerId));
+
+  for(const m of METRICS){
+    const pool = [];
+    for(const p of (v2players || [])){
+      if(m.key !== 'overall' && String(p.position || '').toUpperCase() !== posGroup) continue;
+      const gp = Number(p.gp || 0);
+      const gpWeight = (gp > 0 && gp < 41) ? (gp / 41) : 1.0;
+      let v;
+      if(m.key === 'overall'){
+        const leagueRow = rankedLeague.find(row => String(row.playerId) === String(p.player_id));
+        if(!leagueRow) continue;
+        v = Number(leagueRow.projection);
+      } else {
+        v = p[m.apiKey];
+        if(v === null || v === undefined) continue;
+        v = Number(v) * gpWeight;
+      }
+      if(Number.isFinite(v)) pool.push(v);
+    }
+    pools[m.key] = pool;
+    if(self){
+      const sgp = Number(self.gp || 0);
+      const sgpWeight = (sgp > 0 && sgp < 41) ? (sgp / 41) : 1.0;
+      if(m.key === 'overall'){
+        selfVals[m.key] = selfLeagueRow ? Number(selfLeagueRow.projection) : null;
+      } else {
+        const sv = self[m.apiKey];
+        selfVals[m.key] = (sv !== null && sv !== undefined) ? Number(sv) * sgpWeight : null;
+      }
+    }
+  }
+
+  projKpiRow.hidden = false;
+  for(const m of METRICS){
+    const selfVal = selfVals[m.key];
+    const pct = (m.key === 'overall')
+      ? leagueOverallPct
+      : ((selfVal !== null && selfVal !== undefined) ? _computePct(selfVal, pools[m.key]) : null);
+    const el = m.el;
+    if(!el) continue;
+    if(pct !== null && Number.isFinite(pct)){
+      const color = _percentileColor(pct);
+      if(m.key === 'overall'){
+        // Circle KPI (reuse skater-proj-kpi style via CSS variable)
+        el.style.setProperty('--proj-kpi-color', color.bg);
+        el.style.borderColor = color.bg;
+        const valEl = el.querySelector('.skater-proj-kpi-val');
+        if(valEl){ valEl.textContent = `${Math.round(pct)}%`; valEl.style.color = color.bg; }
+      } else {
+        const valEl = el.querySelector('.proj-kpi-value');
+        const lblEl = el.querySelector('.proj-kpi-label');
+        if(valEl){ valEl.textContent = `${Math.round(pct)}`; valEl.style.color = color.bg; }
+        if(lblEl) lblEl.style.color = '';  // reset to CSS default (white/dim)
+        el.style.background = '';
+        el.style.borderColor = color.bg;
+      }
+    } else {
+      if(m.key === 'overall'){
+        el.style.removeProperty('--proj-kpi-color');
+        el.style.borderColor = '';
+        const valEl = el.querySelector('.skater-proj-kpi-val');
+        if(valEl){ valEl.textContent = '--'; valEl.style.color = ''; }
+      } else {
+        const valEl = el.querySelector('.proj-kpi-value');
+        const lblEl = el.querySelector('.proj-kpi-label');
+        if(valEl){ valEl.textContent = '--'; valEl.style.color = ''; }
+        if(lblEl) lblEl.style.color = '';
+        el.style.background = '';
+        el.style.borderColor = '';
+      }
+    }
+  }
+}
+
+// ── V2 Projections (g_diff_evppsh) ──────────────────────────────
+
+async function ensureProjV2Players(){
+  try{
+    const r = await fetch('/api/player-projections/v2', { cache:'no-store' });
+    if(!r.ok){ console.error('[projV2] fetch failed:', r.status); return null; }
+    const js = await r.json();
+    return js?.players || [];
+  }catch(e){
+    console.error('[projV2] fetch failed:', e);
+    return null;
+  }
+}
+function __buildProjLeagueFromV2(v2players, useAll, ssGroup){
+  const league = (v2players || []).filter(p => String(p.position || '').toUpperCase() !== 'G').map(p => {
+    const gp = Number(p.gp || 0);
+    const gpWeight = (gp > 0 && gp < 41) ? (gp / 41) : 1.0;
+    // Apply GP weight to all metrics EXCEPT rookie
+    const evoVal = Number(p.evo || 0) * gpWeight;
+    const evdVal = Number(p.evd || 0) * gpWeight;
+    const ppVal  = Number(p.pp_raw || 0) * gpWeight;
+    const shVal  = Number(p.sh_raw || 0) * gpWeight;
+    const finVal = Number(p.gax || 0) * gpWeight;
+    const rookieVal = Number(p.rookie || 0);  // no GP weight
+    const overall = (evoVal + evdVal + ppVal + shVal + finVal + rookieVal) * (useAll ? 1 : 1);
+    return {
+      playerId: p.player_id, name: p.name, team: p.team, position: p.position, gp,
+      projection: overall,
+      evo: evoVal,
+      evd: evdVal,
+      pp: ppVal,
+      sh: shVal,
+      finishing: finVal,
+      rookie: rookieVal,
+    };
+  });
+  return league;
+}
+
+function __projectionLeagueStableKey(p){
+  return [
+    String(p?.name || '').trim().toLowerCase(),
+    String(p?.team || '').trim().toLowerCase(),
+    String(p?.position || '').trim().toLowerCase(),
+    String(p?.playerId || p?.player_id || ''),
+  ].join('|');
+}
+
+function __rankProjectionLeaguePlayers(players){
+  const list = (players||[])
+    .filter((p)=>p.name && String(p.name).trim())
+    .map((p)=>({ ...p }));
+  list.sort((a,b)=>{
+    const ap = Number(a?.projection ?? a?.projectedValue);
+    const bp = Number(b?.projection ?? b?.projectedValue);
+    if(Number.isFinite(ap) && Number.isFinite(bp) && ap !== bp) return bp - ap;
+    if(Number.isFinite(ap) !== Number.isFinite(bp)) return Number.isFinite(bp) ? 1 : -1;
+    return __projectionLeagueStableKey(a).localeCompare(__projectionLeagueStableKey(b));
+  });
+  list.forEach((p, i)=>{ p._rank = i + 1; });
+  return list;
+}
+
+function getProjV2Percentile(playerId, strengthState, players){
+  if(!players || !players.length) return null;
+  const posGroup = __cardProjectionPositionGroup || 'F';
+  const ss = strengthState || '5v5';
+  // Get this player's value
+  const self = players.find(p => String(p.player_id) === String(playerId));
+  if(!self) return null;
+  const selfVal = Number(self.projections?.[ss] || 0);
+  if(!Number.isFinite(selfVal)) return null;
+  // Build pool: same position group, at this strengthstate
+  const pool = [];
+  for(const p of players){
+    if(String(p.position || '') === posGroup || (posGroup === 'F' && ['F','C','L','R','LW','RW'].includes(String(p.position||'').toUpperCase()))){
+      const v = Number(p.projections?.[ss] || 0);
+      if(Number.isFinite(v)) pool.push(v);
+    }
+  }
+  if(!pool.length) return null;
+  pool.sort((a,b)=>a-b);
+  // Percentile rank
+  let lo = 0, hi = pool.length;
+  while(lo < hi){ const mid = (lo+hi)>>1; if(pool[mid] <= selfVal) lo=mid+1; else hi=mid; }
+  const rank = lo - 1;
+  return 100 * (rank / (pool.length - 1));
 }
 
 function renderTeamStackFromLeague(team, leaguePlayers, teamColor){
@@ -4046,19 +4436,27 @@ function renderTeamStackFromLeague(team, leaguePlayers, teamColor){
   const labels = list.map(p=>p.name || String(p.playerId));
   const tick = themeTextDim();
   const grid = 'rgba(154,164,177,0.14)';
-  const datasets = [{
-    label: 'Projection',
-    data: list.map(p=>Number(p.projection||p.projectedValue||0)),
-    backgroundColor: list.map(p=>{
-      const pos = String(p.position||'').toUpperCase();
-      if(pos === 'D') return 'rgba(77,163,255,0.78)';
-      if(pos === 'G') return 'rgba(255,206,84,0.82)';
-      return 'rgba(255,255,255,0.74)';
-    }),
-    borderColor: 'rgba(255,255,255,0.10)',
+
+  // Stacked bar segments: EVO, EVD, PP, SH, Finishing
+  const STACK_COLORS = {
+    evo: 'rgba(77,163,255,0.82)',       // blue
+    evd: 'rgba(255,106,106,0.78)',       // red
+    pp:  'rgba(255,206,84,0.82)',        // yellow
+    sh:  'rgba(130,200,130,0.78)',       // green
+    finishing: 'rgba(200,140,255,0.80)',  // purple
+    rookie: 'rgba(255,180,100,0.78)',     // orange
+  };
+  const STACK_KEYS = ['evo','evd','pp','sh','finishing','rookie'];
+  const STACK_LABELS = { evo:'EVO', evd:'EVD', pp:'PP', sh:'SH', finishing:'Finishing', rookie:'Rookie' };
+
+  const datasets = STACK_KEYS.map(key => ({
+    label: STACK_LABELS[key],
+    data: list.map(p => Number(p[key] || 0)),
+    backgroundColor: STACK_COLORS[key],
+    borderColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderRadius: 8,
-  }];
+    borderRadius: 0,
+  }));
 
   __projTeamChart = new Chart(ctx, {
     type: 'bar',
@@ -4069,25 +4467,33 @@ function renderTeamStackFromLeague(team, leaguePlayers, teamColor){
       animation: false,
       indexAxis: 'y',
       plugins: {
-        legend: { display:false },
-        tooltip: { callbacks: { footer: (items)=>{
-          const i = items?.[0]?.dataIndex;
-          if(i==null) return '';
-          const p = list[i] || {};
-          const lines = [];
-          const total = Number(p.projection ?? p.projectedValue);
-          if(Number.isFinite(total)) lines.push(`Projection: ${total.toFixed(3)}`);
-          if(Number.isFinite(Number(p.QoT))) lines.push(`QoT: ${Number(p.QoT).toFixed(3)}`);
-          if(Number.isFinite(Number(p.QoC))) lines.push(`QoC: ${Number(p.QoC).toFixed(3)}`);
-          if(Number.isFinite(Number(p.ZS))) lines.push(`ZS: ${Number(p.ZS).toFixed(3)}`);
-          return lines;
-        } } }
+        legend: {
+          labels: { color: tick, font:{ size: 11, weight:'700' } },
+        },
+        tooltip: {
+          callbacks: {
+            label: (item)=>{
+              const value = Number(item?.parsed?.x);
+              if(!Number.isFinite(value)) return `${item.dataset.label}: -`;
+              return `${item.dataset.label}: ${value.toFixed(3)}`;
+            },
+          },
+        },
       },
       scales: {
-        x: { ticks: { color: tick }, grid: { color: grid } },
-        y: { ticks: { color: tick, autoSkip: false }, grid: { display:false } },
-      }
-    }
+        x: {
+          stacked: true,
+          title: { display:true, text:'Projection', color: tick, font:{ size: 12, weight:'800' } },
+          ticks: { color: tick },
+          grid: { color: grid },
+        },
+        y: {
+          stacked: true,
+          ticks: { color: tick, autoSkip: false },
+          grid: { display:false },
+        },
+      },
+    },
   });
   window.requestAnimationFrame(()=>{
     try{ __projTeamChart?.resize(); }catch(_){/*noop*/}
@@ -4097,18 +4503,22 @@ function renderTeamStackFromLeague(team, leaguePlayers, teamColor){
 function __getSortedProjectionLeaguePlayers(players){
   const sortKey = __projLeagueSort.key;
   const sortDir = __projLeagueSort.dir;
-  const list = (players||[]).filter((p)=>p.name && String(p.name).trim()).slice();
+  const list = __rankProjectionLeaguePlayers(players);
   list.sort((a,b)=>{
-    const av = a?.[sortKey];
-    const bv = b?.[sortKey];
+    const key = (sortKey === 'rank') ? '_rank' : sortKey;
+    const av = a?.[key];
+    const bv = b?.[key];
     const an = Number(av);
     const bn = Number(bv);
     let cmp = 0;
     if(Number.isFinite(an) && Number.isFinite(bn)) cmp = an - bn;
     else cmp = String(av || '').localeCompare(String(bv || ''));
+    if(cmp === 0){
+      if(sortKey !== 'rank') cmp = Number(a._rank || 0) - Number(b._rank || 0);
+      if(cmp === 0) cmp = __projectionLeagueStableKey(a).localeCompare(__projectionLeagueStableKey(b));
+    }
     return sortDir === 'asc' ? cmp : -cmp;
   });
-  list.forEach((p, i)=>{ p._rank = i + 1; });
   return list;
 }
 
@@ -4125,11 +4535,13 @@ function renderLeagueTable(players, selectedPlayerId){
     { key:'name', label:'Player', name:true },
     { key:'team', label:'Team' },
     { key:'position', label:'Pos' },
-    { key:'gp', label:'GP', num:true },
-    { key:'QoT', label:'QoT', num:true },
-    { key:'QoC', label:'QoC', num:true },
-    { key:'ZS', label:'ZS', num:true },
-    { key:'projection', label:'Projection', num:true },
+    { key:'evo', label:'EVO', num:true },
+    { key:'evd', label:'EVD', num:true },
+    { key:'pp', label:'PP', num:true },
+    { key:'sh', label:'SH', num:true },
+    { key:'finishing', label:'Finishing', num:true },
+    { key:'rookie', label:'Rookie', num:true },
+    { key:'projection', label:'Overall', num:true },
   ];
 
   const sortKey = __projLeagueSort.key;
@@ -4165,10 +4577,12 @@ function renderLeagueTable(players, selectedPlayerId){
       ${td(p.name,false,true)}
       ${td(p.team,false,false,true)}
       ${td(p.position,false,false)}
-      ${td(p.gp,true,false)}
-      ${td(p.QoT,true,false)}
-      ${td(p.QoC,true,false)}
-      ${td(p.ZS,true,false)}
+      ${td(p.evo,true,false)}
+      ${td(p.evd,true,false)}
+      ${td(p.pp,true,false)}
+      ${td(p.sh,true,false)}
+      ${td(p.finishing,true,false)}
+      ${td(p.rookie,true,false)}
       ${td(p.projection ?? p.projectedValue,true,false)}
     </tr>`;
   }).join('')}</tbody>`;
@@ -5156,12 +5570,24 @@ async function loadProjectionsPanel(){
   const requestKey = `${playerId || ''}|${season}|${teamAbbrev || ''}`;
   loadProjectionsPanel.__reqKey = requestKey;
   try{
-    const [league, playerTrend] = await Promise.all([
-      ensureProjLeaguePlayers(),
-      ensureProjPlayerTrend(playerId, season),
+    // Load V2 projections + player trend
+    const [v2players, playerTrend] = await Promise.all([
+      ensureProjV2Players(),
+      ensureProjPlayerTrend(playerId, season,
+        'All',
+        String(cardSeasonState?.value || 'regular')),
     ]);
 
     if(requestKey !== String(loadProjectionsPanel.__reqKey || '')) return;
+
+    // Map V2 data to league format: always All strengths
+    const ss = 'All';
+    const ssMap = {'5v5':'5v5','PP':'PP','SH':'SH','Other':'Other','4v4':'Other','3v3':'Other','5v4':'PP','5v3':'PP','4v3':'PP','4v5':'SH','3v4':'SH','3v5':'SH'};
+    const ssGroup = ssMap[ss] || ss;
+    const useAll = true;
+    const league = __buildProjLeagueFromV2(v2players, useAll, ssGroup);
+    __projLeaguePlayers = league;
+    __projLeaguePlayersKey = `v2|${season}|${ss}`;
 
     // Set CSS variable for team color highlight
     if(teamColor){
@@ -5172,7 +5598,7 @@ async function loadProjectionsPanel(){
     }
 
     renderLeagueTable(league, playerId);
-    if(!projPanelPlayer?.hidden) renderProjPlayerTrend(playerTrend, teamColor);
+    if(!projPanelPlayer?.hidden){ renderProjPlayerTrend(playerTrend, teamColor); renderProjPlayerKpis(v2players, playerId, playerTrend?.position); }
     if(!projPanelTeam?.hidden) renderTeamStackFromLeague(teamAbbrev, league, teamColor);
   }catch(e){
     if(requestKey !== String(loadProjectionsPanel.__reqKey || '')) return;
@@ -7363,12 +7789,22 @@ function __buildProjPlayerExportSurface(imageUrl){
 
   const summary = document.createElement('div');
   summary.className = 'proj-player-export-summary';
-  summary.textContent = [season, 'Player Projection History'].filter(Boolean).join(' • ');
+  summary.textContent = [season, 'Player Projection'].filter(Boolean).join(' - ');
   card.appendChild(summary);
 
   const content = document.createElement('div');
   content.className = 'proj-player-export-content';
+
+  // Clone KPI row for export
+  let kpiHtml = '';
+  if(projKpiRow && !projKpiRow.hidden){
+    const kpiClone = projKpiRow.cloneNode(true);
+    kpiClone.style.margin = '0 0 16px 0';
+    kpiHtml = kpiClone.outerHTML;
+  }
+
   content.innerHTML = `
+    ${kpiHtml}
     <section class="proj-player-export-block">
       <h3>Projection Trend</h3>
       <div class="proj-player-export-img-wrap"><img class="proj-player-export-img" src="${imageUrl}" alt="Player projection trend chart" /></div>
@@ -7528,7 +7964,7 @@ async function __buildProjTeamPngBlob(){
   if(typeof window.html2canvas !== 'function') throw new Error('PNG export is unavailable right now.');
   const { teamAbbrev, teamColor } = __getCurrentProjectionTeamMeta();
   if(!teamAbbrev) throw new Error('Select a team before exporting team projections.');
-  const league = await ensureProjLeaguePlayers();
+  const league = __projLeaguePlayers || [];
   renderTeamStackFromLeague(teamAbbrev, league, teamColor);
   await __stabilizeProjectionChart(__projTeamChart, projTeamStack);
   if(projTeamEmpty?.hidden === false) throw new Error(String(projTeamEmpty?.textContent || '').trim() || 'No team projections are loaded for export.');
@@ -7618,15 +8054,17 @@ function __buildProjLeagueExportSurface(){
   table.innerHTML = `
     <thead>
       <tr>
-        <th style="width:88px;">Rank</th>
-        <th class="name" style="width:280px;">Player</th>
-        <th class="team" style="width:150px;">Team</th>
-        <th style="width:90px;">Pos</th>
-        <th style="width:90px;">GP</th>
-        <th style="width:120px;">QoT</th>
-        <th style="width:120px;">QoC</th>
-        <th style="width:120px;">ZS</th>
-        <th style="width:140px;">Projection</th>
+        <th style="width:72px;">Rank</th>
+        <th class="name" style="width:220px;">Player</th>
+        <th class="team" style="width:120px;">Team</th>
+        <th style="width:60px;">Pos</th>
+        <th style="width:80px;">EVO</th>
+        <th style="width:80px;">EVD</th>
+        <th style="width:80px;">PP</th>
+        <th style="width:80px;">SH</th>
+        <th style="width:100px;">Finishing</th>
+        <th style="width:80px;">Rookie</th>
+        <th style="width:100px;">Overall</th>
       </tr>
     </thead>
     <tbody>
@@ -7638,10 +8076,12 @@ function __buildProjLeagueExportSurface(){
           <td class="name">${escapeHtml(String(row.name || '—'))}</td>
           <td class="team"><div class="proj-league-export-team-cell">${logo}<span>${escapeHtml(team || '—')}</span></div></td>
           <td>${escapeHtml(String(row.position || '—'))}</td>
-          <td>${__formatProjectionNumber(row.gp)}</td>
-          <td>${__formatProjectionNumber(row.QoT)}</td>
-          <td>${__formatProjectionNumber(row.QoC)}</td>
-          <td>${__formatProjectionNumber(row.ZS)}</td>
+          <td>${__formatProjectionNumber(row.evo)}</td>
+          <td>${__formatProjectionNumber(row.evd)}</td>
+          <td>${__formatProjectionNumber(row.pp)}</td>
+          <td>${__formatProjectionNumber(row.sh)}</td>
+          <td>${__formatProjectionNumber(row.finishing)}</td>
+          <td>${__formatProjectionNumber(row.rookie)}</td>
           <td>${__formatProjectionNumber(row.projection ?? row.projectedValue)}</td>
         </tr>`;
       }).join('')}
@@ -7660,7 +8100,7 @@ function __buildProjLeagueExportSurface(){
 
 async function __buildProjLeaguePngBlob(){
   if(typeof window.html2canvas !== 'function') throw new Error('PNG export is unavailable right now.');
-  const league = await ensureProjLeaguePlayers();
+  const league = __projLeaguePlayers || [];
   renderLeagueTable(league, playerSelect?.value);
   if(!league || !league.length) throw new Error('No league projections are loaded for export.');
 
@@ -8225,6 +8665,7 @@ edgeSeasonState?.addEventListener('change', ()=>{
 cardMinGp?.addEventListener('change', ()=> loadCardPanel());
 cardMinToi?.addEventListener('change', ()=> loadCardPanel());
 cardStrengthState?.addEventListener('change', ()=> loadCardPanel());
+cardStrengthState?.addEventListener('change', ()=> { if(tabProjections?.classList.contains('active')) loadProjectionsPanel(); });
 cardRates?.addEventListener('change', ()=> loadCardPanel());
 cardXgModel?.addEventListener('change', ()=> loadCardPanel());
 
@@ -8376,16 +8817,24 @@ projTabPlayer?.addEventListener('click', ()=> { setActiveProjSubtab('player'); s
 projTabTeam?.addEventListener('click', ()=> { setActiveProjSubtab('team'); saveSkatersState(); });
 projTabLeague?.addEventListener('click', ()=> { setActiveProjSubtab('league'); saveSkatersState(); });
 
+// Moving-average and metric selectors → re-render trend chart
+projPerfMA?.addEventListener('change', ()=>{
+  if(__projPlayerTrendData && __projPlayerTrendColor !== null){
+    renderProjPlayerTrend(__projPlayerTrendData, __projPlayerTrendColor);
+  }
+});
+projTrendMetric?.addEventListener('change', ()=>{
+  if(__projPlayerTrendData && __projPlayerTrendColor !== null){
+    renderProjPlayerTrend(__projPlayerTrendData, __projPlayerTrendColor);
+  }
+});
+
 projExportCsv?.addEventListener('click', ()=>{
   if(!__projLeaguePlayers || !__projLeaguePlayers.length) return;
-  const cols = ['name','team','position','gp','QoT','QoC','ZS','projection'];
+  const cols = ['name','team','position','evo','evd','pp','sh','finishing','rookie','projection'];
   const header = cols.join(',');
   const rows = __projLeaguePlayers.filter(p=>p.name && String(p.name).trim()).map(p=>{
     return cols.map(c=>{
-      if(c === 'QoT' || c === 'QoC' || c === 'ZS'){
-        const v = p[c] ?? p.contextData?.[c];
-        return v != null ? String(v) : '';
-      }
       const v = p[c];
       return v != null ? String(v) : '';
     }).join(',');

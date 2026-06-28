@@ -7,9 +7,11 @@ import math
 import bisect
 import pickle
 import gzip
+import random
 from datetime import datetime, timedelta, timezone
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 from typing import Dict, List, Tuple, Optional, Any, Iterable, Iterator
 
@@ -81,7 +83,7 @@ except Exception:
 
 
 main_bp = Blueprint('main', __name__)
-_AUTH_TRIAL_DAYS = 7
+_AUTH_TRIAL_DAYS = 14
 _AUTH_SESSION_KEY = 'auth_user'
 _CSRF_SESSION_KEY = 'csrf_token'
 _AUTH_PLAN_OPTIONS = (
@@ -1137,7 +1139,7 @@ def _auth_state_from_record(record: Dict[str, Any]) -> Dict[str, Any]:
         else:
             plan_label = subscription_plan or 'Pro'
     elif trial_active:
-        plan_label = '7-day free trial'
+        plan_label = '14-day free trial'
     else:
         plan_label = subscription_plan or 'No active plan'
     out = dict(record)
@@ -1635,6 +1637,126 @@ def run_lineups():
         return jsonify({'jobId': job_id})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@main_bp.route('/api/admin/lineups/upload', methods=['POST'])
+def admin_upload_lineups():
+    """Admin endpoint: save the current custom lineups to the Supabase lineups table.
+
+    POST body JSON:
+      {
+        "season": 20262027,
+        "lineupsByTeam": {
+          "ANA": [{"pid": 8484153, "pos": "F", "games": 68}, ...],
+          ...
+        }
+      }
+
+    This overwrites existing rows for the given season in the public.lineups table.
+    Uses the same row format as scripts/upload_lineups.py but driven by the GM Mode UI.
+    """
+    guard = _require_admin_api()
+    if guard is not None:
+        return guard
+
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        body = {}
+
+    season = str(body.get('season') or '20262027').strip()
+    lineups_by_team = body.get('lineupsByTeam') or {}
+    if not isinstance(lineups_by_team, dict) or not lineups_by_team:
+        return jsonify({'error': 'lineupsByTeam must be a non-empty object'}), 400
+
+    # Build rows in the same format as upload_lineups.py
+    rows: List[Dict[str, Any]] = []
+    for team_abbrev, entries in lineups_by_team.items():
+        if not isinstance(entries, list):
+            continue
+        team = str(team_abbrev or '').strip().upper()
+        if not team:
+            continue
+        for i, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            pid = _safe_int(entry.get('pid') or 0)
+            if not pid:
+                continue
+            pos = str(entry.get('pos') or 'F').strip().upper()[:1]
+            if pos not in ('F', 'D', 'G'):
+                pos = 'F'
+            games_raw = entry.get('games')
+            try:
+                games = int(games_raw) if games_raw is not None else 82
+            except Exception:
+                games = 82
+            if games < 0:
+                games = 0
+            if games > 82:
+                games = 82
+
+            # Determine unit from position in the list
+            # The client sends scratches last; starters come first in slot order.
+            # We use the index to infer unit: first 12 F → LW1..RW4, next 6 D → LD1..RD3,
+            # next 2 G → G1/G2, rest → EXT.
+            unit = 'EXT'
+            f_count = sum(1 for e in entries[:i] if str(e.get('pos') or 'F')[:1] == 'F')
+            d_count = sum(1 for e in entries[:i] if str(e.get('pos') or 'F')[:1] == 'D')
+            g_count = sum(1 for e in entries[:i] if str(e.get('pos') or 'F')[:1] == 'G')
+            if pos == 'F' and f_count < 12:
+                fn = f_count
+                unit = ['LW','C','RW'][fn % 3] + str(fn // 3 + 1)
+            elif pos == 'D' and d_count < 6:
+                dn = d_count
+                unit = ['LD','RD'][dn % 2] + str(dn // 2 + 1)
+            elif pos == 'G' and g_count < 2:
+                unit = 'G1' if g_count == 0 else 'G2'
+
+            starter = 1 if unit != 'EXT' else 0
+
+            rows.append({
+                'team': team,
+                'player_id': int(pid),
+                'player_name': '',
+                'position': pos,
+                'line_unit': unit,
+                'starter': starter,
+                'estimated_gp': games,
+                'gp_note': '',
+                'is_injured': 0,
+                'injury_start': None,
+                'injury_end': None,
+                'replacement_id': None,
+                'replacement_name': '',
+                'season': season,
+                'source': 'gm_mode_admin',
+            })
+
+    if not rows:
+        return jsonify({'error': 'no valid rows to upload'}), 400
+
+    try:
+        from app.supabase_client import upsert_lineups, delete_lineups
+    except Exception as e:
+        return jsonify({'error': f'Supabase client unavailable: {e}'}), 500
+
+    try:
+        # Clear existing rows for this season
+        delete_lineups(season=season)
+    except Exception:
+        pass  # non-fatal; upsert will overwrite anyway
+
+    try:
+        count = upsert_lineups(rows)
+    except Exception as e:
+        return jsonify({'error': f'Upsert failed: {e}'}), 500
+
+    # Bust the server-side cache so /api/lineups/all picks up the new data
+    global _LINEUPS_ALL_CACHE
+    _LINEUPS_ALL_CACHE = None
+
+    return jsonify({'ok': True, 'count': count, 'season': season})
 
 # --- Module-level caches for performance ---
 _MODEL_CACHE: Dict[str, Any] = {}
@@ -3242,10 +3364,8 @@ def line_tool_page():
 
 @main_bp.route('/gm-mode')
 def gm_mode_page():
-    """Admin-only GM Mode page for lineup management workflows."""
-    guard = _require_admin_page()
-    if guard is not None:
-        return guard
+    """GM Mode page for lineup management workflows. Public — anyone can view;
+    Save/Load actions require a logged-in user (handled client-side)."""
     return render_template(
         'gm_mode.html',
         teams=TEAM_ROWS,
@@ -3254,7 +3374,7 @@ def gm_mode_page():
         show_include_historic=False,
         show_season_slicer=False,
         meta_title='GM Mode · Hockey-Statistics',
-        meta_description='Admin GM Mode for viewing Daily Faceoff lines, defensive pairings, and goalie depth chart by team.',
+        meta_description='GM Mode for viewing Daily Faceoff lines, defensive pairings, and goalie depth chart by team.',
     )
 
 
@@ -5636,12 +5756,11 @@ def api_player_projections_sheets():
 
 @main_bp.route('/api/player-current-projections')
 def api_player_current_projections():
-    """Fetch current-season player projections for the lineup editor.
+    """Fetch current-season player projections for the lineup editor (V2).
 
-    Returns rows keyed by player id, preferring player_current_projections and falling back
-    to the legacy player projections source when the current table is unavailable.
+    Returns rows keyed by player id from the g_diff_evppsh model.
     """
-    data = _load_current_player_projections_cached()
+    data = _load_gm_mode_projections_cached()
     roster_map = _load_all_rosters_cached() or {}
     out: Dict[str, Dict[str, Any]] = {}
     for k, row in (data or {}).items():
@@ -5714,6 +5833,390 @@ def api_player_current_projections_public():
     except Exception:
         pass
     return j
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Player Projections v2 — g_diff_evppsh coefficients × current metrics
+# ═══════════════════════════════════════════════════════════════════════
+
+# Coefficient mapping for g_diff_evppsh model
+_EVPP_COEF = {
+    'poss_value_ev': 1.315740,
+    'xga_ev':       -0.191099,
+    'poss_value_st':  1.952908,
+    'xgf_pp':        0.127149,
+    'off_the_puck_sh': 0.272929,
+    'xga_sh':       -0.284162,
+    'gax':           0.232042,
+    'gsax':          0.529976,
+    'rookie_f':     -0.018529,
+    'rookie_d':     -0.026125,
+    'rookie_g':     -0.419905,
+}
+
+EV_SS = {'5v5', '4v4', '3v3'}
+PP_SS = {'5v4', '5v3', '4v3'}
+SH_SS = {'4v5', '3v4', '3v5'}
+
+# ── V2 Game Projection: league averages + situation coefficients ──
+# League-average goals per team per game (used to un-center predictions).
+_V2_LG_AVG: Dict[str, float] = {
+    '20192020': 2.9505, '20202021': 2.8834, '20212022': 3.1096,
+    '20222023': 3.1422, '20232024': 3.0679, '20242025': 3.0168,
+    '20252026': 3.0724,
+}
+
+# Situation coefficients from g_diff_evppsh model (sit_home-X-Y where
+# X = home b2b (0/1), Y = away b2b (0/1)).
+_V2_SITUATION: Dict[Tuple[int, int], float] = {
+    (0, 0):  0.181937,   # neither b2b
+    (0, 1):  0.539297,   # away b2b only
+    (1, 0): -0.196136,   # home b2b only
+    (1, 1):  0.247761,   # both b2b
+}
+
+# Conservative shrinkage applied to the projected goal differential (mu) in
+# both the KPI win probability and the simulation's Poisson goal means.  This
+# regresses team edges toward league average to account for NHL parity /
+# single-game randomness the deterministic model does not capture.  Shared so
+# the Projected Points KPI and the simulation average match.
+_V2_CONSERVATIVE_WEIGHT = 0.7
+
+
+def _v2_norm_cdf(x: float) -> float:
+    """Standard Normal CDF via math.erf (no scipy dependency)."""
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _v2_win_probability(
+    home_proj: float,
+    away_proj: float,
+    home_b2b: bool,
+    away_b2b: bool,
+    season: int,
+) -> float:
+    """V2 win probability for the HOME team using Normal CDF.
+
+    home_proj / away_proj are the team's summed raw V2 player projections
+    (proxy for per-game goal-differential contribution above/below average).
+    """
+    # Goal differential (centered, home perspective), shrunk by the
+    # conservative weight so the KPI matches the simulation average.
+    sit = _V2_SITUATION.get((1 if home_b2b else 0, 1 if away_b2b else 0), 0.0)
+    mu = _V2_CONSERVATIVE_WEIGHT * (home_proj - away_proj + sit)
+
+    # League-average scoring for this season
+    lg = _V2_LG_AVG.get(str(season), 3.0)
+
+    # Approximate GF for each team: lg_avg ± half the (shrunk) goal differential
+    gf_home = max(0.5, lg + mu / 2.0)
+    gf_away = max(0.5, lg - mu / 2.0)
+
+    # Poisson-difference standard deviation
+    sigma = math.sqrt(gf_home + gf_away)
+
+    return _v2_norm_cdf(mu / sigma)
+
+
+# Precompute log-factorials once for the Poisson expected-points helper.
+_LOG_FACT: List[float] = []
+_MAX_K = 30  # covers λ up to ~20; for λ≈3, P(X>25) < 10⁻¹⁰
+_LOG_FACT.append(0.0)  # log(0!) = 0
+for _k in range(1, _MAX_K + 1):
+    _LOG_FACT.append(_LOG_FACT[-1] + math.log(_k))
+
+
+def _v2_expected_points_exact(
+    gf_home: float, gf_away: float, p_home_norm: float,
+) -> Tuple[float, float]:
+    """Expected points for HOME and AWAY using the exact Poisson + OT logic
+    that matches the simulation (no linear approximation).
+
+    p_home_norm is the Normal-CDF win probability used as the tiebreaker
+    when scores are tied (matches _v2_win_probability).
+
+    Returns (expected_points_home, expected_points_away).
+    """
+    # Poisson PMF: P(X=k) = exp(k*log(λ) - λ - log_fact(k))
+    h_lam = max(0.01, gf_home)
+    a_lam = max(0.01, gf_away)
+    h_pmf: List[float] = []
+    a_pmf: List[float] = []
+    for k in range(_MAX_K + 1):
+        h_pmf.append(math.exp(k * math.log(h_lam) - h_lam - _LOG_FACT[k]))
+        a_pmf.append(math.exp(k * math.log(a_lam) - a_lam - _LOG_FACT[k]))
+
+    # Accumulate expected points by iterating all goal-pairs.
+    e_home = 0.0
+    e_away = 0.0
+    for i in range(_MAX_K + 1):
+        pi = h_pmf[i]
+        if pi == 0.0:
+            continue
+        for j in range(_MAX_K + 1):
+            pj = a_pmf[j]
+            if pj == 0.0:
+                continue
+            prob = pi * pj
+            if i > j + 1:
+                # regulation win for home
+                e_home += 2.0 * prob
+                # away gets 0
+            elif i == j + 1:
+                # 1-goal home win: 70% regulation, 30% OT (both 2 pts for home)
+                e_home += 2.0 * prob
+                e_away += 0.3 * prob  # 30% chance of OTL point
+            elif i == j:
+                # tied → OT, winner from Normal-CDF tiebreaker
+                e_home += (2.0 * p_home_norm + 1.0 * (1.0 - p_home_norm)) * prob
+                e_away += (2.0 * (1.0 - p_home_norm) + 1.0 * p_home_norm) * prob
+            elif i == j - 1:
+                # 1-goal away win
+                e_away += 2.0 * prob
+                e_home += 0.3 * prob  # 30% chance of OTL point for home
+            else:  # i < j - 1
+                # regulation win for away
+                e_away += 2.0 * prob
+                # home gets 0
+
+    return float(e_home), float(e_away)
+
+
+def _v2_expected_points(
+    home_proj: float,
+    away_proj: float,
+    home_b2b: bool,
+    away_b2b: bool,
+    season: int,
+) -> float:
+    """Expected points for the HOME team from one game (V2 model).
+
+    Points = 2 × P(win) + 1 × P(OTL).  OTL probability is approximated as
+    12% of non-regulation outcomes, scaled to the remaining probability mass.
+    """
+    p_win = _v2_win_probability(home_proj, away_proj, home_b2b, away_b2b, season)
+    # Approximate: ~24% of games go to OT; half of those are OTLs.
+    p_otl = 0.12 * (1.0 - abs(2.0 * p_win - 1.0))  # peaks at 50/50 games
+    p_otl = max(0.0, min(0.12, p_otl))
+    return 2.0 * p_win + 1.0 * p_otl
+
+
+def _compute_projection_value(row: dict) -> float:
+    """Compute g_diff_evppsh projection value for a single (player, strengthstate) row.
+    Rookie contribution is added only for 5v5 (position-dependent coefficient).
+    """
+    ss = str(row.get('strengthstate') or '')
+    pos = str(row.get('position') or '')
+    c = _EVPP_COEF
+    v = 0.0
+
+    # ── Metric × coefficient per strengthstate ──
+    # faceoffs: EV → c1, PP/SH → c3
+    if ss in EV_SS:
+        v += float(row.get('faceoffs') or 0) * c['poss_value_ev']
+    elif ss in PP_SS or ss in SH_SS:
+        v += float(row.get('faceoffs') or 0) * c['poss_value_st']
+
+    # defensive: EV → c1, SH → c3, PP → 0
+    if ss in EV_SS:
+        v += float(row.get('defensive') or 0) * c['poss_value_ev']
+    elif ss in SH_SS:
+        v += float(row.get('defensive') or 0) * c['poss_value_st']
+
+    # dump_ins_outs: EV → c1, SH → c3, PP → 0
+    if ss in EV_SS:
+        v += float(row.get('dump_ins_outs') or 0) * c['poss_value_ev']
+    elif ss in SH_SS:
+        v += float(row.get('dump_ins_outs') or 0) * c['poss_value_st']
+
+    # passes: EV → c1, else 0
+    if ss in EV_SS:
+        v += float(row.get('passes') or 0) * c['poss_value_ev']
+
+    # carries: EV → c1, else 0
+    if ss in EV_SS:
+        v += float(row.get('carries') or 0) * c['poss_value_ev']
+
+    # xga: EV → c2, SH → c6, PP → 0
+    if ss in EV_SS:
+        v += float(row.get('xga') or 0) * c['xga_ev']
+    elif ss in SH_SS:
+        v += float(row.get('xga') or 0) * c['xga_sh']
+
+    # xgf: PP → c4, else 0
+    if ss in PP_SS:
+        v += float(row.get('xgf') or 0) * c['xgf_pp']
+
+    # off_the_puck: SH → c5, else 0
+    if ss in SH_SS:
+        v += float(row.get('off_the_puck') or 0) * c['off_the_puck_sh']
+
+    # gax: always c7
+    v += float(row.get('gax') or 0) * c['gax']
+
+    # gsax: always c8
+    v += float(row.get('gsax') or 0) * c['gsax']
+
+    # ── Rookie: 5v5 only, position-dependent ──
+    if ss == '5v5':
+        rookie_val = float(row.get('rookie') or 0)
+        if rookie_val > 0:
+            if pos == 'F':
+                v += rookie_val * c['rookie_f']
+            elif pos == 'D':
+                v += rookie_val * c['rookie_d']
+            elif pos == 'G':
+                v += rookie_val * c['rookie_g']
+
+    return v
+
+
+@main_bp.route('/api/player-projections/v2')
+def api_player_projections_v2():
+    """Current player projections using g_diff_evppsh coefficients."""
+    try:
+        season_i = int(current_season_id())
+    except Exception:
+        season_i = 20252026
+
+    result = _build_v2_player_projections(season_i)
+
+    j = jsonify({
+        'players': result,
+        'meta': {
+            'coefficients': _EVPP_COEF,
+            'count': len(result),
+        },
+    })
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
+def _build_v2_player_projections(season_i: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Build V2 player projections from nhl_current_playerprojections.
+
+    Single source of truth — used by both the /api/player-projections/v2 endpoint
+    and _load_v2_player_projections_cached().  Returns a list of player dicts with
+    projections, component fields, and context data.
+    """
+    # Filter by season if provided; GM Mode passes None to include all seasons.
+    filters = {}
+    if season_i is not None:
+        filters['season'] = f'eq.{season_i}'
+    rows = _sb_read(
+        'nhl_current_playerprojections',
+        columns='*',
+        filters=filters or None,
+        order='playerid,strengthstate',
+    ) or []
+
+    if not rows:
+        return []
+
+    SS_GROUPS = {
+        '5v5':   ['5v5'],
+        'PP':    ['5v4', '4v3', '5v3'],
+        'SH':    ['4v5', '3v4', '3v5'],
+        'Other': ['4v4', '3v3'],
+    }
+
+    players: Dict[int, Dict[str, Any]] = {}
+    for r in rows:
+        pid = _safe_int(r.get('nhl_api_player_id') or r.get('playerid'))
+        if not pid or pid <= 0:
+            continue
+        ss = str(r.get('strengthstate') or '')
+        if pid not in players:
+            players[pid] = {
+                'player_id': int(pid),
+                'name': str(r.get('nhl_player_name') or ''),
+                'position': str(r.get('position') or ''),
+                'team': str(r.get('team') or ''),
+                'gp': int(r.get('gp') or 0),
+                '_proj_by_ss': {},
+                '_evo': 0.0, '_evd': 0.0, '_pp_raw': 0.0, '_sh_raw': 0.0,
+                '_gax': 0.0, '_gsax': 0.0, '_rookie': 0.0,
+                '_ig': 0.0, '_a1': 0.0, '_a2': 0.0,
+            }
+        if ss:
+            players[pid]['_proj_by_ss'][ss] = _compute_projection_value(r)
+        # Goal/assist rate accumulators (summed across strengthstates — per-game rates)
+        players[pid]['_ig'] += float(r.get('ig') or 0)
+        players[pid]['_a1'] += float(r.get('a1') or 0)
+        players[pid]['_a2'] += float(r.get('a2') or 0)
+        # Component accumulators
+        f  = float(r.get('faceoffs') or 0)
+        pa = float(r.get('passes') or 0)
+        ca = float(r.get('carries') or 0)
+        de = float(r.get('defensive') or 0)
+        di = float(r.get('dump_ins_outs') or 0)
+        ot = float(r.get('off_the_puck') or 0)
+        xg = float(r.get('xga') or 0)
+        xf = float(r.get('xgf') or 0)
+        ga = float(r.get('gax') or 0)
+        gs = float(r.get('gsax') or 0)
+        if ss in EV_SS:
+            players[pid]['_evo'] += (f + pa + ca) * _EVPP_COEF['poss_value_ev']
+            players[pid]['_evd'] += (de + di) * _EVPP_COEF['poss_value_ev'] + xg * _EVPP_COEF['xga_ev']
+        if ss in PP_SS:
+            players[pid]['_pp_raw'] += f * _EVPP_COEF['poss_value_st'] + xf * _EVPP_COEF['xgf_pp']
+        if ss in SH_SS:
+            players[pid]['_sh_raw'] += (f + de + di) * _EVPP_COEF['poss_value_st'] + ot * _EVPP_COEF['off_the_puck_sh'] + xg * _EVPP_COEF['xga_sh']
+        players[pid]['_gax'] += ga * _EVPP_COEF['gax']
+        players[pid]['_gsax'] += gs * _EVPP_COEF['gsax']
+        if ss == '5v5':
+            pos = str(r.get('position') or '')
+            rv = float(r.get('rookie') or 0)
+            if rv > 0:
+                if pos == 'D':    players[pid]['_rookie'] += rv * _EVPP_COEF['rookie_d']
+                elif pos == 'G':  players[pid]['_rookie'] += rv * _EVPP_COEF['rookie_g']
+                else:             players[pid]['_rookie'] += rv * _EVPP_COEF['rookie_f']
+
+    # ── Context data ──
+    ctx_rows = _load_context_static_csv() or []
+    ctx_by_pid: Dict[int, Dict[str, Optional[float]]] = {}
+    for row in ctx_rows:
+        try:
+            if _safe_int(row.get('Season')) != int(season_i): continue
+            if str(row.get('StrengthState') or '').strip() != '5v5': continue
+            pid_i = _safe_int(row.get('PlayerID') or row.get('player_id') or row.get('playerId'))
+            if not pid_i or pid_i <= 0: continue
+            ctx_by_pid[int(pid_i)] = {
+                'qot': _parse_locale_float(row.get('QoT_blend_xG67_G33')),
+                'qoc': _parse_locale_float(row.get('QoC_blend_xG67_G33')),
+                'zs': _parse_locale_float(row.get('ZS_Difficulty')),
+            }
+        except Exception: continue
+
+    # ── Build result ──
+    result = []
+    for pid, p in players.items():
+        projections = {}
+        for group_name, ss_list in SS_GROUPS.items():
+            projections[group_name] = round(sum(p['_proj_by_ss'].get(ss, 0.0) for ss in ss_list), 6)
+        del p['_proj_by_ss']
+        p['projections'] = projections
+        p['evo'] = round(p.pop('_evo'), 6)
+        p['evd'] = round(p.pop('_evd'), 6)
+        p['pp_raw'] = round(p.pop('_pp_raw'), 6)
+        p['sh_raw'] = round(p.pop('_sh_raw'), 6)
+        p['gax'] = round(p.pop('_gax'), 6)
+        p['gsax'] = round(p.pop('_gsax'), 6)
+        p['rookie'] = round(p.pop('_rookie'), 6)
+        p['ig'] = round(p.pop('_ig'), 6)
+        p['a1'] = round(p.pop('_a1'), 6)
+        p['a2'] = round(p.pop('_a2'), 6)
+        ctx = ctx_by_pid.get(int(pid), {})
+        p['qot'] = round(ctx.get('qot') or 0.0, 6) if ctx.get('qot') is not None else None
+        p['qoc'] = round(ctx.get('qoc') or 0.0, 6) if ctx.get('qoc') is not None else None
+        p['zs'] = round(ctx.get('zs') or 0.0, 6) if ctx.get('zs') is not None else None
+        result.append(p)
+
+    result.sort(key=lambda p: p['player_id'])
+    return result
 
 
 _PLAYOFF_SERIES_HOME_PATTERN: Tuple[bool, ...] = (True, True, False, False, True, False, True)
@@ -6457,7 +6960,15 @@ def _fetch_club_schedule_games(team_abbrev: str, season: int) -> List[Dict[str, 
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
 
-    url = f'https://api-web.nhle.com/v1/club-schedule-season/{team}/{season_i}'
+    # For future seasons with no published schedule yet, fetch the previous
+    # season and shift dates forward by the appropriate number of years.
+    fetch_season = season_i
+    shift_years = 0
+    if season_i >= 20262027:
+        shift_years = (season_i // 10000) - 2025
+        fetch_season = 20252026
+
+    url = f'https://api-web.nhle.com/v1/club-schedule-season/{team}/{fetch_season}'
     try:
         r = requests.get(url, timeout=25)
         if r.status_code != 200:
@@ -6496,6 +7007,27 @@ def _fetch_club_schedule_games(team_abbrev: str, season: int) -> List[Dict[str, 
         })
 
     out.sort(key=lambda x: (str(x.get('date') or ''), int(x.get('id') or 0) if str(x.get('id') or '').isdigit() else 0))
+
+    # Season shift: for future seasons with no published schedule yet,
+    # reuse the previous season's schedule with dates nudged one year forward.
+    if shift_years > 0:
+        try:
+            shifted_out = []
+            for g in out:
+                g2 = dict(g)
+                d = str(g.get('date') or '')[:10]
+                if d:
+                    try:
+                        y, m, dd = int(d[:4]), int(d[5:7]), int(d[8:10])
+                        g2['date'] = f'{y + shift_years:04d}-{m:02d}-{dd:02d}'
+                    except Exception:
+                        pass
+                g2['id'] = str(g.get('id') or '') + '_shift' + str(shift_years)
+                shifted_out.append(g2)
+            out = shifted_out
+        except Exception:
+            pass
+
     _CLUB_SCHEDULE_CACHE[cache_key] = (now, out)
     return out
 
@@ -6557,7 +7089,17 @@ def _normalize_custom_lineup_entries(raw_lineup: Any) -> List[Dict[str, Any]]:
             pos = 'F'
         if pid <= 0:
             continue
-        out.append({'pid': int(pid), 'pos': pos})
+        # Use explicit None-check: games=0 is valid (scratch), games=82 is default
+        games_raw = entry.get('games')
+        try:
+            games = int(games_raw) if games_raw is not None else 82
+        except Exception:
+            games = 82
+        if games < 0:
+            games = 0
+        if games > 82:
+            games = 82
+        out.append({'pid': int(pid), 'pos': pos, 'games': games, 'scratch': entry.get('scratch') or False})
     return out
 
 
@@ -6611,10 +7153,21 @@ def _team_proj_from_custom_lineup_entries(lineup_entries: List[Dict[str, Any]], 
         pos = str(entry.get('pos') or 'F').strip().upper()[:1]
         if pos not in ('F', 'D', 'G'):
             pos = 'F'
+        # Use explicit None-check: games=0 is valid (scratch), games=82 is default
+        games_raw = entry.get('games')
+        try:
+            games = int(games_raw) if games_raw is not None else 82
+        except Exception:
+            games = 82
+        if games < 0:
+            games = 0
+        if games > 82:
+            games = 82
+        weight = games / 82.0
         if pid > 0 and pid in proj_map:
-            total += _proj_value_for_player(proj_map.get(pid))
+            total += _proj_value_for_player(proj_map.get(pid)) * weight
         else:
-            total += _ROOKIE_FALLBACK.get(pos, _ROOKIE_FALLBACK['F'])
+            total += _ROOKIE_FALLBACK.get(pos, _ROOKIE_FALLBACK['F']) * weight
     return float(total)
 
 
@@ -6625,6 +7178,96 @@ def _all_team_abbrevs() -> List[str]:
         if str(r.get('Team') or '').strip()
     }
     return sorted([v for v in vals if v])
+
+
+def _normalize_injuries(raw: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            injured_pid = int(entry.get('injuredPid') or entry.get('injured_pid') or 0)
+        except Exception:
+            injured_pid = 0
+        try:
+            replacement_pid = int(entry.get('replacementPid') or entry.get('replacement_pid') or 0)
+        except Exception:
+            replacement_pid = 0
+        if injured_pid <= 0 or replacement_pid <= 0:
+            continue
+        start = str(entry.get('startDate') or entry.get('start_date') or '').strip()[:10]
+        end = str(entry.get('endDate') or entry.get('end_date') or '').strip()[:10]
+        out.append({
+            'injured_pid': injured_pid,
+            'replacement_pid': replacement_pid,
+            'start_date': start,
+            'end_date': end,
+        })
+    return out
+
+
+def _team_proj_with_injuries(
+    base_team_proj: float,
+    lineup_entries: List[Dict[str, Any]],
+    proj_map: Dict[int, Dict[str, Any]],
+    injuries: List[Dict[str, Any]],
+    date_iso: str,
+) -> float:
+    """Compute the team's projection for a specific game, applying injuries.
+
+    For each injured player in the lineup whose injury covers `date_iso`,
+    swap their contribution for the replacement player's contribution.
+    """
+    if not injuries or not date_iso or not isinstance(lineup_entries, list):
+        return base_team_proj
+
+    # Build {pid: entry} so we can find the injured player's slot.
+    total_delta = 0.0
+    for entry in lineup_entries:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            pid = int(entry.get('pid') or 0)
+        except Exception:
+            pid = 0
+        pos = str(entry.get('pos') or 'F').strip().upper()[:1]
+        if pos not in ('F', 'D', 'G'):
+            pos = 'F'
+        try:
+            games_raw = entry.get('games')
+            games = int(games_raw) if games_raw is not None else 82
+        except Exception:
+            games = 82
+        if games < 0: games = 0
+        if games > 82: games = 82
+        weight = games / 82.0
+        if pid <= 0:
+            continue
+        # Check if this player is injured for this game.
+        for inj in injuries:
+            if int(inj.get('injured_pid') or 0) != pid:
+                continue
+            # Date range check (inclusive).
+            s = str(inj.get('start_date') or '')
+            e = str(inj.get('end_date') or '')
+            if s and date_iso < s:
+                continue
+            if e and date_iso > e:
+                continue
+            # Injured: subtract their contribution, add replacement's.
+            repl_pid = int(inj.get('replacement_pid') or 0)
+            if repl_pid <= 0:
+                continue
+            row = proj_map.get(pid)
+            repl_row = proj_map.get(repl_pid)
+            orig_val = _proj_value_for_player(row) if row else _ROOKIE_FALLBACK.get(pos, _ROOKIE_FALLBACK['F'])
+            repl_val = _proj_value_for_player(repl_row) if repl_row else _ROOKIE_FALLBACK.get(pos, _ROOKIE_FALLBACK['F'])
+            total_delta += (repl_val - orig_val) * weight
+            break  # one injury per player slot
+
+    return base_team_proj + total_delta
 
 
 def _team_proj_map_for_season(
@@ -6643,7 +7286,14 @@ def _team_proj_map_for_season(
     return out
 
 
-def _projected_points_for_team(team: str, season: int, team_proj_map: Dict[str, float]) -> Tuple[float, int]:
+def _projected_points_for_team(
+    team: str,
+    season: int,
+    team_proj_map: Dict[str, float],
+    lineup_entries: Optional[List[Dict[str, Any]]] = None,
+    proj_map: Optional[Dict[int, Dict[str, Any]]] = None,
+    injuries: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[float, int]:
     team_games_all = _fetch_club_schedule_games(team, season)
     team_games = [g for g in team_games_all if int(g.get('gameType') or 0) == 2]
     if not team_games:
@@ -6665,34 +7315,41 @@ def _projected_points_for_team(team: str, season: int, team_proj_map: Dict[str, 
         team_proj = float(team_proj_map.get(team) or 0.0)
         opp_proj = float(team_proj_map.get(opp) or 0.0)
 
-        # Simplicity rule for GM card: use team B2B from its own schedule,
-        # and assume opponent is rested for this aggregate projection.
+        # Apply injuries to this team's projection for this game's date.
+        if injuries and lineup_entries is not None and proj_map is not None:
+            team_proj = _team_proj_with_injuries(team_proj, lineup_entries, proj_map, injuries, date_iso)
+
+        # B2B detection for BOTH teams (must match simulation).
+        team_games_opp = _fetch_club_schedule_games(opp, season)
         team_is_b2b = _is_team_b2b_on_date(team_games, date_iso)
+        opp_is_b2b = _is_team_b2b_on_date(team_games_opp, date_iso)
         if away == team:
-            a_b2b = bool(team_is_b2b)
-            h_b2b = False
+            home_b2b = bool(opp_is_b2b)
+            away_b2b = bool(team_is_b2b)
         else:
-            a_b2b = False
-            h_b2b = bool(team_is_b2b)
+            home_b2b = bool(team_is_b2b)
+            away_b2b = bool(opp_is_b2b)
 
-        if a_b2b and h_b2b:
-            situation = -0.126602018
-        elif a_b2b and not h_b2b:
-            situation = -0.400515738
-        elif (not a_b2b) and h_b2b:
-            situation = 0.174538991
+        # V2 win probability (Normal CDF from g_diff + gf approximation).
+        # Re-derive gf_home/gf_away so we can use the exact Poisson expected points.
+        home_proj = team_proj if home == team else opp_proj
+        away_proj = team_proj if away == team else opp_proj
+        sit = _V2_SITUATION.get((1 if home_b2b else 0, 1 if away_b2b else 0), 0.0)
+        mu = _V2_CONSERVATIVE_WEIGHT * (home_proj - away_proj + sit)
+        lg = _V2_LG_AVG.get(str(season), 3.0)
+        gf_home = max(0.5, lg + mu / 2.0)
+        gf_away = max(0.5, lg - mu / 2.0)
+        sigma = math.sqrt(gf_home + gf_away)
+        p_home_win = _v2_norm_cdf(mu / sigma)
+
+        home_pts, away_pts = _v2_expected_points_exact(gf_home, gf_away, p_home_win)
+
+        if home == team:
+            game_points = home_pts
         else:
-            situation = -0.153396566
+            game_points = away_pts
 
-        proj_away = team_proj if away == team else opp_proj
-        proj_home = team_proj if home == team else opp_proj
-        dproj = proj_away - proj_home
-        try:
-            win_away = 1.0 / (1.0 + math.exp(-dproj - situation))
-        except Exception:
-            continue
-        win_team = float(win_away) if away == team else float(1.0 - win_away)
-        game_points = min(2.0, max(0.0, win_team * 2.24))
+        game_points = max(0.0, game_points)
         projected_points += game_points
         usable_games += 1
 
@@ -6701,13 +7358,7 @@ def _projected_points_for_team(team: str, season: int, team_proj_map: Dict[str, 
 
 @main_bp.route('/api/projections/team-season-points')
 def api_projections_team_season_points():
-    """Projected regular-season points for a team based on game win probabilities.
-
-    Uses projected points per game = min(2.0, winProb * 2.24), then sums across regular-season games.
-    Query params:
-      - team: required NHL team abbrev
-      - season: optional season id, default 20252026
-    """
+    """Projected regular-season points for a team (V2 g_diff_evppsh model)."""
     team = str(request.args.get('team') or '').strip().upper()
     season_raw = request.args.get('season', '20252026')
     try:
@@ -6719,7 +7370,7 @@ def api_projections_team_season_points():
         return jsonify({'error': 'team_required'}), 400
 
     lineups_all = _load_lineups_all()
-    proj_map = _load_current_player_projections_cached()
+    proj_map = _load_v2_player_projections_cached()
     custom_lineups = _custom_lineups_cache_get(season)
     team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
     projected_points, usable_games = _projected_points_for_team(team, season, team_proj_map)
@@ -6729,6 +7380,7 @@ def api_projections_team_season_points():
         'season': season,
         'games': int(usable_games),
         'projectedPoints': round(float(projected_points), 3),
+        'model': 'v2_g_diff_evppsh',
     })
 
 
@@ -6774,37 +7426,27 @@ def api_projections_team_season_points_custom():
     _custom_lineups_cache_set(season, custom_lineups)
 
     lineups_all = _load_lineups_all()
-    proj_map = _load_current_player_projections_cached()
+    proj_map = _load_v2_player_projections_cached()
     team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
-    projected_points, usable_games = _projected_points_for_team(team, season, team_proj_map)
+
+    injuries = _normalize_injuries(body.get('injuries'))
+    lineup_entries = custom_lineups.get(team) or []
+    projected_points, usable_games = _projected_points_for_team(
+        team, season, team_proj_map, lineup_entries, proj_map, injuries,
+    )
 
     return jsonify({
         'team': team,
         'season': season,
         'games': int(usable_games),
         'projectedPoints': round(float(projected_points), 3),
+        'model': 'v2_g_diff_evppsh',
     })
 
 
 @main_bp.route('/api/projections/all-teams-custom', methods=['POST'])
 def api_projections_all_teams_custom():
-    """Projected regular-season points for ALL teams using cached custom lineups.
-
-    POST body JSON:
-      {
-        "team": "BOS",
-        "season": 20252026,           // optional, default 20252026
-        "lineup": [                   // custom lineup for the specified team
-          {"pid": 8478402, "pos": "F"},
-          ...
-        ]
-      }
-
-        Behavior:
-            - Updates custom-lineup cache from payload (single team and/or bulk lineupsByTeam)
-            - Computes projected points for all teams using cached custom lineups when present
-            - Falls back to live lineups for teams without custom cached lineups
-    """
+    """Projected regular-season points for ALL teams using cached custom lineups (V2)."""
     try:
         body = request.get_json(force=True, silent=True) or {}
     except Exception:
@@ -6824,18 +7466,16 @@ def api_projections_all_teams_custom():
 
     custom_lineups = _custom_lineups_cache_get(season)
 
-    # Optional bulk replace from loaded GM config.
     if isinstance(body.get('lineupsByTeam'), dict):
         custom_lineups = _normalize_custom_lineups_by_team(body.get('lineupsByTeam'))
 
-    # Optional single-team upsert.
     if team and isinstance(lineup_raw, list):
         custom_lineups[team] = _normalize_custom_lineup_entries(lineup_raw)
 
     _custom_lineups_cache_set(season, custom_lineups)
 
     lineups_all = _load_lineups_all()
-    proj_map = _load_current_player_projections_cached()
+    proj_map = _load_v2_player_projections_cached()
     team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
 
     all_teams_points: Dict[str, float] = {}
@@ -6852,6 +7492,7 @@ def api_projections_all_teams_custom():
     return jsonify({
         'customTeam': team,
         'season': season,
+        'model': 'v2_g_diff_evppsh',
         'cachedCustomTeams': sorted(list(custom_lineups.keys())),
         'teams': [
             {
@@ -6861,6 +7502,952 @@ def api_projections_all_teams_custom():
             }
             for team_abbrev in sorted(all_team_abbrevs)
         ],
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Season Simulation — full regular season + playoffs (single draw)
+# ═══════════════════════════════════════════════════════════════════════
+
+# Static conference assignment for the 32 active teams (2024-25 alignment).
+# Used to seed the playoff bracket from simulated regular-season standings.
+_TEAM_CONF: Dict[str, str] = {
+    'BOS': 'East', 'NJD': 'East', 'NYI': 'East', 'NYR': 'East',
+    'PHI': 'East', 'PIT': 'East', 'BUF': 'East', 'MTL': 'East',
+    'OTT': 'East', 'TOR': 'East', 'TBL': 'East', 'FLA': 'East',
+    'CAR': 'East', 'WSH': 'East', 'DET': 'East', 'CBJ': 'East',
+    'CHI': 'West', 'NSH': 'West', 'STL': 'West', 'WPG': 'West',
+    'DAL': 'West', 'COL': 'West', 'MIN': 'West', 'CGY': 'West',
+    'EDM': 'West', 'VAN': 'West', 'ANA': 'West', 'LAK': 'West',
+    'SJS': 'West', 'SEA': 'West', 'VGK': 'West', 'UTA': 'West',
+}
+
+
+def _active_team_abbrevs() -> List[str]:
+    """Return only currently-active team abbrevs (Active == '1')."""
+    out: List[str] = []
+    seen: set = set()
+    for r in (TEAM_ROWS or []):
+        ab = str(r.get('Team') or '').strip().upper()
+        if ab and str(r.get('Active') or '').strip() == '1' and ab not in seen:
+            seen.add(ab)
+            out.append(ab)
+    return sorted(out)
+
+
+def _build_league_schedule(season: int, teams: List[str]) -> List[Dict[str, Any]]:
+    """Collect every regular-season game once, deduped by game id."""
+    by_id: Dict[Any, Dict[str, Any]] = {}
+    for team in teams:
+        games = _fetch_club_schedule_games(team, season)
+        for g in (games or []):
+            if int(g.get('gameType') or 0) != 2:
+                continue
+            gid = g.get('id')
+            if gid is None:
+                continue
+            if gid not in by_id:
+                by_id[gid] = g
+    out = list(by_id.values())
+    out.sort(key=lambda x: (str(x.get('date') or ''), str(x.get('id') or '')))
+    return out
+
+
+def _fetch_all_schedules_parallel(season: int, teams: List[str], max_workers: int = 12) -> Dict[str, List[Dict[str, Any]]]:
+    """Fetch per-team schedules in parallel (still benefits from the in-memory cache)."""
+    out: Dict[str, List[Dict[str, Any]]] = {t: [] for t in teams}
+    if not teams:
+        return out
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(teams))) as ex:
+        future_map = {ex.submit(_fetch_club_schedule_games, t, season): t for t in teams}
+        for fut in future_map:
+            try:
+                out[future_map[fut]] = fut.result() or []
+            except Exception:
+                out[future_map[fut]] = []
+    return out
+
+
+def _b2b_date_sets(team_games: Dict[str, List[Dict[str, Any]]]) -> Dict[str, set]:
+    """For each team, precompute the set of dates where the team is on a back-to-back
+    (i.e. the team has a REGULAR-SEASON game on date D AND on date D-1).
+    Filters to gameType==2 to match _projected_points_for_team."""
+    out: Dict[str, set] = {}
+    for team, games in team_games.items():
+        # Only regular-season games for B2B detection (matches KPI).
+        reg_games = [g for g in (games or []) if int(g.get('gameType') or 0) == 2]
+        dates = {str(g.get('date') or '')[:10] for g in reg_games if g.get('date')}
+        b2b: set = set()
+        for g in reg_games:
+            d = str(g.get('date') or '')[:10]
+            if not d:
+                continue
+            try:
+                dd = datetime.fromisoformat(d).date()
+            except Exception:
+                continue
+            prev = (dd - timedelta(days=1)).isoformat()
+            if prev in dates:
+                b2b.add(d)
+        out[team] = b2b
+    return out
+
+
+def _poisson_draw(lam: float, rng: random.Random) -> int:
+    """Draw a single Poisson(lam) random variate using Knuth's algorithm."""
+    if lam <= 0:
+        return 0
+    L = math.exp(-lam)
+    k = 0
+    p = 1.0
+    while True:
+        k += 1
+        p *= rng.random()
+        if p <= L:
+            return k - 1
+
+
+def _simulate_game_goals(
+    gf_home: float,
+    gf_away: float,
+    p_home_reg: float,
+    rng: random.Random,
+) -> Tuple[int, int, str, bool]:
+    """Simulate regulation goals for both teams and determine the winner.
+
+    Uses Poisson draws with lambdas gf_home / gf_away (from the V2 gf model).
+    If the scores are tied after regulation, the game goes to OT and the
+    OT winner is drawn from the regulation win probability.
+
+    Returns (home_goals, away_goals, winner, ot).
+    """
+    gh = _poisson_draw(gf_home, rng)
+    ga = _poisson_draw(gf_away, rng)
+    if gh > ga:
+        return gh, ga, 'home', False
+    if ga > gh:
+        return gh, ga, 'away', False
+    # Tie → OT/SO.  Winner determined by win-probability draw.
+    winner_home = rng.random() < p_home_reg
+    return gh, ga, 'home' if winner_home else 'away', True
+
+
+def _simulate_game(
+    home: str,
+    away: str,
+    date_iso: str,
+    team_proj_map: Dict[str, float],
+    team_games: Dict[str, List[Dict[str, Any]]],
+    season: int,
+    rng: random.Random,
+) -> Dict[str, Any]:
+    """Simulate a single game outcome from V2 win probability."""
+    home_proj = float(team_proj_map.get(home) or 0.0)
+    away_proj = float(team_proj_map.get(away) or 0.0)
+    home_b2b = _is_team_b2b_on_date(team_games.get(home, []), date_iso)
+    away_b2b = _is_team_b2b_on_date(team_games.get(away, []), date_iso)
+    p_home = _v2_win_probability(home_proj, away_proj, home_b2b, away_b2b, season)
+
+    lg = _V2_LG_AVG.get(str(season), 3.0)
+    # Goal means reflect the full projected goal differential (incl. B2B sit),
+    # Goal means reflect the full projected goal differential (incl. B2B sit),
+    # scaled by the same _V2_CONSERVATIVE_WEIGHT used in _v2_win_probability so
+    # the Poisson draw's average win rate matches the KPI win probability.
+    sit = _V2_SITUATION.get((1 if home_b2b else 0, 1 if away_b2b else 0), 0.0)
+    mu = _V2_CONSERVATIVE_WEIGHT * (home_proj - away_proj + sit)
+    gf_home = max(0.5, lg + mu / 2.0)
+    gf_away = max(0.5, lg - mu / 2.0)
+
+    gh = _poisson_draw(gf_home, rng)
+    ga = _poisson_draw(gf_away, rng)
+    if gh > ga:
+        winner, loser, ot = home, away, False
+    elif ga > gh:
+        winner, loser, ot = away, home, False
+    else:
+        ot = True
+        if rng.random() < p_home:
+            winner, loser = home, away
+        else:
+            winner, loser = away, home
+
+    return {
+        'home': home, 'away': away, 'winner': winner, 'loser': loser,
+        'ot': bool(ot),
+        'homeGoals': int(gh), 'awayGoals': int(ga),
+        'homePoints': 2 if winner == home else (1 if ot else 0),
+        'awayPoints': 2 if winner == away else (1 if ot else 0),
+    }
+
+
+def _standings_from_results(
+    teams: List[str],
+    results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Aggregate simulated games into a standings list sorted by points."""
+    pts: Dict[str, int] = {t: 0 for t in teams}
+    wins: Dict[str, int] = {t: 0 for t in teams}
+    losses: Dict[str, int] = {t: 0 for t in teams}
+    otl: Dict[str, int] = {t: 0 for t in teams}
+    gf: Dict[str, int] = {t: 0 for t in teams}
+    ga: Dict[str, int] = {t: 0 for t in teams}
+    gp: Dict[str, int] = {t: 0 for t in teams}
+
+    # Aggregate GF/GA from simulated goals (with fallback for legacy games).
+    for g in results:
+        h, a = g['home'], g['away']
+        if h not in pts or a not in pts:
+            continue
+        gp[h] += 1; gp[a] += 1
+        pts[h] += g['homePoints']; pts[a] += g['awayPoints']
+        w, l = g['winner'], g['loser']
+        wins[w] += 1; losses[l] += 1
+        if g['ot']:
+            otl[l] += 1
+        gh = int(g.get('homeGoals') or 0)
+        ga_val = int(g.get('awayGoals') or 0)
+        # Fallback for games without goals (shouldn't happen with new sim).
+        if gh == 0 and ga_val == 0:
+            gh, ga_val = (3, 2) if w == h else (2, 3)
+        gf[h] += gh; ga[h] += ga_val
+        gf[a] += ga_val; ga[a] += gh
+
+    rows = []
+    for t in teams:
+        rows.append({
+            'team': t,
+            'conference': _TEAM_CONF.get(t, 'East'),
+            'gp': gp[t],
+            'wins': wins[t],
+            'losses': losses[t],
+            'otLosses': otl[t],
+            'points': pts[t],
+            'goalsFor': gf[t],
+            'goalsAgainst': ga[t],
+            'goalDifferential': gf[t] - ga[t],
+            'regulationWins': wins[t],  # placeholder tiebreak
+        })
+    # Sort: points desc, wins desc, GF desc, team asc
+    rows.sort(key=lambda x: (-x['points'], -x['wins'], -x['goalsFor'], x['team']))
+    return rows
+
+
+def _seed_playoffs(standings: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    """Seed 8 teams per conference from sorted standings."""
+    east = [r['team'] for r in standings if r['conference'] == 'East'][:8]
+    west = [r['team'] for r in standings if r['conference'] == 'West'][:8]
+    return {'East': east, 'West': west}
+
+
+def _simulate_series(
+    top: str,
+    bottom: str,
+    team_proj_map: Dict[str, float],
+    season: int,
+    rng: random.Random,
+) -> Dict[str, Any]:
+    """Best-of-7 series.  'top' seeds higher (home-ice).  No b2b in playoffs."""
+    top_wins = 0
+    bottom_wins = 0
+    games_played = 0
+    # home-ice pattern: top hosts games 1,2,5,7 ; bottom hosts 3,4,6
+    home_pattern = [top, top, bottom, bottom, top, bottom, top]
+    while top_wins < 4 and bottom_wins < 4:
+        home = home_pattern[games_played]
+        away = bottom if home == top else top
+        p_home = _v2_win_probability(
+            float(team_proj_map.get(home) or 0.0),
+            float(team_proj_map.get(away) or 0.0),
+            False, False, season,
+        )
+        if rng.random() < p_home:
+            winner = home
+        else:
+            winner = away
+        if winner == top:
+            top_wins += 1
+        else:
+            bottom_wins += 1
+        games_played += 1
+    winner = top if top_wins == 4 else bottom
+    loser = bottom if winner == top else top
+    return {
+        'top': top, 'bottom': bottom,
+        'winner': winner, 'loser': loser,
+        'topWins': top_wins, 'bottomWins': bottom_wins,
+        'games': games_played,
+    }
+
+
+def _simulate_playoffs(
+    seeds: Dict[str, List[str]],
+    team_proj_map: Dict[str, float],
+    season: int,
+    rng: random.Random,
+) -> Dict[str, Any]:
+    """Standard NHL bracket: 1v8,2v7,3v6,4v5 → 1v(winner bracket), etc."""
+    def conf_round(team_list, label_prefix):
+        # team_list is a list of 8 seeds in order
+        m1 = _simulate_series(team_list[0], team_list[7], team_proj_map, season, rng)
+        m2 = _simulate_series(team_list[1], team_list[6], team_proj_map, season, rng)
+        m3 = _simulate_series(team_list[2], team_list[5], team_proj_map, season, rng)
+        m4 = _simulate_series(team_list[3], team_list[4], team_proj_map, season, rng)
+        return [m1, m2, m3, m4]
+
+    east_r1 = conf_round(seeds['East'], 'E')
+    west_r1 = conf_round(seeds['West'], 'W')
+
+    # Round 2: re-seed by original seed order (lowest seed number faces lowest)
+    # Standard NHL: top remaining seed vs lowest remaining, etc.
+    def reseeds(round_results, original_seeds):
+        remain = [s['winner'] for s in round_results]
+        # order by original seed index
+        idx = {t: i for i, t in enumerate(original_seeds)}
+        remain.sort(key=lambda t: idx.get(t, 99))
+        return remain
+
+    east_remain = reseeds(east_r1, seeds['East'])
+    west_remain = reseeds(west_r1, seeds['West'])
+
+    east_r2 = [
+        _simulate_series(east_remain[0], east_remain[3], team_proj_map, season, rng),
+        _simulate_series(east_remain[1], east_remain[2], team_proj_map, season, rng),
+    ]
+    west_r2 = [
+        _simulate_series(west_remain[0], west_remain[3], team_proj_map, season, rng),
+        _simulate_series(west_remain[1], west_remain[2], team_proj_map, season, rng),
+    ]
+
+    east_final_seeds = reseeds(east_r2, east_remain)
+    west_final_seeds = reseeds(west_r2, west_remain)
+    east_conf_final = _simulate_series(east_final_seeds[0], east_final_seeds[1], team_proj_map, season, rng)
+    west_conf_final = _simulate_series(west_final_seeds[0], west_final_seeds[1], team_proj_map, season, rng)
+
+    # Stanley Cup Final — higher regular-season point total gets home ice
+    stanley = _simulate_series(
+        east_conf_final['winner'], west_conf_final['winner'],
+        team_proj_map, season, rng,
+    )
+
+    return {
+        'round1': {'East': east_r1, 'West': west_r1},
+        'round2': {'East': east_r2, 'West': west_r2},
+        'conferenceFinals': {'East': east_conf_final, 'West': west_conf_final},
+        'stanleyFinal': stanley,
+        'champion': stanley['winner'],
+    }
+
+
+# ═══ Scorer / assist simulation helpers ═══════════════════════════════
+# Minimum per-game goal/assist rate floors (for players with 0 ig/a1/a2).
+# Forwards score more than defensemen, so separate floors by position.
+_SIM_FLOOR = {
+    'F': {'ig': 0.030, 'a1': 0.050, 'a2': 0.050},
+    'D': {'ig': 0.012, 'a1': 0.025, 'a2': 0.025},
+}
+# NHL averages: ~65% of goals have 2 assists, ~20% have 1 assist, ~15% unassisted.
+_SIM_ASSIST_PROBS = {
+    'two': 0.65,   # two assists awarded
+    'one': 0.20,   # one assist awarded
+    'zero': 0.15,  # unassisted
+}
+
+
+def _build_team_roster_rates(
+    team_abbrev: str,
+    lineups_all: Dict[str, Any],
+    proj_map: Dict[int, Dict[str, Any]],
+    custom_lineup: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Build a list of skater rate dicts for a team's dressed lineup.
+
+    Each entry: {pid, pos, ig, a1, a2} where ig/a1/a2 are per-game rates
+    with estimated-GP-weighting and position-floor applied.
+    """
+    t = (team_abbrev or '').upper()
+    roster: List[Dict[str, Any]] = []
+    seen_pids: set = set()
+
+    def add_player(pid: int, pos: str, games_est: int = 82):
+        if not pid or pid in seen_pids:
+            return
+        seen_pids.add(pid)
+        row = proj_map.get(pid)
+        # Determine position
+        p = (pos or '').upper()[:1]
+        if p not in ('F', 'D'):
+            if row:
+                p = str(row.get('position') or '').upper()[:1] or 'F'
+            if p not in ('F', 'D'):
+                p = 'F'
+        floor = _SIM_FLOOR.get(p, _SIM_FLOOR['F'])
+        if row:
+            ig = float(row.get('ig') or 0)
+            a1 = float(row.get('a1') or 0)
+            a2 = float(row.get('a2') or 0)
+        else:
+            ig = a1 = a2 = 0.0
+        # Apply position floor to raw per-game rates
+        ig = max(ig, floor['ig'])
+        a1 = max(a1, floor['a1'])
+        a2 = max(a2, floor['a2'])
+        # Scale by estimated GP / 82 so season-total points match expected games.
+        gp_weight = max(0.0, min(1.0, games_est / 82.0))
+        ig *= gp_weight
+        a1 *= gp_weight
+        a2 *= gp_weight
+        if ig <= 0 and a1 <= 0 and a2 <= 0:
+            return  # effectively zero — don't bloat the roster
+        roster.append({'pid': int(pid), 'pos': p, 'ig': ig, 'a1': a1, 'a2': a2})
+
+    if custom_lineup is not None and isinstance(custom_lineup, list):
+        for entry in custom_lineup:
+            try:
+                pid = int(entry.get('pid') or 0)
+            except Exception:
+                pid = 0
+            pos = str(entry.get('pos') or 'F').upper()[:1]
+            if pid <= 0 or pos == 'G':
+                continue
+            # Use the estimated GP from the lineup entry (default 82).
+            games_raw = entry.get('games')
+            try:
+                games_est = int(games_raw) if games_raw is not None else 82
+            except Exception:
+                games_est = 82
+            if games_est < 0:
+                games_est = 0
+            if games_est > 82:
+                games_est = 82
+            add_player(pid, pos, games_est)
+    else:
+        li = lineups_all.get(t) or {}
+        for sec in ('forwards', 'defense'):
+            arr = li.get(sec) or []
+            if not isinstance(arr, list):
+                continue
+            for it in arr:
+                try:
+                    if str(it.get('unit') or '').upper() == 'EXT':
+                        continue
+                    pid = it.get('playerId')
+                    pos = (it.get('pos') or '').upper()[:1]
+                    if isinstance(pid, int) and pos != 'G':
+                        add_player(pid, pos)
+                except Exception:
+                    continue
+    return roster
+
+
+def _weighted_choice(weights: List[float], rng: random.Random) -> int:
+    """Return index chosen proportional to weights (no numpy needed)."""
+    total = sum(weights)
+    if total <= 0:
+        return rng.randrange(len(weights))
+    r = rng.random() * total
+    cumulative = 0.0
+    for i, w in enumerate(weights):
+        cumulative += w
+        if r <= cumulative:
+            return i
+    return len(weights) - 1
+
+
+def _simulate_goal_scorers(
+    roster: List[Dict[str, Any]],
+    num_goals: int,
+    rng: random.Random,
+) -> List[Dict[str, Any]]:
+    """For each of num_goals team goals, pick a scorer and 0-2 assisters.
+
+    Returns list of {scorer, a1, a2} where a1/a2 are pid or None.
+    Assisters are chosen from roster excluding the scorer.
+    """
+    if not roster or num_goals <= 0:
+        return []
+    scorer_weights = [p['ig'] for p in roster]
+    a1_weights_base = [p['a1'] for p in roster]
+    a2_weights_base = [p['a2'] for p in roster]
+    out: List[Dict[str, Any]] = []
+    n = len(roster)
+    for _ in range(num_goals):
+        # Scorer
+        si = _weighted_choice(scorer_weights, rng)
+        scorer_pid = roster[si]['pid']
+        # Number of assists
+        r = rng.random()
+        if r < _SIM_ASSIST_PROBS['two']:
+            num_assists = 2
+        elif r < _SIM_ASSIST_PROBS['two'] + _SIM_ASSIST_PROBS['one']:
+            num_assists = 1
+        else:
+            num_assists = 0
+        a1_pid = None
+        a2_pid = None
+        if num_assists >= 1:
+            # Primary assist: exclude scorer
+            w1 = [a1_weights_base[j] if j != si else 0.0 for j in range(n)]
+            a1_pid = roster[_weighted_choice(w1, rng)]['pid']
+        if num_assists >= 2:
+            # Secondary assist: exclude scorer and a1
+            w2 = [a2_weights_base[j] if j != si and roster[j]['pid'] != a1_pid else 0.0 for j in range(n)]
+            a2_pid = roster[_weighted_choice(w2, rng)]['pid']
+        out.append({'scorer': scorer_pid, 'a1': a1_pid, 'a2': a2_pid})
+    return out
+
+
+@main_bp.route('/api/projections/simulate-season', methods=['POST'])
+def api_projections_simulate_season():
+    """Run a single full-season simulation (regular season + playoffs).
+
+    POST body JSON (all optional):
+      {
+        "season": 20252026,
+        "seed": 12345,            // optional RNG seed for reproducibility
+        "lineup": [...],          // optional custom lineup for a single team
+        "team": "BOS",           // required if lineup provided
+        "lineupsByTeam": {...}    // optional custom lineups for multiple teams
+      }
+
+    Returns:
+      {
+        "season": 20252026,
+        "standings": [{team, conference, gp, wins, losses, otLosses, points, ...}],
+        "playoffSeeds": {"East": [...8], "West": [...8]},
+        "playoffs": {round1, round2, conferenceFinals, stanleyFinal, champion},
+        "simulatedGames": <count>
+      }
+    """
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        body = {}
+
+    season_raw = body.get('season', 20252026)
+    try:
+        season = int(season_raw)
+    except Exception:
+        season = 20252026
+
+    seed_raw = body.get('seed')
+    try:
+        seed = int(seed_raw) if seed_raw is not None else None
+    except Exception:
+        seed = None
+    rng = random.Random(seed) if seed is not None else random.Random()
+
+    # Build team projection map (support custom lineups like the points endpoint)
+    custom_lineups = _custom_lineups_cache_get(season)
+    if isinstance(body.get('lineupsByTeam'), dict):
+        custom_lineups = _normalize_custom_lineups_by_team(body.get('lineupsByTeam'))
+    team = str(body.get('team') or '').strip().upper()
+    lineup_raw = body.get('lineup') or []
+    if team and isinstance(lineup_raw, list):
+        custom_lineups[team] = _normalize_custom_lineup_entries(lineup_raw)
+    _custom_lineups_cache_set(season, custom_lineups)
+
+    lineups_all = _load_lineups_all()
+    proj_map = _load_v2_player_projections_cached()
+    team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
+
+    teams = _active_team_abbrevs()
+    if len(teams) < 2:
+        return jsonify({'error': 'not_enough_teams'}), 500
+
+    # Per-team game lists (for b2b detection) — fetched in parallel, cached.
+    team_games = _fetch_all_schedules_parallel(season, teams)
+    b2b_sets = _b2b_date_sets(team_games)
+
+    # Build team rosters (skater rates ig/a1/a2) for scorer simulation.
+    team_rosters: Dict[str, List[Dict[str, Any]]] = {}
+    for t in teams:
+        custom = custom_lineups.get(t)
+        team_rosters[t] = _build_team_roster_rates(t, lineups_all, proj_map, custom)
+
+    # Injuries (currently only for the explicitly-listed team in the request).
+    injuries_by_team: Dict[str, List[Dict[str, Any]]] = {}
+    if team:
+        injuries_by_team[team] = _normalize_injuries(body.get('injuries'))
+
+    # Build deduped league schedule from the already-fetched per-team games.
+    by_id: Dict[Any, Dict[str, Any]] = {}
+    for t in teams:
+        for g in (team_games.get(t) or []):
+            if int(g.get('gameType') or 0) != 2:
+                continue
+            gid = g.get('id')
+            if gid is None or gid in by_id:
+                continue
+            by_id[gid] = g
+    schedule = list(by_id.values())
+    schedule.sort(key=lambda x: (str(x.get('date') or ''), str(x.get('id') or '')))
+    if not schedule:
+        return jsonify({'error': 'no_schedule_found'}), 500
+
+    sim_result = _run_single_sim(
+        schedule, team_proj_map, b2b_sets, team_rosters, teams, proj_map, season, rng,
+        injuries_by_team=injuries_by_team if injuries_by_team else None,
+        custom_lineups=custom_lineups,
+    )
+
+    return jsonify({
+        'season': season,
+        'standings': sim_result['standings'],
+        'playoffSeeds': sim_result['playoffSeeds'],
+        'playoffs': sim_result['playoffs'],
+        'playerStats': sim_result['playerStats'],
+        'simulatedGames': len(schedule),
+        'model': 'v2_g_diff_evppsh',
+    })
+
+
+def _run_single_sim(
+    schedule, team_proj_map, b2b_sets, team_rosters, teams, proj_map, season, rng,
+    injuries_by_team: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    custom_lineups: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+) -> Dict[str, Any]:
+    """Run one full simulation (regular season + playoffs) and return results.
+
+    Reused by both the single-sim endpoint and the batch endpoint.
+    injuries_by_team maps team abbrev → list of injury dicts. For each game,
+    if the home or away team has injuries covering that game's date, their
+    projection is adjusted by swapping injured-player contributions for
+    replacement-player contributions.
+    """
+    lg = _V2_LG_AVG.get(str(season), 3.0)
+    sqrt2 = math.sqrt(2.0)
+    results: List[Dict[str, Any]] = []
+    for g in schedule:
+        home = str(g.get('home') or '').strip().upper()
+        away = str(g.get('away') or '').strip().upper()
+        date_iso = str(g.get('date') or '').strip()
+        if not home or not away or home not in team_proj_map or away not in team_proj_map:
+            continue
+        home_proj = float(team_proj_map.get(home) or 0.0)
+        away_proj = float(team_proj_map.get(away) or 0.0)
+
+        # Apply injuries for this game's date.
+        if injuries_by_team:
+            if home in injuries_by_team and custom_lineups and home in custom_lineups:
+                home_proj = _team_proj_with_injuries(
+                    home_proj, custom_lineups.get(home) or [], proj_map,
+                    injuries_by_team[home], date_iso,
+                )
+            if away in injuries_by_team and custom_lineups and away in custom_lineups:
+                away_proj = _team_proj_with_injuries(
+                    away_proj, custom_lineups.get(away) or [], proj_map,
+                    injuries_by_team[away], date_iso,
+                )
+        hb = 1 if (date_iso in b2b_sets.get(home, set())) else 0
+        ab = 1 if (date_iso in b2b_sets.get(away, set())) else 0
+        sit = _V2_SITUATION.get((hb, ab), 0.0)
+        mu = _V2_CONSERVATIVE_WEIGHT * (home_proj - away_proj + sit)
+        # Goal means and win probability use the same shrunk mu as
+        # _v2_win_probability so the sim average matches the KPI.
+        gf_home = max(0.5, lg + mu / 2.0)
+        gf_away = max(0.5, lg - mu / 2.0)
+        sigma = math.sqrt(gf_home + gf_away)
+        p_home = 0.5 * (1.0 + math.erf(mu / (sigma * sqrt2)))
+        gh = _poisson_draw(gf_home, rng)
+        ga = _poisson_draw(gf_away, rng)
+        if gh > ga:
+            winner, loser, ot = home, away, False
+        elif ga > gh:
+            winner, loser, ot = away, home, False
+        else:
+            ot = True
+            if rng.random() < p_home:
+                winner, loser = home, away
+            else:
+                winner, loser = away, home
+        if not ot and abs(gh - ga) == 1 and rng.random() < 0.30:
+            ot = True
+        home_scorers = _simulate_goal_scorers(team_rosters.get(home, []), int(gh), rng)
+        away_scorers = _simulate_goal_scorers(team_rosters.get(away, []), int(ga), rng)
+        results.append({
+            'home': home, 'away': away, 'winner': winner, 'loser': loser,
+            'ot': bool(ot),
+            'homeGoals': int(gh), 'awayGoals': int(ga),
+            'homePoints': 2 if winner == home else (1 if ot else 0),
+            'awayPoints': 2 if winner == away else (1 if ot else 0),
+            'homeScorers': home_scorers, 'awayScorers': away_scorers,
+        })
+
+    # Build pid → estimated-GP lookup from custom lineups (for player stats output).
+    gp_by_pid: Dict[int, int] = {}
+    if custom_lineups:
+        for _t, entries in custom_lineups.items():
+            if not isinstance(entries, list):
+                continue
+            for e in entries:
+                try:
+                    _pid = int(e.get('pid') or 0)
+                except Exception:
+                    _pid = 0
+                if _pid <= 0:
+                    continue
+                _g = int(e.get('games') or 0)
+                if _g < 0:
+                    _g = 0
+                if _g > 82:
+                    _g = 82
+                # Keep the highest GP if a player appears in multiple lineups.
+                gp_by_pid[_pid] = max(gp_by_pid.get(_pid, 0), _g)
+
+    # Player stats (regular season)
+    player_stats: Dict[int, Dict[str, Any]] = {}
+    for g in results:
+        for scorers_list, team_abbr in ((g.get('homeScorers') or [], g['home']),
+                                        (g.get('awayScorers') or [], g['away'])):
+            for sg in scorers_list:
+                for role, pid in (('scorer', sg.get('scorer')),
+                                  ('a1', sg.get('a1')), ('a2', sg.get('a2'))):
+                    if not pid:
+                        continue
+                    if pid not in player_stats:
+                        row = proj_map.get(pid) or {}
+                        player_stats[pid] = {
+                            'pid': int(pid), 'name': str(row.get('player') or ''),
+                            'team': str(row.get('team') or team_abbr),
+                            'position': str(row.get('position') or ''),
+                            'gp': gp_by_pid.get(int(pid), 82),
+                            'goals': 0, 'a1': 0, 'a2': 0, 'points': 0,
+                        }
+                    ps = player_stats[pid]
+                    if role == 'scorer':
+                        ps['goals'] += 1; ps['points'] += 1
+                    elif role == 'a1':
+                        ps['a1'] += 1; ps['points'] += 1
+                    elif role == 'a2':
+                        ps['a2'] += 1; ps['points'] += 1
+
+    standings = _standings_from_results(teams, results)
+    seeds = _seed_playoffs(standings)
+    if len(seeds['East']) < 8 or len(seeds['West']) < 8:
+        top16 = [r['team'] for r in standings[:16]]
+        seeds = {'East': top16[:8], 'West': top16[8:16]}
+    playoffs = _simulate_playoffs(seeds, team_proj_map, season, rng)
+
+    return {
+        'standings': standings,
+        'playoffSeeds': seeds,
+        'playoffs': playoffs,
+        'playerStats': list(player_stats.values()),
+    }
+
+
+@main_bp.route('/api/projections/simulate-season-batch', methods=['POST'])
+def api_projections_simulate_season_batch():
+    """Run N full-season simulations and return aggregated results.
+
+    POST body JSON (all optional):
+      {
+        "season": 20252026,
+        "numSims": 100,
+        "seed": 42,
+        "lineupsByTeam": {...},
+        "team": "BOS",
+        "lineup": [...]
+      }
+
+    Returns aggregated team and player stats across all simulations:
+      {
+        "numSims": 100,
+        "teamAgg": [{team, conference, avgGp, avgWins, ..., sumPlayoffs, ..., sumChampion}],
+        "playerAgg": [{pid, name, team, position, avgGoals, avgA1, avgA2, avgPoints}]
+      }
+    """
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        body = {}
+
+    season_raw = body.get('season', 20252026)
+    try:
+        season = int(season_raw)
+    except Exception:
+        season = 20252026
+
+    num_sims = max(1, min(int(body.get('numSims') or 100), 10000))
+
+    seed_raw = body.get('seed')
+    try:
+        base_seed = int(seed_raw) if seed_raw is not None else random.randint(0, 2**31 - 1)
+    except Exception:
+        base_seed = 42
+
+    # Build team projection map (same as single sim)
+    custom_lineups: Dict[str, List[Dict[str, Any]]] = {}
+    if isinstance(body.get('lineupsByTeam'), dict):
+        custom_lineups = _normalize_custom_lineups_by_team(body.get('lineupsByTeam'))
+    team_ab = str(body.get('team') or '').strip().upper()
+    lineup_raw = body.get('lineup') or []
+    if team_ab and isinstance(lineup_raw, list):
+        custom_lineups[team_ab] = _normalize_custom_lineup_entries(lineup_raw)
+
+    lineups_all = _load_lineups_all()
+    proj_map = _load_v2_player_projections_cached()
+    team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
+
+    teams = _active_team_abbrevs()
+    if len(teams) < 2:
+        return jsonify({'error': 'not_enough_teams'}), 500
+
+    # Fetch schedules once (shared across all sims)
+    team_games = _fetch_all_schedules_parallel(season, teams)
+    b2b_sets = _b2b_date_sets(team_games)
+
+    by_id: Dict[Any, Dict[str, Any]] = {}
+    for t in teams:
+        for g in (team_games.get(t) or []):
+            if int(g.get('gameType') or 0) != 2:
+                continue
+            gid = g.get('id')
+            if gid is None or gid in by_id:
+                continue
+            by_id[gid] = g
+    schedule = list(by_id.values())
+    schedule.sort(key=lambda x: (str(x.get('date') or ''), str(x.get('id') or '')))
+    if not schedule:
+        return jsonify({'error': 'no_schedule_found'}), 500
+
+    # Build rosters once
+    team_rosters: Dict[str, List[Dict[str, Any]]] = {}
+    for t in teams:
+        team_rosters[t] = _build_team_roster_rates(t, lineups_all, proj_map, custom_lineups.get(t))
+
+    # Injuries (only for the explicitly-listed team in the request).
+    injuries_by_team: Dict[str, List[Dict[str, Any]]] = {}
+    if team_ab:
+        injuries_by_team[team_ab] = _normalize_injuries(body.get('injuries'))
+
+    # ── Aggregation accumulators ──
+    team_agg: Dict[str, Dict[str, float]] = {}
+    for t in teams:
+        team_agg[t] = {
+            'team': t, 'conference': _TEAM_CONF.get(t, 'East'),
+            'gp': 0, 'wins': 0, 'losses': 0, 'ot_losses': 0, 'points': 0,
+            'goals_for': 0, 'goals_against': 0, 'goal_differential': 0,
+            'playoffs': 0, 'second_round': 0, 'third_round': 0, 'final': 0, 'champion': 0,
+        }
+
+    player_agg: Dict[int, Dict[str, float]] = {}
+
+    for i in range(num_sims):
+        rng = random.Random(base_seed + i)
+        sim = _run_single_sim(
+            schedule, team_proj_map, b2b_sets, team_rosters, teams, proj_map, season, rng,
+            injuries_by_team=injuries_by_team if injuries_by_team else None,
+            custom_lineups=custom_lineups,
+        )
+
+        # Aggregate team standings
+        for row in sim['standings']:
+            t = row['team']
+            if t not in team_agg:
+                continue
+            a = team_agg[t]
+            a['gp'] += row['gp']
+            a['wins'] += row['wins']
+            a['losses'] += row['losses']
+            a['ot_losses'] += row['otLosses']
+            a['points'] += row['points']
+            a['goals_for'] += row['goalsFor']
+            a['goals_against'] += row['goalsAgainst']
+            a['goal_differential'] += row.get('goalDifferential', row['goalsFor'] - row['goalsAgainst'])
+
+        # Aggregate playoff flags
+        po = sim['playoffs']
+        for t in teams:
+            # Made playoffs?
+            made = False
+            for conf in ('East', 'West'):
+                for s in (po.get('round1') or {}).get(conf) or []:
+                    if s.get('winner') == t or s.get('loser') == t:
+                        made = True; break
+            if made:
+                team_agg[t]['playoffs'] += 1
+            # 2nd round
+            r2 = False
+            for conf in ('East', 'West'):
+                for s in (po.get('round2') or {}).get(conf) or []:
+                    if s.get('winner') == t or s.get('loser') == t:
+                        r2 = True; break
+            if r2:
+                team_agg[t]['second_round'] += 1
+            # 3rd round (conference finals)
+            r3 = False
+            for conf in ('East', 'West'):
+                s = (po.get('conferenceFinals') or {}).get(conf)
+                if s and (s.get('winner') == t or s.get('loser') == t):
+                    r3 = True
+            if r3:
+                team_agg[t]['third_round'] += 1
+            # Final
+            sf = po.get('stanleyFinal')
+            if sf and (sf.get('winner') == t or sf.get('loser') == t):
+                team_agg[t]['final'] += 1
+                if sf.get('winner') == t:
+                    team_agg[t]['champion'] += 1
+
+        # Aggregate player stats (regular season only for the avg table)
+        for p in sim['playerStats']:
+            pid = p['pid']
+            if pid not in player_agg:
+                player_agg[pid] = {
+                    'pid': pid, 'name': p['name'], 'team': p['team'],
+                    'position': p['position'],
+                    'gp': p.get('gp', 82),
+                    'goals': 0, 'a1': 0, 'a2': 0, 'points': 0,
+                }
+            pa = player_agg[pid]
+            pa['goals'] += p['goals']
+            pa['a1'] += p['a1']
+            pa['a2'] += p['a2']
+            pa['points'] += p['points']
+
+    # Average team stats
+    n = float(num_sims)
+    team_list = []
+    for t in teams:
+        a = team_agg[t]
+        team_list.append({
+            'team': t, 'conference': a['conference'],
+            'avgGp': round(a['gp'] / n, 1),
+            'avgWins': round(a['wins'] / n, 1),
+            'avgLosses': round(a['losses'] / n, 1),
+            'avgOtLosses': round(a['ot_losses'] / n, 1),
+            'avgPoints': round(a['points'] / n, 1),
+            'avgGoalsFor': round(a['goals_for'] / n, 1),
+            'avgGoalsAgainst': round(a['goals_against'] / n, 1),
+            'avgGoalDifferential': round(a['goal_differential'] / n, 1),
+            'sumPlayoffs': int(a['playoffs']),
+            'sumSecondRound': int(a['second_round']),
+            'sumThirdRound': int(a['third_round']),
+            'sumFinal': int(a['final']),
+            'sumChampion': int(a['champion']),
+        })
+    team_list.sort(key=lambda x: (-x['avgPoints'], -x['avgWins'], x['team']))
+
+    # Average player stats
+    player_list = []
+    for pid, pa in player_agg.items():
+        player_list.append({
+            'pid': pid, 'name': pa['name'], 'team': pa['team'], 'position': pa['position'],
+            'gp': pa.get('gp', 82),
+            'avgGoals': round(pa['goals'] / n, 1),
+            'avgA1': round(pa['a1'] / n, 1),
+            'avgA2': round(pa['a2'] / n, 1),
+            'avgPoints': round(pa['points'] / n, 1),
+        })
+    player_list.sort(key=lambda x: (-x['avgPoints'], -x['avgGoals'], x['name']))
+
+    return jsonify({
+        'numSims': num_sims,
+        'season': season,
+        'teamAgg': team_list,
+        'playerAgg': player_list,
+        'model': 'v2_g_diff_evppsh',
     })
 
 
@@ -7870,7 +9457,7 @@ def api_skaters_card():
 
     if needs_projection:
         try:
-            projection_map = _load_current_player_projections_cached() or {}
+            projection_map = _load_v2_player_projections_cached() or {}
         except Exception:
             projection_map = {}
 
@@ -8535,7 +10122,7 @@ def api_goalies_card():
     projection_map_g: Dict[int, Dict[str, Any]] = {}
     if needs_projection:
         try:
-            projection_map_g = _load_current_player_projections_cached() or {}
+            projection_map_g = _load_v2_player_projections_cached() or {}
         except Exception:
             projection_map_g = {}
 
@@ -9350,7 +10937,7 @@ def api_teams_card():
     if needs_proj_ranking:
         try:
             lineups_all = _load_lineups_all() or {}
-            proj_map_t = _load_current_player_projections_cached() or {}
+            proj_map_t = _load_v2_player_projections_cached() or {}
             skater_bios = _load_skater_bios_season_cached(int(season_int)) or {}
             goalie_bios = _load_goalie_bios_season_cached(int(season_int)) or {}
             roster_map = {**skater_bios, **goalie_bios}
@@ -9377,8 +10964,12 @@ def api_teams_card():
                     pid_i = _safe_int((raw or {}).get('player_id') or (raw or {}).get('playerId') or pid_raw)
                     if not pid_i or pid_i <= 0:
                         continue
-                    info = roster_map.get(int(pid_i)) or {}
-                    team_abbrev_i = str(info.get('team') or '').strip().upper()
+                    # Determine team: prefer V2 projection data (same source as
+                    # the frontend League table), fall back to bios.
+                    team_abbrev_i = str((raw or {}).get('team') or '').strip().upper()
+                    if not team_abbrev_i:
+                        info = roster_map.get(int(pid_i)) or {}
+                        team_abbrev_i = str(info.get('team') or '').strip().upper()
                     if not team_abbrev_i:
                         continue
                     if int(pid_i) not in lineup_pids_by_team.get(team_abbrev_i, set()):
@@ -9390,7 +10981,7 @@ def api_teams_card():
                 except Exception:
                     continue
 
-            sorted_teams = sorted(team_proj_totals.items(), key=lambda x: x[1], reverse=True)
+            sorted_teams = sorted(team_proj_totals.items(), key=lambda x: (-x[1], x[0]))
             for rank_i, (tab, _) in enumerate(sorted_teams, start=1):
                 team_projection_rank[tab] = rank_i
         except Exception:
@@ -16171,7 +17762,13 @@ def api_skaters_current_projections():
 
 @main_bp.route('/api/skaters/player-projection-trend/<int:player_id>')
 def api_skaters_player_projection_trend(player_id: int):
-    """Return a player's season projection trend for the Skaters projections tab."""
+    """Return a player's season projection trend (V2) for the Skaters projections tab.
+
+    Uses nhl_player_metrics for per-game rolling metrics and gs_* per-game values.
+    Projection = Σ(rolling_metric × coeff) across 5v5/PP/SH/Other + rookie (5v5 only),
+                 then × game_weight (min(gp,41)/41).
+    Performance = Σ(gs_metric × coeff) across 5v5/PP/SH/Other, no rookie, no game_weight.
+    """
     pid = int(player_id)
     if pid <= 0:
         return jsonify({'error': 'invalid_player_id'}), 400
@@ -16187,65 +17784,161 @@ def api_skaters_player_projection_trend(player_id: int):
     if season_i <= 0:
         return jsonify({'error': 'invalid_season'}), 400
 
-    sb_rows = _sb_read(
-        'player_game_projections',
-        columns='season,game_id,source_game_id,game_date,player_id,source_player_id,team,opponent,position,projected_value,poss_value,off_the_puck,gax,games_in_window,model_key',
+    # Load all rows for this player+season from nhl_player_metrics
+    rows = _sb_read(
+        'nhl_player_metrics',
+        columns='*',
         filters={
             'season': f'eq.{season_i}',
-            'player_id': f'eq.{pid}',
-            'model_key': 'eq.preseason_updating',
+            'nhl_api_player_id': f'eq.{pid}',
         },
     ) or []
 
-    if not sb_rows:
-        sb_rows = _load_player_game_projection_export_rows_cached(season_i, pid)
-
-    if not sb_rows:
+    if not rows:
         return jsonify({'error': 'not_found'}), 404
 
-    source_player_id = _safe_int((sb_rows[0] or {}).get('source_player_id')) if sb_rows else None
-    performance_by_game = _load_player_game_performance_rows_cached(season_i, source_player_id) if source_player_id else {}
+    # ── Optional filters ──
+    # strengthState: '5v5','PP','SH','Other','All' — maps to strengthstate groups
+    want_ss = str(request.args.get('strengthState') or '').strip()
+    if want_ss and want_ss.lower() != 'all':
+        ALLOWED_SS: Dict[str, set] = {
+            '5v5':   {'5v5'},
+            'pp':    {'5v4', '4v3', '5v3'},
+            'sh':    {'4v5', '3v4', '3v5'},
+            'other': {'4v4', '3v3'},
+        }
+        allowed_ss = ALLOWED_SS.get(want_ss.lower(), None)
+        if allowed_ss is not None:
+            rows = [r for r in rows if str(r.get('strengthstate') or '') in allowed_ss]
 
-    def _sort_key(row: Dict[str, Any]) -> Tuple[str, int, int]:
-        game_date = str(row.get('game_date') or '').strip()
-        source_game_id = _safe_int(row.get('source_game_id')) or 0
-        game_id = _safe_int(row.get('game_id')) or 0
-        return (game_date, source_game_id, game_id)
+    # seasonState: 'regular','playoffs','all' — filters seasonstage column
+    want_stage = str(request.args.get('seasonState') or '').strip().lower()
+    if want_stage and want_stage not in ('all', ''):
+        if want_stage == 'regular':
+            rows = [r for r in rows if str(r.get('seasonstage') or '').strip().lower() in ('', 'regular', 'reg')]
+        elif want_stage == 'playoffs':
+            rows = [r for r in rows if str(r.get('seasonstage') or '').strip().lower() in ('playoffs', 'playoff', 'po')]
 
-    rows_sorted = sorted(sb_rows, key=_sort_key)
+    if not rows:
+        return jsonify({'error': 'not_found'}), 404
+
+    # ── Group by gameid, sort by gameid ──
+    games: Dict[int, Dict[str, Any]] = {}
+    for r in rows:
+        gid = _safe_int(r.get('gameid'))
+        if not gid or gid <= 0:
+            continue
+        if gid not in games:
+            games[gid] = {
+                'gameid': gid,
+                'prior_games': int(r.get('prior_games') or 0),
+                'team': str(r.get('team') or ''),
+                'position': str(r.get('position') or ''),
+                'player_name': str(r.get('nhl_player_name') or ''),
+                'rows': [],  # one per strengthstate
+            }
+        games[gid]['rows'].append(r)
+
+    if not games:
+        return jsonify({'error': 'not_found'}), 404
+
+    c = _EVPP_COEF
+
+    # Helper: compute ALL component contributions from a single row (rolling metrics + rookie)
+    # Returns dict with keys: evo, evd, pp, sh, gax, gsax, rookie (plus 'total' = sum)
+    def _component_contribs(r: dict, use_gs: bool = False) -> Dict[str, float]:
+        ss = str(r.get('strengthstate') or '')
+        pos = str(r.get('position') or '')
+        prefix = 'gs_' if use_gs else ''
+        f  = float(r.get(f'{prefix}faceoffs') or 0)
+        pa = float(r.get(f'{prefix}passes') or 0)
+        ca = float(r.get(f'{prefix}carries') or 0)
+        de = float(r.get(f'{prefix}defensive') or 0)
+        di = float(r.get(f'{prefix}dump_ins_outs') or 0)
+        ot = float(r.get(f'{prefix}off_the_puck') or 0)
+        xg = float(r.get(f'{prefix}xga') or 0)
+        xf = float(r.get(f'{prefix}xgf') or 0)
+        ga = float(r.get(f'{prefix}gax') or 0)
+        gs = float(r.get(f'{prefix}gsax') or 0)
+
+        out = {'evo': 0.0, 'evd': 0.0, 'pp': 0.0, 'sh': 0.0, 'gax': 0.0, 'gsax': 0.0, 'rookie': 0.0}
+
+        if ss in EV_SS:
+            out['evo'] = (f + pa + ca) * c['poss_value_ev']
+            out['evd'] = (de + di) * c['poss_value_ev'] + xg * c['xga_ev']
+        if ss in PP_SS:
+            out['pp'] = f * c['poss_value_st'] + xf * c['xgf_pp']
+        if ss in SH_SS:
+            out['sh'] = (f + de + di) * c['poss_value_st'] + ot * c['off_the_puck_sh'] + xg * c['xga_sh']
+        out['gax'] = ga * c['gax']
+        out['gsax'] = gs * c['gsax']
+
+        # Rookie (5v5 only, rolling only)
+        if not use_gs and ss == '5v5':
+            if pos == 'D':
+                rv = float(r.get('rookie_d') or r.get('rookie') or 0)
+                out['rookie'] = rv * c['rookie_d'] if rv > 0 else 0.0
+            elif pos == 'G':
+                rv = float(r.get('rookie_g') or r.get('rookie') or 0)
+                out['rookie'] = rv * c['rookie_g'] if rv > 0 else 0.0
+            else:
+                rv = float(r.get('rookie_f') or r.get('rookie') or 0)
+                out['rookie'] = rv * c['rookie_f'] if rv > 0 else 0.0
+
+        out['total'] = out['evo'] + out['evd'] + out['pp'] + out['sh'] + out['gax'] + out['gsax'] + out['rookie']
+        return out
+
+    # ── Build points ──
+    sorted_game_ids = sorted(games.keys())
     points: List[Dict[str, Any]] = []
     player_name = ''
     position = ''
     team_abbrev = ''
-    for idx, row in enumerate(rows_sorted, start=1):
-        projection = _parse_locale_float(row.get('projected_value'))
-        poss_value = _parse_locale_float(row.get('poss_value'))
-        off_the_puck = _parse_locale_float(row.get('off_the_puck'))
-        gax = _parse_locale_float(row.get('gax'))
-        source_game_id = _safe_int(row.get('source_game_id'))
-        performance = performance_by_game.get(int(source_game_id)) if source_game_id else None
+
+    COMP_KEYS = ['evo', 'evd', 'pp', 'sh', 'gax', 'gsax', 'rookie']
+
+    for idx, gid in enumerate(sorted_game_ids, start=1):
+        g = games[gid]
+        pg = int(g.get('prior_games') or 0)
+        gp = min(pg + 1, 41)
+        game_weight = gp / 41.0
+
+        # Sum rolling + gs_ components across all strengthstates
+        roll = {'evo': 0.0, 'evd': 0.0, 'pp': 0.0, 'sh': 0.0, 'gax': 0.0, 'gsax': 0.0, 'rookie': 0.0, 'total': 0.0}
+        perf = {'evo': 0.0, 'evd': 0.0, 'pp': 0.0, 'sh': 0.0, 'gax': 0.0, 'gsax': 0.0, 'rookie': 0.0, 'total': 0.0}
+        for r in g['rows']:
+            rc = _component_contribs(r, use_gs=False)
+            pc = _component_contribs(r, use_gs=True)
+            for k in roll:
+                roll[k] += rc[k]
+                perf[k] += pc[k]
+
+        # Build components dict from rolling (with game_weight)
+        components = {}
+        perf_components = {}
+        for k in COMP_KEYS:
+            components[k] = round(roll[k] * game_weight, 6)
+            perf_components[k] = round(perf[k], 6)  # gs_-based, no game_weight, no rookie
+
+        projection = round(roll['total'] * game_weight, 6)
+        performance = round(perf['total'], 6)
 
         if not player_name:
-            player_name = str(row.get('player') or '').strip()
+            player_name = str(g.get('player_name') or '').strip()
         if not position:
-            position = str(row.get('position') or '').strip().upper()
+            position = str(g.get('position') or '').strip().upper()
         if not team_abbrev:
-            team_abbrev = str(row.get('team') or '').strip().upper()
+            team_abbrev = str(g.get('team') or '').strip().upper()
 
         points.append({
             'gameNumber': idx,
-            'gameDate': str(row.get('game_date') or '').strip(),
-            'gameId': _safe_int(row.get('game_id')),
-            'sourceGameId': source_game_id,
-            'opponent': str(row.get('opponent') or '').strip().upper(),
-            'projection': float(projection) if projection is not None else None,
-            'performance': float(performance) if performance is not None else None,
-            'metrics': {
-                'possValue': float(poss_value) if poss_value is not None else None,
-                'offThePuck': float(off_the_puck) if off_the_puck is not None else None,
-                'gax': float(gax) if gax is not None else None,
-            },
-            'gamesInWindow': _safe_int(row.get('games_in_window')),
+            'gameId': gid,
+            'projection': float(projection),
+            'performance': float(performance),
+            'components': components,
+            'perf_components': perf_components,
+            'priorGames': pg,
+            'gp': gp,
         })
 
     j = jsonify({
@@ -16255,6 +17948,7 @@ def api_skaters_player_projection_trend(player_id: int):
         'position': position,
         'team': team_abbrev,
         'points': points,
+        'source': 'nhl_player_metrics',
     })
     try:
         j.headers['Cache-Control'] = 'no-store'
@@ -16405,6 +18099,125 @@ def _load_current_player_projections_cached() -> Dict[int, Dict[str, Any]]:
     data = _load_player_projections_cached()
     _CURRENT_PLAYER_PROJECTIONS_CACHE = (now, data)
     return data
+
+
+# ── V2 current-player projections cache (from nhl_current_playerprojections) ──
+_CURRENT_V2_PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
+
+def _load_v2_player_projections_cached() -> Dict[int, Dict[str, Any]]:
+    """Return V2 player projections keyed by nhl_api_player_id.
+
+    Uses the shared _build_v2_player_projections() so values are identical to the
+    /api/player-projections/v2 endpoint.  No caching — always fresh.
+    """
+    try:
+        season_i = int(current_season_id())
+    except Exception:
+        season_i = 0
+
+    players = _build_v2_player_projections(season_i)
+
+    out: Dict[int, Dict[str, Any]] = {}
+    for p in players:
+        pid = int(p.get('player_id') or 0)
+        if pid <= 0:
+            continue
+        gp = int(p.get('gp') or 0)
+        gp_weight = (gp / 41.0) if (0 < gp < 41) else 1.0
+        # Compute projection the same way the Teams Projections League table does:
+        # GP-weight every component EXCEPT rookie, then sum.
+        # (gsax is included so that goalie contributions are reflected in totals.)
+        evo    = float(p.get('evo') or 0)     * gp_weight
+        evd    = float(p.get('evd') or 0)     * gp_weight
+        pp     = float(p.get('pp_raw') or 0)  * gp_weight
+        sh     = float(p.get('sh_raw') or 0)  * gp_weight
+        gax    = float(p.get('gax') or 0)     * gp_weight
+        gsax   = float(p.get('gsax') or 0)    * gp_weight
+        rookie = float(p.get('rookie') or 0)   # *not* GP-weighted
+        proj_total = evo + evd + pp + sh + gax + gsax + rookie
+        # Raw (unweighted) projection — used by GM Mode which applies its own
+        # games/82 availability weight, so double-weighting is avoided.
+        evo_r    = float(p.get('evo') or 0)
+        evd_r    = float(p.get('evd') or 0)
+        pp_r     = float(p.get('pp_raw') or 0)
+        sh_r     = float(p.get('sh_raw') or 0)
+        gax_r    = float(p.get('gax') or 0)
+        gsax_r   = float(p.get('gsax') or 0)
+        rookie_r = float(p.get('rookie') or 0)
+        raw_total = evo_r + evd_r + pp_r + sh_r + gax_r + gsax_r + rookie_r
+        out[pid] = {
+            'player_id': pid,
+            'player': str(p.get('name') or ''),
+            'position': str(p.get('position') or ''),
+            'team': str(p.get('team') or ''),
+            'projected_value': round(float(proj_total), 6),
+            'raw_projected_value': round(float(raw_total), 6),
+            'games_in_window': gp,
+            # Per-game goal/assist rolling rates (summed across strengthstates).
+            # GP-weighted so low-GP players are pulled toward 0 (floor applied
+            # later during simulation).
+            'ig': round(float(p.get('ig') or 0) * gp_weight, 6),
+            'a1': round(float(p.get('a1') or 0) * gp_weight, 6),
+            'a2': round(float(p.get('a2') or 0) * gp_weight, 6),
+        }
+    return out
+
+
+_GM_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
+
+
+def _load_gm_mode_projections_cached() -> Dict[int, Dict[str, Any]]:
+    """Return player projections keyed by player_id for GM Mode.
+    
+    Unlike _load_v2_player_projections_cached, this does NOT filter by season.
+    The GM Mode needs projections for every player who might appear in a lineup,
+    including players who missed the most recent season (e.g. Barkov 2025-26).
+    """
+    global _GM_PROJECTIONS_CACHE
+    ttl_s = int(os.getenv('GM_PROJECTIONS_CACHE_TTL_SECONDS', '300') or '300')
+    now = time.time()
+    if _GM_PROJECTIONS_CACHE and (now - _GM_PROJECTIONS_CACHE[0]) < max(1, ttl_s):
+        return _GM_PROJECTIONS_CACHE[1]
+
+    players = _build_v2_player_projections(None)  # None = no season filter
+
+    out: Dict[int, Dict[str, Any]] = {}
+    for p in players:
+        pid = int(p.get('player_id') or 0)
+        if pid <= 0:
+            continue
+        gp = int(p.get('gp') or 0)
+        gp_weight = (gp / 41.0) if (0 < gp < 41) else 1.0
+        evo    = float(p.get('evo') or 0)     * gp_weight
+        evd    = float(p.get('evd') or 0)     * gp_weight
+        pp     = float(p.get('pp_raw') or 0)  * gp_weight
+        sh     = float(p.get('sh_raw') or 0)  * gp_weight
+        gax    = float(p.get('gax') or 0)     * gp_weight
+        gsax   = float(p.get('gsax') or 0)    * gp_weight
+        rookie = float(p.get('rookie') or 0)
+        proj_total = evo + evd + pp + sh + gax + gsax + rookie
+        evo_r    = float(p.get('evo') or 0)
+        evd_r    = float(p.get('evd') or 0)
+        pp_r     = float(p.get('pp_raw') or 0)
+        sh_r     = float(p.get('sh_raw') or 0)
+        gax_r    = float(p.get('gax') or 0)
+        gsax_r   = float(p.get('gsax') or 0)
+        rookie_r = float(p.get('rookie') or 0)
+        raw_total = evo_r + evd_r + pp_r + sh_r + gax_r + gsax_r + rookie_r
+        out[pid] = {
+            'player_id': pid,
+            'player': str(p.get('name') or ''),
+            'position': str(p.get('position') or ''),
+            'team': str(p.get('team') or ''),
+            'projected_value': round(float(proj_total), 6),
+            'raw_projected_value': round(float(raw_total), 6),
+            'games_in_window': gp,
+            'ig': round(float(p.get('ig') or 0) * gp_weight, 6),
+            'a1': round(float(p.get('a1') or 0) * gp_weight, 6),
+            'a2': round(float(p.get('a2') or 0) * gp_weight, 6),
+        }
+    _GM_PROJECTIONS_CACHE = (now, out)
+    return out
 
 
 def _load_player_game_projection_export_rows_cached(season_i: int, player_id: int) -> List[Dict[str, Any]]:
@@ -16611,36 +18424,59 @@ def _load_lineups_all() -> Dict[str, Any]:
     if _LINEUPS_ALL_CACHE and (now - _LINEUPS_ALL_CACHE[0]) < max(1, ttl_s):
         return _LINEUPS_ALL_CACHE[1]
 
-    sb_raw = _sb_read("dailyfaceoff_lineups")
+    sb_raw = _sb_read("lineups")
     if sb_raw:
-        # Map Supabase snake_case → original column names used below
         rows = []
         for r in sb_raw:
             rows.append({
                 'Team': r.get('team') or r.get('Team') or '',
-                'Unit': r.get('unit') or r.get('line') or r.get('Unit') or '',
-                'Pos': r.get('pos') or r.get('position') or r.get('Pos') or '',
+                'Unit': r.get('line_unit') or r.get('unit') or r.get('Unit') or '',
+                'Pos': r.get('position') or r.get('pos') or r.get('Pos') or '',
                 'PlayerName': r.get('player_name') or r.get('player') or r.get('name') or r.get('PlayerName') or '',
                 'playerId': r.get('player_id') or r.get('playerId') or r.get('PlayerID') or '',
-                'Timestamp': str(r.get('timestamp') or r.get('updated_at') or r.get('created_at') or r.get('Timestamp') or ''),
+                'Timestamp': str(r.get('updated_at') or r.get('timestamp') or r.get('created_at') or r.get('Timestamp') or ''),
+                'gp_est': r.get('estimated_gp') or r.get('gp_est'),
+                'gp_est_note': r.get('gp_note') or r.get('gp_est_note') or '',
+                'starter': r.get('starter'),
+                'is_injured': r.get('is_injured'),
+                'injury_start': r.get('injury_start'),
+                'injury_end': r.get('injury_end'),
+                'replacement_id': r.get('replacement_id'),
             })
     else:
+        # Fallback: load from app/static/lineups_all.json (local dev / no Supabase rows)
+        import json as _json_local
+        json_path = os.path.join(os.path.dirname(__file__), 'static', 'lineups_all.json')
+        try:
+            if os.path.exists(json_path):
+                with open(json_path, 'r', encoding='utf-8') as _f_local:
+                    fallback = _json_local.load(_f_local)
+                if isinstance(fallback, dict) and fallback:
+                    _LINEUPS_ALL_CACHE = (now, fallback)
+                    return fallback
+        except Exception:
+            pass
         _LINEUPS_ALL_CACHE = (now, {})
         return {}
 
+    # Sort by timestamp descending so the first occurrence we keep for each
+    # (team, playerId) is always the latest one — makes deduplication deterministic.
+    rows.sort(key=lambda r: str(r.get('Timestamp') or ''), reverse=True)
+
     out: Dict[str, Any] = {}
-    latest_ts_by_team: Dict[str, str] = {}
+    _injuries_by_team: Dict[str, list] = {}
+    seen_players: set = set()  # (team, playerId) to deduplicate — first seen = latest
 
     def _ensure_team(t: str) -> Dict[str, Any]:
         if t not in out:
             out[t] = {'team': t, 'forwards': [], 'defense': [], 'goalies': [], 'generated_at': None}
         return out[t]
 
+    latest_ts_by_team: Dict[str, str] = {}
     for r in rows:
         try:
             team = str(r.get('Team') or '').strip().upper()
-            if not team:
-                continue
+            if not team: continue
             unit = str(r.get('Unit') or '').strip().upper()
             pos = str(r.get('Pos') or '').strip().upper()[:1]
             name = str(r.get('PlayerName') or r.get('Name') or '').strip()
@@ -16650,29 +18486,119 @@ def _load_lineups_all() -> Dict[str, Any]:
         except Exception:
             continue
 
-        rec = {'name': name, 'playerId': pid, 'unit': unit, 'pos': ('G' if unit.startswith('G') else pos)}
+        # Deduplicate: only keep first occurrence per (team, playerId)
+        key = (team, pid)
+        if key in seen_players:
+            continue
+        seen_players.add(key)
 
+        # Track latest timestamp per team
+        if ts and ts > latest_ts_by_team.get(team, ''):
+            latest_ts_by_team[team] = ts
+
+        rec = {'name': name, 'playerId': pid, 'unit': unit, 'pos': ('G' if unit.startswith('G') else pos)}
+        # Preserve gp_est and injury fields if present
+        if r.get('gp_est') is not None:
+            rec['gp_est'] = int(r['gp_est'])
+        if r.get('gp_est_note'):
+            rec['gp_est_note'] = str(r['gp_est_note'])
         bucket = 'forwards'
         if rec['pos'] == 'G' or unit.startswith('G'):
-            bucket = 'goalies'
-            rec['pos'] = 'G'
+            bucket = 'goalies'; rec['pos'] = 'G'
         elif rec['pos'] == 'D' or unit.startswith('LD') or unit.startswith('RD'):
-            bucket = 'defense'
-            rec['pos'] = 'D'
+            bucket = 'defense'; rec['pos'] = 'D'
         else:
             rec['pos'] = 'F'
 
+        # Track injuries for this team
+        if r.get('is_injured') and int(r.get('is_injured') or 0) == 1:
+            _injuries_by_team.setdefault(team, []).append({
+                'injuredPid': pid,
+                'replacementPid': int(r.get('replacement_id') or 0) if r.get('replacement_id') else 0,
+                'startDate': str(r.get('injury_start') or ''),
+                'endDate': str(r.get('injury_end') or ''),
+            })
+
         tnode = _ensure_team(team)
         tnode[bucket].append(rec)
-        if ts:
-            latest_ts_by_team[team] = max(latest_ts_by_team.get(team, ''), ts)
 
-    # Set generated_at per team
     for t, node in out.items():
         node['generated_at'] = latest_ts_by_team.get(t)
+        if _injuries_by_team.get(t):
+            node['injuries'] = _injuries_by_team[t]
+
+    # Merge gp_est / gp_est_note from lineups_all.json (offline GP estimates)
+    _merge_gp_est_from_json(out)
 
     _LINEUPS_ALL_CACHE = (now, out)
     return out
+
+
+def _merge_gp_est_from_json(out: Dict[str, Any]) -> None:
+    """Load gp_est/gp_est_note from app/static/lineups_all.json and merge into out dict.
+    
+    Keys on (team, playerId). Adds gp_est/gp_est_note to existing players.
+    Also appends EXT/scratch players from JSON that are missing from Supabase data,
+    ensuring complete rosters (12F/6D/2G + extras) even when Supabase is incomplete.
+    """
+    import json as _json_local
+    json_path = os.path.join(os.path.dirname(__file__), 'static', 'lineups_all.json')
+    try:
+        if not os.path.exists(json_path):
+            return
+        with open(json_path, 'r', encoding='utf-8') as _f:
+            json_data = _json_local.load(_f)
+    except Exception:
+        return
+    
+    if not isinstance(json_data, dict):
+        return
+    
+    for team_abbrev, team_node in json_data.items():
+        if not isinstance(team_node, dict):
+            continue
+        out_team = out.get(team_abbrev)
+        if not out_team:
+            continue
+        for group_key in ('forwards', 'defense', 'goalies'):
+            json_players = team_node.get(group_key, [])
+            out_players = out_team.get(group_key, [])
+            # Build lookup by playerId for the JSON side
+            json_by_pid: Dict[int, Dict] = {}
+            for p in json_players:
+                pid = p.get('playerId')
+                if pid:
+                    json_by_pid[int(pid)] = p
+            # Build set of existing playerIds in out
+            out_pids: set = set()
+            for op in out_players:
+                pid = op.get('playerId')
+                if pid:
+                    out_pids.add(int(pid))
+            # Merge gp_est into out players
+            for op in out_players:
+                pid = op.get('playerId')
+                if pid and pid in json_by_pid:
+                    jp = json_by_pid[pid]
+                    if 'gp_est' in jp and 'gp_est' not in op:
+                        op['gp_est'] = jp['gp_est']
+                    if 'gp_est_note' in jp and 'gp_est_note' not in op:
+                        op['gp_est_note'] = jp['gp_est_note']
+            # Append players from JSON that are missing from Supabase (EXT/scratches)
+            for jp in json_players:
+                pid = jp.get('playerId')
+                if pid and int(pid) not in out_pids and jp.get('name'):
+                    extra = {
+                        'name': jp.get('name', ''),
+                        'playerId': int(pid),
+                        'unit': jp.get('unit', 'EXT'),
+                        'pos': jp.get('pos', 'F' if group_key == 'forwards' else ('D' if group_key == 'defense' else 'G')),
+                    }
+                    if 'gp_est' in jp:
+                        extra['gp_est'] = jp['gp_est']
+                    if 'gp_est_note' in jp:
+                        extra['gp_est_note'] = jp['gp_est_note']
+                    out_players.append(extra)
 
 _ODDS_SNAPSHOT_ROWS_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 

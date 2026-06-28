@@ -31,7 +31,7 @@
       </label>
       <button type="submit" class="auth-submit">Log in</button>
     </form>
-    <div class="auth-links">Need an account? <a href="{{ url_for('main.signup_page', next=next_url or '/projections') }}">Start your 7-day free trial</a></div>
+    <div class="auth-links">Need an account? <a href="{{ url_for('main.signup_page', next=next_url or '/projections') }}">Start your 14-day free trial</a> — no credit card required.</div>
     {% if not auth_enabled %}
     <div class="auth-note">Auth is not configured in this environment yet. Set the Supabase auth credentials before using login and signup.</div>
     {% endif %}
