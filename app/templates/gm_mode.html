@@ -28,7 +28,7 @@
   .gm-team-card{ width:100%; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:10px 0 2px; min-width:0; overflow-x:hidden; }
   .gm-team-top{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:22px; align-items:center; }
   .gm-team-main{ display:flex; gap:22px; align-items:center; min-width:0; }
-  .gm-team-img{ width:190px; height:190px; border-radius:18px; object-fit:contain; object-position:center; background:var(--panel); border:1px solid #2a3142; padding:0; }
+  .gm-team-img{ width:240px; height:240px; border-radius:26px; object-fit:contain; object-position:center; background:radial-gradient(circle at 50% 42%, rgba(255,255,255,0.07), rgba(255,255,255,0.015) 58%, transparent 74%); border:none; padding:14px; box-sizing:border-box; filter:drop-shadow(0 16px 34px rgba(0,0,0,0.45)); }
   .gm-team-info{ display:flex; flex-direction:column; gap:10px; min-width:0; }
   .gm-team-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; color:#fff; line-height:1.05; }
   .gm-team-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
@@ -68,19 +68,27 @@
   .gm-kpi-points-circle .v{ font-size:56px; }
   .gm-kpi-points-side{ display:flex; flex-direction:column; align-items:center; gap:12px; flex:0 0 auto; justify-self:end; }
   .gm-card-actions{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; }
-  .gm-subtabs{ display:flex; gap:12px; align-items:center; margin-top:10px; }
+  .gm-subtabs{ display:flex; gap:2px; align-items:center; margin-top:10px; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; -ms-overflow-style:none; border-bottom:1px solid #1f2734; }
+  .gm-subtabs::-webkit-scrollbar{ display:none; }
   .gm-subtab-row{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-top:10px; }
   .gm-subtab-btn{
+    position:relative;
     background:transparent;
-    border:1px solid #2a3142;
-    color:var(--text);
-    padding:8px 14px;
-    border-radius:10px;
-    font-weight:750;
-    letter-spacing:.2px;
+    border:none;
+    color:var(--text-dim);
+    padding:10px 16px 14px;
+    border-radius:0;
+    font-weight:650;
+    letter-spacing:.4px;
     cursor:pointer;
+    font-size:13px;
+    white-space:nowrap;
+    flex:0 0 auto;
+    transition:color .15s ease;
   }
-  .gm-subtab-btn.active{ outline:2px solid var(--accent); }
+  .gm-subtab-btn:hover{ color:var(--text); }
+  .gm-subtab-btn.active{ color:var(--text); }
+  .gm-subtab-btn.active::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:4px; border-radius:4px 4px 0 0; background:var(--accent); box-shadow:0 0 10px -1px var(--accent); }
   .gm-tab-panel{ display:none; min-width:0; }
   .gm-tab-panel.active{ display:block; }
   .gm-sim-inline{ display:grid; gap:14px; min-width:0; }
@@ -88,43 +96,52 @@
   .gm-sim-empty strong{ color:#fff; font-weight:800; }
   .gm-sim-status{ padding:24px; text-align:center; color:var(--text-dim); font-size:15px; border:1px solid #2a3142; border-radius:12px; }
   .gm-sim-error{ padding:14px; border:1px solid rgba(224,90,90,0.4); border-radius:10px; color:#ffd0d0; background:rgba(224,90,90,0.08); font-size:13px; }
-  .gm-sim-champion{ display:flex; align-items:center; gap:16px; padding:14px 16px; border:1px solid rgba(120,200,100,0.35); border-radius:12px; background:rgba(120,200,100,0.06); }
-  .gm-sim-champ-logo{ width:72px; height:72px; object-fit:contain; border-radius:10px; }
-  .gm-sim-champ-label{ font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:800; }
-  .gm-sim-champ-name{ font-size:26px; font-weight:900; color:#fff; margin-top:2px; }
-  .gm-sim-meta{ font-size:12px; color:var(--text-dim); margin-top:4px; }
-  .gm-sim-champion{ margin-top:10px; }
+  .gm-sim-champion{ display:flex; align-items:center; gap:24px; padding:24px 28px; margin:0 0 16px; border:1px solid #232a3a; border-radius:14px; background:radial-gradient(circle at 10% 32%, rgba(212,175,55,0.12), transparent 44%), linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
+  .gm-sim-champ-cup{ width:auto; height:120px; flex:0 0 auto; object-fit:contain; filter:drop-shadow(0 10px 22px rgba(212,175,55,0.32)); }
+  .gm-sim-champ-body{ min-width:0; }
+  .gm-sim-champ-logo{ width:120px; height:120px; object-fit:contain; margin-left:auto; filter:drop-shadow(0 10px 22px rgba(0,0,0,0.45)); }
+  .gm-sim-champ-label{ font-size:11px; text-transform:uppercase; letter-spacing:1px; color:rgba(212,175,55,0.95); font-weight:800; }
+  .gm-sim-champ-name{ font-size:28px; font-weight:900; color:#fff; margin-top:4px; letter-spacing:.2px; }
+  .gm-sim-champ-odds{ font-size:15px; font-weight:750; color:var(--text-dim); margin-left:8px; letter-spacing:.3px; }
+  .gm-sim-meta{ font-size:12px; color:var(--text-dim); margin-top:8px; }
   .gm-sim-section-title{ margin:6px 0 4px; font-size:15px; font-weight:850; letter-spacing:.4px; text-transform:uppercase; color:rgba(255,255,255,0.9); }
-  .gm-sim-standings-wrap{ display:flex; flex-direction:column; gap:18px; }
+  .gm-sim-standings-wrap{ display:flex; flex-direction:column; gap:22px; }
   .gm-sim-standings-col + .gm-sim-standings-col{ margin-top:0; }
   .bracket-shell{ width:100%; max-width:100%; min-width:0; overflow-x:auto; overflow-y:hidden; padding-bottom:8px; box-sizing:border-box; }
-  .playoff-bracket{ min-width:1320px; display:grid; grid-template-columns: 1.2fr 0.95fr 0.85fr 1fr 0.85fr 0.95fr 1.2fr; gap:14px; align-items:center; }
-  .bracket-column{ display:flex; flex-direction:column; gap:18px; min-width:0; }
+  .playoff-bracket{ min-width:1320px; display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:14px; align-items:center; }
+  .bracket-column{ display:flex; flex-direction:column; gap:14px; min-width:0; }
   .bracket-column.center{ justify-content:center; }
   .bracket-column-title{ text-align:center; color:var(--text-dim); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
-  .bracket-series-card{ background:#0f1522; border:1px solid #2a3142; border-radius:16px; padding:12px; box-shadow:0 8px 24px rgba(0,0,0,.22); min-width:0; }
+  .bracket-series-card{ height:120px; display:flex; flex-direction:column; justify-content:space-between; gap:4px; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); border:1px solid #232a3a; border-radius:14px; padding:10px 14px; box-shadow:0 8px 24px rgba(0,0,0,0.22); min-width:0; }
   .bracket-series-card.projected{ border-style:dashed; }
-  .bracket-series-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 8px 0; min-width:0; }
+  .bracket-series-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0; min-width:0; }
   .bracket-series-label{ color:var(--text-dim); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; }
   .bracket-scoreline{ color:var(--text); font-size:13px; font-weight:700; }
-  .bracket-team-line{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; border-top:1px solid rgba(255,255,255,.06); min-width:0; }
+  .bracket-team-line{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 0; border-top:1px solid rgba(255,255,255,.06); min-width:0; }
   .bracket-team-line:first-of-type{ border-top:none; }
   .bracket-team-meta{ display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto; }
-  .bracket-team-meta img{ height:40px; width:auto; max-width:none; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); flex:0 0 auto; }
+  .bracket-team-meta img{ height:30px; width:auto; max-width:none; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); flex:0 0 auto; }
   .bracket-team-name{ color:var(--text); font-size:13px; font-weight:700; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .bracket-team-subtext{ color:var(--text-dim); font-size:11px; }
   .bracket-wins-chip{ display:inline-flex; align-items:center; justify-content:center; min-width:22px; padding:3px 6px; border-radius:999px; background:#1b2536; color:var(--text); font-size:12px; font-weight:800; }
+  /* Center champion block: trophy with the winner on top */
+  .gm-bracket-champion{ display:grid; justify-items:center; gap:4px; text-align:center; margin:0 0 4px; }
+  .gm-bracket-champ-trophy{ position:relative; width:72px; height:136px; }
+  .gm-bracket-champ-trophy > img:first-child{ width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 8px 18px rgba(212,175,55,0.32)); }
+  .gm-bracket-champ-logo{ position:absolute; top:74%; left:50%; transform:translate(-50%,-50%); width:48px; height:48px; object-fit:contain; filter:drop-shadow(0 3px 8px rgba(0,0,0,0.65)); }
+  .gm-bracket-champ-name{ font-size:15px; font-weight:850; color:#fff; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gm-bracket-champ-label{ font-size:10px; text-transform:uppercase; letter-spacing:.8px; color:rgba(212,175,55,0.95); font-weight:800; }
   /* Playoffs distribution chart (batch / 100-sim view) */
   .gm-distrib-wrap{ display:flex; flex-direction:column; gap:14px; }
   .gm-distrib-filters{ display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid #2a3142; width:fit-content; }
   .gm-distrib-filters button{ background:transparent; color:var(--text-dim); border:none; padding:8px 16px; font-size:12px; font-weight:750; cursor:pointer; letter-spacing:.3px; }
   .gm-distrib-filters button:hover{ color:#fff; }
-  .gm-distrib-filters button.active{ background:var(--accent); color:#0b0f16; }
+  .gm-distrib-filters button.active{ background:var(--team-btn-dark, rgb(19,26,44)); color:#ffffff; }
   .gm-distrib-chart{ background:#0f1522; border:1px solid #2a3142; border-radius:14px; padding:18px; overflow-x:auto; }
   .gm-distrib-stage-title{ font-size:13px; font-weight:850; text-transform:uppercase; letter-spacing:.4px; color:rgba(255,255,255,0.85); margin:0 0 4px 0; padding-top:2px; }
-  .gm-distrib-canvas-wrap{ position:relative; height:700px; min-height:700px; }
-  .gm-sim-standings-col{ border:1px solid #2a3142; border-radius:10px; overflow:hidden; }
-  .gm-sim-standings-title{ padding:8px 10px; font-size:12px; font-weight:850; text-transform:uppercase; letter-spacing:.6px; color:var(--text-dim); background:rgba(255,255,255,0.03); border-bottom:1px solid #2a3142; }
+  .gm-distrib-canvas-wrap{ position:relative; height:860px; min-height:860px; }
+  .gm-sim-standings-col{ border:1px solid #232a3a; border-radius:14px; overflow:hidden; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
+  .gm-sim-standings-title{ padding:12px 14px; font-size:12px; font-weight:850; text-transform:uppercase; letter-spacing:.6px; color:var(--text-dim); background:rgba(255,255,255,0.03); border-bottom:1px solid #2a3142; }
   .gm-sim-standings-table{ width:100%; border-collapse:collapse; font-size:12px; }
   .gm-sim-standings-table th{ padding:6px 8px; text-align:right; font-weight:700; color:var(--text-dim); font-size:10px; text-transform:uppercase; letter-spacing:.4px; }
   .gm-sim-standings-table th:first-child{ text-align:left; }
@@ -137,18 +154,21 @@
   .gm-sim-standings-table .sim-playoff{ border-left:3px solid rgba(70,122,200,0.85); background:rgba(28,49,99,0.12); }
   /* Skaters-style sortable table look */
   .gm-table{ width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
-  .gm-table th{ position:sticky; top:0; background:#0f1522; text-align:center; font-size:11px; text-transform:uppercase; letter-spacing:.6px; padding:9px 10px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; user-select:none; white-space:nowrap; z-index:2; }
-  .gm-table td{ padding:8px 10px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric:tabular-nums; }
+  .gm-table th{ position:sticky; top:0; background:linear-gradient(180deg, #1a2337, #121a2b); text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:12px 12px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #2b3648; user-select:none; white-space:nowrap; z-index:2; }
+  .gm-table td{ padding:9px 12px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric:tabular-nums; }
   .gm-table th:first-child, .gm-table td:first-child{ text-align:left; }
   .gm-table th[data-col]{ cursor:pointer; user-select:none; }
-  .gm-table th[data-col]:hover{ background:#141a28; }
-  .gm-table th.sort-asc, .gm-table th.sort-desc{ color:#fff; }
+  .gm-table th[data-col]:hover{ background:linear-gradient(180deg, #1e2940, #151f33); }
+  .gm-table th.sort-asc, .gm-table th.sort-desc{ color:#dbe9fb; box-shadow: inset 0 -2px 0 var(--accent); }
   .gm-table .sort-ind{ display:inline-block; margin-left:4px; font-size:10px; opacity:.85; }
-  .gm-table tbody tr:hover{ background:rgba(255,255,255,0.04); }
+  .gm-table th.sort-asc .sort-ind, .gm-table th.sort-desc .sort-ind{ color:var(--accent); opacity:1; }
+  .gm-table tbody tr:nth-child(even) td{ background:rgba(255,255,255,0.025); }
+  .gm-table tbody tr:hover td{ background:rgba(255,255,255,0.055); }
   .gm-table .sim-team-cell{ display:flex; align-items:center; gap:8px; }
   .gm-table .sim-team-logo{ height:24px; width:auto; max-width:none; object-fit:contain; filter:drop-shadow(0 0 2px rgba(0,0,0,.6)); }
   /* Playoff teams in single-sim standings use a dark blue highlight. */
-  .gm-table .sim-playoff{ box-shadow: inset 3px 0 0 rgba(70,122,200,0.85); background:rgba(28,49,99,0.12); }
+  .gm-table tr.sim-playoff td{ background:rgba(28,49,99,0.14); }
+  .gm-table tr.sim-playoff td:first-child{ box-shadow: inset 3px 0 0 rgba(70,122,200,0.85); }
   .gm-sim-bracket{ display:grid; gap:10px; }
   .gm-sim-round{ display:grid; gap:8px; }
   .gm-sim-round-title{ font-size:12px; font-weight:850; text-transform:uppercase; letter-spacing:.5px; color:var(--text-dim); margin-bottom:2px; }
@@ -158,7 +178,7 @@
   .gm-sim-series-score{ margin-left:auto; font-weight:800; color:rgba(120,200,100,0.9); }
   .gm-sim-series-conf{ font-size:10px; text-transform:uppercase; letter-spacing:.4px; color:var(--text-dim); font-weight:700; width:34px; flex:0 0 auto; }
   .gm-sim-actions{ display:flex; gap:8px; justify-content:flex-end; }
-  .gm-sim-stats-wrap{ max-height:560px; overflow:auto; border:1px solid #2a3142; border-radius:10px; }
+  .gm-sim-stats-wrap{ max-height:560px; overflow:auto; border:1px solid #232a3a; border-radius:14px; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
   .gm-sim-stats-wrap .gm-sim-standings-table th:first-child,
   .gm-sim-stats-wrap .gm-sim-standings-table td:first-child{ text-align:right; width:36px; font-weight:700; color:var(--text-dim); }
   .gm-sim-stats-wrap .sim-stat-name{ text-align:left; font-weight:800; min-width:140px; }
@@ -227,8 +247,10 @@
   .gm-status:empty{ display:none; }
   .gm-filter-actions{ display:flex; gap:8px; align-items:center; }
   .gm-filter-admin-actions{ display:flex; gap:8px; align-items:center; margin-top:8px; }
-  .gm-filter-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
-  .gm-filter-btn:hover{ background:rgba(255,255,255,0.05); }
+  /* Match the Skaters Card scope toggles (seg-btn) instead of gradient pills */
+  .gm-filter-btn{ background:transparent; border:1px solid rgba(255,255,255,0.35); color:var(--text); padding:8px 10px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; font-size:13px; transition:background .15s ease, border-color .15s ease; }
+  .gm-filter-btn:hover{ background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.6); }
+  .gm-filter-btn:active{ background:rgba(255,255,255,0.08); }
   .gm-filter-btn.gm-requires-auth{ position:relative; }
   .gm-filter-btn.gm-requires-auth::after{
     content:'Log in to use';
@@ -257,13 +279,13 @@
   .gm-config-fields label{ font-size:12px; color:var(--text-dim); font-weight:700; display:grid; gap:4px; }
   .gm-config-fields input{ font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid #2b3648; background:#131b2b; color:#fff; }
   .gm-config-actions{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
-  .gm-config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
-  .gm-config-btn:hover{ background:rgba(255,255,255,0.05); }
-  .gm-config-btn.danger{ border-color:rgba(224,90,90,0.48); color:#ffd0d0; }
-  .gm-config-btn.primary{ border-color:rgba(77,163,255,0.48); color:#d8ebff; }
+  .gm-config-btn{ background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.26)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, #2a3142); color:#ffffff; padding:8px 12px; border-radius:999px; font-weight:750; cursor:pointer; font-size:13px; transition:filter .15s ease, border-color .15s ease, transform .15s ease; }
+  .gm-config-btn:hover{ filter:brightness(1.22); border-color:var(--team-ring, #3a4560); transform:translateY(-1px); }
+  .gm-config-btn.danger{ border-color:rgba(224,90,90,0.55); }
+  .gm-config-btn.primary{ border-color:var(--team-ring, rgba(77,163,255,0.48)); }
 
-  .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
-  .config-btn:hover{ background:rgba(255,255,255,0.05); }
+  .config-btn{ background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.26)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, #2a3142); color:#ffffff; padding:8px 12px; border-radius:999px; font-weight:750; cursor:pointer; font-size:13px; transition:filter .15s ease, border-color .15s ease, transform .15s ease; }
+  .config-btn:hover{ filter:brightness(1.22); border-color:var(--team-ring, #3a4560); transform:translateY(-1px); }
   .config-btn:disabled{ opacity:0.55; cursor:default; }
 
   /* Export PNG surface */
@@ -300,8 +322,8 @@
   .modal-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid #232a3a; }
   .modal-title{ font-weight:900; letter-spacing:.2px; }
   .modal-bd{ padding:14px 16px; }
-  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
-  .btn:hover{ background:rgba(255,255,255,0.05); }
+  .btn{ background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.26)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, #2a3142); color:#ffffff; padding:8px 12px; border-radius:999px; font-weight:750; cursor:pointer; font-size:13px; transition:filter .15s ease, border-color .15s ease, transform .15s ease; }
+  .btn:hover{ filter:brightness(1.22); border-color:var(--team-ring, #3a4560); transform:translateY(-1px); }
   .cc-help{ color:var(--text-dim); font-size:13px; margin-bottom:12px; }
   .visually-hidden{ position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
   .shoot-share-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; }
@@ -365,6 +387,10 @@
 
     /* Standings: scroll the column instead of letting the page scroll. */
     .gm-sim-standings-col{ max-height: 560px; overflow: auto; }
+    .gm-sim-champion{ gap:14px; padding:18px 16px; }
+    .gm-sim-champ-cup{ height:76px; }
+    .gm-sim-champ-logo{ width:72px; height:72px; }
+    .gm-sim-champ-name{ font-size:20px; }
 
     /* Distribution filter buttons: shrink padding + font on mobile portrait so
        all 5 fit on a single row without clipping. */
@@ -2240,6 +2266,7 @@
   }
 
   function renderFromSelectedTeam(){
+    __gmApplyAccent();
     const selectedTeam = String(teamSelect.value || '').trim().toUpperCase();
     if(!selectedTeam){
       statusEl.textContent = 'Select a team to view line combinations.';
@@ -2983,14 +3010,22 @@
     const eastR2 = (r2.East || []).map(s => gmBracketSeriesCard(s, 'East'));
     const eastR1 = (r1.East || []).map(s => gmBracketSeriesCard(s, 'East'));
     const finalCard = fin ? [gmBracketSeriesCard(fin, 'Stanley Cup')] : [];
+    const champ = playoffs.champion;
+    const champHtml = champ
+      ? '<div class="gm-bracket-champion">'
+        + '<div class="gm-bracket-champ-trophy"><img src="/static/trophy.png" alt="Stanley Cup" /><img class="gm-bracket-champ-logo" src="' + teamLogoUrl(champ) + '" alt="" /></div>'
+        + '<div class="gm-bracket-champ-name">' + teamNameOf(champ) + '</div>'
+        + '<div class="gm-bracket-champ-label">Stanley Cup Champion</div>'
+        + '</div>'
+      : '';
+    const centerNodes = (champHtml ? [champHtml] : []).concat(finalCard);
     panelBracket.innerHTML =
       '<div class="gm-sim-section-title">Playoffs</div>' +
-      '<div class="gm-sim-meta">Single simulation bracket.</div>' +
       `<div class="bracket-shell"><div class="playoff-bracket">
         ${column('West First Round', westR1)}
         ${column('West Second Round', westR2)}
         ${column('West Final', westFinal)}
-        ${column('Stanley Cup Final', finalCard, 'center')}
+        ${column('Stanley Cup Final', centerNodes, 'center')}
         ${column('East Final', eastFinal)}
         ${column('East Second Round', eastR2)}
         ${column('East First Round', eastR1)}
@@ -3059,7 +3094,12 @@
     const ctx = canvas.getContext('2d');
     if(!ctx) return;
     const tick = '#9aa4b1';
-    const grid = 'rgba(154,164,177,0.14)';
+    const grid = 'rgba(255,255,255,0.07)';
+    let teamCss = '#4da3ff';
+    try{
+      const tc = getComputedStyle(document.documentElement).getPropertyValue('--team-color').trim();
+      if(tc) teamCss = tc;
+    }catch(_){/*noop*/}
 
     // Pre-load team logo images keyed by team abbreviation.
     const logoImages = {};
@@ -3081,7 +3121,8 @@
         if(!meta || !meta.data || !meta.data.length) return;
         const yScale = chart.scales.y;
         const ctx2 = chart.ctx;
-        const logoH = 18;
+        const pitch = ((chart.chartArea && chart.chartArea.height) ? chart.chartArea.height : 600) / Math.max(1, meta.data.length);
+        const logoH = Math.max(16, Math.min(28, Math.round(pitch * 0.92)));
         const gap = 6;
         meta.data.forEach(function(bar, i){
           const label = String(chart.data.labels[i] || '');
@@ -3097,18 +3138,56 @@
       }
     };
 
+    // Plugin: value label at the end of each bar.
+    const valuePlugin = {
+      id: 'gmDistribValues',
+      afterDatasetsDraw: function(chart){
+        const meta = chart.getDatasetMeta(0);
+        if(!meta || !meta.data || !meta.data.length) return;
+        const ctx2 = chart.ctx;
+        ctx2.save();
+        ctx2.font = '800 11px Inter, system-ui, -apple-system, sans-serif';
+        ctx2.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx2.textAlign = 'left';
+        ctx2.textBaseline = 'middle';
+        chart.data.datasets[0].data.forEach(function(v, i){
+          const el = meta.data[i];
+          if(!el || el.skip) return;
+          ctx2.fillText(String(v), Number(el.x) + 8, Number(el.y));
+        });
+        ctx2.restore();
+      }
+    };
+
     __gmDistribChart = new Chart(ctx, {
       type: 'bar',
-      plugins: [logoPlugin],
+      plugins: [logoPlugin, valuePlugin],
       data: {
         labels: labels,
         datasets: [{
           label: activeLabel,
           data: values,
-          backgroundColor: 'rgba(77,163,255,0.78)',
-          borderColor: 'rgba(77,163,255,0.9)',
-          borderWidth: 1,
-          borderRadius: 0,
+          backgroundColor: function(context){
+            const chart = context.chart;
+            const meta = chart.getDatasetMeta(0);
+            const el = meta && meta.data ? meta.data[context.dataIndex] : null;
+            const x0 = el ? Number(el.base) : NaN;
+            const x1 = el ? Number(el.x) : NaN;
+            const y0 = el ? Number(el.y) : NaN;
+            if(!Number.isFinite(x0) || !Number.isFinite(x1) || !Number.isFinite(y0)) return __gmRgba(teamCss, 0.85);
+            const g = chart.ctx.createLinearGradient(x0, y0, x1, y0);
+            g.addColorStop(0, __gmRgba(teamCss, 0.5));
+            g.addColorStop(1, __gmRgba(teamCss, 0.95));
+            return g;
+          },
+          hoverBackgroundColor: __gmRgba(teamCss, 1),
+          borderColor: 'rgba(10,14,22,0.9)',
+          borderWidth: 1.5,
+          borderRadius: { topRight: 8, bottomRight: 8 },
+          borderSkipped: false,
+          barPercentage: 0.8,
+          categoryPercentage: 0.85,
+          maxBarThickness: 20,
         }],
       },
       options: {
@@ -3117,11 +3196,18 @@
         animation: false,
         indexAxis: 'y',
         layout: {
-          padding: { left: 40 },
+          padding: { left: 40, right: 38 },
         },
         plugins: {
           legend: { display: false },
           tooltip: {
+            backgroundColor: 'rgba(15,21,34,0.97)',
+            titleColor: 'rgba(255,255,255,0.95)',
+            bodyColor: 'rgba(255,255,255,0.88)',
+            borderColor: '#2a3142',
+            borderWidth: 1,
+            cornerRadius: 10,
+            padding: 10,
             callbacks: {
               label: function(item){
                 const v = Number(item?.parsed?.x);
@@ -3133,14 +3219,16 @@
         },
         scales: {
           x: {
-            title: { display: true, text: 'Simulations', color: tick, font: { size: 12, weight: '800' } },
-            ticks: { color: tick },
+            border: { display: false },
+            title: { display: true, text: 'Simulations', color: 'rgba(255,255,255,0.78)', font: { size: 12, weight: '800' } },
+            ticks: { color: 'rgba(255,255,255,0.72)', font: { size: 11 } },
             grid: { color: grid },
             suggestedMax: maxCount,
           },
           y: {
-            ticks: { color: tick, autoSkip: false },
+            ticks: { display: false },
             grid: { display: false },
+            border: { display: false },
           },
         },
       },
@@ -3210,14 +3298,19 @@
   }
 
   // ── Render results for whichever mode was last run ──
+  const __gmCupImg = '<img class="gm-sim-champ-cup" src="/static/trophy.png" alt="Stanley Cup" />';
+
   function renderResults(){
     if(lastMode === 'batch' && lastBatchData){
       const sortedChamp = lastBatchData.teamAgg ? lastBatchData.teamAgg.slice().sort(function(a,b){ return (b.sumChampion||0)-(a.sumChampion||0); }) : [];
       const champ = sortedChamp[0];
       const champBanner = champ && champ.sumChampion > 0
-        ? '<div class="gm-sim-champion"><img class="gm-sim-champ-logo" src="' + teamLogoUrl(champ.team) + '" alt="" /><div>' +
-        '<div class="gm-sim-champ-label">Most Likely Champion</div>' +
-        '<div class="gm-sim-champ-name">' + teamNameOf(champ.team) + ' (' + champ.sumChampion + '/' + lastBatchData.numSims + ')</div></div></div>' : '';
+        ? '<div class="gm-sim-champion">' + __gmCupImg +
+          '<div class="gm-sim-champ-body">' +
+          '<div class="gm-sim-champ-label">Most Likely Champion</div>' +
+          '<div class="gm-sim-champ-name">' + teamNameOf(champ.team) + '<span class="gm-sim-champ-odds">' + champ.sumChampion + '/' + lastBatchData.numSims + ' sims</span></div></div>' +
+          '<img class="gm-sim-champ-logo" src="' + teamLogoUrl(champ.team) + '" alt="" />' +
+          '</div>' : '';
       // Seed the panels with the banner so the renderers can preserve it
       // when they replace the panel HTML.
       if(panelStandings) panelStandings.innerHTML = champBanner;
@@ -3228,9 +3321,12 @@
     } else if(lastMode === 'single' && lastSimData){
       const champ = lastSimData.playoffs && lastSimData.playoffs.champion;
       const champBanner = champ
-        ? '<div class="gm-sim-champion"><img class="gm-sim-champ-logo" src="' + teamLogoUrl(champ) + '" alt="" /><div>' +
-        '<div class="gm-sim-champ-label">Stanley Cup Champion</div>' +
-        '<div class="gm-sim-champ-name">' + teamNameOf(champ) + '</div></div></div>' : '';
+        ? '<div class="gm-sim-champion">' + __gmCupImg +
+          '<div class="gm-sim-champ-body">' +
+          '<div class="gm-sim-champ-label">Stanley Cup Champion</div>' +
+          '<div class="gm-sim-champ-name">' + teamNameOf(champ) + '</div></div>' +
+          '<img class="gm-sim-champ-logo" src="' + teamLogoUrl(champ) + '" alt="" />' +
+          '</div>' : '';
       if(panelStandings) panelStandings.innerHTML = champBanner;
       if(panelBracket) panelBracket.innerHTML = champBanner;
       renderSimStandings(lastSimData.standings || [], lastSimData.playoffSeeds || {});
@@ -3403,6 +3499,17 @@
     var teamKey = getCurrentTeamKey() || '';
     var row = teamsData.find(function(t){ return String((t || {}).Team || '').trim().toUpperCase() === teamKey; });
     return String((row || {}).Color || '').trim() || '#4da3ff';
+  }
+
+  function __gmApplyAccent(){
+    var teamColor = __gmGetTeamColor();
+    var root = document.documentElement;
+    root.style.setProperty('--team-color', teamColor);
+    root.style.setProperty('--team-glow', __gmRgba(__gmDarkenHex(teamColor, 0.35), 0.35));
+    root.style.setProperty('--team-ring', __gmRgba(teamColor, 0.55));
+    root.style.setProperty('--team-border', __gmRgba(teamColor, 0.30));
+    root.style.setProperty('--team-btn-soft', __gmRgba(teamColor, 0.30));
+    root.style.setProperty('--team-btn-dark', __gmDarkenHex(teamColor, 0.55));
   }
 
   function __gmShareStateKey(){

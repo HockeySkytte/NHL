@@ -10,13 +10,24 @@
   .game-tile .status-chip { position:absolute; right:6px; bottom:6px; z-index:2; }
   /* Smaller card height */
   .calendar-grid .game-tile { aspect-ratio:7/5 !important; }
-  /* Month controls as title */
-  #monthControls select { font-size:26px; font-weight:600; background:transparent; border:none; color:var(--text); padding:4px 8px; letter-spacing:1px; }
-  #monthControls select option { color:#111; background:#f1f3f6; }
-  #monthControls select:focus { outline:none; }
-  #monthControls button { background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; font-size:20px; line-height:1; border-radius:10px; font-weight:600; cursor:pointer; transition:.18s background; }
-  #monthControls button:hover:not(:disabled){ background:var(--panel); }
-  #monthControls button:disabled { opacity:.35; cursor:default; }
+  /* Month controls: custom dropdown title centered between arrow buttons */
+  #monthControls { position:relative; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:.5rem; margin:0 0 1rem 0; }
+  #monthControls .month-nav-btn { width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); border-radius:999px; font-weight:600; cursor:pointer; justify-self:end; transition:background .18s ease, transform .18s ease, border-color .18s ease; }
+  #monthControls .month-nav-btn .icon { width:18px; height:18px; }
+  #monthControls .month-nav-btn.next { justify-self:start; }
+  #monthControls .month-nav-btn:hover:not(:disabled){ background:var(--panel); border-color:#3a4560; transform:translateY(-1px); }
+  #monthControls .month-nav-btn:disabled { opacity:.35; cursor:default; }
+  #monthControls .month-title-wrap { position:relative; }
+  #monthControls .month-title-btn { position:relative; display:inline-flex; align-items:center; justify-content:center; font-size:28px; font-weight:600; letter-spacing:1px; background:transparent; border:none; color:var(--text); padding:6px 38px; cursor:pointer; line-height:1.15; }
+  #monthControls .month-title-btn:hover { color:#fff; }
+  #monthControls .month-title-label { text-align:center; }
+  #monthControls .month-title-btn .chev { position:absolute; right:10px; top:50%; transform:translateY(-50%); width:16px; height:16px; opacity:.6; transition:transform .18s ease; }
+  #monthControls .month-title-btn[aria-expanded="true"] .chev { transform:translateY(-50%) rotate(180deg); }
+  #monthControls .month-menu { position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); z-index:300; min-width:230px; max-height:320px; overflow:auto; background:#111827; border:1px solid #2a3142; border-radius:14px; box-shadow:0 18px 40px rgba(0,0,0,0.45); padding:6px; scrollbar-width:thin; }
+  #monthControls .month-menu[hidden]{ display:none; }
+  #monthControls .month-menu button { display:block; width:100%; text-align:left; background:transparent; border:none; color:var(--text); padding:9px 12px; border-radius:8px; font-size:14px; font-weight:650; cursor:pointer; white-space:nowrap; }
+  #monthControls .month-menu button:hover { background:rgba(255,255,255,0.06); }
+  #monthControls .month-menu button.active { background:rgba(77,163,255,0.14); outline:1px solid rgba(77,163,255,0.45); outline-offset:-1px; color:#eaf4ff; }
 
   /* Mobile schedule table */
   .schedule-grid-root{ display:block; }
@@ -35,14 +46,15 @@
   @media (max-width: 980px){
     .schedule-grid-root{ display:none; }
     .schedule-table-root{ display:block; }
-    #monthControls{ gap:.5rem !important; }
-    #monthControls select{ font-size:18px; }
-    #monthControls button{ font-size:18px; padding:8px 10px; }
+    #monthControls{ gap:.4rem !important; }
+    #monthControls .month-title-btn{ font-size:20px; padding:6px 30px; }
+    #monthControls .month-title-btn .chev{ right:6px; width:14px; height:14px; }
+    #monthControls .month-nav-btn{ width:38px; height:38px; }
   }
 </style>
 {% endblock %}
 {% block content %}
-<div id="monthControls" style="display:flex; justify-content:center; align-items:center; gap:.75rem; margin:0 0 1rem 0;"></div>
+<div id="monthControls"></div>
 <div id="scheduleRoot">
   <div id="scheduleGridRoot" class="schedule-grid-root"></div>
   <div id="scheduleTableRoot" class="schedule-table-root"></div>
@@ -78,6 +90,7 @@ function isLight(hex){
 let currentFilteredGames = [];
 let monthMeta = []; // [{key, year, month, label}]
 let currentMonthIndex = 0;
+let __monthMenuDocHandler = null;
 
 function getScheduleSelectedSeasons(){
   const selected = (typeof window.getSelectedSeasonValues === 'function')
@@ -147,13 +160,95 @@ function buildMonthControls(){
   const mc = document.getElementById('monthControls');
   if(!mc) return;
   if(!monthMeta.length){ mc.innerHTML=''; return; }
+
+  const meta = monthMeta[currentMonthIndex];
+
+  const prevBtn = document.createElement('button');
+  prevBtn.type = 'button';
+  prevBtn.className = 'month-nav-btn';
+  prevBtn.setAttribute('aria-label', 'Previous month');
+  prevBtn.innerHTML = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+  prevBtn.disabled = currentMonthIndex === 0;
+  prevBtn.onclick = ()=>{ if(currentMonthIndex > 0){ currentMonthIndex--; renderCurrentMonth(teamSelect.value); buildMonthControls(); } };
+
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.className = 'month-nav-btn next';
+  nextBtn.setAttribute('aria-label', 'Next month');
+  nextBtn.innerHTML = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
+  nextBtn.disabled = currentMonthIndex === monthMeta.length - 1;
+  nextBtn.onclick = ()=>{ if(currentMonthIndex < monthMeta.length - 1){ currentMonthIndex++; renderCurrentMonth(teamSelect.value); buildMonthControls(); } };
+
+  const wrap = document.createElement('div');
+  wrap.className = 'month-title-wrap';
+
+  const titleBtn = document.createElement('button');
+  titleBtn.type = 'button';
+  titleBtn.className = 'month-title-btn';
+  titleBtn.setAttribute('aria-haspopup', 'listbox');
+  titleBtn.setAttribute('aria-expanded', 'false');
+
+  const label = document.createElement('span');
+  label.className = 'month-title-label';
+  label.textContent = meta ? meta.label : '';
+
+  const chev = document.createElement('svg');
+  chev.classList.add('chev');
+  chev.setAttribute('viewBox', '0 0 24 24');
+  chev.setAttribute('fill', 'none');
+  chev.setAttribute('stroke', 'currentColor');
+  chev.setAttribute('stroke-width', '2.5');
+  chev.setAttribute('stroke-linecap', 'round');
+  chev.setAttribute('stroke-linejoin', 'round');
+  chev.innerHTML = '<path d="M6 9l6 6 6-6"/>';
+
+  titleBtn.appendChild(label);
+  titleBtn.appendChild(chev);
+
+  const menu = document.createElement('div');
+  menu.className = 'month-menu';
+  menu.setAttribute('role', 'listbox');
+  menu.hidden = true;
+  monthMeta.forEach((m, i)=>{
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.textContent = m.label;
+    if(i === currentMonthIndex) item.classList.add('active');
+    item.onclick = ()=>{
+      menu.hidden = true;
+      titleBtn.setAttribute('aria-expanded', 'false');
+      if(i !== currentMonthIndex){
+        currentMonthIndex = i;
+        renderCurrentMonth(teamSelect.value);
+        buildMonthControls();
+      }
+    };
+    menu.appendChild(item);
+  });
+
+  wrap.appendChild(titleBtn);
+  wrap.appendChild(menu);
+
+  titleBtn.onclick = ()=>{
+    const open = menu.hidden;
+    menu.hidden = !open;
+    titleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+
   mc.innerHTML = '';
-  const prevBtn = document.createElement('button'); prevBtn.textContent='◀'; prevBtn.disabled = currentMonthIndex===0; prevBtn.onclick=()=>{ if(currentMonthIndex>0){ currentMonthIndex--; renderCurrentMonth(teamSelect.value); buildMonthControls(); }};
-  const nextBtn = document.createElement('button'); nextBtn.textContent='▶'; nextBtn.disabled = currentMonthIndex===monthMeta.length-1; nextBtn.onclick=()=>{ if(currentMonthIndex<monthMeta.length-1){ currentMonthIndex++; renderCurrentMonth(teamSelect.value); buildMonthControls(); }};
-  const select = document.createElement('select');
-  monthMeta.forEach((m,i)=>{ const opt=document.createElement('option'); opt.value=i; opt.textContent=m.label; if(i===currentMonthIndex) opt.selected=true; select.appendChild(opt); });
-  select.onchange = ()=>{ currentMonthIndex = parseInt(select.value,10); renderCurrentMonth(teamSelect.value); buildMonthControls(); };
-  mc.appendChild(prevBtn); mc.appendChild(select); mc.appendChild(nextBtn);
+  mc.appendChild(prevBtn);
+  mc.appendChild(wrap);
+  mc.appendChild(nextBtn);
+
+  // Close the menu when clicking outside
+  if(typeof __monthMenuDocHandler === 'function') document.removeEventListener('click', __monthMenuDocHandler);
+  __monthMenuDocHandler = (e)=>{
+    if(menu.hidden) return;
+    if(wrap.contains(e.target)) return;
+    menu.hidden = true;
+    titleBtn.setAttribute('aria-expanded', 'false');
+  };
+  document.addEventListener('click', __monthMenuDocHandler);
 }
 
 function handleSeasonStateAvailability(){ loadSchedule(); }

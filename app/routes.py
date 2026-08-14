@@ -1787,6 +1787,9 @@ _GOALIES_PLAYERS_CACHE: Dict[Tuple[int, str, str], Tuple[float, List[Dict[str, A
 # Goalie team map (for trend charts): {(playerId, seasonState): (timestamp, {seasonId: teamAbbrev})}
 _GOALIES_TEAM_BY_SEASON_MAP_CACHE: Dict[Tuple[int, str], Tuple[float, Dict[int, str]]] = {}
 
+# Skater team map (for RAPM career chart logos): {playerId: (timestamp, {seasonId: teamAbbrev})}
+_SKATER_TEAM_BY_SEASON_MAP_CACHE: Dict[int, Tuple[float, Dict[int, str]]] = {}
+
 # Static CSV caches
 _RAPM_STATIC_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 _PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
@@ -3628,9 +3631,10 @@ def _get_lt_base_context(
 
     shift_rows = _get_lt_shifts_parallel(team, season_ids)
     if not shift_rows:
-        result = {'shiftRows': [], 'baseShifts': [], 'allPbp': []}
-        _cache_set_multi_bounded(_LT_BASE_CACHE, cache_key, result, ttl_s=ttl_s, max_items=max_items)
-        return result
+        # Do NOT cache empty base contexts — an empty result can be transient
+        # (e.g. a data backfill in progress or a temporary DB hiccup) and
+        # caching it would pin "No data available" for the whole TTL.
+        return {'shiftRows': [], 'baseShifts': [], 'allPbp': []}
 
     shift_rows = _filter_shifts_season_state(shift_rows, ss)
     shift_rows = _apply_lt_strength_filter(shift_rows, strength)
@@ -14229,6 +14233,72 @@ def _compute_player_scale_payload(player_id: int, dists: Dict[str, Any]) -> Dict
     }
 
 
+def _skater_team_by_season_map(pid_i: int) -> Dict[int, str]:
+    """Best-effort {seasonId -> teamAbbrev} from NHL Stats API skater summary (cached)."""
+    try:
+        ttl_s = max(60, int(os.getenv('SKATERS_TEAM_BY_SEASON_CACHE_TTL_SECONDS', str(7 * 86400)) or str(7 * 86400)))
+    except Exception:
+        ttl_s = 7 * 86400
+    try:
+        max_items = max(1, int(os.getenv('SKATERS_TEAM_BY_SEASON_MAP_CACHE_MAX_ITEMS', '128') or '128'))
+    except Exception:
+        max_items = 128
+    now = time.time()
+    _cache_prune_ttl_and_size(_SKATER_TEAM_BY_SEASON_MAP_CACHE, ttl_s=ttl_s, max_items=max_items)
+    cached = _SKATER_TEAM_BY_SEASON_MAP_CACHE.get(int(pid_i))
+    if cached and (now - float(cached[0])) < float(ttl_s):
+        return cached[1] or {}
+
+    team_map: Dict[int, str] = {}
+    try:
+        url = 'https://api.nhle.com/stats/rest/en/skater/summary'
+        r = requests.get(
+            url,
+            params={'limit': -1, 'start': 0, 'cayenneExp': f'(gameTypeId=2 or gameTypeId=3) and playerId={int(pid_i)}'},
+            headers={'User-Agent': 'Mozilla/5.0'},
+            timeout=20,
+            allow_redirects=True,
+        )
+        if r.status_code == 200:
+            data = r.json() if r.content else {}
+            rows = data.get('data') if isinstance(data, dict) else None
+            if isinstance(rows, list) and rows:
+                best: Dict[int, Tuple[int, str]] = {}
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    sid = _safe_int(row.get('seasonId'))
+                    if not sid:
+                        continue
+                    team_raw = row.get('teamAbbrev') or row.get('teamAbbrevs') or row.get('currentTeamAbbrev') or ''
+                    team_abbrev = ''
+                    if isinstance(team_raw, list) and team_raw:
+                        team_abbrev = str(team_raw[0] or '').strip().upper()
+                    else:
+                        team_abbrev = str(team_raw or '').strip().upper()
+                    if '/' in team_abbrev:
+                        team_abbrev = team_abbrev.split('/')[0].strip().upper()
+                    if not team_abbrev:
+                        continue
+                    gp = _safe_int(row.get('gamesPlayed') or row.get('games') or 0) or 0
+                    try:
+                        weight = int(gp) * 100000
+                    except Exception:
+                        weight = 0
+                    prev = best.get(int(sid))
+                    if not prev or weight > int(prev[0]):
+                        best[int(sid)] = (weight, team_abbrev)
+                team_map = {sid: t for sid, (_, t) in best.items()}
+    except Exception:
+        team_map = {}
+
+    try:
+        _cache_set_multi_bounded(_SKATER_TEAM_BY_SEASON_MAP_CACHE, int(pid_i), team_map, ttl_s=ttl_s, max_items=max_items)
+    except Exception:
+        pass
+    return team_map
+
+
 @main_bp.route('/api/rapm/career')
 def api_rapm_career():
     """Career RAPM series for a single player.
@@ -14643,6 +14713,13 @@ def api_rapm_career():
         except Exception:
             continue
 
+    # Best-effort team per season (logo markers on the career chart).
+    team_map: Dict[int, str] = {}
+    try:
+        team_map = _skater_team_by_season_map(pid)
+    except Exception:
+        team_map = {}
+
     seasons = sorted(series.keys())
     points: List[Dict[str, Any]] = []
     for season_int in seasons:
@@ -14655,6 +14732,7 @@ def api_rapm_career():
         eligs = _elig(season_int, 'SH')
         p: Dict[str, Any] = {
             'Season': season_int,
+            'team': team_map.get(season_int, ''),
             'minutes': {'5v5': mins5, 'PP': minsp, 'SH': minss},
             'eligible': {'5v5': elig5, 'PP': eligp, 'SH': eligs},
         }

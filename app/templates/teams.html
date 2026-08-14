@@ -56,8 +56,8 @@
   .skater-proj-kpi-val{ color:var(--proj-kpi-color, rgba(255,255,255,0.9)); font-size:34px; font-weight:900; letter-spacing:.2px; line-height:1; }
   .skater-proj-kpi-lbl{ margin-top:8px; color:rgba(255,255,255,0.88); font-size:11px; letter-spacing:.8px; text-transform:uppercase; font-weight:800; line-height:1.25; }
   .skater-proj-kpi[hidden]{ display:none !important; }
-  /* Smaller surrounding square while keeping the logo's effective size similar. */
-  .team-img{ width:190px; height:190px; border-radius:18px; object-fit:contain; object-position:center; background:var(--panel); border:1px solid #2a3142; padding:0; transform:none; }
+  /* Team logo: transparent, larger, with a soft glow instead of a boxed panel */
+  .team-img{ width:204px; height:204px; border-radius:26px; object-fit:contain; object-position:center; background:radial-gradient(circle at 50% 42%, rgba(255,255,255,0.07), rgba(255,255,255,0.015) 58%, transparent 74%); border:none; padding:14px; box-sizing:border-box; transform:none; filter:drop-shadow(0 16px 34px rgba(0,0,0,0.45)); }
   .team-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
   .team-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
   .kv{ display:flex; gap:6px; align-items:baseline; }
@@ -68,11 +68,14 @@
 
   .segmented{ display:flex; gap:8px; margin-top:6px; }
   .seg-btn{ flex:1; background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 10px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
-  .seg-btn.active{ outline:2px solid var(--accent); background:rgba(255,255,255,0.03); }
+  .seg-btn.active{ outline:2px solid var(--team-ring, var(--accent)); background:rgba(255,255,255,0.03); }
 
-  .subtabs{ display:flex; gap:12px; align-items:center; margin-top:10px; flex-wrap:wrap; }
-  .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
-  .subtab-btn.active{ outline:2px solid var(--accent); }
+  .subtabs{ display:flex; gap:2px; align-items:center; margin-top:14px; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; -ms-overflow-style:none; border-bottom:1px solid #1f2734; }
+  .subtabs::-webkit-scrollbar{ display:none; }
+  .subtab-btn{ position:relative; background:transparent; border:none; color:var(--text-dim); padding:10px 16px 14px; border-radius:0; font-weight:650; letter-spacing:.4px; cursor:pointer; font-size:13px; white-space:nowrap; flex:0 0 auto; transition:color .15s ease; }
+  .subtab-btn:hover{ color:var(--text); }
+  .subtab-btn.active{ color:var(--text); }
+  .subtab-btn.active::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:4px; border-radius:4px 4px 0 0; background:var(--accent); box-shadow:0 0 10px -1px var(--accent); }
   .panel{ margin-top:8px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:8px 8px 6px; min-width:0; }
 
   #tabPanelCard.panel{ padding:10px 10px 8px; }
@@ -107,18 +110,23 @@
 
   .proj-subtabs{ display:flex; gap:12px; align-items:center; margin-top:6px; flex-wrap:wrap; }
   .proj-subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
-  .proj-subtab-btn.active{ outline:2px solid var(--accent); }
+  .proj-subtab-btn.active{ outline:2px solid var(--team-ring, var(--accent)); }
   .proj-subpanel{ margin-top:14px; background:transparent; border:none; border-radius:12px; padding:16px; }
   .proj-subpanel[hidden]{ display:none !important; }
-  .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
+  .proj-table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:14px; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
   .proj-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
   .proj-toggle-group{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .proj-toggle-label{ font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-dim); font-weight:800; }
-  .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
-  .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
-  .proj-table{ width:100%; border-collapse:collapse; font-size:14px; }
-  .proj-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
-  .proj-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; }
+  .proj-export-btn{ background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.26)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, #2a3142); color:#ffffff; padding:8px 14px; border-radius:999px; font-weight:650; cursor:pointer; font-size:13px; transition:filter .15s ease, border-color .15s ease, transform .15s ease; }
+  .proj-export-btn:hover{ filter:brightness(1.22); border-color:var(--team-ring, #3a4560); transform:translateY(-1px); }
+  .proj-table{ width:100%; border-collapse:separate; border-spacing:0; font-size:14px; }
+  .proj-table th{ position:sticky; top:0; z-index:1; background:linear-gradient(180deg, #1a2337, #121a2b); text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:12px 12px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #2b3648; cursor:pointer; user-select:none; white-space:nowrap; }
+  .proj-table td{ padding:9px 12px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric:tabular-nums; }
+  .proj-table tbody tr:nth-child(even) td{ background:rgba(255,255,255,0.025); }
+  .proj-table tbody tr:hover td{ background:rgba(255,255,255,0.055); }
+  .proj-table tbody tr.selected-player td{ background:rgba(77,163,255,0.12); }
+  .proj-table th.sorted{ color:#dbe9fb; box-shadow: inset 0 -2px 0 var(--accent); }
+  .proj-table th.sorted .sort-ind{ color:var(--accent); opacity:1; }
   .proj-table td.name{ text-align:left; }
   .proj-table th.name{ text-align:left; }
 
@@ -161,17 +169,24 @@
     .edge-grid{ grid-template-columns: 1fr; }
   }
 
-  .table-wrap{ overflow:auto; border:none; border-radius:12px; }
+  .table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:14px; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
   .metrics-table{ width:100%; border-collapse:collapse; font-size:14px; }
-  .metrics-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
-  .metrics-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; }
+  .metrics-table th{ position:sticky; top:0; background:linear-gradient(180deg, #1a2337, #121a2b); text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:12px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #2b3648; cursor:pointer; user-select:none; }
+  .metrics-table th.sorted{ color:#dbe9fb; box-shadow: inset 0 -2px 0 var(--accent); }
+  .metrics-table td{ padding:9px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; }
+  .metrics-table tbody tr:hover{ background:rgba(255,255,255,0.04); }
+  .metrics-table tbody tr:nth-child(even){ background:rgba(255,255,255,0.018); }
   .metrics-table td.num, .metrics-table th.num{ text-align:center; }
   .metrics-table td.pct, .metrics-table th.pct{ padding-left:6px; padding-right:6px; width:1%; }
+  .team-table-cell{ display:flex; align-items:center; gap:9px; }
+  .team-table-logo{ width:24px; height:24px; object-fit:contain; flex:0 0 auto; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5)); }
+  .team-table-name{ font-weight:650; }
+  .metrics-table td.team-cell{ text-align:left; }
   .pct-chip{ display:inline-block; padding:3px 8px; border-radius:10px; min-width:48px; text-align:center; font-weight:850; font-size:16px; color:#0b0f16; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.20); }
   .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
 
-  .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
-  .config-btn:hover{ background:color-mix(in srgb, var(--panel-alt) 70%, black); }
+  .config-btn{ background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.26)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, #2a3142); color:#ffffff; padding:8px 13px; border-radius:999px; font-weight:750; cursor:pointer; font-size:13px; transition:filter .15s ease, border-color .15s ease, transform .15s ease; }
+  .config-btn:hover{ filter:brightness(1.22); border-color:var(--team-ring, #3a4560); transform:translateY(-1px); }
   .panel-actions{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 
   .modal{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:2000; }
@@ -191,9 +206,9 @@
   .table-metric input{ margin:0; flex:0 0 auto; cursor:pointer; }
   .table-metric span{ cursor:pointer; flex:1 1 auto; }
   .modal-ft{ display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; border-top:1px solid #232a3a; align-items:center; flex-wrap:wrap; }
-  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
-  .btn:hover{ background:rgba(255,255,255,0.05); }
-  .btn.primary{ outline:2px solid var(--accent); }
+  .btn{ background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.26)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, #2a3142); color:#ffffff; padding:8px 12px; border-radius:999px; font-weight:750; cursor:pointer; font-size:13px; transition:filter .15s ease, border-color .15s ease, transform .15s ease; }
+  .btn:hover{ filter:brightness(1.22); border-color:var(--team-ring, #3a4560); transform:translateY(-1px); }
+  .btn.primary{ outline:2px solid var(--team-ring, var(--accent)); }
   .visually-hidden{ position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
   .teams-share-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; }
   .teams-share-card{ width:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; text-align:left; min-height:132px; padding:14px; border-radius:12px; border:1px solid #2a3142; background:rgba(255,255,255,0.02); color:var(--value-text, var(--text)); cursor:pointer; }
@@ -272,12 +287,12 @@
     .team-top{ flex-direction:column; align-items:center; text-align:center; gap:12px; }
     .team-top > div:not(.skater-proj-kpi){ display:contents; }
     #teamName{ order:1; font-size:26px; }
-    #teamImg{ order:2; width:150px; height:150px; }
+    #teamImg{ order:2; width:164px; height:164px; }
     #teamInfo{ order:3; justify-content:center; gap:12px; font-size:14px; }
     #teamProjectionKpi{ order:4; margin:6px auto 0; width:118px; height:118px; }
     #teamProjectionKpi .skater-proj-kpi-val{ font-size:28px; }
     #teamProjectionKpi .skater-proj-kpi-lbl{ font-size:10px; }
-    .subtabs{ justify-content:center; flex-wrap:wrap; }
+    .subtabs{ justify-content:flex-start; }
     .teams-export-table-grid{ grid-template-columns:1fr; }
 
     /* Card header: action above filter context */
@@ -431,7 +446,7 @@
         </div>
 
         <section id="projPanelTeam" class="proj-subpanel" role="tabpanel">
-          <canvas id="projTeamStack" style="width:100%; height:420px;"></canvas>
+          <canvas id="projTeamStack" style="width:100%; height:640px;"></canvas>
         </section>
 
         <section id="projPanelLeague" class="proj-subpanel" role="tabpanel" hidden>
@@ -859,6 +874,29 @@ function mixHex(a, b, t){
   const A=p(a), B=p(b);
   const r=c(A[0] + (B[0]-A[0])*t), g=c(A[1] + (B[1]-A[1])*t), bb=c(A[2] + (B[2]-A[2])*t);
   return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${bb.toString(16).padStart(2,'0')}`;
+}
+
+function __teamsRgba(hex, alpha){
+  try{
+    function p(h){ h=String(h||'').replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join(''); return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]; }
+    const [r,g,b] = p(hex);
+    const a = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 0.4));
+    return `rgba(${r},${g},${b},${a})`;
+  }catch(_){
+    return 'rgba(77,163,255,0.4)';
+  }
+}
+
+function __teamsApplyAccent(){
+  const teamObj = teams.find(item => String(item?.Team || '').trim().toUpperCase() === String(teamSelect?.value || '').trim().toUpperCase()) || null;
+  const teamColor = String(teamObj?.Color || '').trim() || themeAccent();
+  const root = document.documentElement;
+  root.style.setProperty('--team-color', teamColor);
+  root.style.setProperty('--team-glow', __teamsRgba(mixHex(teamColor, '#000000', 0.35), 0.35));
+  root.style.setProperty('--team-ring', __teamsRgba(teamColor, 0.55));
+  root.style.setProperty('--team-border', __teamsRgba(teamColor, 0.30));
+  root.style.setProperty('--team-btn-soft', __teamsRgba(teamColor, 0.30));
+  root.style.setProperty('--team-btn-dark', mixHex(teamColor, '#0b0f18', 0.55));
 }
 
 function escapeHtml(value){
@@ -1546,6 +1584,7 @@ try{
 }catch(_){/*noop*/}
 
 function updateHeader(){
+  __teamsApplyAccent();
   const ab = String(teamSelect?.value||'').toUpperCase();
   const nm = teamNameByAbbrev[ab] || ab || 'Teams';
   if(teamName) teamName.textContent = nm;
@@ -2193,7 +2232,7 @@ function makeScatterChart(canvasEl, title){
           const pad = 1.4;
 
           ctx.save();
-          ctx.globalAlpha = 0.75;
+          ctx.globalAlpha = 0.30;
 
           // Draw logo "contained" in a square without any circle/ring.
           const dw = d - 2*pad;
@@ -2238,17 +2277,22 @@ function makeScatterChart(canvasEl, title){
           if(!isHit) return;
           const p = ptEl.getProps(['x','y'], true);
 
-          const outerR = 20.5;
-          const innerR = 19;
+          const outerR = 24;
+          const innerR = 22.5;
 
           ctx.save();
+
+          // Soft team-colored glow instead of a white ring
+          try{
+            const glow = getComputedStyle(document.documentElement).getPropertyValue('--team-ring').trim();
+            ctx.shadowColor = glow || 'rgba(77,163,255,0.55)';
+            ctx.shadowBlur = 16;
+          }catch(_){/*noop*/}
           ctx.beginPath();
-          ctx.fillStyle = 'rgba(10,14,22,0.92)';
+          ctx.fillStyle = 'rgba(10,14,22,0.96)';
           ctx.arc(p.x, p.y, outerR, 0, Math.PI*2);
           ctx.fill();
-          ctx.lineWidth = 3.5;
-          ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-          ctx.stroke();
+          try{ ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }catch(_){/*noop*/}
 
           ctx.beginPath();
           ctx.arc(p.x, p.y, innerR, 0, Math.PI*2);
@@ -2537,6 +2581,41 @@ function buildTeamAggsFromLeague(leaguePlayers, mode='all'){
   return out;
 }
 
+// Total projection value labels at the end of each roster bar.
+const __teamsProjTotalLabelPlugin = {
+  id: 'teamsProjTotalLabels',
+  afterDatasetsDraw(chart){
+    try{
+      const meta = chart.getDatasetMeta(0);
+      if(!meta || !Array.isArray(meta.data) || !meta.data.length) return;
+      const ctx = chart.ctx;
+      const isExport = chart?.$projTeamExport === true;
+      ctx.save();
+      ctx.font = `800 ${isExport ? 22 : 11}px Inter, system-ui, -apple-system, sans-serif`;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const dsCount = chart.data.datasets.length;
+      for(let i = 0; i < meta.data.length; i++){
+        const el = meta.data[i];
+        if(!el || el.skip) continue;
+        let total = 0;
+        let endX = Number(el.base);
+        for(let d = 0; d < dsCount; d++){
+          const v = Number(chart.data.datasets[d].data?.[i]);
+          if(Number.isFinite(v)) total += v;
+          const m = chart.getDatasetMeta(d).data[i];
+          if(m && !m.skip && Number.isFinite(m.x)) endX = Math.max(endX, Number(m.x));
+        }
+        if(!Number.isFinite(total)) continue;
+        const y = Number(el.y);
+        if(Number.isFinite(y)) ctx.fillText(total.toFixed(2), endX + (isExport ? 14 : 9), y);
+      }
+      ctx.restore();
+    }catch(_){/*noop*/}
+  },
+};
+
 function __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, options={}){
   const ctx = canvasEl?.getContext('2d');
   if(!ctx || typeof Chart === 'undefined') return null;
@@ -2551,33 +2630,43 @@ function __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, options
   const labels = list.map(p=>p.name || String(p.playerId));
   const tick = themeTextDim();
   const isExport = options.export === true;
-  const grid = 'rgba(154,164,177,0.14)';
+  const grid = 'rgba(255,255,255,0.07)';
 
   // Stacked bar segments: EVO, EVD, PP, SH, Finishing, Rookie, Goaltending
   const STACK_COLORS = {
-    evo: 'rgba(77,163,255,0.82)',
-    evd: 'rgba(255,106,106,0.78)',
-    pp:  'rgba(255,206,84,0.82)',
-    sh:  'rgba(130,200,130,0.78)',
-    finishing: 'rgba(200,140,255,0.80)',
-    rookie: 'rgba(255,180,100,0.78)',
-    goaltending: 'rgba(100,200,200,0.78)',
+    evo:         { bg:'rgba(96,165,250,0.88)',  hover:'rgba(96,165,250,1.0)' },
+    evd:         { bg:'rgba(248,113,113,0.82)', hover:'rgba(248,113,113,0.96)' },
+    pp:          { bg:'rgba(251,191,36,0.88)',  hover:'rgba(251,191,36,1.0)' },
+    sh:          { bg:'rgba(74,222,128,0.80)',  hover:'rgba(74,222,128,0.94)' },
+    finishing:   { bg:'rgba(192,132,252,0.85)', hover:'rgba(192,132,252,0.98)' },
+    rookie:      { bg:'rgba(251,146,60,0.82)',  hover:'rgba(251,146,60,0.96)' },
+    goaltending: { bg:'rgba(45,212,191,0.82)',  hover:'rgba(45,212,191,0.96)' },
   };
-  const datasets = ['evo','evd','pp','sh','finishing','rookie','goaltending'].map(key => ({
-    label: key === 'goaltending' ? 'Goaltending' : key.toUpperCase(),
-    data: list.map(p => {
-      if(key === 'goaltending') return Number(p?.gsax || 0);
-      return Number(p?.[key] || 0);
-    }),
-    backgroundColor: STACK_COLORS[key],
-    borderColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    barPercentage: isExport ? 0.58 : 0.68,
-    categoryPercentage: isExport ? 0.80 : 0.86,
-    maxBarThickness: isExport ? 20 : 18,
-  }));
+  const STACK_KEYS = ['evo','evd','pp','sh','finishing','rookie','goaltending'];
+  const lastKey = STACK_KEYS[STACK_KEYS.length - 1];
+  const datasets = STACK_KEYS.map((key, idx) => {
+    const c = STACK_COLORS[key];
+    const isFirst = (idx === 0);
+    const isLast = (key === lastKey);
+    return {
+      label: key === 'goaltending' ? 'Goaltending' : key.toUpperCase(),
+      data: list.map(p => {
+        if(key === 'goaltending') return Number(p?.gsax || 0);
+        return Number(p?.[key] || 0);
+      }),
+      backgroundColor: c.bg,
+      hoverBackgroundColor: c.hover,
+      borderColor: 'rgba(10,14,22,0.9)',
+      borderWidth: 1.5,
+      borderRadius: isFirst ? { topLeft:5, bottomLeft:5 } : isLast ? { topRight:5, bottomRight:5 } : 0,
+      borderSkipped: false,
+      barPercentage: isExport ? 0.58 : 0.9,
+      categoryPercentage: isExport ? 0.80 : 0.74,
+      maxBarThickness: isExport ? 20 : 18,
+    };
+  });
 
-  return new Chart(ctx, {
+  const chart = new Chart(ctx, {
     type: 'bar',
     data: { labels, datasets },
     options: {
@@ -2585,32 +2674,88 @@ function __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, options
       responsive: true,
       maintainAspectRatio: false,
       indexAxis: 'y',
+      layout: { padding: { right: isExport ? 70 : 46 } },
       plugins: {
-        legend: { display: true, labels: { color: tick, font:{ size: 11, weight:'700' } } },
-        tooltip: { callbacks: {
-          label: (context)=> `${context.dataset.label}: ${fmt3(context.raw)}`,
-        } }
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'start',
+          labels: {
+            color: 'rgba(255,255,255,0.85)',
+            font: { size: isExport ? 20 : 11, weight: '700' },
+            boxWidth: isExport ? 16 : 10,
+            boxHeight: isExport ? 16 : 10,
+            borderRadius: 3,
+            padding: 16,
+            usePointStyle: true,
+            pointStyle: 'rectRounded',
+          },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(15,21,34,0.97)',
+          titleColor: 'rgba(255,255,255,0.95)',
+          bodyColor: 'rgba(255,255,255,0.88)',
+          footerColor: 'rgba(255,255,255,0.78)',
+          borderColor: '#2a3142',
+          borderWidth: 1,
+          cornerRadius: 10,
+          padding: 10,
+          titleFont: { size: 12, weight: '800' },
+          bodyFont: { size: 11, weight: '600' },
+          footerFont: { size: 11, weight: '800' },
+          boxWidth: 8,
+          boxHeight: 8,
+          boxPadding: 4,
+          callbacks: {
+            label: (context)=> `${context.dataset.label}: ${fmt3(context.raw)}`,
+            footer: (items)=>{
+              if(!items || !items.length) return '';
+              const i = Number(items[0].dataIndex);
+              const c = items[0].chart;
+              let total = 0;
+              for(const ds of c.data.datasets){
+                const v = Number(ds.data?.[i]);
+                if(Number.isFinite(v)) total += v;
+              }
+              return `Total: ${total.toFixed(3)}`;
+            },
+          },
+        },
       },
       scales: {
         x: {
           stacked: true,
-          ticks: { color: tick, font: { size: isExport ? 18 : 12, weight: isExport ? '700' : '500' } },
+          border: { display: false },
+          title: { display:true, text:'Projection', color:'rgba(255,255,255,0.78)', font:{ size: isExport ? 20 : 12, weight:'800' } },
+          ticks: { color: 'rgba(255,255,255,0.72)', font: { size: isExport ? 18 : 11 } },
           grid: { color: grid },
         },
         y: {
           stacked: true,
-          ticks: { color: tick, autoSkip: false, font: { size: isExport ? 20 : 12, weight: isExport ? '700' : '500' } },
+          border: { display: false },
+          ticks: { color: 'rgba(255,255,255,0.88)', autoSkip: false, font: { size: isExport ? 20 : 12, weight: isExport ? '700' : '650' }, padding: 8 },
           grid: { display:false },
         },
-      }
-    }
+      },
+    },
+    plugins: [__teamsProjTotalLabelPlugin],
   });
+  try{ chart.$projTeamExport = isExport; }catch(_){/*noop*/}
+  return chart;
 }
 
 function renderProjTeamStack(teamAbbrev, leaguePlayers){
   const canvasEl = document.getElementById('projTeamStack');
   if(__projTeamChart){ try{ __projTeamChart.destroy(); }catch(_){/*noop*/} __projTeamChart=null; }
+  // Dynamic height based on roster size so bars get breathing room.
+  const ab = String(teamAbbrev||'').toUpperCase();
+  const count = (leaguePlayers||[]).filter(p=>String(p.team||'').toUpperCase() === ab).length;
+  const height = Math.max(640, Math.min(1300, 120 + (count * 34)));
+  if(canvasEl){
+    canvasEl.style.height = `${height}px`;
+  }
   __projTeamChart = __createProjTeamStackChart(canvasEl, teamAbbrev, leaguePlayers, { animate:true });
+  try{ __projTeamChart?.resize(); }catch(_){/*noop*/}
 }
 
 function exportRowsToCsv(filename, rows){
@@ -2665,12 +2810,12 @@ function renderLeagueTable(teamAgg){
   const th = cols.map(c=>{
     const isS = c.key === sortKey;
     const ind = isS ? (sortDir==='asc'?'▲':'▼') : '';
-    return `<th class="${c.cls||''} ${c.cls==='num'?'num':''}" data-sort="${c.key}">${c.label}${ind?`<span class="sort-ind">${ind}</span>`:''}</th>`;
+    return `<th class="${c.cls||''} ${c.cls==='num'?'num':''}${isS?' sorted':''}" data-sort="${c.key}">${c.label}${ind?`<span class="sort-ind">${ind}</span>`:''}</th>`;
   }).join('');
 
   const tb = rows.map(p=>{
     const isTeam = ab && String(p.team||'').toUpperCase() === ab;
-    return `<tr style="${isTeam?'background:rgba(77,163,255,0.10);':''}">` + cols.map(c=>{
+    return `<tr${isTeam?' class="selected-player"':''}>` + cols.map(c=>{
       if(c.key === 'teamName'){
         const name = String(p.teamName||p.team||'');
         return `<td class="name">${name}</td>`;
@@ -2859,9 +3004,8 @@ try{
 
 function applyExportButtonTextColor(){
   try{
-    const v = getComputedStyle(document.documentElement).getPropertyValue('--value-text').trim();
-    if(btnExportTableCsv) btnExportTableCsv.style.color = v;
-    if(projExportCsv) projExportCsv.style.color = v;
+    if(btnExportTableCsv) btnExportTableCsv.style.color = '#ffffff';
+    if(projExportCsv) projExportCsv.style.color = '#ffffff';
   }catch(_){/*noop*/}
 }
 
@@ -2924,14 +3068,14 @@ async function loadTablePanel(){
       const head = cols.map(c=>{
         const isS = c.key === activeSortKey;
         const ind = isS ? (activeSortDir==='asc'?'▲':'▼') : '';
-        return `<th class="${c.cls||''}" data-sort="${c.key}">${c.label}${ind?`<span class=\"sort-ind\">${ind}</span>`:''}</th>`;
+        return `<th class="${c.cls||''}${isS?' sorted':''}" data-sort="${c.key}">${c.label}${ind?`<span class=\"sort-ind\">${ind}</span>`:''}</th>`;
       }).join('');
 
       const body = rows.map((r, idx)=>{
         const isSel = String(r.team||'').toUpperCase() === String(teamSelect?.value||'').toUpperCase();
         return `<tr style="${isSel?'background:rgba(77,163,255,0.10);':''}">` + cols.map(c=>{
           if(c.key==='rank') return `<td class="num">${idx+1}</td>`;
-          if(c.key==='team') return `<td>${String(r.team||'')}</td>`;
+          if(c.key==='team') return `<td class="team-cell"><div class="team-table-cell"><img class="team-table-logo" src="${teamLogoUrl(String(r.team||''))}" alt="" loading="lazy" onerror="this.style.display='none'" /><span class="team-table-name">${String(r.team||'')}</span></div></td>`;
           const v = r[c.key];
           const txt = Number.isFinite(Number(v)) ? fmtSmart(v) : '—';
           const metricName = String((c.key||'').split('|')[1] || c.key || '');
@@ -3074,6 +3218,7 @@ try{
 async function initTeamsPage(){
   restoreTeamsState();
   updateSlicerSummaries();
+  __teamsApplyAccent();
   applyExportButtonTextColor();
 
   // Wait for base.html to populate selects.

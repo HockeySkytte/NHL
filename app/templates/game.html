@@ -8,39 +8,58 @@
 .game-tabs button { background:none; border:none; font-size:14px; font-weight:600; padding:14px 4px 16px; cursor:pointer; position:relative; color:var(--text-dim); letter-spacing:.7px; }
 .game-tabs button.active { color:var(--text); }
 .game-tabs button.active::after { content:""; position:absolute; left:0; right:0; bottom:0; height:4px; background:var(--accent); border-radius:4px; box-shadow:0 0 8px -1px var(--accent); }
-.panel { background:var(--panel); border:1px solid #222c3a; border-radius:14px; padding:24px 26px 30px; box-shadow:0 4px 18px -6px rgba(0,0,0,.55); }
+.panel { background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); border:1px solid #232a3a; border-radius:14px; padding:20px 22px 24px; box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
+.panel.flat { background:transparent; border:none; border-radius:0; box-shadow:none; padding:0; }
+/* Rounded panel container for data tables — matches .metrics-table-wrap / .table-wrap on other pages */
+.game-table-wrap { border:1px solid #232a3a; border-radius:14px; overflow:hidden; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
 .split { display:grid; gap:26px; }
 @media (min-width:1100px){ .split { grid-template-columns:1fr 1fr; } }
 .roster-group { margin-bottom:28px; }
 .roster-group h3 { margin:0 0 14px; font-size:15px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); }
 .player-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:20px; }
-.player-card { background:var(--team-card-bg,rgba(255,255,255,.08)); border:1px solid rgba(255,255,255,.10); border-radius:16px; padding:16px 18px 18px; font-size:13px; line-height:1.28; position:relative; display:grid; grid-template-columns:94px 1fr; gap:16px; backdrop-filter:blur(4px); }
+.player-card { background:var(--team-card-bg,rgba(255,255,255,.08)); border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:16px 18px 18px; font-size:13px; line-height:1.28; position:relative; display:grid; grid-template-columns:94px 1fr; gap:16px; backdrop-filter:blur(4px); }
 .player-card h4 { margin:0 0 6px; font-size:16px; font-weight:600; letter-spacing:.4px; }
 .player-card .meta { font-size:12px; opacity:.9; letter-spacing:.4px; font-weight:500; }
 .player-card img { width:94px; height:94px; border-radius:14px; object-fit:cover; background:#0d1117; box-shadow:0 2px 6px -2px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.10); }
-.table { width:100%; border-collapse:collapse; font-size:13px; }
-.table th { text-align:left; padding:8px 10px; font-size:11px; text-transform:uppercase; letter-spacing:.7px; border-bottom:1px solid #253041; color:var(--text-dim); }
-.table td { padding:8px 10px; border-bottom:1px solid #1e2735; }
+.table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+.table th { position:sticky; top:0; z-index:2; text-align:center; padding:12px 12px; font-size:12px; font-weight:900; text-transform:uppercase; letter-spacing:.8px; border-bottom:1px solid #2b3648; color:var(--text-dim); background:linear-gradient(180deg, #1a2337, #121a2b); white-space:nowrap; user-select:none; box-shadow:0 1px 0 rgba(255,255,255,0.04) inset; }
+.table th.sortable { cursor:pointer; }
+.table th.sortable:hover { background:linear-gradient(180deg, #1e2940, #151f33); color:#e2ecf9; }
+.table th.sort-active { color:#dbe9fb; box-shadow:inset 0 -2px 0 var(--accent), 0 1px 0 rgba(255,255,255,0.04) inset; }
+.sort-arrow { color:rgba(255,255,255,0.35); margin-left:4px; font-size:10px; }
+.sort-active .sort-arrow { color:var(--accent); }
+.table td { padding:8px 12px; text-align:center; border-bottom:1px solid #1a2230; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.table th:first-child, .table td:first-child { text-align:left; }
+.table tbody tr:nth-child(even) td { background:rgba(255,255,255,0.025); }
+.table tbody tr:hover td { background:rgba(255,255,255,0.055); }
+/* Sticky first column (Skaters/Goalies name cells) — mirrors metrics-table */
+.table th.sticky-col { z-index:4; border-right:1px solid #2b3648; }
+.table td.sticky-col { position:sticky; left:0; z-index:1; background:#111827; border-right:1px solid #232c3c; }
+.table tbody tr:nth-child(even) td.sticky-col { background:#131c2c; }
+.table tbody tr:hover td.sticky-col { background:#1a2436; }
 .skaters-table table th, .skaters-table table td { text-align:center; }
 .skaters-table table th:first-child, .skaters-table table td:first-child { text-align:left; }
 .val-chip { display:inline-block; padding:2px 6px; border-radius:8px; font-weight:800; min-width:44px; text-align:center; }
 .badge { background:#253143; padding:2px 6px; border-radius:6px; font-size:11px; font-weight:600; letter-spacing:.5px; }
 .sticky-actions { margin-bottom:18px; }
 .code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
-/* Larger, lighter export button styling */
-.btn-export { background:#3a4860; border:1px solid #2f3b52; color:var(--text); padding:10px 16px; border-radius:10px; cursor:pointer; font-weight:700; font-size:13px; }
-.btn-export:hover { background:#445571; border-color:#3a4860; }
+/* Pill action buttons — gradient team accents with white text (matches other pages) */
+.btn-export { background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.30)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, rgba(77,163,255,0.30)); color:#ffffff; padding:10px 18px; border-radius:999px; cursor:pointer; font-weight:800; font-size:13px; letter-spacing:.3px; transition:filter .15s ease, transform .15s ease; }
+.btn-export:hover { filter:brightness(1.22); transform:translateY(-1px); }
+.btn-export:disabled { opacity:.55; cursor:not-allowed; filter:none; transform:none; }
+.btn-back { background:var(--panel-alt); border:1px solid #2a3343; color:#ffffff; padding:8px 16px; border-radius:999px; cursor:pointer; font-weight:700; font-size:13px; margin-bottom:14px; transition:filter .15s ease, transform .15s ease; }
+.btn-back:hover { filter:brightness(1.2); transform:translateY(-1px); }
 /* Report slicers + sub-tabs */
-.report-slicers { display:flex; flex-wrap:wrap; gap:12px; padding:10px 12px; background:var(--panel); border:1px solid #222c3a; border-radius:10px; margin-bottom:14px; }
+.report-slicers { display:flex; flex-wrap:wrap; gap:12px; padding:14px 16px; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); border:1px solid #232a3a; border-radius:14px; margin-bottom:14px; box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
 .slicer { display:flex; flex-direction:column; gap:6px; }
 .slicer label { font-size:11px; letter-spacing:.5px; color:var(--text-dim); font-weight:600; }
-.slicer select { min-width:180px; background:#0f1520; border:1px solid #2a3343; color:var(--text); padding:8px 10px; border-radius:8px; font-weight:600; }
+.slicer select { min-width:180px; background:#0d1322; border:1px solid #2a3343; color:var(--text); padding:8px 10px; border-radius:10px; font-weight:600; }
 .slicer select[multiple] { min-width:220px; min-height:90px; }
 /* Dropdown slicers (PWHL-like) */
 .slicer .dropdown { position:relative; }
-.slicer .dropdown-btn { min-width:180px; background:#0f1520; border:1px solid #2a3343; color:var(--text); padding:8px 10px; border-radius:8px; font-weight:600; display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer; }
+.slicer .dropdown-btn { min-width:180px; background:#0d1322; border:1px solid #2a3343; color:var(--text); padding:8px 12px; border-radius:10px; font-weight:600; display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer; }
 .slicer .dropdown-btn:after { content:''; width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid rgba(255,255,255,0.8); margin-left:auto; }
-.slicer .dropdown-menu { position:absolute; top:calc(100% + 6px); left:0; background:#0b1220; border:1px solid #2a3343; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.4); padding:8px; z-index:40; min-width:240px; max-height:280px; overflow:auto; }
+.slicer .dropdown-menu { position:absolute; top:calc(100% + 6px); left:0; background:#0c1220; border:1px solid #232a3a; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.4); padding:8px; z-index:40; min-width:240px; max-height:280px; overflow:auto; }
 .slicer .dropdown-item { display:flex; align-items:center; gap:8px; padding:6px 6px; border-radius:6px; }
 .slicer .dropdown-item:hover { background:rgba(255,255,255,.05); }
 .slicer .dropdown-item input { accent-color: var(--accent, #53b3ff); }
@@ -58,10 +77,11 @@
 .slicer .dropdown-tools { position:sticky; top:0; background:#0b1220; padding:4px 6px 6px; display:flex; justify-content:flex-end; gap:8px; z-index:1; }
 .slicer .dropdown-tools .link-btn { background:transparent; color:var(--text); opacity:.85; border:none; font-size:12px; padding:4px 6px; cursor:pointer; border-radius:6px; }
 .slicer .dropdown-tools .link-btn:hover { background:rgba(255,255,255,.06); }
-.report-subtabs { display:flex; gap:8px; border-bottom:1px solid #222c3a; margin-top:8px; }
-.report-subtabs button { background:none; border:none; padding:10px 10px; font-weight:700; color:var(--text-dim); cursor:pointer; position:relative; }
+.report-subtabs { display:flex; gap:2px; border-bottom:1px solid #1f2734; margin-top:8px; overflow-x:auto; scrollbar-width:none; }
+.report-subtabs::-webkit-scrollbar { display:none; }
+.report-subtabs button { background:none; border:none; padding:10px 14px 12px; font-size:13px; font-weight:650; color:var(--text-dim); cursor:pointer; position:relative; letter-spacing:.3px; white-space:nowrap; }
 .report-subtabs button.active { color:var(--text); }
-.report-subtabs button.active::after { content:""; position:absolute; left:8px; right:8px; bottom:-1px; height:3px; background:var(--accent); border-radius:3px; }
+.report-subtabs button.active::after { content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:4px; background:var(--accent); border-radius:4px 4px 0 0; }
 .report-view-shell { display:flex; flex-direction:column; gap:12px; }
 .report-view-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .report-view-meta { display:flex; flex-direction:column; gap:6px; min-width:min(100%, 720px); }
@@ -72,13 +92,13 @@
 .report-share-status.err { color:#ffb3b3; }
 .modal{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:2000; }
 .modal[hidden]{ display:none !important; }
-.modal-card{ width:min(1100px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:#0f1522; border:1px solid #2a3142; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.6); }
+.modal-card{ width:min(1100px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; background:linear-gradient(180deg, rgba(20,27,42,0.95), rgba(11,16,26,0.97)); border:1px solid #232a3a; border-radius:14px; box-shadow:0 18px 44px rgba(0,0,0,0.6); }
 .modal-hd{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid #232a3a; }
 .modal-title{ font-weight:900; letter-spacing:.2px; }
 .modal-bd{ padding:14px 16px; }
 .shoot-share-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; }
-.shoot-share-card{ width:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; text-align:left; min-height:132px; padding:14px; border-radius:12px; border:1px solid #2a3142; background:rgba(255,255,255,0.02); color:var(--value-text, var(--text)); cursor:pointer; }
-.shoot-share-card:hover{ background:rgba(255,255,255,0.05); }
+.shoot-share-card{ width:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; text-align:left; min-height:132px; padding:14px; border-radius:14px; border:1px solid #232a3a; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); color:var(--value-text, var(--text)); cursor:pointer; transition:filter .15s ease; }
+.shoot-share-card:hover{ filter:brightness(1.15); }
 .shoot-share-card:disabled{ opacity:.55; cursor:not-allowed; }
 .shoot-share-card.logo-only{ align-items:center; text-align:center; }
 .shoot-share-card.logo-only .shoot-share-name,
@@ -120,9 +140,9 @@
   .zone-wrap { position:relative; width:100%; max-width:620px; margin:0 auto; aspect-ratio:75/85; border-radius:12px; overflow:hidden; background:transparent; }
 .zone-wrap canvas { position:absolute; inset:0; width:100%; height:100%; }
 @media (max-width: 1100px){ .report-rink-row { grid-template-columns:1fr; } }
-.xgmap-wrap{ max-width:none; margin:0; aspect-ratio:16/6; background:transparent; border:1px solid #222c3a; }
+.xgmap-wrap{ max-width:none; margin:0; aspect-ratio:16/6; background:transparent; }
   .kpi-stack{ display:flex; flex-direction:column; height:100%; background:transparent; border:none; border-radius:0; padding:0; }
-  .kpi-card { background:rgba(8,14,24,.62); border:1px solid rgba(255,255,255,.08); border-radius:18px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; box-shadow:0 10px 24px rgba(0,0,0,.18); }
+  .kpi-card { background:transparent; border:none; border-radius:0; padding:6px 8px; display:flex; flex-direction:column; gap:6px; box-shadow:none; }
   .kpi-card h5{ margin:0; font-size:12px; font-weight:800; text-align:center; color:var(--text); }
   .kpi-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
   .kpi { background:transparent; border:none; border-radius:12px; padding:6px 4px; text-align:center; }
@@ -186,7 +206,7 @@
 {% endblock %}
 {% block content %}
 <div class="game-header">
-  <button onclick="window.history.back()" style="background:var(--panel-alt); border:1px solid #2a3343; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px; margin-bottom:14px;">← Back</button>
+  <button onclick="window.history.back()" class="btn-back" type="button">← Back</button>
   <h2 id="gameTitle">Loading...</h2>
   <div class="subline" id="gameMeta"></div>
   <div class="final-line" id="gameFinal" style="margin-top:4px;"></div>
@@ -379,7 +399,21 @@ function buildHeader(){
   document.getElementById('gameMeta').textContent = `${state}${regTag}: ${away.abbrev||'AWY'} ${away.score!=null?away.score:'-'} - ${home.score!=null?home.score:'-'} ${home.abbrev||'HME'}`;
   const venue = boxscoreData.venue?.default; const city = boxscoreData.venueLocation?.default; 
   document.getElementById('gameFinal').textContent = `${venue?venue+(city?`, ${city}`:''):''}${shotsLine}`;
-  try { const teamsData = JSON.parse(document.getElementById('teams-data').textContent); const homeMeta = teamsData.find(t=> t.Team===home.abbrev); if(homeMeta){ document.documentElement.style.setProperty('--accent', homeMeta.Color||'#f97316'); }} catch(e){}
+  try {
+    const teamsData = JSON.parse(document.getElementById('teams-data').textContent);
+    const homeMeta = teamsData.find(t=> t.Team===home.abbrev);
+    if(homeMeta){
+      const col = homeMeta.Color||'#f97316';
+      const st = document.documentElement.style;
+      st.setProperty('--accent', col);
+      st.setProperty('--team-color', col);
+      st.setProperty('--team-btn-soft', hexWithAlpha(col, 0.30));
+      st.setProperty('--team-btn-dark', darkenColor(col, 0.55));
+      st.setProperty('--team-border', hexWithAlpha(col, 0.30));
+      st.setProperty('--team-ring', hexWithAlpha(col, 0.55));
+      st.setProperty('--team-glow', hexWithAlpha(col, 0.42));
+    }
+  } catch(e){}
 }
 
 function parseTeamsData(){ try { return JSON.parse(document.getElementById('teams-data').textContent); } catch(e){ return null; } }
@@ -406,12 +440,12 @@ async function renderPBP(){
   ];
   const header = cols.map(c=>`<th>${c}</th>`).join('');
   const body = (pbpData.plays||[]).map(pl=> `<tr>${cols.map(c=> `<td>${pl[c]!==undefined && pl[c]!==null ? pl[c] : ''}</td>`).join('')}</tr>`).join('');
-  tabContent.innerHTML = `<div class="panel"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Play-by-Play</h3><button id="exportPbpBtn" class="btn-export">Export CSV</button></div>
-    <div class='table-scroll'>
+  tabContent.innerHTML = `<div><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Play-by-Play</h3><button id="exportPbpBtn" class="btn-export">Export CSV</button></div>
+    <div class="game-table-wrap"><div class='table-scroll'>
     <table class='table' style='min-width:1400px;'>
       <thead><tr>${header}</tr></thead>
       <tbody>${body}</tbody>
-    </table></div>
+    </table></div></div>
   </div>`;
   document.getElementById('exportPbpBtn')?.addEventListener('click', ()=> exportRowsToCSV(`pbp_${GAME_ID}.csv`, pbpData.plays||[], cols));
 }
@@ -516,15 +550,15 @@ async function renderShifts(){
   }
   const rows = enrichedRows.map(row=> `<tr>${cols.map(c=>`<td>${escapeHtml(row[c]??'')}</td>`).join('')}</tr>`).join('');
   const emptyMsg = (shiftsData.shifts||[]).length ? '' : `<div style="color:var(--text-dim); font-size:13px; margin:6px 0 12px;">No shifts found for this game yet.</div>`;
-  tabContent.innerHTML = `<div class="panel"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Shifts</h3><button id="exportShiftsBtn" class="btn-export">Export CSV</button></div>
+  tabContent.innerHTML = `<div><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Shifts</h3><button id="exportShiftsBtn" class="btn-export">Export CSV</button></div>
     ${emptyMsg}
-    <div style='overflow:auto; max-height:70vh;'>
+    <div class="game-table-wrap"><div style='overflow:auto; max-height:70vh;'>
     <table class='table' style='min-width:1200px;'>
       <thead><tr>
         ${cols.map(c=>`<th>${c}</th>`).join('')}
       </tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>
+    </table></div></div>
   </div>`;
   document.getElementById('exportShiftsBtn')?.addEventListener('click', ()=> exportRowsToCSV(`shifts_${GAME_ID}.csv`, enrichedRows, cols));
 }
@@ -578,7 +612,7 @@ async function renderReport(){
   const onIce = buildOnIcePlayerList();
 
   const sel = REPORT_STATE.slicers || {};
-  const activeView = REPORT_STATE.view || 'shot-map';
+  const activeView = (REPORT_STATE.view && REPORT_STATE.view!=='video') ? REPORT_STATE.view : 'shot-map';
 
   tabContent.innerHTML = `
     <div class="report-slicers">
@@ -696,7 +730,7 @@ async function renderReport(){
       </div>
     </div>
     <div class="report-subtabs">
-      ${['shot-map','heat-map','xg-map','skaters','goalies','video'].map(v=> `<button class="subtab-btn ${activeView===v?'active':''}" data-view="${v}">${v==='shot-map'?'Shot Map': v==='heat-map'?'Heat Map': v==='xg-map'?'xG Map': v[0].toUpperCase()+v.slice(1)}</button>`).join('')}
+      ${['shot-map','heat-map','xg-map','skaters','goalies'].map(v=> `<button class="subtab-btn ${activeView===v?'active':''}" data-view="${v}">${v==='shot-map'?'Shot Map': v==='heat-map'?'Heat Map': v==='xg-map'?'xG Map': v[0].toUpperCase()+v.slice(1)}</button>`).join('')}
     </div>
     <div id="reportView" style="margin-top:12px;"></div>
   `;
@@ -799,7 +833,6 @@ function getReportViewLabel(view){
   if(view==='xg-map') return 'xG Map';
   if(view==='skaters') return 'Skaters';
   if(view==='goalies') return 'Goalies';
-  if(view==='video') return 'Video';
   return 'Report';
 }
 
@@ -1513,7 +1546,7 @@ function renderReportView(view){
       <div class="report-view-shell">
         ${buildReportActionBar('shot-map')}
         <div class="report-export-target">
-          <div class="panel report-view-panel">
+          <div class="panel report-view-panel flat">
             <div class="report-rink-row">
               <div class="zone zone-def">
                 <h4>Defensive Zone</h4>
@@ -1602,7 +1635,7 @@ function renderReportView(view){
       <div class="report-view-shell">
         ${buildReportActionBar('heat-map')}
         <div class="report-export-target">
-          <div class="panel report-view-panel">
+          <div class="panel report-view-panel flat">
             <div class="report-rink-row">
               <div class="zone zone-def">
                 <h4>Defensive Zone</h4>
@@ -1703,9 +1736,6 @@ function renderReportView(view){
   } else if(view==='teams'){
     const kpiPlays = filterPbpForKpis();
     renderTeamsPage(wrap, kpiPlays);
-    try{ saveReportState(); }catch(_){ }
-  } else if(view==='video'){
-    renderVideoTab(wrap);
     try{ saveReportState(); }catch(_){ }
   }
 }
@@ -1841,7 +1871,13 @@ function renderSkatersTable(wrap, rows){
   const cmp = (a,b)=>{ const f=sorters[_skatersSortKey]||(()=>0); const r=f(a,b); return _skatersSortDir==='asc'? r : -r; };
   rows = rows.slice().sort(cmp);
   const th = [ 'Name','Team','Position','TOI','G','A1','A2','P','ixG','Shots','iSh%','GF','GA','GF%','CF','CA','CF%','xGF','xGA','xGF%','Sh%','Sv%','PDO' ];
-  const htmlHead = `<thead><tr>${th.map(h=> `<th data-key="${keyMap[h]||''}" style="${h==='Name'? 'position:sticky; left:0; z-index:2; background:var(--panel);':''}">${h} ${keyMap[h]? '▾':''}</th>`).join('')}</tr></thead>`;
+  const htmlHead = `<thead><tr>${th.map(h=> {
+    const key = keyMap[h]||'';
+    const activeCls = key && _skatersSortKey===key ? ' sort-active' : '';
+    const arrow = key ? (_skatersSortKey===key ? (_skatersSortDir==='asc'?'▲':'▼') : '▾') : '';
+    const sticky = h==='Name' ? ' sticky-col' : '';
+    return `<th data-key="${key}" class="${key?'sortable':''}${activeCls}${sticky}">${h}${key? ` <span class="sort-arrow">${arrow}</span>`:''}</th>`;
+  }).join('')}</tr></thead>`;
   const fmt = (v, d=1)=> v==null? '—' : (typeof v==='number'? (Number.isInteger(v)? String(v) : v.toFixed(d)) : String(v));
   const htmlBody = rows.map(r=>{
     const gfChip = `<span class="val-chip" style="${colorStyleFor(r.GFp,'pct')}">${fmt(r.GFp,1)}</span>`;
@@ -1849,7 +1885,7 @@ function renderSkatersTable(wrap, rows){
     const xgfChip = `<span class="val-chip" style="${colorStyleFor(r.xGFp,'pct')}">${fmt(r.xGFp,1)}</span>`;
     const pdoChip = `<span class="val-chip" style="${colorStyleFor(r.PDO,'pdo')}">${fmt(r.PDO,1)}</span>`;
     return `<tr>
-      <td style="position:sticky; left:0; z-index:1; background:var(--panel);">${r.name}</td>
+      <td class="sticky-col">${r.name}</td>
       <td>${r.logo? `<img class='team-logo' src='${r.logo}' alt='${r.team}'/>` : (r.team||'')}</td>
       <td>${r.pos||''}</td>
       <td>${formatSeconds(r.toi)}</td>
@@ -1874,8 +1910,8 @@ function renderSkatersTable(wrap, rows){
       <td>${pdoChip}</td>
     </tr>`;
   }).join('');
-  wrap.innerHTML = `<div class="panel skaters-table"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Skaters</h3><button id="exportSkatersBtn" class="btn-export">Export CSV</button></div>
-    <div class='table-scroll'><table class='table' style='min-width:1400px;'>${htmlHead}<tbody>${htmlBody}</tbody></table></div></div>`;
+  wrap.innerHTML = `<div class="skaters-table"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Skaters</h3><button id="exportSkatersBtn" class="btn-export">Export CSV</button></div>
+    <div class="game-table-wrap"><div class='table-scroll'><table class='table' style='min-width:1400px;'>${htmlHead}<tbody>${htmlBody}</tbody></table></div></div></div>`;
   // wire sort
   wrap.querySelectorAll('th[data-key]')?.forEach(thEl=>{
     thEl.addEventListener('click',()=>{
@@ -1975,7 +2011,7 @@ function drawShotMapPoints(plays, root=document, wireTooltip=true){
     const ctx = isFor ? octx : dctx;
     const px = zx * ctx.canvas.width; const py = zy * ctx.canvas.height;
     const type = pl.Goal===1 ? 'Goal' : (pl.Shot===1 ? 'Shot' : 'Miss');
-    const color = getTeamColor(pl.EventTeam||team);
+    const color = darkenColor(getTeamColor(pl.EventTeam||team), 0.55);
     drawMarker(ctx, type, px, py, color);
     // index for hover (store screen coords and source data)
     hoverIdx.push({ ctxId: isFor? 'offShots':'defShots', x:px, y:py, pl, isFor });
@@ -2173,43 +2209,6 @@ function applyKpiGradients(){
   applyGradientToKpi('k_pdo', pdoToColor);
 }
 
-// ---- Video tab ----
-async function fetchRightRail(gameId){
-  try{
-    // Call server-side proxy to avoid browser CORS
-    const url = `/api/game/${gameId}/right-rail`;
-    return await fetchJson(url);
-  }catch(e){ return {}; }
-}
-function renderVideoTab(wrap){
-  const panel = document.createElement('div'); panel.className='panel';
-  panel.innerHTML = `
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
-      <h3 style='margin:0;font-size:18px;'>Video</h3>
-      <div style='display:flex; gap:8px;'>
-        <button id='btnRecap' class='btn-export'>3 minute recap</button>
-        <button id='btnCondensed' class='btn-export'>Condensed Game</button>
-      </div>
-    </div>
-    <div style='position:relative; padding-top:56.25%; background:#0b1220; border:1px solid #222c3a; border-radius:10px;'>
-      <iframe id='videoPlayer' allow='autoplay' style='position:absolute; inset:0; width:100%; height:100%; border:0; border-radius:10px; background:#000;'></iframe>
-    </div>
-  `;
-  wrap.innerHTML=''; wrap.appendChild(panel);
-  let last = null;
-  const play=(videoId)=>{
-    const iframe=document.getElementById('videoPlayer'); if(!iframe||!videoId) return;
-    iframe.src = `https://players.brightcove.net/6415718365001/default_default/index.html?videoId=${videoId}&autoplay=true&muted=false`;
-  };
-  const loadAndPlay= async (type)=>{
-    const rr = await fetchRightRail(GAME_ID);
-    const vid = rr?.gameVideo?.[type];
-    if(vid){ play(vid); last=type; }
-  };
-  document.getElementById('btnRecap')?.addEventListener('click', ()=> loadAndPlay('threeMinRecap'));
-  document.getElementById('btnCondensed')?.addEventListener('click', ()=> loadAndPlay('condensedGame'));
-}
-
 // ---- Teams page (xG Map) ----
 function parseGameTimeToSeconds(t){ return parseTimeToSeconds(t); }
 function getOpponentTeam(abbrev){ const h=boxscoreData?.homeTeam?.abbrev, a=boxscoreData?.awayTeam?.abbrev; if(abbrev===h) return a; if(abbrev===a) return h; return null; }
@@ -2260,7 +2259,7 @@ function renderTeamsPage(wrap, plays){
     <div class="report-view-shell">
       ${buildReportActionBar('xg-map')}
       <div class="report-export-target">
-        <div class="panel report-view-panel">
+        <div class="panel report-view-panel flat">
           <div>
             <div class="zone-wrap xgmap-wrap">
               <canvas id="xgMapCanvas"></canvas>
@@ -2511,11 +2510,17 @@ function renderGoaliesTable(wrap, rows){
   rows = rows.slice().sort(cmp);
   const shotBased = isShotBasedXg();
   const th=['Name','Team','TOI','FA','SA','GA','xGA', ...(shotBased? ['Sv%','xSv%','dSv%'] : ['FSv%','xFSv%','dFSv%']), 'GSAx'];
-  const htmlHead = `<thead><tr>${th.map(h=> `<th data-key="${keyMap[h]||''}" style="${h==='Name'? 'position:sticky; left:0; z-index:2; background:var(--panel);':''}">${h} ${keyMap[h]? '▾':''}</th>`).join('')}</tr></thead>`;
+  const htmlHead = `<thead><tr>${th.map(h=> {
+    const key = keyMap[h]||'';
+    const activeCls = key && _goaliesSortKey===key ? ' sort-active' : '';
+    const arrow = key ? (_goaliesSortKey===key ? (_goaliesSortDir==='asc'?'▲':'▼') : '▾') : '';
+    const sticky = h==='Name' ? ' sticky-col' : '';
+    return `<th data-key="${key}" class="${key?'sortable':''}${activeCls}${sticky}">${h}${key? ` <span class="sort-arrow">${arrow}</span>`:''}</th>`;
+  }).join('')}</tr></thead>`;
   const fmt=(v,d=1)=> v==null? '—' : (typeof v==='number'? (Number.isInteger(v)? String(v) : v.toFixed(d)) : String(v));
   const htmlBody = rows.map(r=>`
     <tr>
-      <td style="position:sticky; left:0; z-index:1; background:var(--panel);">${r.name}</td>
+      <td class="sticky-col">${r.name}</td>
       <td>${r.logo? `<img class='team-logo' src='${r.logo}' alt='${r.team}'/>` : (r.team||'')}</td>
       <td>${formatSeconds(r.toi)}</td>
       <td>${r.FA}</td>
@@ -2532,8 +2537,8 @@ function renderGoaliesTable(wrap, rows){
   <td><span class="val-chip" style="${colorStyleFor(r.GSAx,'gsa')}">${fmt(r.GSAx,2)}</span></td>
     </tr>
   `).join('');
-  wrap.innerHTML = `<div class="panel skaters-table"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Goalies</h3><button id="exportGoaliesBtn" class="btn-export">Export CSV</button></div>
-    <div class='table-scroll'><table class='table' style='min-width:1000px;'>${htmlHead}<tbody>${htmlBody}</tbody></table></div></div>`;
+  wrap.innerHTML = `<div class="skaters-table"><div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;"><h3 style='margin:0;font-size:18px;'>Goalies</h3><button id="exportGoaliesBtn" class="btn-export">Export CSV</button></div>
+    <div class="game-table-wrap"><div class='table-scroll'><table class='table' style='min-width:1000px;'>${htmlHead}<tbody>${htmlBody}</tbody></table></div></div></div>`;
   // wire sort
   wrap.querySelectorAll('th[data-key]')?.forEach(thEl=>{
     thEl.addEventListener('click',()=>{

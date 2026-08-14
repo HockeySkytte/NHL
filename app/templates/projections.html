@@ -1,14 +1,21 @@
 {% extends 'base.html' %}
 {% block head %}
 <style>
-  .proj-page-tabs{ display:flex; gap:10px; align-items:center; margin:0 0 16px 0; flex-wrap:wrap; }
-  .proj-page-tabs button{ background:transparent; border:1px solid #2a3142; color:#fff; min-height:40px; padding:0 16px; font-size:14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
-  .proj-page-tabs button.active{ outline:2px solid var(--accent); background:rgba(255,255,255,0.03); }
+  .proj-page-tabs{ display:flex; gap:2px; align-items:center; margin:0 0 16px 0; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; -ms-overflow-style:none; border-bottom:1px solid #1f2734; }
+  .proj-page-tabs::-webkit-scrollbar{ display:none; }
+  .proj-page-tabs button{ position:relative; background:transparent; border:none; color:var(--text-dim); padding:10px 16px 14px; border-radius:0; font-weight:650; letter-spacing:.4px; cursor:pointer; font-size:13px; white-space:nowrap; flex:0 0 auto; transition:color .15s ease; }
+  .proj-page-tabs button:hover{ color:var(--text); }
+  .proj-page-tabs button.active{ color:var(--text); }
+  .proj-page-tabs button.active::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:4px; border-radius:4px 4px 0 0; background:var(--accent); box-shadow:0 0 10px -1px var(--accent); }
   .proj-panel[hidden]{ display:none !important; }
   .odds-row{ display:flex; justify-content:flex-end; align-items:center; margin:0 0 10px 0; }
-  .proj-toolbar{ display:flex; gap:10px; align-items:center; margin:0 0 16px 0; }
-  .proj-toolbar button{ background:var(--panel-alt); border:1px solid #2a3142; color:#fff; padding:8px 12px; font-size:14px; border-radius:8px; font-weight:600; cursor:pointer; }
-  .proj-toolbar button.active{ background:var(--accent); border-color:var(--accent); }
+  /* Date controls: circular arrows around a centered date title (matches Schedule month selector) */
+  #projDateControls{ display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:.5rem; margin:0 0 1rem 0; }
+  #projDateControls .date-nav-btn{ width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); border-radius:999px; font-weight:600; cursor:pointer; justify-self:end; transition:background .18s ease, transform .18s ease, border-color .18s ease; }
+  #projDateControls .date-nav-btn .icon{ width:18px; height:18px; }
+  #projDateControls .date-nav-btn.next{ justify-self:start; }
+  #projDateControls .date-nav-btn:hover:not(:disabled){ background:var(--panel); border-color:#3a4560; transform:translateY(-1px); }
+  #projDateControls .date-nav-btn:disabled{ opacity:.35; cursor:default; }
   .odds-toggle button{ background:var(--panel-alt); border:1px solid #2a3142; color:#fff; padding:6px 12px; font-size:13px; border-radius:8px; font-weight:600; cursor:pointer; }
   .odds-toggle button.active{ background:var(--accent); border-color:var(--accent); }
   .live-table{ width:100%; border-collapse:collapse; font-size:15px; table-layout:auto; }
@@ -30,7 +37,7 @@
   .win-chip{ display:inline-block; padding:6px 10px; border-radius:8px; min-width:68px; text-align:center; font-weight:700; font-size:16px; }
   .bet-chip{ display:inline-block; padding:6px 10px; border-radius:8px; min-width:68px; text-align:center; font-weight:700; font-size:16px; color:#0b0f16; }
   .lineup-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:6px 10px; border-radius:8px; font-weight:650; cursor:pointer; }
-  .proj-title{ text-align:center; margin: 0 0 10px 0; font-size:18px; font-weight:750; color:var(--text); }
+  .proj-title{ text-align:center; margin:0; font-size:28px; font-weight:600; letter-spacing:1px; color:var(--text); line-height:1.15; }
   /* Modal */
   .modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:1000; }
   .modal{ background:#0f1522 !important; border:1px solid #2a3142; border-radius:12px; width:min(700px, 92vw); max-height:80vh; overflow:auto; box-shadow:0 8px 30px rgba(0,0,0,.5); }
@@ -114,12 +121,12 @@
 
   @media (max-width: 980px){
     .bracket-panel-toolbar{ padding-left:12px; padding-right:12px; }
-    .proj-page-tabs{ padding-left:12px; padding-right:12px; gap:8px; }
-    .proj-page-tabs button{ padding:0 12px; min-height:36px; font-size:12px; }
+    .proj-page-tabs{ padding-left:12px; padding-right:12px; }
+    .proj-page-tabs button{ padding:10px 14px 12px; }
     .odds-row{ justify-content:flex-start; }
     /* Use the full canvas width for the table on mobile */
     main{ padding-left:0; padding-right:0; }
-    .odds-row, .proj-toolbar, .proj-title{ padding-left:12px; padding-right:12px; }
+    .odds-row, #projDateControls{ padding-left:12px; padding-right:12px; }
     #projRoot{ width:100%; margin:0; overflow:hidden; }
     #seriesRoot, #bracketRoot, #cupRoot{ padding-left:12px; padding-right:12px; }
     .playoff-bracket{ min-width:1120px; }
@@ -133,8 +140,10 @@
 
     /* Buttons: no padding, fixed tap-height */
     .odds-toggle button{ padding:0; font-size:12px; height:32px; min-width:88px; display:inline-flex; align-items:center; justify-content:center; }
-    .proj-toolbar{ gap:8px; }
-    .proj-toolbar button{ padding:0; font-size:12px; height:34px; min-width:112px; display:inline-flex; align-items:center; justify-content:center; }
+    #projDateControls{ gap:.4rem; }
+    #projDateControls .proj-title{ font-size:20px; }
+    #projDateControls .date-nav-btn{ width:38px; height:38px; }
+    #projDateControls .date-nav-btn .icon{ width:15px; height:15px; }
 
     .live-table{ font-size:12px; width:100%; max-width:100%; }
     .live-table{ table-layout:fixed; }
@@ -225,12 +234,15 @@
       <button id="oddsDecimal">Decimal</button>
     </div>
   </div>
-  <div class="proj-toolbar">
-    <button id="btnYesterday">Yesterday (ET)</button>
-    <button id="btnToday" class="active">Today (ET)</button>
-    <button id="btnTomorrow">Tomorrow (ET)</button>
+  <div id="projDateControls">
+    <button id="btnPrevDate" type="button" class="date-nav-btn" aria-label="Previous day">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <h2 id="projDateTitle" class="proj-title"></h2>
+    <button id="btnNextDate" type="button" class="date-nav-btn next" aria-label="Next day">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
   </div>
-  <h2 id="projDateTitle" class="proj-title"></h2>
   <div id="projRoot"></div>
 </div>
 
@@ -269,9 +281,8 @@ const bracketFullscreenBtn = document.getElementById('bracketFullscreenBtn');
 const seriesRoot = document.getElementById('seriesRoot');
 const bracketRoot = document.getElementById('bracketRoot');
 const cupRoot = document.getElementById('cupRoot');
-const btnToday = document.getElementById('btnToday');
-const btnYesterday = document.getElementById('btnYesterday');
-const btnTomorrow = document.getElementById('btnTomorrow');
+const btnPrevDate = document.getElementById('btnPrevDate');
+const btnNextDate = document.getElementById('btnNextDate');
 const dateEl = document.getElementById('projDateTitle');
 const oddsAmericanBtn = document.getElementById('oddsAmerican');
 const oddsDecimalBtn = document.getElementById('oddsDecimal');
@@ -298,6 +309,16 @@ let _activeProjTab = 'games';
 let oddsMode = 'american'; // 'american' | 'decimal'
 
 function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+function formatDateTitle(iso){
+  // '2026-08-14' -> 'Fri, Aug 14, 2026'
+  try{
+    if(!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso;
+    const [y, m, d] = iso.split('-').map(Number);
+    if(!y || !m || !d) return iso;
+    return new Date(y, m-1, d).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+  }catch(_){ return iso; }
+}
 
 function hexToRgb(hex){
   try{
@@ -356,7 +377,7 @@ function applyProjectionsTextColors(){
   try{
     const panelAlt = (getComputedStyle(document.documentElement).getPropertyValue('--panel-alt').trim() || '#1c2233');
     const uiText = getTextColorForBg(panelAlt);
-    const btns = [btnToday, btnYesterday, btnTomorrow, oddsAmericanBtn, oddsDecimalBtn].filter(Boolean);
+    const btns = [btnPrevDate, btnNextDate, oddsAmericanBtn, oddsDecimalBtn].filter(Boolean);
     btns.forEach(btn=>{ btn.style.color = uiText; });
     // Inputs are re-rendered, but keep any existing ones consistent.
     document.querySelectorAll('.odds-input').forEach(inp=>{ try{ inp.style.color = uiText; }catch(_){/*ignore*/} });
@@ -926,15 +947,13 @@ function setActiveProjTab(tab){
 
 function setActiveWhich(which){
   _currentWhich = which;
-  btnToday.classList.toggle('active', which==='today');
-  btnYesterday.classList.toggle('active', which==='yesterday');
-  btnTomorrow.classList.toggle('active', which==='tomorrow');
+  if(btnPrevDate) btnPrevDate.disabled = (which==='yesterday');
+  if(btnNextDate) btnNextDate.disabled = (which==='tomorrow');
   applyProjectionsTextColors();
 }
 
-btnToday.addEventListener('click', ()=>{ setActiveWhich('today'); loadGames('today'); });
-btnYesterday.addEventListener('click', ()=>{ setActiveWhich('yesterday'); loadGames('yesterday'); });
-btnTomorrow.addEventListener('click', ()=>{ setActiveWhich('tomorrow'); loadGames('tomorrow'); });
+btnPrevDate?.addEventListener('click', ()=>{ const w = _currentWhich==='tomorrow'?'today':'yesterday'; setActiveWhich(w); loadGames(w); });
+btnNextDate?.addEventListener('click', ()=>{ const w = _currentWhich==='yesterday'?'today':'tomorrow'; setActiveWhich(w); loadGames(w); });
 pageTabGames?.addEventListener('click', ()=>{ setActiveProjTab('games'); });
 pageTabSeries?.addEventListener('click', ()=>{ setActiveProjTab('series'); });
 pageTabBracket?.addEventListener('click', ()=>{ setActiveProjTab('bracket'); });
@@ -963,7 +982,7 @@ async function loadGames(which='today'){
     root.innerHTML = '<div class="live-empty">Loading…</div>';
     const r = await fetch(`/api/projections/games?which=${encodeURIComponent(which)}`);
     const js = await r.json();
-    dateEl.textContent = js.date || '';
+    dateEl.textContent = formatDateTitle(js.date || '');
     const games = js.games||[];
     window._currentGamesById = Object.fromEntries((games||[]).map(g=>[g.id, g]));
     try{

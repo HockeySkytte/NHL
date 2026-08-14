@@ -83,11 +83,12 @@
   .filters-hd .sum{ font-size:12px; color:var(--text); opacity:.92; font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:56vw; }
   .filters-toggle{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:7px 10px; border-radius:10px; font-weight:800; letter-spacing:.2px; cursor:pointer; }
 
-  nav.tabs { display:flex; gap:6px; padding:0 20px; height:46px; align-items:flex-end; border-bottom:1px solid #1f2734; background:#0e121b; position:sticky; top:0; z-index:30; }
-  nav.tabs > a { position:relative; top:10px; padding:12px 6px 18px; font-size:13px; font-weight:600; color:var(--text-dim); text-decoration:none; letter-spacing:.4px; white-space:nowrap; }
+  nav.tabs { display:flex; gap:6px; padding:0 20px; height:46px; align-items:flex-end; border-bottom:1px solid #1f2734; background:#0e121b; position:sticky; top:0; z-index:30; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; -ms-overflow-style:none; }
+  nav.tabs::-webkit-scrollbar{ display:none; }
+  nav.tabs > a { position:relative; top:10px; padding:12px 6px 18px; font-size:13px; font-weight:600; color:var(--text-dim); text-decoration:none; letter-spacing:.4px; white-space:nowrap; flex:0 0 auto; }
   nav.tabs > a.active, nav.tabs > a:hover { color:var(--text); }
   nav.tabs > a.active::after { content:""; position:absolute; left:0; right:0; bottom:10px; height:4px; border-radius:4px; background:var(--accent); box-shadow:0 0 8px -1px var(--accent); }
-  .nav-spacer{ flex:1 1 auto; }
+  .nav-spacer{ flex:1 1 auto; min-width:6px; }
   .nav-user-link, details.nav-user > summary{ position:relative; top:0; display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; border-radius:10px; border:1px solid #2a3142; background:var(--panel-alt); color:var(--value-text, var(--text)); text-decoration:none; font-size:13px; font-weight:700; cursor:pointer; list-style:none; line-height:1; transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease; }
   .nav-user-link{ align-self:center; margin-left:8px; padding:0 16px; border-radius:12px; border-color:rgba(77,163,255,0.28); background:linear-gradient(180deg, rgba(18,24,38,0.92), rgba(11,15,24,0.92)); color:#edf5ff; box-shadow:none; }
   .nav-user-link:hover, .nav-user-link:focus-visible, details.nav-user > summary:hover, details.nav-user > summary:focus-visible{ border-color:rgba(77,163,255,0.55); box-shadow:0 0 0 3px rgba(77,163,255,0.12); transform:translateY(-1px); outline:none; }
@@ -475,6 +476,63 @@
         closeMobileMenu();
       });
     }catch(_){/*noop*/}
+
+    // Keep the active top-nav tab visible when the nav overflows horizontally.
+    // Re-run after font load since Inter swaps in and reflows the nav.
+    function __alignActiveNavTab(){
+      try{
+        const navEl = document.querySelector('nav.tabs');
+        const activeLink = navEl ? navEl.querySelector('a.active') : null;
+        if(!navEl || !activeLink) return;
+        if(navEl.scrollWidth <= navEl.clientWidth + 2) return;
+        const navRect = navEl.getBoundingClientRect();
+        const linkRect = activeLink.getBoundingClientRect();
+        if(linkRect.left < navRect.left) navEl.scrollLeft += (linkRect.left - navRect.left) - 8;
+        else if(linkRect.right > navRect.right) navEl.scrollLeft += (linkRect.right - navRect.right) + 8;
+      }catch(_){/*noop*/}
+    }
+    function __alignNavSoon(){
+      try{
+        const run = ()=> setTimeout(()=> __alignActiveNavTab(), 60);
+        if(window.requestAnimationFrame) requestAnimationFrame(run);
+        else run();
+        setTimeout(()=> __alignActiveNavTab(), 350);
+      }catch(_){/*noop*/}
+    }
+    __alignNavSoon();
+    try{ if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=> __alignNavSoon()); }catch(_){/*noop*/}
+    try{ window.addEventListener('load', ()=> __alignNavSoon()); }catch(_){/*noop*/}
+
+    // User/Admin menu: nav.tabs uses overflow clipping for horizontal tab scroll,
+    // which cuts off the absolutely-positioned dropdown. Float it with fixed
+    // positioning anchored to the summary button so it escapes the clipping.
+    (function(){
+      try{
+        const detailsEl = document.querySelector('details.nav-user');
+        const menuEl = detailsEl ? detailsEl.querySelector('.nav-user-menu') : null;
+        if(!detailsEl || !menuEl) return;
+        const placeMenu = ()=>{
+          const r = detailsEl.getBoundingClientRect();
+          const vw = document.documentElement.clientWidth || window.innerWidth;
+          menuEl.style.position = 'fixed';
+          menuEl.style.top = (r.bottom + 6) + 'px';
+          menuEl.style.right = Math.max(8, vw - r.right) + 'px';
+          menuEl.style.left = 'auto';
+          menuEl.style.margin = '0';
+        };
+        const clearMenu = ()=>{ menuEl.style.cssText = ''; };
+        detailsEl.addEventListener('toggle', ()=>{ if(detailsEl.open) placeMenu(); else clearMenu(); });
+        if(detailsEl.open) placeMenu();
+        window.addEventListener('resize', ()=>{ if(detailsEl.open) placeMenu(); });
+        window.addEventListener('scroll', ()=>{ if(detailsEl.open) placeMenu(); }, true);
+        document.addEventListener('click', (e)=>{
+          if(detailsEl.open && e.target && !detailsEl.contains(e.target)) detailsEl.removeAttribute('open');
+        });
+        document.addEventListener('keydown', (e)=>{
+          if(detailsEl.open && (e.key==='Escape'||e.key==='Esc')) detailsEl.removeAttribute('open');
+        });
+      }catch(_){/*noop*/}
+    })();
 
     if(!teamSelect || !seasonSelect) return;
 

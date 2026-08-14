@@ -73,8 +73,10 @@
   .skater-proj-kpi-val{ color:var(--proj-kpi-color, rgba(255,255,255,0.9)); font-size:34px; font-weight:900; letter-spacing:.2px; line-height:1; }
   .skater-proj-kpi-lbl{ margin-top:8px; color:rgba(255,255,255,0.88); font-size:11px; letter-spacing:.8px; text-transform:uppercase; font-weight:800; line-height:1.25; }
   .skater-proj-kpi[hidden]{ display:none !important; }
-  .skater-img{ width:170px; height:170px; border-radius:18px; object-fit:cover; background:var(--panel); border:1px solid #2a3142; }
-  .skater-img.team-logo{ object-fit:contain; padding:16px; background:rgba(255,255,255,0.04); }
+  .skater-img-wrap{ position:relative; flex:0 0 auto; display:inline-flex; }
+  .skater-img{ width:164px; height:164px; border-radius:50%; object-fit:cover; object-position:center top; background:radial-gradient(circle at 50% 34%, rgba(255,255,255,0.09), rgba(255,255,255,0.02) 56%, transparent 74%); border:1px solid var(--team-ring, rgba(255,255,255,0.16)); box-shadow:none; filter:drop-shadow(0 10px 22px var(--team-glow, rgba(0,0,0,0.30))); }
+  /* Team logo mode: exact copy of the Teams page .team-img */
+  .skater-img.team-logo{ width:204px; height:204px; border-radius:26px; object-fit:contain; object-position:center; background:radial-gradient(circle at 50% 42%, rgba(255,255,255,0.07), rgba(255,255,255,0.015) 58%, transparent 74%); border:none; padding:14px; box-sizing:border-box; filter:drop-shadow(0 16px 34px rgba(0,0,0,0.45)); }
   .skater-name{ font-size:38px; font-weight:800; margin:0; letter-spacing:.2px; }
   .skater-sub{ margin-top:10px; color:var(--text-dim); font-size:16px; display:flex; gap:18px; flex-wrap:wrap; }
   .kv{ display:flex; gap:6px; align-items:baseline; }
@@ -87,11 +89,14 @@
 
   .segmented{ display:flex; gap:8px; margin-top:6px; }
   .seg-btn{ flex:1; background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 10px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
-  .seg-btn.active{ outline:2px solid var(--accent); background:rgba(255,255,255,0.03); }
+  .seg-btn.active{ outline:2px solid var(--team-ring, var(--accent)); background:rgba(255,255,255,0.03); }
 
-  .subtabs{ display:flex; gap:12px; align-items:center; margin-top:10px; }
-  .subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
-  .subtab-btn.active{ outline:2px solid var(--accent); }
+  .subtabs{ display:flex; gap:2px; align-items:center; margin-top:14px; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; -ms-overflow-style:none; border-bottom:1px solid #1f2734; }
+  .subtabs::-webkit-scrollbar{ display:none; }
+  .subtab-btn{ position:relative; background:transparent; border:none; color:var(--text-dim); padding:10px 16px 14px; border-radius:0; font-weight:650; letter-spacing:.4px; cursor:pointer; font-size:13px; white-space:nowrap; flex:0 0 auto; transition:color .15s ease; }
+  .subtab-btn:hover{ color:var(--text); }
+  .subtab-btn.active{ color:var(--text); }
+  .subtab-btn.active::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:4px; border-radius:4px 4px 0 0; background:var(--accent); box-shadow:0 0 10px -1px var(--accent); }
   .panel{ margin-top:8px; box-sizing:border-box; background:transparent; border:none; border-radius:14px; padding:8px 8px 6px; min-width:0; }
   .mini-table{ width:100%; border-collapse:collapse; font-size:14px; }
   .mini-table th{ text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; }
@@ -123,7 +128,8 @@
   .goalie-trend-wrap{ position:relative; width:100%; height:280px; }
   @media (max-width: 980px){ .goalie-trend-wrap{ height:240px; } }
 
-  .config-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
+  .config-btn{ background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.26)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, #2a3142); color:#ffffff; padding:8px 13px; border-radius:999px; font-weight:750; cursor:pointer; font-size:13px; transition:filter .15s ease, border-color .15s ease, transform .15s ease; }
+  .config-btn:hover{ filter:brightness(1.22); border-color:var(--team-ring, #3a4560); transform:translateY(-1px); }
   .config-btn:hover{ background:color-mix(in srgb, var(--panel-alt) 70%, black); }
 
   .modal{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:2000; }
@@ -148,9 +154,9 @@
   .cc-metrics .cc-metric input[type="checkbox"]{ margin:0; flex:0 0 auto; }
   .cc-metrics .cc-metric span{ display:inline; }
   .modal-ft{ display:flex; gap:10px; justify-content:flex-end; padding:12px 16px; border-top:1px solid #232a3a; }
-  .btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
-  .btn:hover{ background:rgba(255,255,255,0.05); }
-  .btn.primary{ outline:2px solid var(--accent); }
+  .btn{ background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.26)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, #2a3142); color:#ffffff; padding:8px 12px; border-radius:999px; font-weight:750; cursor:pointer; font-size:13px; transition:filter .15s ease, border-color .15s ease, transform .15s ease; }
+  .btn:hover{ filter:brightness(1.22); border-color:var(--team-ring, #3a4560); transform:translateY(-1px); }
+  .btn.primary{ outline:2px solid var(--team-ring, var(--accent)); }
 
   .rapm-controls{ display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; margin:0 auto 18px; max-width:1150px; padding:14px 16px; border:1px solid rgba(120,145,185,0.18); border-radius:20px; background:linear-gradient(180deg, rgba(18,25,40,0.9), rgba(10,14,22,0.72)); box-shadow:0 18px 40px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.04); backdrop-filter:blur(10px); }
   .rapm-controls label{ min-width:160px; color:rgba(230,236,246,0.95); font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
@@ -170,7 +176,9 @@
   @media (max-width: 640px){ .chart-controls{ grid-template-columns:1fr; } }
   .chart-controls label{ min-width:0; }
   .chart-controls select{ width:100%; }
-  .charts-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .charts-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
+  .charts-highlight-row{ display:flex; justify-content:center; align-items:center; margin-bottom:10px; }
+  .charts-highlight-row .segmented{ width:min(100%, 380px); }
   .charts-sub{ color:var(--text-dim); font-size:13px; }
   .chart-area{ position:relative; width:100%; height:520px; flex:1 1 auto; }
   @media (max-width: 980px){ .chart-area{ height:420px; } }
@@ -206,7 +214,7 @@
 
   .proj-subtabs{ display:flex; gap:12px; align-items:center; margin-top:6px; }
   .proj-subtab-btn{ background:transparent; border:1px solid #2a3142; color:var(--text); padding:8px 14px; border-radius:10px; font-weight:750; letter-spacing:.2px; cursor:pointer; }
-  .proj-subtab-btn.active{ outline:2px solid var(--accent); }
+  .proj-subtab-btn.active{ outline:2px solid var(--team-ring, var(--accent)); }
   .proj-subpanel{ margin-top:14px; background:transparent; border:none; border-radius:12px; padding:16px; }
   .proj-subpanel[hidden]{ display:none !important; }
   .proj-grid{ display:grid; grid-template-columns: 320px 1fr; gap:16px; align-items:start; }
@@ -217,17 +225,25 @@
   .proj-canvas{ width:100%; height:360px; }
   #projPlayerRadar{ height:500px; }
   #projTeamStack{ height:600px; }
-  .proj-table-wrap{ overflow:auto; border:none; border-radius:12px; }
+  .proj-table-wrap{ overflow:auto; border:1px solid #232a3a; border-radius:14px; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
   .proj-export-wrap{ display:flex; justify-content:flex-end; margin-bottom:12px; }
-  .proj-export-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 14px; border-radius:8px; font-weight:650; cursor:pointer; font-size:13px; }
-  .proj-export-btn:hover{ background:rgba(255,255,255,0.05); }
+  .proj-export-btn{ background:linear-gradient(90deg, var(--team-btn-soft, rgba(77,163,255,0.26)), var(--team-btn-dark, rgb(19,26,44))); border:1px solid var(--team-border, #2a3142); color:#ffffff; padding:8px 14px; border-radius:999px; font-weight:650; cursor:pointer; font-size:13px; transition:filter .15s ease, border-color .15s ease, transform .15s ease; }
+  .proj-export-btn:hover{ filter:brightness(1.22); border-color:var(--team-ring, #3a4560); transform:translateY(-1px); }
   .proj-table{ width:100%; border-collapse:collapse; font-size:14px; }
-  .proj-table th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
-  .proj-table td{ padding:10px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; }
+  .proj-table th{ position:sticky; top:0; background:linear-gradient(180deg, #1a2337, #121a2b); text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:12px 8px; color:var(--text-dim); font-weight:800; border-bottom:1px solid #2b3648; cursor:pointer; user-select:none; }
+  .proj-table td{ padding:9px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; }
   .proj-table td.name{ text-align:left; }
   .proj-table th.name{ text-align:left; }
+  .proj-table td.team, .proj-table th.team{ text-align:left; }
   .proj-table td.num, .proj-table th.num{ text-align:center; }
+  .proj-table tbody tr:hover{ background:rgba(255,255,255,0.04); }
   .proj-table tr.selected-player{ background:var(--league-highlight-color, rgba(77,163,255,0.12)); }
+  .proj-name-cell{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .proj-name-cell .proj-mug{ width:28px; height:28px; border-radius:50%; object-fit:cover; object-position:center top; background:linear-gradient(180deg, #232f45, #141d2e); border:1px solid rgba(255,255,255,0.14); flex:0 0 auto; }
+  .proj-name-cell span{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .proj-team-cell{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .proj-team-cell img{ width:28px; height:28px; object-fit:contain; flex:0 0 auto; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+  .proj-team-cell span{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sort-ind{ color:rgba(255,255,255,0.6); font-weight:900; margin-left:6px; }
 
   .edge-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
@@ -257,25 +273,39 @@
     .edge-grid{ grid-template-columns: 1fr; }
   }
 
-  .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:none; border-radius:12px; }
+  .table-wrap{ width:100%; max-width:100%; max-height:70vh; min-width:0; overflow-x:auto; overflow-y:auto; border:1px solid #232a3a; border-radius:14px; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
   #tabPanelTable{ min-width:0; }
   #tablePanelInner{ min-width:0; }
   .metrics-table{ width:max-content; min-width:100%; border-collapse:separate; border-spacing:0; font-size:14px; table-layout:auto; }
-  .metrics-table th{ position:sticky; top:0; background:#0f1522; text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:10px 12px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; user-select:none; white-space:nowrap; z-index:2; }
-  .metrics-table td{ padding:10px 12px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric: tabular-nums; }
+  .metrics-table th{ position:sticky; top:0; background:linear-gradient(180deg, #1a2337, #121a2b); text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:12px 12px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #2b3648; user-select:none; white-space:nowrap; z-index:2; box-shadow:0 1px 0 rgba(255,255,255,0.04) inset; }
+  .metrics-table th.sorted{ color:#dbe9fb; box-shadow: inset 0 -2px 0 var(--accent), 0 1px 0 rgba(255,255,255,0.04) inset; }
+  .metrics-table td{ padding:8px 12px; border-bottom:1px solid #1a2230; white-space:nowrap; text-align:center; font-variant-numeric: tabular-nums; }
   .metrics-table th, .metrics-table td{ min-width:92px; }
+  .metrics-table th.pos, .metrics-table td.pos{ min-width:48px; max-width:56px; width:48px; }
+  .metrics-table tbody tr:nth-child(even) td{ background:rgba(255,255,255,0.025); }
+  .metrics-table tbody tr:hover td{ background:rgba(255,255,255,0.055); }
+  .metrics-table tbody tr.selected td{ background:var(--league-highlight-color, rgba(77,163,255,0.13)); }
+  .metrics-table tbody tr.selected td.rank{ box-shadow: inset 3px 0 0 var(--accent); }
+  /* Skip rendering offscreen rows: big scroll performance win with 900+ rows */
+  .metrics-table tbody tr{ content-visibility:auto; contain-intrinsic-size:auto 52px; }
   .metrics-table td.name, .metrics-table th.name{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ width:64px; min-width:64px; max-width:64px; }
-  .metrics-table td.rank, .metrics-table td.name{ position:sticky; background:#0f1522; z-index:1; }
-  .metrics-table td.rank{ left:0; border-right:2px solid #1a2230; }
-  .metrics-table td.name{ left:64px; width:180px; min-width:180px; max-width:180px; }
-  .metrics-table th.rank, .metrics-table th.name{ position:sticky; background:#0f1522; z-index:4; }
-  .metrics-table th.rank{ left:0; border-right:2px solid #222b37; }
-  .metrics-table th.name{ left:64px; width:180px; min-width:180px; max-width:180px; }
-  .metrics-table tbody tr:hover{ background:rgba(255,255,255,0.04); }
+  .metrics-table td.rank, .metrics-table td.name{ position:sticky; background:#111827; z-index:1; }
+  .metrics-table tbody tr:nth-child(even) td.rank, .metrics-table tbody tr:nth-child(even) td.name{ background:#131c2c; }
+  .metrics-table tbody tr:hover td.rank, .metrics-table tbody tr:hover td.name{ background:#1a2436; }
+  .metrics-table tbody tr.selected td.rank, .metrics-table tbody tr.selected td.name{ background:color-mix(in srgb, var(--league-highlight-color, rgba(77,163,255,0.13)) 30%, #111827); }
+  .metrics-table td.rank{ left:0; border-right:1px solid #232c3c; }
+  .metrics-table td.name{ left:64px; width:264px; min-width:264px; max-width:264px; border-right:1px solid #232c3c; }
+  .metrics-table th.rank, .metrics-table th.name{ position:sticky; background:linear-gradient(180deg, #1a2337, #121a2b); z-index:4; }
+  .metrics-table th.rank{ left:0; border-right:1px solid #2b3648; }
+  .metrics-table th.name{ left:64px; width:264px; min-width:264px; max-width:264px; border-right:1px solid #2b3648; }
   .metrics-table th[data-mid]{ cursor:pointer; user-select:none; }
-  .metrics-table th[data-mid]:hover{ background:#141a28; }
+  .metrics-table th[data-mid]:hover{ background:linear-gradient(180deg, #1e2940, #151f33); color:#e2ecf9; }
+  .pl-cell{ display:flex; align-items:center; gap:12px; min-width:0; }
+  .pl-mug{ width:32px; height:32px; border-radius:50%; object-fit:cover; object-position:center top; background:linear-gradient(180deg, #232f45, #141d2e); border:1px solid rgba(255,255,255,0.14); flex:0 0 auto; }
+  .pl-name{ font-weight:650; overflow:hidden; text-overflow:ellipsis; flex:1 1 auto; min-width:0; }
+  .pl-team-logo{ width:36px; height:36px; object-fit:contain; flex:0 0 auto; opacity:0.95; }
 
   .table-metric-picker{ display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; }
   @media (max-width: 980px){ .table-metric-picker{ grid-template-columns:1fr; } }
@@ -315,14 +345,17 @@
   .gtend-left{ position:relative; min-height:0; min-width:0; }
   .gtend-right{ min-width:0; }
   .gtend-left-inner{ position:absolute; inset:0; display:flex; flex-direction:column; gap:10px; overflow:hidden; }
-  .gtend-tbl-wrap{ flex:1; min-height:0; max-width:100%; overflow-x:auto; overflow-y:auto; border-radius:10px; border:1px solid #232a3a; -webkit-overflow-scrolling:touch; }
-  .gtend-tbl{ width:100%; min-width:520px; border-collapse:collapse; font-size:13px; }
-  .gtend-tbl th{ position:sticky; top:0; background:#0f1522; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.8px; padding:8px 8px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #222b37; cursor:pointer; user-select:none; }
-  .gtend-tbl td{ padding:7px 8px; border-bottom:1px solid #1a2230; white-space:nowrap; font-variant-numeric:tabular-nums; }
-  .gtend-tbl th.num, .gtend-tbl td.num{ text-align:right; }
+  .gtend-tbl-wrap{ flex:1; min-height:0; max-width:100%; overflow-x:auto; overflow-y:auto; border-radius:14px; border:1px solid #232a3a; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); -webkit-overflow-scrolling:touch; }
+  .gtend-tbl{ width:100%; border-collapse:separate; border-spacing:0; font-size:13px; table-layout:fixed; }
+  .gtend-tbl th{ position:sticky; top:0; z-index:1; background:linear-gradient(180deg, #1a2337, #121a2b); text-align:center; font-size:12px; text-transform:uppercase; letter-spacing:.8px; padding:12px 12px; color:var(--text-dim); font-weight:900; border-bottom:1px solid #2b3648; cursor:pointer; user-select:none; }
+  .gtend-tbl td{ padding:9px 12px; border-bottom:1px solid #1a2230; white-space:nowrap; font-variant-numeric:tabular-nums; text-align:center; }
+  .gtend-tbl th:first-child, .gtend-tbl td:first-child{ text-align:left; }
+  .gtend-tbl th:first-child{ width:150px; }
+  .gtend-tbl td:first-child{ max-width:150px; overflow:hidden; text-overflow:ellipsis; }
   .gtend-tbl tbody tr{ cursor:pointer; }
-  .gtend-tbl tbody tr:hover{ background:rgba(255,255,255,0.04); }
-  .gtend-tbl tbody tr.active{ background:rgba(77,163,255,0.12); }
+  .gtend-tbl tbody tr:nth-child(even) td{ background:rgba(255,255,255,0.025); }
+  .gtend-tbl tbody tr:hover td{ background:rgba(255,255,255,0.055); }
+  .gtend-tbl tbody tr.active td{ background:rgba(77,163,255,0.12); }
   .gtend-video-btn{ display:inline-flex; align-items:center; gap:6px; background:#e53935; color:#fff; border:none; border-radius:8px; padding:9px 18px; font-size:13px; font-weight:800; cursor:pointer; letter-spacing:.3px; }
   .gtend-video-btn:hover{ background:#c62828; }
   .gtend-video-btn:disabled{ opacity:0.35; cursor:default; }
@@ -333,9 +366,9 @@
   .gtend-map-toggle{ display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid #2a3142; width:fit-content; margin:0 auto 8px; }
   .gtend-type-toggle{ display:flex; gap:0; border-radius:10px; overflow:hidden; border:1px solid #2a3142; width:fit-content; margin:8px auto 0; }
   .gtend-type-btn{ background:transparent; color:var(--text-dim); border:none; padding:8px 16px; font-size:12px; font-weight:750; cursor:pointer; letter-spacing:.3px; }
-  .gtend-type-btn.active{ background:var(--accent); color:#0b0f16; }
+  .gtend-type-btn.active{ background:var(--team-btn-dark, rgb(19,26,44)); color:#ffffff; }
   .gtend-map-btn{ background:transparent; color:var(--text-dim); border:none; padding:8px 16px; font-size:12px; font-weight:750; cursor:pointer; letter-spacing:.3px; }
-  .gtend-map-btn.active{ background:var(--accent); color:#0b0f16; }
+  .gtend-map-btn.active{ background:var(--team-btn-dark, rgb(19,26,44)); color:#ffffff; }
   .gtend-rink-wrap{ position:relative; width:100%; max-width:100%; aspect-ratio:75/85; border-radius:12px; overflow:hidden; }
   .gtend-rink-wrap img{ position:absolute; inset:0; width:100%; height:100%; object-fit:fill; pointer-events:none; }
   .gtend-rink-canvas{ position:absolute; inset:0; width:100%; height:100%; }
@@ -450,7 +483,9 @@
   .gtend-export-left{ display:grid; padding:0; align-self:stretch; }
   .gtend-export-right{ display:grid; gap:12px; padding:0; justify-self:stretch; width:100%; align-self:stretch; }
   .gtend-export-left .gtend-tbl-wrap{ overflow-x:hidden; overflow-y:auto; max-height:none; align-self:start; }
-  .gtend-export-left .gtend-tbl{ min-width:0; width:100%; font-size:20px; }
+  .gtend-export-left .gtend-tbl{ min-width:0; width:100%; font-size:20px; table-layout:auto; }
+  .gtend-export-left .gtend-tbl th:first-child{ width:auto; }
+  .gtend-export-left .gtend-tbl td:first-child{ max-width:none; overflow:visible; }
   .gtend-export-left .gtend-tbl th{ font-size:18px; padding:12px 10px; }
   .gtend-export-left .gtend-tbl td{ font-size:20px; padding:11px 10px; line-height:1.42; }
   .gtend-export-left .gtend-tbl .val{ font-size:20px; }
@@ -501,14 +536,16 @@
     .skater-wrap{ margin-left:0; }
     .skater-card{ padding:10px 8px 8px; }
     .skater-top{ flex-direction:column; align-items:center; text-align:center; gap:12px; }
-    .skater-top > div:not(.skater-proj-kpi){ display:contents; }
+    .skater-top > div:not(.skater-proj-kpi):not(.skater-img-wrap){ display:contents; }
     #skaterName{ order:1; font-size:26px; }
-    #skaterImg{ order:2; width:140px; height:140px; }
+    .skater-img-wrap{ order:2; }
+    #skaterImg{ width:126px; height:126px; }
+    #skaterImg.team-logo{ width:164px; height:164px; }
     #skaterInfo{ order:3; justify-content:center; gap:12px; font-size:14px; }
     #goalieProjectionKpi{ order:4; margin:6px auto 0; width:118px; height:118px; }
     #goalieProjectionKpi .skater-proj-kpi-val{ font-size:28px; }
     #goalieProjectionKpi .skater-proj-kpi-lbl{ font-size:10px; }
-    .subtabs{ justify-content:center; flex-wrap:wrap; }
+    .subtabs{ justify-content:flex-start; }
 
     /* Filter context sizing + layout (match Skaters/Teams) */
     #tabPanelCard .card-panel-hd{ flex-direction:column-reverse; align-items:stretch; gap:8px; }
@@ -532,6 +569,10 @@
     .gtend-left{ position:static; }
     .gtend-left-inner{ position:static; overflow:visible; }
     .gtend-tbl-wrap{ max-height:40vh; overflow:auto; }
+    .gtend-tbl th, .gtend-tbl td{ padding-left:6px; padding-right:6px; }
+    .gtend-tbl th{ font-size:10px; }
+    .gtend-tbl td{ font-size:12px; }
+    .gtend-tbl th:first-child{ width:110px; }
     .gtend-map-toggle, .gtend-type-toggle{ width:100%; }
     .gtend-map-btn, .gtend-type-btn{ flex:1 1 0; padding:8px 10px; }
 
@@ -553,7 +594,7 @@
 <div class="skater-wrap">
   <div class="skater-card">
     <div class="skater-top">
-      <img id="skaterImg" class="skater-img" alt="Player" />
+      <div class="skater-img-wrap"><img id="skaterImg" class="skater-img" alt="Player" /></div>
       <div style="min-width:0;">
         <h2 id="skaterName" class="skater-name">Select a goalie</h2>
         <div id="skaterInfo" class="skater-sub"></div>
@@ -605,15 +646,17 @@
     <div id="tabPanelCharts" class="panel" role="tabpanel" style="display:none;">
       <div class="charts-toolbar">
         <div id="chartsSlicerSummary" class="card-panel-meta"></div>
+        <div class="charts-panel-actions">
+          <button id="btnExportChartsPng" class="config-btn" type="button">Export PNG</button>
+          <button id="btnShareChartsPng" class="config-btn" type="button">Share</button>
+        </div>
+      </div>
+      <div class="charts-highlight-row">
         <div id="chartsHighlightWrap">
           <div id="chartsHighlightButtons" class="segmented" role="group" aria-label="Charts highlight">
             <button id="chartsHlPlayer" type="button" class="seg-btn" aria-pressed="false">Highlight Player</button>
             <button id="chartsHlTeam" type="button" class="seg-btn active" aria-pressed="true">Highlight Team</button>
           </div>
-        </div>
-        <div class="charts-panel-actions">
-          <button id="btnExportChartsPng" class="config-btn" type="button">Export PNG</button>
-          <button id="btnShareChartsPng" class="config-btn" type="button">Share</button>
         </div>
       </div>
 
@@ -1061,6 +1104,12 @@ function getSelectedTeamName(teamAbbrev){
 function setHeroImageMode(mode){
   if(!skaterImg) return;
   skaterImg.classList.toggle('team-logo', mode === 'team');
+  try{
+    const wrap = skaterImg.parentElement;
+    if(wrap && wrap.classList.contains('skater-img-wrap')) wrap.classList.toggle('team-logo', mode === 'team');
+    const top = skaterImg.closest('.skater-top');
+    if(top) top.classList.toggle('team-mode', mode === 'team');
+  }catch(_){/*noop*/}
 }
 
 function setTeamLogo(teamAbbrev){
@@ -1094,7 +1143,7 @@ async function __ensureGoalieTrendLogosLoaded(series){
 }
 
 // Draw team logos on the goalie trend chart points.
-// Sizing + render rules match the Chart tab team-logo badge.
+// Plain logo, no backplate or circular mask.
 const __goalieTrendLogoPlugin = {
   id: 'goalieTrendLogos',
   afterDatasetsDraw(chart, args, pluginOptions){
@@ -1105,8 +1154,6 @@ const __goalieTrendLogoPlugin = {
       if(!meta || !Array.isArray(meta.data) || !meta.data.length) return;
 
       const outerR = clamp(Number(pluginOptions?.outerR ?? 14), 8, 28);
-      const innerR = clamp(Number(pluginOptions?.innerR ?? 12.6), 6, outerR);
-      const pad = clamp(Number(pluginOptions?.pad ?? 0.35), 0, 3);
       const zoom = clamp(Number(pluginOptions?.zoom ?? 1.08), 0.75, 2.0);
       const ctx = chart.ctx;
       if(!ctx) return;
@@ -1123,21 +1170,8 @@ const __goalieTrendLogoPlugin = {
         if(!img || !img.complete) continue;
 
         ctx.save();
-        // Backplate + ring
-        ctx.beginPath();
-        ctx.fillStyle = 'rgba(10,14,22,0.92)';
-        ctx.arc(x, y, outerR, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.lineWidth = 3.5;
-        ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-        ctx.stroke();
-
-        // Clip + image inside circle
-        ctx.beginPath();
-        ctx.arc(x, y, innerR, 0, Math.PI * 2);
-        ctx.clip();
-
-        const d = innerR * 2;
+        // Plain team logo — no backplate, no circular mask
+        const d = outerR * 2;
         // Note: NHL team logos are often SVG, which may report naturalWidth=0.
         // In that case, fall back to a simple drawImage without source-cropping.
         const iw = Number(img.naturalWidth || img.width || 0);
@@ -1150,22 +1184,15 @@ const __goalieTrendLogoPlugin = {
             if(crop > 0){
               const sx = (iw - crop) / 2;
               const sy = (ih - crop) / 2;
-              ctx.drawImage(
-                img,
-                sx, sy, crop, crop,
-                x - innerR + pad,
-                y - innerR + pad,
-                d - 2*pad,
-                d - 2*pad
-              );
+              ctx.drawImage(img, sx, sy, crop, crop, x - outerR, y - outerR, d, d);
             }else{
-              ctx.drawImage(img, x - innerR + pad, y - innerR + pad, d - 2*pad, d - 2*pad);
+              ctx.drawImage(img, x - outerR, y - outerR, d, d);
             }
           }else{
-            ctx.drawImage(img, x - innerR + pad, y - innerR + pad, d - 2*pad, d - 2*pad);
+            ctx.drawImage(img, x - outerR, y - outerR, d, d);
           }
         }catch(_){
-          try{ ctx.drawImage(img, x - innerR + pad, y - innerR + pad, d - 2*pad, d - 2*pad); }catch(__){/*noop*/}
+          try{ ctx.drawImage(img, x - outerR, y - outerR, d, d); }catch(__){/*noop*/}
         }
         ctx.restore();
       }
@@ -1466,6 +1493,7 @@ async function initSkatersPage(){
     }
 
     // Load player list + card.
+    _applyTeamAccent();
     await loadPlayers();
     await loadPlayerCard();
     applyExportButtonTextColor();
@@ -1600,19 +1628,23 @@ function makeScatterChart(canvasEl, title){
           if(!isHit) return;
           const p = ptEl.getProps(['x','y'], true);
 
-          const outerR = 14;
+          const outerR = 18;
           // Keep the overall badge size the same (outerR), but let the image fill more of it.
-          const innerR = 12.6;
+          const innerR = 16.5;
 
           ctx.save();
-          // Backplate + ring
+
+          // Soft team-colored glow instead of a white ring
+          try{
+            const glow = getComputedStyle(document.documentElement).getPropertyValue('--team-ring').trim();
+            ctx.shadowColor = glow || 'rgba(77,163,255,0.55)';
+            ctx.shadowBlur = 14;
+          }catch(_){/*noop*/}
           ctx.beginPath();
-          ctx.fillStyle = 'rgba(10,14,22,0.92)';
+          ctx.fillStyle = 'rgba(10,14,22,0.96)';
           ctx.arc(p.x, p.y, outerR, 0, Math.PI*2);
           ctx.fill();
-          ctx.lineWidth = 3.5;
-          ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-          ctx.stroke();
+          try{ ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }catch(_){/*noop*/}
 
           // Clip + image inside circle
           ctx.beginPath();
@@ -1683,28 +1715,10 @@ function makeScatterChart(canvasEl, title){
           const isHit = (mode === 'player')
             ? (wantPid && String(raw.playerId) === wantPid)
             : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
-          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.16)';
+          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.07)';
         },
-        pointBorderColor: (ctx)=>{
-          const raw = ctx.raw || {};
-          const mode = __chartsHighlightMode;
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const wantPid = String(playerSelect?.value||'');
-          const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
-            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
-          return isHit ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.10)';
-        },
-        pointBorderWidth: (ctx)=>{
-          const raw = ctx.raw || {};
-          const mode = __chartsHighlightMode;
-          const wantTeam = String(teamSelect?.value||'').toUpperCase();
-          const wantPid = String(playerSelect?.value||'');
-          const isHit = (mode === 'player')
-            ? (wantPid && String(raw.playerId) === wantPid)
-            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
-          return isHit ? 0 : 1;
-        },
+        pointBorderColor: 'rgba(0,0,0,0)',
+        pointBorderWidth: 0,
         pointRadius: (ctx)=>{
           const raw = ctx.raw || {};
           const mode = __chartsHighlightMode;
@@ -1714,9 +1728,19 @@ function makeScatterChart(canvasEl, title){
             ? (wantPid && String(raw.playerId) === wantPid)
             : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
           // The actual highlight badge is drawn by the plugin.
-          return isHit ? 10 : 4;
+          return isHit ? 12 : 3.5;
         },
-        pointHoverRadius: 10,
+        pointHoverRadius: 8,
+        pointHitRadius: (ctx)=>{
+          const raw = ctx.raw || {};
+          const mode = __chartsHighlightMode;
+          const wantTeam = String(teamSelect?.value||'').toUpperCase();
+          const wantPid = String(playerSelect?.value||'');
+          const isHit = (mode === 'player')
+            ? (wantPid && String(raw.playerId) === wantPid)
+            : (wantTeam && String(raw.team||'').toUpperCase() === wantTeam);
+          return isHit ? 16 : 8;
+        },
         pointStyle: 'circle',
       }]
     },
@@ -3955,6 +3979,20 @@ function _getSelectedTeamColor(){
   return teamObj?.Color || teamObj?.color || null;
 }
 
+function _applyTeamAccent(){
+  const teamColor = _getSelectedTeamColor();
+  if(!teamColor) return;
+  const root = document.documentElement;
+  const rgb = hexToRgb(teamColor);
+  const dark = rgb ? mixRgb(rgb, {r:0,g:0,b:0}, 0.35) : {r:0,g:0,b:0};
+  root.style.setProperty('--team-color', teamColor);
+  root.style.setProperty('--team-glow', `rgba(${dark.r},${dark.g},${dark.b},0.35)`);
+  root.style.setProperty('--team-ring', _rgbaFromHex(teamColor, 0.55));
+  root.style.setProperty('--team-border', _rgbaFromHex(teamColor, 0.30));
+  root.style.setProperty('--team-btn-soft', _rgbaFromHex(teamColor, 0.30));
+  root.style.setProperty('--team-btn-dark', _darkenHex(teamColor, 0.55));
+}
+
 function _loadGoaliesTrendState(){
   try{
     const raw = localStorage.getItem(GOALIES_TREND_STATE_KEY);
@@ -4424,7 +4462,7 @@ function renderTable(cfg, defs){
     const label = String(metricLabel(id) || def?.name || id);
     const isSorted = (id === sortId);
     const arrow = isSorted ? (dir === 'asc' ? ' ▲' : ' ▼') : '';
-    head.push(`<th data-mid="${escapeHtml(id)}">${escapeHtml(label)}${arrow}</th>`);
+    head.push(`<th class="${isSorted?'sorted ':''}" data-mid="${escapeHtml(id)}">${escapeHtml(label)}${arrow}</th>`);
   }
   head.push('</tr>');
 
@@ -4433,9 +4471,12 @@ function renderTable(cfg, defs){
   const selectedPid = String(playerSelect?.value||'');
   for(const r of rows){
     const isSel = selectedPid && String(r.playerId) === selectedPid;
-    body.push(`<tr data-pid="${escapeHtml(String(r.playerId))}" data-team="${escapeHtml(String(r.team||''))}"${isSel?` style="background: var(--league-highlight-color, rgba(77,163,255,0.12));"`:''}>`);
+    const team = String(r.team||'').trim().toUpperCase();
+    const mug = `https://assets.nhle.com/mugs/nhl/latest/${escapeHtml(String(r.playerId))}.png`;
+    const logo = team ? teamLogoUrl(team) : '';
+    body.push(`<tr class="${isSel?'selected':''}" data-pid="${escapeHtml(String(r.playerId))}" data-team="${escapeHtml(String(r.team||''))}">`);
     body.push(`<td class="rank">${rank++}</td>`);
-    body.push(`<td class="name">${escapeHtml(String(r.name||r.playerId))}</td>`);
+    body.push(`<td class="name"><div class="pl-cell"><img class="pl-mug" src="${mug}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.style.display='none'" /><span class="pl-name">${escapeHtml(String(r.name||r.playerId))}</span><img class="pl-team-logo" src="${logo}" alt="" loading="lazy" decoding="async" fetchpriority="low" onerror="this.style.display='none'" /></div></td>`);
     body.push(`<td class="pos">${escapeHtml(String(r.pos||''))}</td>`);
     for(const id of metricIds){
       body.push(`<td>${escapeHtml(__fmtTableValue(id, r.metrics?.[id]))}</td>`);
@@ -4456,8 +4497,12 @@ function renderTable(cfg, defs){
         loadTablePanel();
       });
     });
-    skatersTable.querySelectorAll('tbody tr[data-pid]').forEach(tr=>{
-      tr.addEventListener('click', async ()=>{
+    const tbody = skatersTable.querySelector('tbody');
+    if(tbody && !tbody.dataset.clickBound){
+      tbody.dataset.clickBound = '1';
+      tbody.addEventListener('click', async (event)=>{
+        const tr = event.target && event.target.closest ? event.target.closest('tr[data-pid]') : null;
+        if(!tr) return;
         const pid = String(tr.getAttribute('data-pid')||'');
         if(!pid) return;
         if(playerSelect && Array.from(playerSelect.options).some(o=>String(o.value)===pid)){
@@ -4477,7 +4522,7 @@ function renderTable(cfg, defs){
           }
         }
       });
-    });
+    }
   }catch(_){/*noop*/}
 }
 
@@ -5010,21 +5055,28 @@ function renderLeagueTable(players, selectedPlayerId){
   const body = `<tbody>${list.map(p=>{
     const isSelected = String(p.playerId) === String(selectedPlayerId||'');
     const rowCls = isSelected ? ' class="selected-player"' : '';
-    const td = (val, num, isName)=>{
+    const td = (val, num, isName, isTeam)=>{
       if(num){
         const n = Number(val);
         const s = Number.isFinite(n) ? (Number.isInteger(n) ? String(n) : n.toFixed(3)) : '';
         return `<td class="num">${s || '—'}</td>`;
       }
       if(isName){
-        return `<td class="name">${(val==null||val==='')?'—':String(val)}</td>`;
+        const pid = Number(p.playerId);
+        const mug = Number.isFinite(pid) && pid > 0 ? `<img class="proj-mug" src="https://assets.nhle.com/mugs/nhl/latest/${pid}.png" alt="" loading="lazy" onerror="this.style.display='none'" />` : '';
+        return `<td class="name"><div class="proj-name-cell">${mug}<span>${(val==null||val==='')?'—':String(val)}</span></div></td>`;
+      }
+      if(isTeam){
+        const team = String(val||'').trim().toUpperCase();
+        const logo = team ? `<img src="${teamLogoUrl(team)}" alt="${escapeHtml(team)} logo" loading="lazy" onerror="this.style.display='none'" />` : '';
+        return `<td class="team"><div class="proj-team-cell">${logo}<span>${team || '—'}</span></div></td>`;
       }
       return `<td>${(val==null||val==='')?'—':String(val)}</td>`;
     };
     return `<tr${rowCls}>
       ${td(p._rank,true,false)}
       ${td(p.name,false,true)}
-      ${td(p.team,false,false)}
+      ${td(p.team,false,false,true)}
       ${td(p.position,false,false)}
       ${td(p.gp,true,false)}
       ${td(p.Age,true,false)}
@@ -5132,8 +5184,7 @@ function applyRAPMSelectTextColor(){
 
 function applyExportButtonTextColor(){
   if(!teamSelect || !projExportCsv) return;
-  const c = getComputedStyle(teamSelect).color;
-  projExportCsv.style.color = c;
+  projExportCsv.style.color = '#ffffff';
 }
 
 function clamp(v, lo, hi){
@@ -6050,7 +6101,7 @@ async function loadPlayerCard(){
     if(team) setTeamLogo(team);
     else setDefaultHeadshot();
     skaterName.textContent = getSelectedTeamName(team) || 'Team';
-    skaterInfo.innerHTML = '';
+    skaterInfo.innerHTML = '<div class="kv"><span class="v">All goalies</span></div>';
     setMsg('');
     loadActiveGoaliePanel();
     return;
@@ -6729,7 +6780,7 @@ function getGtendKpiEvents(evts){
 function updateGtendKpiLabels(){
   const isShotsMode = getGtendKpiMode() === 'shots';
   const labelMap = {
-    gtendKpiSa: isShotsMode ? 'Shots on Net Against' : 'Fenwick Against',
+    gtendKpiSa: isShotsMode ? 'Shots on Net Against' : 'FA',
     gtendKpiSvPct: isShotsMode ? 'Sv%' : 'FSv%',
     gtendKpiXSvPct: isShotsMode ? 'xSv%' : 'xFSv%',
     gtendKpiDSvPct: isShotsMode ? 'dSv%' : 'dFSv%',
@@ -7153,6 +7204,7 @@ projExportCsv?.addEventListener('click', ()=>{
 });
 
 teamSelect?.addEventListener('change', async ()=>{
+  _applyTeamAccent();
   await __waitForSeasonValueReady(8000);
   await loadPlayers();
   await loadPlayerCard();
