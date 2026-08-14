@@ -93,6 +93,7 @@ pub async fn load_context_rows(caches: &Caches, sb: Option<&SbClient>, _cfg: &Co
             return rows;
         }
     }
+    eprintln!("DBG rapm.rs: load_context_rows CACHE MISS");
     const COLS: &str = "player_id,season,strength_state,minutes,qot_blend_xg67_g33,qoc_blend_xg67_g33,zs_difficulty";
     let rows = if let Some(sb) = sb {
         sb.read("rapm_context", COLS, None, Some(&context_col_map()), None, 0)
@@ -109,30 +110,49 @@ pub async fn load_context_rows(caches: &Caches, sb: Option<&SbClient>, _cfg: &Co
 /// outdated and intentionally never used). TTL cached; Rates rows are
 /// synthesized from Totals + context minutes.
 pub async fn load_rapm_rows(caches: &Caches, sb: Option<&SbClient>, _cfg: &Config) -> Vec<Value> {
+    // The cache stores ONLY the raw Supabase rows (Totals). Rates rows are
+    // synthesized from context minutes on demand per call and never cached:
+    // the combined Totals+Rates blob (~42k rows) exceeded the cache weight cap
+    // and self-evicted after every hit, forcing a full Supabase reload on
+    // alternating requests.
     if let Some(v) = caches.rapm_static.get(&()) {
         if let Value::Array(rows) = v {
-            return rows;
+            return rows_with_rates(rows, caches, sb, _cfg).await;
         }
     }
-    let mut rows: Vec<Value> = match sb {
+    let raw: Vec<Value> = match sb {
         Some(sb) => read_rapm_supabase(sb).await.unwrap_or_default(),
         None => Vec::new(),
     };
-    // Supabase stores only Totals; synthesize Rates from context minutes.
-    if !rows.is_empty() {
-        let has_rates = rows
-            .iter()
-            .any(|r| str_of(r.get("Rates_Totals")).to_lowercase().starts_with("rate"));
-        if !has_rates {
-            let ctx_rows = load_context_rows(caches, sb, _cfg).await;
-            if !ctx_rows.is_empty() {
-                let synth = synthesize_rates_rows(&rows, &ctx_rows);
-                rows.extend(synth);
-            }
-        }
+    if raw.is_empty() {
+        return raw;
     }
-    caches.rapm_static.insert((), Value::Array(rows.clone()));
-    rows
+    let v = Value::Array(raw.clone());
+    caches.rapm_static.insert((), v);
+    rows_with_rates(raw, caches, sb, _cfg).await
+}
+
+/// Appends synthesized Rates rows when the cached rows are Totals-only.
+async fn rows_with_rates(
+    rows: Vec<Value>,
+    caches: &Caches,
+    sb: Option<&SbClient>,
+    cfg: &Config,
+) -> Vec<Value> {
+    let has_rates = rows
+        .iter()
+        .any(|r| str_of(r.get("Rates_Totals")).to_lowercase().starts_with("rate"));
+    if has_rates {
+        return rows;
+    }
+    let ctx_rows = load_context_rows(caches, sb, cfg).await;
+    if ctx_rows.is_empty() {
+        return rows;
+    }
+    let synth = synthesize_rates_rows(&rows, &ctx_rows);
+    let mut combined = rows;
+    combined.extend(synth);
+    combined
 }
 
 fn str_of(v: Option<&Value>) -> String {

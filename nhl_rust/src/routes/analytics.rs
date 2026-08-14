@@ -253,6 +253,79 @@ fn pick_ctx_row(rows: &[Value], pid: i64, season: i64, want_strength: &str) -> O
     candidates.first().map(|r| (*r).clone())
 }
 
+/// Pre-builds an index of RAPM row indices keyed by (PlayerID, Season) so
+/// bulk table requests (940+ players) don't do an O(rows) scan per player.
+fn build_rapm_index(rows: &[Value]) -> HashMap<(i64, i64), Vec<usize>> {
+    let mut idx: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+    for (i, r) in rows.iter().enumerate() {
+        let p = safe_int(r.get("PlayerID")).unwrap_or(0);
+        let s = safe_int(r.get("Season")).unwrap_or(0);
+        idx.entry((p, s)).or_default().push(i);
+    }
+    idx
+}
+
+/// Indexed variant of `pick_rapm_row` — O(few) instead of a full-table scan.
+fn pick_rapm_row_indexed(
+    rows: &[Value],
+    idx: &HashMap<(i64, i64), Vec<usize>>,
+    pid: i64,
+    season: i64,
+    want_strength: &str,
+    want_rates: &str,
+) -> Option<Value> {
+    let indices = idx.get(&(pid, season))?;
+    for &i in indices {
+        let r = &rows[i];
+        if str_value(r.get("StrengthState")) == want_strength
+            && norm_rates_totals(r.get("Rates_Totals")) == want_rates
+        {
+            return Some((*r).clone());
+        }
+    }
+    for &i in indices {
+        let r = &rows[i];
+        if norm_rates_totals(r.get("Rates_Totals")) == want_rates {
+            return Some((*r).clone());
+        }
+    }
+    indices.first().map(|&i| rows[i].clone())
+}
+
+fn build_ctx_index(rows: &[Value]) -> HashMap<(i64, i64), Vec<usize>> {
+    let mut idx: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+    for (i, r) in rows.iter().enumerate() {
+        let p = safe_int(r.get("PlayerID")).unwrap_or(0);
+        let s = safe_int(r.get("Season")).unwrap_or(0);
+        idx.entry((p, s)).or_default().push(i);
+    }
+    idx
+}
+
+/// Indexed variant of `pick_ctx_row` — O(few) instead of a full-table scan.
+fn pick_ctx_row_indexed(
+    rows: &[Value],
+    idx: &HashMap<(i64, i64), Vec<usize>>,
+    pid: i64,
+    season: i64,
+    want_strength: &str,
+) -> Option<Value> {
+    let indices = idx.get(&(pid, season))?;
+    for &i in indices {
+        let r = &rows[i];
+        if str_value(r.get("StrengthState")) == want_strength {
+            return Some((*r).clone());
+        }
+    }
+    for &i in indices {
+        let r = &rows[i];
+        if str_value(r.get("StrengthState")) == "5v5" {
+            return Some((*r).clone());
+        }
+    }
+    indices.first().map(|&i| rows[i].clone())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn skater_metric(
     state: &AppState,
@@ -1391,6 +1464,11 @@ async fn skaters_table_endpoint(state: AppState, params: &HashMap<String, String
         None
     };
 
+    // Pre-index RAPM/context rows by (PlayerID, Season) once so the per-player
+    // pick below is O(few) instead of a full-table scan per player (~40M ops
+    // for 940 players x 42k RAPM rows).
+    let rapm_idx = rapm_all.as_ref().map(|rows| build_rapm_index(rows));
+    let ctx_idx = ctx_all.as_ref().map(|rows| build_ctx_index(rows));
     let mut special_pct: BTreeMap<String, Option<f64>> = BTreeMap::new();
     let mut players_out: Vec<Value> = Vec::new();
     for pid in &player_ids {
@@ -1399,12 +1477,18 @@ async fn skaters_table_endpoint(state: AppState, params: &HashMap<String, String
         if num(vobj.get("GP")) < p.min_gp as f64 || num(vobj.get("TOI")) < p.min_toi {
             continue;
         }
-        let rapm_row = rapm_all
-            .as_ref()
-            .and_then(|rows| pick_rapm_row(rows, *pid, p.season, &want_strength, want_rapm_rates));
-        let ctx_row = ctx_all
-            .as_ref()
-            .and_then(|rows| pick_ctx_row(rows, *pid, p.season, &want_strength));
+        let rapm_row = match (&rapm_all, &rapm_idx) {
+            (Some(rows), Some(idx)) => {
+                pick_rapm_row_indexed(rows, idx, *pid, p.season, &want_strength, want_rapm_rates)
+            }
+            (Some(rows), None) => pick_rapm_row(rows, *pid, p.season, &want_strength, want_rapm_rates),
+            _ => None,
+        };
+        let ctx_row = match (&ctx_all, &ctx_idx) {
+            (Some(rows), Some(idx)) => pick_ctx_row_indexed(rows, idx, *pid, p.season, &want_strength),
+            (Some(rows), None) => pick_ctx_row(rows, *pid, p.season, &want_strength),
+            _ => None,
+        };
         let mut metrics_out: Map<String, Value> = Map::new();
         for mid in &metric_ids {
             if mid.starts_with("Edge|") {

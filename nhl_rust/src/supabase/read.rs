@@ -68,54 +68,152 @@ impl SbClient {
         order: Option<&str>,
         limit: usize,
     ) -> Option<Vec<Value>> {
-        let mut all: Vec<Value> = Vec::new();
-        let mut offset: usize = 0;
-        loop {
-            let mut query: Vec<(String, String)> = Vec::new();
-            query.push(("select".to_string(), columns.to_string()));
-            if let Some(filters) = filters {
-                for (col, expr) in filters {
-                    query.push((col.clone(), expr.clone()));
+        let mut query: Vec<(String, String)> = Vec::new();
+        query.push(("select".to_string(), columns.to_string()));
+        if let Some(filters) = filters {
+            for (col, expr) in filters {
+                query.push((col.clone(), expr.clone()));
+            }
+        }
+        if let Some(order) = order {
+            query.push(("order".to_string(), order.to_string()));
+        }
+        let url = format!("{}/rest/v1/{table}", self.url);
+
+        let (page0, content_range) =
+            match fetch_page(&self.http, &url, &query, &self.service_key, 0, true).await {
+                Some(v) => v,
+                None => return None,
+            };
+        let page0_count = page0.len();
+        if page0_count < PAGE_SIZE {
+            // Single page: nothing to parallelize.
+            return Some(finish_rows(page0, col_map, limit));
+        }
+        let Some(total) = content_range
+            .and_then(|cr| cr.rsplit('/').next().map(|s| s.parse::<usize>().ok()).flatten())
+        else {
+            // No exact count available; use the sequential path.
+            return read_sequential(self, &url, &query, col_map, limit, page0).await;
+        };
+        let pages = total.div_ceil(PAGE_SIZE);
+        let mut page_rows: Vec<Vec<Value>> = Vec::with_capacity(pages);
+        page_rows.push(page0);
+        const CHUNK: usize = 16;
+        for chunk_start in (1..pages).step_by(CHUNK) {
+            let chunk_end = (chunk_start + CHUNK).min(pages);
+            let mut handles = Vec::with_capacity(chunk_end - chunk_start);
+            for page in chunk_start..chunk_end {
+                let http = self.http.clone();
+                let url = url.clone();
+                let query = query.clone();
+                let service_key = self.service_key.clone();
+                handles.push(tokio::spawn(async move {
+                    fetch_page(&http, &url, &query, &service_key, page * PAGE_SIZE, false).await
+                }));
+            }
+            for h in handles {
+                match h.await {
+                    Ok(Some((rows, _))) => page_rows.push(rows),
+                    _ => return None,
                 }
             }
-            if let Some(order) = order {
-                query.push(("order".to_string(), order.to_string()));
-            }
-
-            let url = format!("{}/rest/v1/{table}", self.url);
-            let resp = self
-                .http
-                .get(&url)
-                .query(&query)
-                .header("apikey", &self.service_key)
-                .header("Authorization", format!("Bearer {}", self.service_key))
-                .header("Range", format!("{offset}-{}", offset + PAGE_SIZE - 1))
-                .send()
-                .await
-                .ok()?;
-            if !resp.status().is_success() {
-                return None;
-            }
-            let rows: Vec<Value> = resp.json().await.ok()?;
-            let count = rows.len();
+        }
+        let mut all: Vec<Value> = Vec::new();
+        for rows in page_rows {
             for row in rows {
-                let row = if let Some(col_map) = col_map {
-                    rename_keys(row, col_map)
-                } else {
-                    row
-                };
                 all.push(row);
             }
-            offset += count;
-            if count < PAGE_SIZE {
-                break;
-            }
         }
-        if limit > 0 && all.len() > limit {
-            all.truncate(limit);
-        }
-        Some(all)
+        Some(finish_rows(all, col_map, limit))
     }
+}
+
+/// Fetches one page of rows; `prefer_count` adds `Prefer: count=exact` so the
+/// caller can learn the total from the `Content-Range` header.
+async fn fetch_page(
+    http: &reqwest::Client,
+    url: &str,
+    query: &[(String, String)],
+    service_key: &str,
+    offset: usize,
+    prefer_count: bool,
+) -> Option<(Vec<Value>, Option<String>)> {
+    let mut req = http
+        .get(url)
+        .query(query)
+        .header("apikey", service_key)
+        .header("Authorization", format!("Bearer {}", service_key))
+        .header("Range", format!("{}-{}", offset, offset + PAGE_SIZE - 1));
+    if prefer_count {
+        req = req.header("Prefer", "count=exact");
+    }
+    let resp = req.send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let content_range = resp
+        .headers()
+        .get("content-range")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let rows: Vec<Value> = resp.json().await.ok()?;
+    Some((rows, content_range))
+}
+
+/// Sequential fallback (used when the exact count is unavailable); keeps the
+/// original `_sb_read` loop semantics.
+async fn read_sequential(
+    sb: &SbClient,
+    url: &str,
+    query: &[(String, String)],
+    col_map: Option<&HashMap<String, String>>,
+    limit: usize,
+    mut all: Vec<Value>,
+) -> Option<Vec<Value>> {
+    let mut offset: usize = all.len();
+    loop {
+        let resp = sb
+            .http
+            .get(url)
+            .query(query)
+            .header("apikey", &sb.service_key)
+            .header("Authorization", format!("Bearer {}", sb.service_key))
+            .header("Range", format!("{offset}-{}", offset + PAGE_SIZE - 1))
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let rows: Vec<Value> = resp.json().await.ok()?;
+        let count = rows.len();
+        for row in rows {
+            all.push(row);
+        }
+        offset += count;
+        if count < PAGE_SIZE {
+            break;
+        }
+    }
+    Some(finish_rows(all, col_map, limit))
+}
+
+/// Applies the column rename map and truncates to `limit` (0 = no limit).
+fn finish_rows(rows: Vec<Value>, col_map: Option<&HashMap<String, String>>, limit: usize) -> Vec<Value> {
+    let mut all: Vec<Value> = Vec::with_capacity(rows.len());
+    for row in rows {
+        let row = if let Some(col_map) = col_map {
+            rename_keys(row, col_map)
+        } else {
+            row
+        };
+        all.push(row);
+    }
+    if limit > 0 && all.len() > limit {
+        all.truncate(limit);
+    }
+    all
 }
 
 /// Applies the snake_case → original column rename to a row object.
