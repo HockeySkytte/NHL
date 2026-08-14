@@ -148,8 +148,16 @@ impl Caches {
                 32 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
-            rapm_static: TtlCache::new(env_ttl("RAPM_STATIC_CACHE_TTL_SECONDS", 600), 1),
-            context_static: TtlCache::new(env_ttl("CONTEXT_STATIC_CACHE_TTL_SECONDS", 600), 1),
+            rapm_static: TtlCache::new_weighted(
+                env_ttl("RAPM_STATIC_CACHE_TTL_SECONDS", 600),
+                24 * 1024 * 1024,
+                |v: &Value| crate::cache::json_value_weight(v),
+            ),
+            context_static: TtlCache::new_weighted(
+                env_ttl("CONTEXT_STATIC_CACHE_TTL_SECONDS", 600),
+                8 * 1024 * 1024,
+                |v: &Value| crate::cache::json_value_weight(v),
+            ),
             card_metrics_defs: TtlCache::new(
                 env_ttl("CARD_METRICS_DEF_CACHE_TTL_SECONDS", 600),
                 8,

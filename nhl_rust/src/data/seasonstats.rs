@@ -106,17 +106,23 @@ pub async fn iter_player_rows(
     sb: Option<&SbClient>,
     cfg: &Config,
     seasons: &[i64],
+    goalie_only: bool,
 ) -> Vec<Value> {
     if !seasons.is_empty() {
         let mut all: Vec<Value> = Vec::new();
         let mut missing: Vec<i64> = Vec::new();
         if let Some(sb) = sb {
             for s in seasons {
+                let mut f = std::collections::BTreeMap::new();
+                f.insert("season".to_string(), format!("eq.{s}"));
+                if goalie_only {
+                    f.insert("position".to_string(), "eq.G".to_string());
+                }
                 match sb
                     .read(
                         "season_stats",
                         "*",
-                        Some(&filters(&[("season", &format!("eq.{s}"))])),
+                        Some(&f),
                         Some(&season_stats_col_map()),
                         None,
                         0,
@@ -145,7 +151,20 @@ pub async fn iter_player_rows(
         }
         return all;
     }
-    load_seasonstats_csv(caches, cfg).await
+    let csv = load_seasonstats_csv(caches, cfg).await;
+    if !goalie_only {
+        return csv;
+    }
+    csv.into_iter()
+        .filter(|r| {
+            let pos = r
+                .as_object()
+                .and_then(|o| ci_get(o, "Position"))
+                .map(|v| str_value(Some(v)).to_uppercase())
+                .unwrap_or_default();
+            pos.starts_with('G')
+        })
+        .collect()
 }
 
 fn flt(v: Option<&Value>) -> f64 {
@@ -206,14 +225,14 @@ pub async fn build_skater_agg(
     }
 
     let rows = if scope_norm == "career" {
-        iter_player_rows(caches, sb, cfg, &[]).await
+        iter_player_rows(caches, sb, cfg, &[], false).await
     } else {
         let seasons = if season_ids.is_empty() {
             vec![primary]
         } else {
             season_ids.to_vec()
         };
-        iter_player_rows(caches, sb, cfg, &seasons).await
+        iter_player_rows(caches, sb, cfg, &seasons, false).await
     };
 
     let mut agg: Map<String, Value> = Map::new();
@@ -364,14 +383,14 @@ pub async fn build_goalie_agg(
     }
 
     let rows = if scope_norm == "career" {
-        iter_player_rows(caches, sb, cfg, &[]).await
+        iter_player_rows(caches, sb, cfg, &[], true).await
     } else {
         let seasons = if season_ids.is_empty() {
             vec![primary]
         } else {
             season_ids.to_vec()
         };
-        iter_player_rows(caches, sb, cfg, &seasons).await
+        iter_player_rows(caches, sb, cfg, &seasons, true).await
     };
 
     let mut agg: Map<String, Value> = Map::new();
@@ -449,10 +468,11 @@ pub async fn build_goalies_career_matrix(
     cfg: &Config,
     season_state: &str,
     strength_state: &str,
+    target_pid: i64,
 ) -> (Value, Value) {
     let ss_norm = normalize_ss(season_state);
     let st_norm = normalize_st(strength_state);
-    let key = json!(["goalies_career", ss_norm, st_norm]).to_string();
+    let key = json!(["goalies_career", ss_norm, st_norm, target_pid]).to_string();
     if let Some(cached) = caches.career_matrix.get(&key) {
         if let Some(arr) = cached.as_array() {
             if arr.len() == 2 {
@@ -461,7 +481,35 @@ pub async fn build_goalies_career_matrix(
         }
     }
 
-    let rows = iter_player_rows(caches, sb, cfg, &[]).await;
+    // Read ONLY goalie rows (position = G) across all seasons from Supabase.
+    // Never load the whole 135k-row season-stats CSV as serde Values — that
+    // alone is ~300MB of working set, and a league-wide goalie matrix on top
+    // of it blew past Render's memory limit (measured +653MB for one request).
+    let rows = if let Some(sb) = sb {
+        sb.read(
+            "season_stats",
+            "*",
+            Some(&filters(&[("position", "eq.G")])),
+            Some(&season_stats_col_map()),
+            None,
+            0,
+        )
+        .await
+        .unwrap_or_default()
+    } else {
+        // Fallback: filtered CSV rows only (goalies), never the whole file.
+        let csv = load_seasonstats_csv(caches, cfg).await;
+        csv.into_iter()
+            .filter(|r| {
+                let pos = r
+                    .as_object()
+                    .and_then(|o| ci_get(o, "Position"))
+                    .map(|v| str_value(Some(v)).to_uppercase())
+                    .unwrap_or_default();
+                pos.starts_with('G')
+            })
+            .collect()
+    };
     let mut by_pid_season: Map<String, Value> = Map::new();
     let mut league_acc: Map<String, Value> = Map::new();
 
@@ -486,6 +534,16 @@ pub async fn build_goalies_career_matrix(
         if pid <= 0 {
             continue;
         }
+        let la = league_acc
+            .entry(season_row.to_string())
+            .or_insert_with(|| json!({"SA": 0.0, "GA": 0.0}));
+        let la = la.as_object_mut().expect("league acc object");
+        la.insert("SA".into(), json!(la.get("SA").and_then(Value::as_f64).unwrap_or(0.0) + flt(ci_get(obj, "SA"))));
+        la.insert("GA".into(), json!(la.get("GA").and_then(Value::as_f64).unwrap_or(0.0) + flt(ci_get(obj, "GA"))));
+        // Only retain the requested goalie's per-season rows.
+        if pid != target_pid {
+            continue;
+        }
         let pmap = by_pid_season
             .entry(pid.to_string())
             .or_insert_with(|| json!({}));
@@ -498,12 +556,6 @@ pub async fn build_goalies_career_matrix(
             let cur = d.get(key).and_then(Value::as_f64).unwrap_or(0.0);
             d.insert(key.to_string(), json!(cur + flt(ci_get(obj, key))));
         }
-        let la = league_acc
-            .entry(season_row.to_string())
-            .or_insert_with(|| json!({"SA": 0.0, "GA": 0.0}));
-        let la = la.as_object_mut().expect("league acc object");
-        la.insert("SA".into(), json!(la.get("SA").and_then(Value::as_f64).unwrap_or(0.0) + flt(ci_get(obj, "SA"))));
-        la.insert("GA".into(), json!(la.get("GA").and_then(Value::as_f64).unwrap_or(0.0) + flt(ci_get(obj, "GA"))));
     }
 
     let mut league_sa_ga: Map<String, Value> = Map::new();

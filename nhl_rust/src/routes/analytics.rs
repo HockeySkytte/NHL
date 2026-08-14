@@ -25,9 +25,9 @@ pub fn router() -> Router<AppState> {
         .route("/api/skaters/card", get(api_skaters_card))
         .route("/api/goalies/card", get(api_goalies_card))
         .route("/api/teams/card", get(api_teams_card))
-        .route("/api/skaters/table", get(api_skaters_table))
-        .route("/api/goalies/table", get(api_goalies_table))
-        .route("/api/teams/table", get(api_teams_table))
+        .route("/api/skaters/table", get(api_skaters_table_get).post(api_skaters_table_post))
+        .route("/api/goalies/table", get(api_goalies_table_get).post(api_goalies_table_post))
+        .route("/api/teams/table", get(api_teams_table_get).post(api_teams_table_post))
         .route("/api/skaters/scatter", get(api_skaters_scatter))
         .route("/api/goalies/scatter", get(api_goalies_scatter))
         .route("/api/teams/scatter", get(api_teams_scatter))
@@ -87,7 +87,7 @@ struct CardParams {
     metric_ids: Vec<String>,
 }
 
-fn parse_card_params(params: &Query<HashMap<String, String>>) -> CardParams {
+fn parse_card_params(params: &HashMap<String, String>) -> CardParams {
     let mut season_state = q(params, "seasonState", "regular").to_lowercase();
     if !matches!(season_state.as_str(), "regular" | "playoffs" | "all") {
         season_state = "regular".to_string();
@@ -1113,19 +1113,60 @@ fn active_team_filter(include_historic: bool) -> Box<dyn Fn(&Value) -> bool + Se
     }
 }
 
-async fn api_teams_table(
+/// Converts a JSON POST body into the same string-params map the GET query
+/// uses (arrays joined with commas, scalars stringified).
+fn params_from_json(value: Value) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    if let Value::Object(map) = value {
+        for (k, v) in map {
+            let s = match v {
+                Value::String(s) => s,
+                Value::Number(n) => n.to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Array(arr) => arr
+                    .iter()
+                    .map(|x| match x {
+                        Value::String(s) => s.clone(),
+                        Value::Number(n) => n.to_string(),
+                        other => other.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(","),
+                Value::Null => String::new(),
+                other => other.to_string(),
+            };
+            out.insert(k, s);
+        }
+    }
+    out
+}
+
+// ── Teams table ─────────────────────────────────────────────────
+
+async fn api_teams_table_get(
     State(state): State<AppState>,
     params: Query<HashMap<String, String>>,
 ) -> Response {
-    let scope = q(&params, "scope", "season");
-    let season_state = q(&params, "seasonState", "regular");
-    let strength_state = q(&params, "strengthState", "5v5");
-    let rates = q(&params, "rates", "Totals");
-    let include_historic = flag_from_params(&params, "includeHistoric", "0");
+    teams_table_endpoint(state, &params).await
+}
+
+async fn api_teams_table_post(
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> Response {
+    teams_table_endpoint(state, &params_from_json(body)).await
+}
+
+async fn teams_table_endpoint(state: AppState, params: &HashMap<String, String>) -> Response {
+    let scope = q(params, "scope", "season");
+    let season_state = q(params, "seasonState", "regular");
+    let strength_state = q(params, "strengthState", "5v5");
+    let rates = q(params, "rates", "Totals");
+    let include_historic = flag_from_params(params, "includeHistoric", "0");
     let season = params.get("season").map(String::as_str).unwrap_or("");
     let season_ids = parse_season_ids(Some(season), current_season_fallback());
     let season_int = primary_season_id(&season_ids, current_season_fallback());
-    let metric_ids_raw = q(&params, "metricIds", "");
+    let metric_ids_raw = q(params, "metricIds", "");
     let metric_ids: Vec<String> = if metric_ids_raw.is_empty() {
         Vec::new()
     } else {
@@ -1261,16 +1302,23 @@ async fn api_teams_scatter(
 
 // ── Skaters / goalies tables ─────────────────────────────────────
 
-async fn api_skaters_table(
+async fn api_skaters_table_get(
     State(state): State<AppState>,
     params: Query<HashMap<String, String>>,
 ) -> Response {
-    skaters_table_endpoint(state, params).await
+    skaters_table_endpoint(state, &params).await
 }
 
-async fn skaters_table_endpoint(state: AppState, params: Query<HashMap<String, String>>) -> Response {
-    let p = parse_card_params(&params);
-    let player_ids_raw = q(&params, "playerIds", "");
+async fn api_skaters_table_post(
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> Response {
+    skaters_table_endpoint(state, &params_from_json(body)).await
+}
+
+async fn skaters_table_endpoint(state: AppState, params: &HashMap<String, String>) -> Response {
+    let p = parse_card_params(params);
+    let player_ids_raw = q(params, "playerIds", "");
     let player_ids: Vec<i64> = player_ids_raw
         .split(',')
         .filter_map(|s| s.trim().parse::<i64>().ok())
@@ -1278,7 +1326,7 @@ async fn skaters_table_endpoint(state: AppState, params: Query<HashMap<String, S
     if player_ids.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(json!({"error": "playerIds_required"}))).into_response();
     }
-    let metric_ids_raw = q(&params, "metricIds", "");
+    let metric_ids_raw = q(params, "metricIds", "");
     let metric_ids: Vec<String> = metric_ids_raw
         .split(',')
         .map(|s| s.trim().to_string())
@@ -1376,12 +1424,23 @@ async fn skaters_table_endpoint(state: AppState, params: Query<HashMap<String, S
     }))
 }
 
-async fn api_goalies_table(
+async fn api_goalies_table_get(
     State(state): State<AppState>,
     params: Query<HashMap<String, String>>,
 ) -> Response {
-    let p = parse_card_params(&params);
-    let player_ids_raw = q(&params, "playerIds", "");
+    goalies_table_endpoint(state, &params).await
+}
+
+async fn api_goalies_table_post(
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> Response {
+    goalies_table_endpoint(state, &params_from_json(body)).await
+}
+
+async fn goalies_table_endpoint(state: AppState, params: &HashMap<String, String>) -> Response {
+    let p = parse_card_params(params);
+    let player_ids_raw = q(params, "playerIds", "");
     let player_ids: Vec<i64> = player_ids_raw
         .split(',')
         .filter_map(|s| s.trim().parse::<i64>().ok())
@@ -1389,7 +1448,7 @@ async fn api_goalies_table(
     if player_ids.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(json!({"error": "playerIds_required"}))).into_response();
     }
-    let metric_ids_raw = q(&params, "metricIds", "");
+    let metric_ids_raw = q(params, "metricIds", "");
     let metric_ids: Vec<String> = metric_ids_raw
         .split(',')
         .map(|s| s.trim().to_string())
@@ -1622,6 +1681,7 @@ async fn api_goalies_series(
         &state.cfg,
         &season_state,
         &strength_state,
+        pid,
     )
     .await;
 

@@ -216,9 +216,6 @@
 {% block content %}
 <div class="proj-page-tabs">
   <button id="pageTabGames" class="active">Games</button>
-  <button id="pageTabSeries">Series</button>
-  <button id="pageTabBracket">Bracket</button>
-  <button id="pageTabCup">Stanley Cup Probability</button>
 </div>
 <div id="gamesPanel" class="proj-panel">
   <div class="odds-row">
@@ -235,18 +232,6 @@
   </div>
   <h2 id="projDateTitle" class="proj-title"></h2>
   <div id="projRoot"></div>
-</div>
-<div id="seriesPanel" class="proj-panel" hidden>
-  <div id="seriesRoot"></div>
-</div>
-<div id="bracketPanel" class="proj-panel" hidden>
-  <div class="bracket-panel-toolbar">
-    <button id="bracketFullscreenBtn" class="bracket-panel-btn" type="button">Full screen</button>
-  </div>
-  <div id="bracketRoot"></div>
-</div>
-<div id="cupPanel" class="proj-panel" hidden>
-  <div id="cupRoot"></div>
 </div>
 
 <!-- Lineups Modal -->
@@ -899,6 +884,7 @@ async function toggleBracketFullscreen(){
 }
 
 async function loadPlayoffData(){
+  if(!seriesRoot || !bracketRoot || !cupRoot) return; // Series/Bracket/Cup UI removed
   try{
     seriesRoot.innerHTML = '<div class="live-empty">Loading series…</div>';
     bracketRoot.innerHTML = '<div class="live-empty">Loading bracket…</div>';
