@@ -905,6 +905,18 @@ fn goalie_metric(metric_id: &str, v: &Map<String, Value>, p: &CardParams, league
     let (_, metric) = metric_id.split_once('|').unwrap_or(("", metric_id));
     let rate = |vv: f64| stats::rate_from(gp, toi, Some(vv), &p.rates);
 
+    // Flask `_sv_frac`: 1 - ga/att; att <= 0 -> 1.0 if ga <= 0 else 0.0.
+    let sv_frac = |goals: f64, att: f64| -> f64 {
+        if att <= 0.0 {
+            if goals <= 0.0 { 1.0 } else { 0.0 }
+        } else {
+            1.0 - goals / att
+        }
+    };
+    // Goalie IDs are "Sv% or FSv%": the denominator is SA for shots (xG_S)
+    // and FA (Fenwick against) for Fenwick models (xG_F / xG_F2).
+    let save_denom = if p.xg_model == "xG_S" { sa } else { fa };
+
     let sv_pct = if sa > 0.0 { Some(100.0 * (1.0 - ga / sa)) } else { None };
     let xsv_pct = if sa > 0.0 { Some(100.0 * (1.0 - xga / sa)) } else { None };
 
@@ -914,6 +926,9 @@ fn goalie_metric(metric_id: &str, v: &Map<String, Value>, p: &CardParams, league
         "GA" => rate(ga),
         "xGA" | "xGA_S" | "xGA_F" | "xGA_F2" => rate(xga),
         "TOI" => Some(toi),
+        "Sv% or FSv%" => Some(100.0 * sv_frac(ga, save_denom)),
+        "xSv% or xFSv%" => Some(100.0 * sv_frac(xga, save_denom)),
+        "dSv% or dFSv%" => Some(100.0 * (sv_frac(ga, save_denom) - sv_frac(xga, save_denom))),
         "Sv%" => sv_pct,
         "xSv%" => xsv_pct,
         "dSv%" => match (sv_pct, xsv_pct) {

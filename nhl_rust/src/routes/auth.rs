@@ -162,7 +162,11 @@ pub fn render_with_session(
         extra,
     );
     let html = Html(state.templates.render(template, ctx)?).into_response();
-    if session.auth_user.is_some() || !session.csrf_token.is_empty() || !session.flashes.is_empty() {
+    // Flash messages are consumed on display (like Flask's get_flashed_messages
+    // removes them from the session), so "Logged in." etc. don't reappear on
+    // later page loads — combined with the front-end auto-dismiss after ~5s.
+    session.flashes.clear();
+    if session.auth_user.is_some() || !session.csrf_token.is_empty() {
         Ok(attach_session(html, &state.cfg, session))
     } else {
         Ok(html)
