@@ -1078,6 +1078,9 @@ async fn players_endpoint(state: AppState, is_goalie: bool, params: HashMap<Stri
         }
     }
 
-    cache.insert(cache_key, json!(players));
+    // Cache the SAME shape we return ({players: [...]}) so cache hits don't
+    // hand the frontend a bare array (which breaks fetchTablePlayers and the
+    // player slicer's loadPlayers).
+    cache.insert(cache_key, json!({ "players": players }));
     json_no_store(json!({ "players": players }))
 }
