@@ -3,10 +3,15 @@
 # approach: set the build + start commands in the Render dashboard.
 #
 #   Build command:
-#     export RUSTUP_HOME=$HOME/.rustup CARGO_HOME=$HOME/.cargo PATH=/usr/local/cargo/bin:$PATH && rustup toolchain install stable --profile minimal && rustup default stable && cd nhl_rust && cargo build --release --locked -j 2
+#     bash scripts/render_build.sh
 #
 #   Start command:
-#     cd nhl_rust && ./target/release/nhl-rust
+#     bash scripts/render_start.sh
+#
+# render_build.sh runs `pip install -r requirements.txt` (kept for the cron
+# jobs) then installs Rust and runs `cargo build --release --locked -j 2` in
+# nhl_rust/ and verifies the binary. render_start.sh cd's into nhl_rust and
+# execs the binary (with a clear diagnostic if it's missing).
 #
 # The Rust app resolves all paths from cwd (nhl_rust): templates/static at
 # ../app/*, models at ../Model/rust (the PBP route appends `rust`), CSVs at
@@ -16,8 +21,8 @@ services:
   - type: web
     name: nhl-analytics
     env: python
-    buildCommand: "export RUSTUP_HOME=$HOME/.rustup CARGO_HOME=$HOME/.cargo PATH=/usr/local/cargo/bin:$PATH && rustup toolchain install stable --profile minimal && rustup default stable && cd nhl_rust && cargo build --release --locked -j 2"
-    startCommand: "cd nhl_rust && ./target/release/nhl-rust"
+    buildCommand: "bash scripts/render_build.sh"
+    startCommand: "bash scripts/render_start.sh"
     autoDeploy: true
     plan: free
     healthCheckPath: /robots.txt

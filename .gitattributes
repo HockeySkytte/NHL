@@ -1,0 +1,2 @@
+# Shell scripts must stay LF so they run correctly in the Render/Linux build.
+*.sh text eol=lf
