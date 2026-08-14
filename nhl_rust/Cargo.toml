@@ -1,0 +1,48 @@
+[package]
+name = "nhl-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Rust port of the Hockey-Statistics NHL analytics Flask app"
+license = "UNLICENSED"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = [
+    "fs",
+    "trace",
+    "compression-gzip",
+    "compression-deflate",
+    "compression-br",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+minijinja = { version = "2", features = ["loader", "json"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "gzip",
+    "brotli",
+    "deflate",
+    "rustls-tls",
+    "charset",
+] }
+moka = { version = "0.12", features = ["sync"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+chrono-tz = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+csv = "1.3"
+thiserror = "2"
+libm = "0.2"
+regex = "1"
+scraper = "0.20"
+unicode-normalization = "0.1"
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+getrandom = "0.2"
+
+[dev-dependencies]
+wiremock = "0.6"

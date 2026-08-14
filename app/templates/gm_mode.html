@@ -10,10 +10,13 @@
 <div class="gm-filter-actions">
   <button id="gmSaveConfigBtn" class="gm-filter-btn{% if not auth_user %} gm-requires-auth{% endif %}" type="button"{% if not auth_user %} title="Log in to save your lineups" data-login-url="{{ url_for('main.login_page', next=url_for('main.gm_mode_page')) }}" data-signup-url="{{ url_for('main.signup_page', next=url_for('main.gm_mode_page')) }}"{% endif %}>Save</button>
   <button id="gmLoadConfigBtn" class="gm-filter-btn{% if not auth_user %} gm-requires-auth{% endif %}" type="button"{% if not auth_user %} title="Log in to load saved lineups" data-login-url="{{ url_for('main.login_page', next=url_for('main.gm_mode_page')) }}" data-signup-url="{{ url_for('main.signup_page', next=url_for('main.gm_mode_page')) }}"{% endif %}>Load</button>
-  {% if auth_user and auth_user.is_admin %}
-  <button id="gmUploadDbBtn" class="gm-filter-btn" type="button" title="Upload current lineups to Supabase lineups table">Upload to Database</button>
-  {% endif %}
 </div>
+{% if auth_user and auth_user.is_admin %}
+<div class="gm-filter-admin-actions">
+  <button id="gmUploadDbBtn" class="gm-filter-btn" type="button" title="Upload current lineups to Supabase lineups table">Upload to Database</button>
+  <button id="gmUpdateLineupsBtn" class="gm-filter-btn" type="button" title="Run the DailyFaceoff lineup scrape + GP estimator, then sync estimated games to the database">Update Lineups & GP</button>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -223,6 +226,7 @@
   .gm-status{ border:1px solid #2a3142; border-radius:12px; padding:10px 12px; color:var(--text-dim); font-size:13px; }
   .gm-status:empty{ display:none; }
   .gm-filter-actions{ display:flex; gap:8px; align-items:center; }
+  .gm-filter-admin-actions{ display:flex; gap:8px; align-items:center; margin-top:8px; }
   .gm-filter-btn{ background:var(--panel-alt); border:1px solid #2a3142; color:var(--value-text, var(--text)); padding:8px 12px; border-radius:10px; font-weight:750; cursor:pointer; font-size:13px; }
   .gm-filter-btn:hover{ background:rgba(255,255,255,0.05); }
   .gm-filter-btn.gm-requires-auth{ position:relative; }
@@ -1021,7 +1025,7 @@
       const rawValue = projectedValueForMember(m);
       if(!Number.isFinite(rawValue)) continue;
       const gRaw = parseNum(m && m.games);
-      const games = (Number.isFinite(gRaw) && gRaw > 0) ? gRaw : 82;
+      const games = (Number.isFinite(gRaw) && gRaw > 0) ? gRaw : 84;
       const weight = Math.max(0, games / 82);
       sum += rawValue * weight;
       used += 1;
@@ -1031,19 +1035,18 @@
   }
 
   // Position-group GP budget totals (constant across the league).
-  // 12 forwards × 82 games, 6 defensemen × 82 games, 2 goalies × 82 games.
+  // 12 forwards × 84 games, 6 defensemen × 84 games, goalies: 84 total
+  // (one starter per game — the two goalies split 84 games).
   const GROUP_GP_BUDGET = {
-    F: 12 * 82,
-    D: 6 * 82,
-    G: 2 * 82,  // but we cap to 82 for goalie starts in sim (one starter per game)
+    F: 12 * 84,
+    D: 6 * 84,
+    G: 84,
   };
 
-  // For goalies, there's 1 starter per game → 82 total starts.
-  // Use 82 as budget so the two goalies split 82 games between them.
   const GROUP_GP_TARGET = {
-    F: 12 * 82,
-    D: 6 * 82,
-    G: 82,
+    F: 12 * 84,
+    D: 6 * 84,
+    G: 84,
   };
 
   function groupMembersByKey(key){
@@ -1358,7 +1361,7 @@
         if(!pid) continue;
         const pos = normalizePos((row && row.pos) || spec.pos) || 'F';
         const gRaw = parseNum(row && row.games);
-        const games = (Number.isFinite(gRaw) && gRaw >= 0) ? Math.round(gRaw) : 82;
+        const games = (Number.isFinite(gRaw) && gRaw >= 0) ? Math.round(gRaw) : 84;
         const entry = { pid: pid, pos: pos, games: games };
         if(isScratch) entry.scratch = true;
         out.push(entry);
@@ -1601,7 +1604,7 @@
 
     const ensureDefaultGames = function(pid){
       if(pid > 0){
-        if(!(Number.isFinite(estGames) && estGames >= 0)) estGames = isScratch ? 0 : 82;
+        if(!(Number.isFinite(estGames) && estGames >= 0)) estGames = isScratch ? 0 : 84;
       }else{
         estGames = 0;
       }
@@ -1617,7 +1620,7 @@
       img.alt = option ? String(option.name || '') : '';
       projValue.textContent = projectionLabel(pct);
       proj.style.setProperty('--gm-proj-color', projectionColor(pct));
-      gamesNote.textContent = 'GP ' + String(Number.isFinite(estGames) ? estGames : (pid > 0 ? 82 : 0));
+      gamesNote.textContent = 'GP ' + String(Number.isFinite(estGames) ? estGames : (pid > 0 ? 84 : 0));
     };
 
     const initialMeta = selectedMeta();
@@ -1626,7 +1629,7 @@
     if(Number.isFinite(initialParsedGames) && initialParsedGames >= 0){
       estGames = Math.round(initialParsedGames);
     }else{
-      estGames = initialPid > 0 ? (isScratch ? 0 : 82) : 0;
+      estGames = initialPid > 0 ? (isScratch ? 0 : 84) : 0;
     }
 
     setButtonLabel();
@@ -1663,13 +1666,13 @@
       }
       const label = String(option.name || 'player').trim();
       const current = Number.isFinite(estGames) ? String(estGames) : '';
-      const oldGames = Number.isFinite(estGames) ? estGames : (isScratch ? 0 : 82);
+      const oldGames = Number.isFinite(estGames) ? estGames : (isScratch ? 0 : 84);
       const entered = window.prompt('Estimated games for ' + label + ' (blank to clear):', current);
       if(entered === null) return;
       const trimmed = String(entered).trim();
       let newGames;
       if(!trimmed){
-        newGames = isScratch ? 0 : 82;
+        newGames = isScratch ? 0 : 84;
       }else{
         const n = parseNum(trimmed);
         if(!(Number.isFinite(n) && n >= 0)){
@@ -1685,7 +1688,7 @@
         const opt = selectedMeta();
         const slotPos = normalizePos(opt && opt.pos) || 'F';
         const delta = newGames - oldGames;
-        onChange({ changedGames: true, changedPos: slotPos, delta: delta, reset: function(){ estGames = isScratch ? 0 : 82; refreshVisual(); } });
+        onChange({ changedGames: true, changedPos: slotPos, delta: delta, reset: function(){ estGames = isScratch ? 0 : 84; refreshVisual(); } });
       }
     });
     slotVisualUpdaters.push(refreshVisual);
@@ -1790,7 +1793,7 @@
       const key = 'fwd' + String(idx + 1);
       groups[key] = rowSlots.map(function(slot){
         const p = bySlot[slot] || null;
-        return playerToMember(p, 'F', 82);
+        return playerToMember(p, 'F', 84);
       });
     });
 
@@ -1798,13 +1801,13 @@
       const key = 'def' + String(idx + 1);
       groups[key] = rowSlots.map(function(slot){
         const p = bySlot[slot] || null;
-        return playerToMember(p, 'D', 82);
+        return playerToMember(p, 'D', 84);
       });
     });
 
     groups.goalies = GOALIE_SLOTS.map(function(slot){
       const p = bySlot[slot] || null;
-      return playerToMember(p, 'G', 82);
+      return playerToMember(p, 'G', 84);
     });
 
     // Collect leftovers (unused players) by position
@@ -1820,7 +1823,7 @@
           if(line[i].pid === 0 && leftoverPool.length > 0){
             const fill = leftoverPool.shift();
             used.add(fill.key);
-            const estGames = (fill.gp_est || fill.games) ? (fill.gp_est || fill.games) : 82;
+            const estGames = (fill.gp_est || fill.games) ? (fill.gp_est || fill.games) : 84;
             line[i] = { pid: fill.pid, pos: fill.pos || posLabel, games: estGames };
           }
         }
@@ -1837,16 +1840,16 @@
       if(groups.goalies[i].pid === 0 && leftoverG.length > 0){
         var fill = leftoverG.shift();
         used.add(fill.key);
-        var estGames = (fill.gp_est || fill.games) ? (fill.gp_est || fill.games) : 82;
+        var estGames = (fill.gp_est || fill.games) ? (fill.gp_est || fill.games) : 84;
         groups.goalies[i] = { pid: fill.pid, pos: 'G', games: estGames };
       }
     }
 
     // ── Normalize GP to position budgets ──────────────────────────
     // Done BEFORE building scratches, so all leftover players are included.
-    var BUDGET_F = 12 * 82;   // 984
-    var BUDGET_D = 6 * 82;    // 492
-    var BUDGET_G = 82;        // one starter per game
+    var BUDGET_F = 12 * 84;   // 1008
+    var BUDGET_D = 6 * 84;    // 504
+    var BUDGET_G = 84;        // one starter per game (two goalies split 84)
 
     var remainingF = forwards.filter(function(p){ return !used.has(p.key); });
     var remainingD = defense.filter(function(p){ return !used.has(p.key); });
@@ -1924,9 +1927,9 @@
       });
     }
 
-    normalizeGpBudget(collectAllMembers('F'), BUDGET_F, 82);
-    normalizeGpBudget(collectAllMembers('D'), BUDGET_D, 82);
-    normalizeGpBudget(collectAllMembers('G'), BUDGET_G, 82);
+    normalizeGpBudget(collectAllMembers('F'), BUDGET_F, 84);
+    normalizeGpBudget(collectAllMembers('D'), BUDGET_D, 84);
+    normalizeGpBudget(collectAllMembers('G'), BUDGET_G, 84);
 
     // ── Build scratches from ALL remaining players ────────────────
     // Show all leftover players (not just 5) so budgets balance visibly.
@@ -2511,6 +2514,50 @@
       }finally{
         uploadDbBtn.disabled = false;
         uploadDbBtn.textContent = 'Upload to Database';
+      }
+    });
+  }
+
+  // Admin: run the lineup scrape + GP estimator + Supabase sync as a background job.
+  const updateLineupsBtn = document.getElementById('gmUpdateLineupsBtn');
+  if(updateLineupsBtn){
+    updateLineupsBtn.addEventListener('click', async function(){
+      if(!confirm('Run the DailyFaceoff lineup scrape + GP estimator for ' + POINTS_SEASON + '? This refreshes all lineups and estimated games (can take a few minutes).')) return;
+      updateLineupsBtn.disabled = true;
+      updateLineupsBtn.textContent = 'Running...';
+      try{
+        const res = await fetch('/api/admin/run-lineups-gp', { method: 'POST', headers: { 'X-CSRF-Token': CSRF_TOKEN } });
+        const data = await res.json().catch(function(){ return {}; });
+        if(!res.ok) throw new Error(String((data || {}).error || 'run_failed'));
+        const jobId = String((data || {}).jobId || '');
+        statusEl.textContent = 'Job ' + jobId + ' started — refreshing lineups & GP...';
+        // Poll until the job finishes, then reload to show fresh data.
+        const deadline = Date.now() + 15 * 60 * 1000;
+        while(Date.now() < deadline){
+          await new Promise(function(r){ setTimeout(r, 3000); });
+          let jr;
+          try{
+            jr = await fetch('/api/admin/job/' + encodeURIComponent(jobId), { cache: 'no-store' });
+            const jj = await jr.json().catch(function(){ return {}; });
+            if(jj.status === 'done'){
+              statusEl.textContent = 'Lineups & GP updated. Reloading...';
+              window.location.reload();
+              return;
+            }
+            if(jj.status === 'error'){
+              throw new Error(String((jj || {}).error || 'job_failed'));
+            }
+          }catch(e2){
+            if(!jr || jr.status === 404) continue;
+            throw e2;
+          }
+        }
+        throw new Error('timed out waiting for the job');
+      }catch(e){
+        statusEl.textContent = 'Update failed: ' + String(e.message || e);
+        console.error(e);
+        updateLineupsBtn.disabled = false;
+        updateLineupsBtn.textContent = 'Update Lineups & GP';
       }
     });
   }
@@ -3124,7 +3171,7 @@
       html += '<tr data-row=\'' + dataRow + '\'>';
       html += '<td class="sim-stat-name"><div class="sim-team-cell"><img class="sim-team-logo" src="' + teamLogoUrl(r.team) + '" alt="" loading="lazy" />' + String(r.name || '') + '</div></td>';
       html += '<td>' + (r.team || '') + '</td><td>' + (r.position || '') + '</td>';
-      html += '<td>' + (r.gp != null ? r.gp : 82) + '</td><td>' + (r.goals || 0) + '</td><td>' + (r.a1 || 0) + '</td><td>' + (r.a2 || 0) + '</td><td>' + (r.points || 0) + '</td></tr>';
+      html += '<td>' + (r.gp != null ? r.gp : 84) + '</td><td>' + (r.goals || 0) + '</td><td>' + (r.a1 || 0) + '</td><td>' + (r.a2 || 0) + '</td><td>' + (r.points || 0) + '</td></tr>';
     }
     html += '</tbody></table></div>';
     panelStats.innerHTML = html;
@@ -3155,7 +3202,7 @@
       html += '<tr data-row=\'' + dataRow + '\'>';
       html += '<td class="sim-stat-name"><div class="sim-team-cell"><img class="sim-team-logo" src="' + teamLogoUrl(r.team) + '" alt="" loading="lazy" />' + String(r.name || '') + '</div></td>';
       html += '<td>' + (r.team || '') + '</td><td>' + (r.position || '') + '</td>';
-      html += '<td>' + (r.gp != null ? r.gp : 82) + '</td><td>' + (r.avgGoals || 0).toFixed(1) + '</td><td>' + (r.avgA1 || 0).toFixed(1) + '</td><td>' + (r.avgA2 || 0).toFixed(1) + '</td><td>' + (r.avgPoints || 0).toFixed(1) + '</td></tr>';
+      html += '<td>' + (r.gp != null ? r.gp : 84) + '</td><td>' + (r.avgGoals || 0).toFixed(1) + '</td><td>' + (r.avgA1 || 0).toFixed(1) + '</td><td>' + (r.avgA2 || 0).toFixed(1) + '</td><td>' + (r.avgPoints || 0).toFixed(1) + '</td></tr>';
     }
     html += '</tbody></table></div>';
     panelStats.innerHTML = html;
@@ -3532,6 +3579,8 @@
       if(actions) actions.remove();
       var filterActions = clone.querySelector('.gm-filter-actions');
       if(filterActions) filterActions.remove();
+      var filterAdminActions = clone.querySelector('.gm-filter-admin-actions');
+      if(filterAdminActions) filterAdminActions.remove();
       var subtabRow = clone.querySelector('.gm-subtab-row');
       if(subtabRow) subtabRow.remove();
       var subtabs = clone.querySelector('.gm-subtabs');

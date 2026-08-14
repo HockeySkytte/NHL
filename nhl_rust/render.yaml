@@ -1,0 +1,72 @@
+# Reference spec for deploying nhl-rust on the EXISTING Render web service
+# (nhl-analytics, env: python) WITHOUT Docker — mirroring the floorball_rust
+# approach: set the build + start commands in the Render dashboard.
+#
+#   Build command:
+#     export RUSTUP_HOME=$HOME/.rustup CARGO_HOME=$HOME/.cargo PATH=/usr/local/cargo/bin:$PATH && rustup toolchain install stable --profile minimal && rustup default stable && cd nhl_rust && cargo build --release --locked -j 2
+#
+#   Start command:
+#     cd nhl_rust && ./target/release/nhl-rust
+#
+# The Rust app resolves all paths from cwd (nhl_rust): templates/static at
+# ../app/*, models at ../Model/rust (the PBP route appends `rust`), CSVs at
+# ../*.csv, about data at data/about.json — no env overrides required.
+# Keep the existing cron jobs (lineups 30m, daily update_data).
+services:
+  - type: web
+    name: nhl-analytics
+    env: python
+    buildCommand: "export RUSTUP_HOME=$HOME/.rustup CARGO_HOME=$HOME/.cargo PATH=/usr/local/cargo/bin:$PATH && rustup toolchain install stable --profile minimal && rustup default stable && cd nhl_rust && cargo build --release --locked -j 2"
+    startCommand: "cd nhl_rust && ./target/release/nhl-rust"
+    autoDeploy: true
+    plan: free
+    healthCheckPath: /robots.txt
+    envVars:
+      # Session signing.
+      - key: FLASK_SECRET_KEY
+        sync: false
+      # Supabase (data + auth).
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      # Admin fallback login (EMAIL/PASSWORD).
+      - key: EMAIL
+        sync: false
+      - key: PASSWORD
+        sync: false
+      # Stripe billing.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_MONTHLY_ID
+        sync: false
+      - key: STRIPE_PRICE_YEARLY_ID
+        sync: false
+      # Canonical public URL.
+      - key: APP_BASE_URL
+        sync: false
+      # Community feed fallback.
+      - key: COMMUNITY_SITE_URL
+        sync: false
+      - key: COMMUNITY_NHL_HUB_ID
+        sync: false
+      # Internal service URL for cron scripts to call the Rust service over
+      # HTTP instead of create_app().test_client() (e.g. https://...onrender.com).
+      - key: APP_INTERNAL_BASE_URL
+        sync: false
+      # Optional DB connectivity for admin preflight / scripts.
+      - key: DATABASE_URL
+        sync: false
+cronJobs:
+  - name: update-lineups-30m
+    schedule: "*/30 * * * *"
+    command: "python -u scripts/lineups.py --all --quiet --out-all app/static/lineups_all.json"
+    timezone: UTC
+  - name: daily-update-data
+    schedule: "15 9 * * *"
+    command: "python -u scripts/update_data.py --date $(python -c 'from datetime import datetime, timedelta, timezone; import sys; sys.stdout.write((datetime.now(timezone.utc)-timedelta(days=1)).strftime(\"%Y-%m-%d\"))') --export --season 20252026 --replace-date --rebuild-team-seasonstats --run-rapm"
+    timezone: UTC

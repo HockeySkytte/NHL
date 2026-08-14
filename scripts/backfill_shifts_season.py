@@ -44,6 +44,51 @@ get_game_ids_for_date = update_data.get_game_ids_for_date
 os.environ.setdefault('XG_PRELOAD', '0')  # backfills shouldn't preload models
 from app import create_app  # noqa: E402
 
+# When APP_INTERNAL_BASE_URL is set, fetch shifts from the Rust service over
+# HTTP instead of create_app().test_client() (PORT_PLAN §10 step 3).
+APP_INTERNAL_BASE_URL = os.getenv('APP_INTERNAL_BASE_URL', '').strip().rstrip('/')
+
+
+class _HttpResponse:
+    """Minimal response shim (matches the Flask test client surface)."""
+
+    def __init__(self, status_code: int, json_data):
+        self.status_code = status_code
+        self._json = json_data
+
+    def get_json(self, silent=True):
+        return self._json
+
+    def json(self):
+        return self._json
+
+
+class _HttpClient:
+    """Test-client-compatible shim that calls the internal service over HTTP."""
+
+    def __init__(self, base: str):
+        self.base = base
+
+    def get(self, path: str, query_string=None) -> _HttpResponse:
+        import requests as _requests
+        try:
+            resp = _requests.get(self.base + path, params=query_string or {}, timeout=300)
+            status = resp.status_code
+            try:
+                data = resp.json() if status == 200 else {}
+            except Exception:
+                data = {}
+            return _HttpResponse(status, data)
+        except Exception as exc:
+            print(f'[warn] internal GET {path} failed: {exc}', file=sys.stderr)
+            return _HttpResponse(0, {})
+
+    def __enter__(self) -> "_HttpClient":
+        return self
+
+    def __exit__(self, *args) -> bool:
+        return False
+
 
 def _validate_date(d: str) -> str:
     try:
@@ -140,13 +185,13 @@ def backfill_one_season(
 
     print(f"[backfill-shifts] season={season} window={start0}..{end0} replace={bool(replace)}")
 
-    app = create_app()
+    app = None if APP_INTERNAL_BASE_URL else create_app()
     total_games = 0
     total_rows = 0
     days_with_games = 0
     stop_after_day = False
 
-    with app.test_client() as client:
+    with (app.test_client() if app is not None else _HttpClient(APP_INTERNAL_BASE_URL)) as client:
         for date_str in _date_range(start0, end0):
             try:
                 game_ids = get_game_ids_for_date(date_str)

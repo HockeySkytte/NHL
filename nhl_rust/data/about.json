@@ -1,0 +1,224 @@
+{
+  "headlines": [
+    "Inside the App",
+    "What the App Does",
+    "How to Use the App",
+    "How to Interpret the Data",
+    "Understanding the xG Models",
+    "Understanding RAPM",
+    "A Practical Way to Read the App",
+    "Why This App Matters",
+    "Please Help Share the App and Support the Work",
+    "Future Perspectives",
+    "Glossary"
+  ],
+  "section_text": {
+    "inside-the-app": "Inside the App: A Modern NHL Analytics Platform for Fans, Analysts, and Hockey Nerds\n\nThere are a lot of hockey sites that show scores, standings, and player stats. There are fewer that try to connect those things into one place and answer the bigger questions: What happened in this game? Which players are truly driving results? How dangerous were those chances? Which lines are working? How does a player look beyond points? Where is a team creating its edge?\n\nThat is the problem this app is built to solve.\n\nAt its core, the app is an NHL analytics workspace. It combines schedule and live-game information, player and team dashboards, game reports, expected goals models, RAPM, lineup-based tools, odds history, and projection views into one connected experience. It is designed for people who want more than surface-level hockey stats, but it is also designed to remain usable for people who are still learning how to read modern hockey analytics.\n\nThis article walks through what the app does, how to use it, how to interpret the numbers, how the xG and RAPM models work, and where the platform can go next.",
+    "what-the-app-does": "What the App Does\n\nThe app is not a single leaderboard or a single model. It is a set of connected tools that let you move from a league-wide view down to a single game, single team, single line, or single player.\n\n1. Schedule and game discovery\n\nThe home page is the front door. It gives you a schedule view that makes it easy to browse the calendar and jump into individual games. Instead of forcing users to start with raw data tables, the app starts with the hockey itself: what games are being played, what happened, and where you want to dig deeper.\n\nThis matters because hockey analysis usually starts with context. Before you look at a RAPM chart or an xG split, you need to know which game, team, or player you are trying to understand.\n\nThe schedule, standings and games include all games to ever have been played in the NHL - Dating back to the 1917/1918 season.\n(Picture1)\n2. Live Games\n\nThe Live Games page surfaces games in progress in a format that is fast to scan. It is built for active follow-up rather than postgame reading. If you want to see what is happening right now, move directly from the schedule into the live layer and then into the full game page.\n\nFor people who follow a slate of games at once, this page acts like a control panel.\n(live_games_image)\n\n3. Standings\n\nThe Standings page gives the seasonal league view. That may sound simple, but standings matter because they are the baseline everyone already understands. The app uses standings as a bridge between familiar hockey language and more advanced analysis.\n\nYou can think of standings as the answer to \"what happened in the standings table,\" while the rest of the app increasingly answers \"why?\"\n(Picture2)\n\n4. Game pages\n\nThe game page is one of the most important parts of the platform. It is where raw game context becomes real analysis.\n\nA game page includes:\n- A report view\n- Lineups\n- Play-by-play\n- Shifts\n\nThe report view is where a lot of users will spend most of their time. This is where you can move beyond final score and start asking questions about shot quality, territory, pressure, and momentum.\n(Picture3)\n(Picture4)\nThe play-by-play view lets you inspect the event stream directly. The shifts view lets you connect those events to who was actually on the ice. That is a major difference between a stats site and an analytics platform: the app is not just storing outcomes, it is trying to connect outcomes to players, matchups, usage, and context.\nYou can download raw Play-by-Play and Shift data directly from the game pages.\n\n5. Skaters page\n\nThe Skaters page is a full player-analysis workspace. It includes:\n- Card\n- Charts\n- Shooting\n- Edge\n- RAPM\n- Projections\n- Table View\n\nThis is where a user can move from a specific player question to a broader league comparison.\n\nThe Card tab gives a fast profile of the player. You can customize exactly what metrics you prefer the Card to show. The bar size and color indicate the percentile ranking.\n(Picture5)\nThe Charts tab is for comparison and positioning. You can choose what metrics you want to compare.\n(Picture6)\nThe Shooting tab helps explain finishing, shot patterns, and chance generation. You can filter the shots versus a specific goaltender, by clicking in the Goalie table. Likewise, you can filter the data by shot location using the Heat Map. The video button shows goals by the selected player.\n(Picture7)\nThe Edge tab gives another layer of visual and context-driven interpretation. It loads the NHL EDGE data directly from the NHL Api.\n(Picture8)\nThe RAPM tab isolates player impact more directly. You can read more about the RAPM models below. You can choose between different metrics and different outputs.\n(Picture9)\nThe Projections tab provides forward-looking context. It shows the player projections used for the game projection model.\n(Picture10)\nThe Table View lets you zoom out and compare one player against a larger peer group. You can configure the table view as you like, and all table views are downloadable.\n(Picture11)\n\nIf you care about player evaluation, this is one of the app's deepest surfaces.\n\n6. Goalies page\n\nGoalies have their own dedicated space because skater logic and goalie logic should not be treated as the same problem.\n\nThe Goalies page includes:\n- Card\n- Charts\n- Goaltending\n- Table View\n(Picture12)\nGoaltending is unusually noisy and unusually dependent on environment, workload, shot quality, and game state. A dedicated goalie page helps separate those questions cleanly instead of forcing goalie analysis into skater frameworks that do not fit.\n\n7. Teams page\n\nThe Teams page shifts the lens from player-level evaluation to team identity and team performance.\n\nIt includes:\n- Card\n- Charts\n- Edge\n- Projections\n- Table View\n\nThis is where you can ask questions like:\n- Is this team winning through shot volume or shot quality?\n- Are they controlling play territorially?\n- Are they overperforming their underlying numbers?\n- How do they compare to the rest of the league?\n- Where are their strengths and weaknesses coming from?\n\nFor many users, the Teams page will be the easiest gateway into analytics because team-level patterns are often easier to see before moving into player isolation.\n\n8. Line Tool\n\nThe Line Tool is one of the most distinctive parts of the app.\n\nIt includes:\n- A Heat Map view\n- WOWY analysis\n- Video integration\n- Line, pair, and player selection\n- KPI panels and zone-based filtering\n\nYou can choose up to 5 players, but you can also just pick just one player to see his On-Ice statistics. You can also include a goaltender, to see if a player performs better in front of one goalie over the other. The Video button will show the goals with selected players on the ice together - Both for and against.\n(Picture13)\nIn the heat map you can compare the performance to the team or the league. If the color is blue, it means that the selected players are performing better than the team average or league average. So, in the defensive zone blue means fewer shots and in the offensive zone blue means more shots.\n(Picture14)\nThis is the kind of tool that turns data from static information into something you can actively test.\n\nYou can use it to explore how combinations of players perform together, where they create or allow chances, and how results change depending on teammates. The WOWY view is especially useful when you want to ask whether a line's results are truly driven by the group or whether one player is carrying the outcome.\nOn the WOWY page you can see the results with and without the selected players. It's setup so you see the data from the perspective of a particular player. You can of course change the perspective.\n(Picture15)\n\nThis kind of lineup analysis is one of the hardest things to do well in hockey, and it is one of the places where the app becomes more than a dashboard.\n\n9. Odds page\n\nThe app also includes odds tracking and odds history. That gives users another lens on games: not only what the model says, but how the market has moved. The odds data is from DraftKings via the NHL Api and it only gets updated from 12PM ET.\n(Picture16)\nThat does not mean the app is only for betting. It means the platform understands that betting markets are one of the most useful real-world signals in hockey. Odds movement can reflect lineup news, goalie confirmations, injury updates, and market sentiment. When combined with the rest of the app, odds history becomes context rather than noise.\n\n10. Projections page\n\nThe Projections page includes:\n- Games\n- Series\n- Bracket\n- Stanley Cup Probability\n(Picture17)\n(Picture18)\n\nThis gives the app a forward-looking layer on top of the descriptive and diagnostic layers. Users can look at individual games, playoff series, bracket paths, and title probabilities in one place.\n\nThis article is deliberately not going into the internals of the projection model, but from a product point of view, the projection surfaces are important because they connect the rest of the platform to decision-making and future-looking analysis.\n\nGetting access to the Projections page will require a subscription. This is what will cover the expenses, so even if you're not particularly interested in the game projections, you can help support the site by subscribing.\n\n11. Update and maintenance surfaces\n\nThere are also update and admin capabilities in the app. Most users will never interact with them directly, but they matter because the platform is built around frequent refreshes and operational workflows, not static CSVs sitting on a forgotten page.\n\nThat is part of what makes the app feel alive.",
+    "how-to-use-the-app": "How to Use the App\n\nOne of the biggest challenges in analytics is not building the model. It is helping people use it correctly.\n\nThe best way to use this app is to think in layers.\n\nStart broad, then narrow\n\nA good workflow looks like this:\n1. Start on the schedule, live games, standings, or team page.\n2. Identify the game, team, or player you want to understand.\n3. Use team and player pages to form an initial hypothesis.\n4. Drop into the game page or line tool when you need to inspect the \"why.\"\n\nFor example:\n- If a team has been winning a lot, go to the Teams page and see whether that success is backed by chance quality or finishing.\n- If a player's point totals look weak, go to the Skaters page and see whether the underlying play-driving data tells a different story.\n- If a line is crushing territorially but not scoring, use the Line Tool and game reports to see whether the problem is finishing, shot quality, or usage.\n- If a game result looks surprising, open the game page and inspect the play-by-play, shifts, and report tabs.\n\nThe app works best when you move between these surfaces instead of treating one chart as the whole answer.\n\nUse filters intentionally\n\nA lot of pages allow you to filter by:\n- Season\n- Season state\n- Strength state\n- Rates vs totals\n- xG model\n- Minimum thresholds like games played or time on ice\n\nThese are not cosmetic controls. They change the question you are asking.\n\nIf you choose totals, you are asking who produced the most overall value or volume. If you choose rates, you are asking who performed best on a per-minute or per-game basis. If you change strength state, you are separating even-strength results from special-teams results. If you set a minimum threshold, you are deciding how much you want to trade inclusiveness for reliability.\n\nThat matters because hockey is a small-sample sport. A player can look elite in 100 minutes and ordinary in 1,000. The app gives you the tools to manage that tension, but the user still has to decide what kind of comparison is fair.",
+    "how-to-interpret-the-data": "How to Interpret the Data\n\nThe app includes a lot of numbers, but most of them can be grouped into a few simple questions.\n\n1. Results: what happened?\n\nThese are the most familiar measures:\n- Goals\n- Wins\n- Points\n- Save percentage\n- Special teams outcomes\n- Scorelines\n\nThey matter, but they are not enough on their own. Results can be noisy, especially in hockey.\n\n2. Process: how did it happen?\n\nThis is where metrics like:\n- Corsi\n- Fenwick\n- xG\n- shot location\n- zone context\n- chance distributions\n- on-ice event rates\n\nbecome important.\n\nProcess metrics help answer whether performance is sustainable. A team winning despite weak shot quality may be living on finishing or goaltending. A player with modest point totals but strong chance-driving metrics may be better than the box score suggests.\n\n3. Context: against whom, with whom, and in what role?\n\nThis is where hockey gets more complex.\n\nA player's numbers are shaped by:\n- Teammates\n- Opponents\n- Usage\n- Zone starts\n- Special teams role\n- Score state\n- Game state\n- Team system\n\nThe app tries to keep that context visible instead of flattening everything into one number.\n\n4. Isolation: what is the player or team actually contributing?\n\nThis is where RAPM and lineup tools become especially useful. They are designed to go beyond \"what happened while this player was on the ice\" and move closer to \"what effect did this player have?\"\n\nNo model can solve that perfectly. But the right tools can get you much closer than raw plus-minus, point totals, or on-ice goal share.",
+    "understanding-the-xg-models": "Understanding the xG Models\n\nExpected goals, or xG, is one of the core ideas in modern hockey analysis. The goal of xG is simple: estimate the probability that a shot becomes a goal.\n\nThat sounds straightforward, but the real value of xG is not the probability assigned to one shot. The real value is what happens when you add those probabilities up across shifts, periods, games, players, teams, and seasons.\n\nIn this app, xG is used in multiple surfaces, and the app exposes different xG model choices because different event definitions can be useful for different analytical purposes.\n\nWhat xG is trying to measure\n\nAt a high level, xG asks:\n\nIf we saw this exact shot or shot-like event many times, how often would it become a goal?\n\nThat lets you separate chance quality from actual finishing results.\n\nA team may score four goals on 1.8 expected goals because they finished well, got a few bounces, or faced weak goaltending. Another team may score once on 3.1 expected goals because they generated better chances than the final score suggests.\n\nThat distinction is critical if you care about repeatability.\n\nThe three xG model options in the app\n\nThe app exposes three xG model views:\n\n- xG_S\n- xG_F\n- xG_F2\n\nThese are not three completely unrelated philosophies. They are three related model variants.\n\nxG_S\n\nThis is the shot-based model. It is trained on shot events and uses contextual features like:\n- venue\n- shot type\n- score state\n- rink context\n- strength state\n- box or ice location\n- last event context\n\nThis is the cleanest traditional shot-model view in the app. If you want a direct shot-quality lens, this is the natural place to start. This is probably the best model for goaltender analysis - Depending on whether or not you believe can impact shot misses... And to what extent.\n\nxG_F\n\nThis is a Fenwick-based model. Fenwick excludes blocked shots and focuses on unblocked attempts, which often gives a broader attacking-process view than shots on goal alone.\n\nThis model includes the same core contextual structure as the shot model, but also adds event-sequence context such as the last event. That can help the model capture how a chance developed, not just where it ended.\nThis is the preferred model for describing results.\n\nxG_F2\n\nThis is also Fenwick-based, but with a slightly different feature set than xG_F. It uses venue, shot type, score state, rink context, strength state, and box location, while leaving out the last-event input.\nThis is the preferred model for predictive analysis. A rebound shot have a much larger chance of becoming a goal, but they are also quite random. This is why excluding rebound effects increases the predictiveness of the model.\n\n\nHow the models are trained\n\nThe xG scripts train gradient-boosted tree classifiers using rolling multi-season windows. In plain English, that means the model is trained on recent historical seasons rather than treating all hockey history as equally relevant forever.\n\nThat matters because the league changes:\n- shot habits change\n- team systems evolve\n- tracking and event recording can drift\n- scoring environments move over time\n\nUsing rolling windows is a practical way to keep the models current without overreacting to only one season.\n\nThe model inputs are categorical and contextual features that are converted into machine-readable form, then fed into XGBoost classifiers that estimate goal probability.\n\nHow to interpret xG in the app\n\nA few practical rules help:\n\n- xG is about chance quality, not certainty.\n- Over one game, xG is descriptive, not definitive.\n- Over larger samples, xG becomes more informative.\n- xG is stronger when combined with usage and context, not read in isolation.\n- Differences between xG and goals can reveal finishing, goaltending, luck, or short-term variance.\n\nIf a player consistently beats xG over many seasons, that may reflect real finishing talent. If a team beats xG for two weeks, that might just be a hot streak. The app is built to help you tell those apart.",
+    "understanding-rapm": "Understanding RAPM\n\nRAPM stands for Regularized Adjusted Plus-Minus.\n\nIt sounds technical because it is technical. But the intuition is simple: hockey is a five-man game at even strength and a deeply contextual game everywhere else. If you want to estimate individual impact, you need a method that tries to separate a player from his teammates, opponents, and deployment.\n\nThat is what RAPM is trying to do.\n\nWhy raw plus-minus is not enough\n\nRaw plus-minus tells you what happened while a player was on the ice. It does not tell you how much of that result belongs to the player.\n\nIf someone spends all night with elite linemates against weak competition, raw plus-minus will flatter him. If someone plays brutal defensive minutes with weak support, raw plus-minus can punish him unfairly.\n\nRAPM exists because hockey is not a clean one-player sport.\n\nHow RAPM works in this app\n\nThe RAPM pipeline in the app:\n- builds shift-segment data from play-by-play and shifts\n- aggregates event outcomes by shift\n- tracks who was on the ice\n- models different outcomes with ridge regression\n- separates strength states like 5v5, power play, and penalty kill\n- outputs offensive, defensive, and differential views across metrics like Corsi, goals, and xG\n\nIn other words, the model tries to learn how outcomes move when players are present, while controlling for the fact that players share the ice with teammates and opponents.\n\nThe regularized part matters a lot. Hockey data is messy and collinear. The same players appear together repeatedly. Ridge regression helps stabilize those estimates and prevents the model from overreacting to noisy lineup combinations.\n\nWhat RAPM is measuring\n\nIn the app, RAPM includes outputs tied to:\n- Corsi\n- goals\n- xG\n- offensive and defensive components\n- plus-minus style differentials\n- power-play and shorthanded states\n\nThat means RAPM is not just one number. It is a family of adjusted impact estimates.\n\nA player may:\n- look strong offensively but weak defensively\n- grade well in xG impact but not goal results\n- show stronger value at 5v5 than on special teams\n- have more value in shot suppression than in shot creation\n\nThat is the point. Good evaluation should separate those things.\n\nHow to read RAPM correctly\n\nA few rules matter here too:\n\n- RAPM is an estimate, not a verdict.\n- It is strongest over larger samples.\n- It should be compared within role and context.\n- Offensive and defensive components should be read together.\n- xG-based RAPM is often more stable than goal-based RAPM.\n- Special teams RAPM should be treated carefully because the samples are smaller.\n\nIf a player has strong xG RAPM and weaker goal RAPM, that often means the underlying process is better than the scoreboard results. If a player rates well in both, the case is stronger. If RAPM, xG, and lineup impacts all agree, confidence goes up.\n\nThe app gives you multiple ways to test that agreement.",
+    "a-practical-way-to-read-the-app": "A Practical Way to Read the App\n\nIf you are new to hockey analytics, this is a good mental model:\n\nFor teams\nUse:\n- Standings for results\n- Teams page for identity\n- Game page for game-level explanation\n- Projections page for future-facing context\n\nFor skaters\nUse:\n- Card for summary\n- Charts for comparison\n- Shooting for chance and finishing context\n- RAPM for isolation\n- Table View for league benchmarking\n- Line Tool when you want to test teammate effects\n\nFor goalies\nUse:\n- Card and Goaltending views first\n- Team and game context second\n- Never interpret goalie results without chance quality context\n\nFor single games\nUse:\n- Game report first\n- Play-by-play second\n- Shifts when you want to connect events to personnel\n- Odds and live context when you want to understand how information moved before and during the game\n\nFor lineup questions\nUse:\n- Line Tool\n- Heat map\n- WOWY\n- Video\n- Game report confirmation\n\nThat last step matters. Numbers are strongest when they point you toward something you can then inspect more directly.",
+    "why-this-app-matters": "Why This App Matters\n\nThere are two kinds of hockey analytics products.\n\nThe first kind gives you numbers.\n\nThe second kind helps you think.\n\nThis app is trying to be the second kind.\n\nIt is built around the idea that hockey data becomes useful when users can move across levels:\n- from schedule to game\n- from team to player\n- from result to process\n- from process to context\n- from context to interpretation\n\nThat is what makes a platform valuable. Not just one stat, one leaderboard, or one model, but the ability to connect the pieces.",
+    "please-help-share-the-app-and-support-the-work": "Please Help Share the App and Support the Work\n\nIf you use the app and find it valuable, the simplest way to help is to share it.\n\nShare it with:\n- hockey fans\n- fantasy players\n- writers\n- podcasters\n- analysts\n- team-level community accounts\n- anyone who wants a smarter way to look at the game\n\nIndependent work grows because people pass it on.\n\nIf you want better public hockey analytics tools, more transparent models, more useful player and team dashboards, and more features that go beyond generic stat pages, support matters. Time, infrastructure, data pipelines, model maintenance, and product development all cost something. Every person who shares the app, talks about it, links to it, or supports the project directly helps keep the work going.\n\nIf you want this kind of platform to improve, please help put it in front of more people.",
+    "future-perspectives": "Future Perspectives\n\nThe app already covers a lot of ground, but there is still plenty of room to grow.\n\nA few directions that make sense for the future:\n\n1. More historical depth\nDeeper season archives, cross-era comparisons, and career trend tools would make the player and team pages even more useful.\n\n2. Better lineup and matchup analysis\nThe Line Tool is already powerful, but there is room for richer matchup views, coach deployment patterns, and opposition-quality overlays.\n\n3. More video-linked analytics\nThe bridge between numbers and film is one of the most interesting parts of modern sports analysis. More direct event-to-video connections would make the app even more valuable.\n\n4. Custom dashboards\nDifferent users care about different questions. Letting people save their own views, filters, tables, or metric bundles would make the app more personal and more efficient.\n\n5. Alerts and tracking\nWatchlists for players, teams, line combinations, or model-driven changes could turn the app from a destination into a daily tool.\n\n6. Expanded game reporting\nGame pages could grow into full postgame analytical reports with automated summaries, turning each game into a richer story.\n\n7. Public explainers and education\nA bigger library of built-in metric explanations, tutorials, and interpretation guides would help newer users get comfortable faster.\n\n8. Deeper team-style fingerprints\nIt would be useful to have even clearer team identity views: rush teams, cycle teams, forecheck-heavy teams, slot-denial teams, east-west power-play teams, and so on.\n\n9. More goalie-specific modeling and visuals\nGoaltending remains one of the hardest analytical problems in hockey. A deeper goalie toolkit would be a natural extension of the current platform.\n\n10. Community-facing features\nSaved screenshots, exportable reports, sharable charts, and public comparison pages would make the app easier to spread organically.\n\n11. Adding contract context\nIncluding contract information and analysis would help answer if a player is living up to his contract.\n\nClosing\n\nThe goal of this app is not to replace watching hockey. It is to deepen it.\n\nIt is for the fan who wants to know whether a result was real.\nIt is for the analyst who wants more than points and plus-minus.\nIt is for the writer who wants sharper evidence.\nIt is for the hockey obsessive who wants one place to explore the game properly.\n\nThat is what makes the project worth building.\n\nIf you have used the app, shared it, talked about it, or supported the work in any way: thank you.\n\nAnd if you want to help it grow, the best next step is simple: use it, share it, and tell other people why it matters."
+  },
+  "glossary_sections": [
+    {
+      "title": "Game States",
+      "items": [
+        {
+          "abbr": "5v5",
+          "name": "Five-on-Five",
+          "description": "Even-strength play with five skaters aside."
+        },
+        {
+          "abbr": "PP",
+          "name": "Power Play",
+          "description": "A team skates with a manpower advantage after an opponent penalty."
+        },
+        {
+          "abbr": "PK",
+          "name": "Penalty Kill",
+          "description": "A team defends while shorthanded after taking a penalty."
+        },
+        {
+          "abbr": "SH",
+          "name": "Shorthanded",
+          "description": "Play while a team has fewer skaters on the ice than the opponent."
+        },
+        {
+          "abbr": "EV",
+          "name": "Even Strength",
+          "description": "Any non-special-teams situation with equal manpower."
+        }
+      ]
+    },
+    {
+      "title": "Ice Time And Usage",
+      "items": [
+        {
+          "abbr": "GP",
+          "name": "Games Played",
+          "description": "Number of games included for the player or team."
+        },
+        {
+          "abbr": "TOI",
+          "name": "Time On Ice",
+          "description": "Total ice time, usually shown in minutes."
+        },
+        {
+          "abbr": "QoT",
+          "name": "Quality of Teammates",
+          "description": "Estimate of the strength of a player’s typical teammates."
+        },
+        {
+          "abbr": "QoC",
+          "name": "Quality of Competition",
+          "description": "Estimate of the strength of the opponents a player usually faces."
+        },
+        {
+          "abbr": "ZS",
+          "name": "Zone Starts",
+          "description": "Deployment context showing how favorable or defensive a player’s starting shifts are."
+        }
+      ]
+    },
+    {
+      "title": "Shot And Chance Metrics",
+      "items": [
+        {
+          "abbr": "CF",
+          "name": "Corsi For",
+          "description": "All shot attempts for while the player or team is on the ice."
+        },
+        {
+          "abbr": "CA",
+          "name": "Corsi Against",
+          "description": "All shot attempts against while the player or team is on the ice."
+        },
+        {
+          "abbr": "FF",
+          "name": "Fenwick For",
+          "description": "Unblocked shot attempts for while the player or team is on the ice."
+        },
+        {
+          "abbr": "FA",
+          "name": "Fenwick Against",
+          "description": "Unblocked shot attempts against while the player or team is on the ice."
+        },
+        {
+          "abbr": "SF",
+          "name": "Shots For",
+          "description": "Shots on goal for while the player or team is on the ice."
+        },
+        {
+          "abbr": "SA",
+          "name": "Shots Against",
+          "description": "Shots on goal against while the player or team is on the ice."
+        },
+        {
+          "abbr": "xG",
+          "name": "Expected Goals",
+          "description": "Model-based estimate of how many goals a set of shots should produce."
+        },
+        {
+          "abbr": "xGF",
+          "name": "Expected Goals For",
+          "description": "Expected goals generated by the player or team."
+        },
+        {
+          "abbr": "xGA",
+          "name": "Expected Goals Against",
+          "description": "Expected goals allowed by the player or team."
+        },
+        {
+          "abbr": "ixG",
+          "name": "Individual Expected Goals",
+          "description": "Expected goals from the player’s own shots."
+        }
+      ]
+    },
+    {
+      "title": "Results And Percentages",
+      "items": [
+        {
+          "abbr": "GF",
+          "name": "Goals For",
+          "description": "Goals scored by the player’s team while he is on the ice."
+        },
+        {
+          "abbr": "GA",
+          "name": "Goals Against",
+          "description": "Goals allowed by the player’s team while he is on the ice."
+        },
+        {
+          "abbr": "GSAx",
+          "name": "Goals Saved Above Expected",
+          "description": "Goalie metric comparing actual goals allowed to expected goals against."
+        },
+        {
+          "abbr": "GAx",
+          "name": "Goals Above Expected",
+          "description": "Difference between actual goals and expected goals in player shooting views."
+        },
+        {
+          "abbr": "Sh%",
+          "name": "Shooting Percentage",
+          "description": "Goals divided by shots on goal."
+        },
+        {
+          "abbr": "Sv%",
+          "name": "Save Percentage",
+          "description": "Saves divided by shots on goal against."
+        },
+        {
+          "abbr": "xSv%",
+          "name": "Expected Save Percentage",
+          "description": "Save percentage implied by expected goals against."
+        },
+        {
+          "abbr": "dSv%",
+          "name": "Delta Save Percentage",
+          "description": "Actual save percentage minus expected save percentage."
+        },
+        {
+          "abbr": "PDO",
+          "name": "PDO",
+          "description": "Combined on-ice shooting and save percentage, often used as a puck-luck indicator."
+        }
+      ]
+    },
+    {
+      "title": "Playmaking And Discipline",
+      "items": [
+        {
+          "abbr": "A1",
+          "name": "Primary Assists",
+          "description": "Assists awarded to the last passer before a goal scorer."
+        },
+        {
+          "abbr": "A2",
+          "name": "Secondary Assists",
+          "description": "Second assists awarded on a goal."
+        },
+        {
+          "abbr": "PIM",
+          "name": "Penalty Minutes",
+          "description": "Minutes assessed for penalties."
+        }
+      ]
+    },
+    {
+      "title": "Modeling And Projection Terms",
+      "items": [
+        {
+          "abbr": "RAPM",
+          "name": "Regularized Adjusted Plus-Minus",
+          "description": "Model that estimates player impact while adjusting for teammates, opponents, and usage."
+        }
+      ]
+    }
+  ]
+}

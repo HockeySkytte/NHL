@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+scripts/.venv
+**/__pycache__
+nhl_rust/target
+/data
+/Model
+/docs
+/tests
+/supabase
+*.log

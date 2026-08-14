@@ -10,6 +10,9 @@ from /v1/player/{id}/landing) and estimates 2026-27 GP based on:
 Writes back to app/static/lineups_all.json with a `gp_est` field per player.
 Also adds `gp_est_note` with a brief explanation.
 
+2026-27 is an 84-game regular season (expanded from 82), so every final
+estimate is scaled by 84/82 and capped at 84.
+
 Usage:
     .\.venv\Scripts\python.exe .\scripts\estimate_gp.py
     .\.venv\Scripts\python.exe .\scripts\estimate_gp.py --dry-run   (preview only)
@@ -28,6 +31,10 @@ import requests
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 LINEUPS_PATH = os.path.join(REPO_ROOT, 'app', 'static', 'lineups_all.json')
+
+# 2026-27 is an 84-game season (expanded from 82) — scale every GP estimate.
+SEASON_GAMES = 84
+GP_MULTIPLIER = SEASON_GAMES / 82.0
 
 REQUEST_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -140,7 +147,7 @@ def estimate_gp_2027(gp_history: List[int], player_id: int, pos: str, age: Optio
     3. If no history, default based on position (F:75, D:72, G:40)
     4. Apply age penalty: over 35, reduce by ~3 games per year
     5. Apply known injury adjustments
-    6. Cap at 82
+    6. Scale by 84/82 (2026-27 is an 84-game season) and cap at 84
 
     Returns (gp_est, note_string).
     """
@@ -171,7 +178,7 @@ def estimate_gp_2027(gp_history: List[int], player_id: int, pos: str, age: Optio
     # Floor at 10 (even injury-prone players might play some)
     base = max(10, base)
 
-    # Cap at 82
+    # Cap at the old 82-game scale (the 84-game scale is applied at the end).
     base = min(82, base)
 
     # Known injury adjustments (override if lower)
@@ -184,6 +191,9 @@ def estimate_gp_2027(gp_history: List[int], player_id: int, pos: str, age: Optio
     # Winding down players
     if player_id in PLAYERS_WINDING_DOWN:
         note_parts.append("aging-vet")
+
+    # 2026-27 is an 84-game season — scale the final estimate by 84/82 and cap.
+    base = min(SEASON_GAMES, int(round(base * GP_MULTIPLIER)))
 
     note = '; '.join(note_parts) if note_parts else 'default-82'
 
@@ -252,7 +262,7 @@ def main():
                     print(f"  Progress: {completed}/{total}")
             except Exception as e:
                 pid = futures[future]
-                gp_estimates[pid] = (82, f"error:{e}")
+                gp_estimates[pid] = (SEASON_GAMES, f"error:{e}")
                 completed += 1
 
     print(f"  Complete: {completed}/{total}")
@@ -304,7 +314,7 @@ def main():
         print(f"Written to {output_path}")
 
         # Summary stats
-        all_gp = [p.get('gp_est', 82) for t in lineups.values()
+        all_gp = [p.get('gp_est', SEASON_GAMES) for t in lineups.values()
                   for g in ('forwards', 'defense', 'goalies')
                   for p in t.get(g, [])]
         if all_gp:

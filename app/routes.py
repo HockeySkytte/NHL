@@ -1705,8 +1705,8 @@ def admin_upload_lineups():
                 games = 82
             if games < 0:
                 games = 0
-            if games > 82:
-                games = 82
+            if games > 84:
+                games = 84
 
             # Determine unit from position in the list
             # The client sends scratches last; starters come first in slot order.
@@ -7126,8 +7126,8 @@ def _normalize_custom_lineup_entries(raw_lineup: Any) -> List[Dict[str, Any]]:
             games = 82
         if games < 0:
             games = 0
-        if games > 82:
-            games = 82
+        if games > 84:
+            games = 84
         out.append({'pid': int(pid), 'pos': pos, 'games': games, 'scratch': entry.get('scratch') or False})
     return out
 
@@ -7190,8 +7190,8 @@ def _team_proj_from_custom_lineup_entries(lineup_entries: List[Dict[str, Any]], 
             games = 82
         if games < 0:
             games = 0
-        if games > 82:
-            games = 82
+        if games > 84:
+            games = 84
         weight = games / 82.0
         if pid > 0 and pid in proj_map:
             total += _proj_value_for_player(proj_map.get(pid)) * weight
@@ -7270,7 +7270,7 @@ def _team_proj_with_injuries(
         except Exception:
             games = 82
         if games < 0: games = 0
-        if games > 82: games = 82
+        if games > 84: games = 84
         weight = games / 82.0
         if pid <= 0:
             continue
@@ -7962,8 +7962,8 @@ def _build_team_roster_rates(
                 games_est = 82
             if games_est < 0:
                 games_est = 0
-            if games_est > 82:
-                games_est = 82
+            if games_est > 84:
+                games_est = 84
             add_player(pid, pos, games_est)
     else:
         li = lineups_all.get(t) or {}
@@ -8234,8 +8234,8 @@ def _run_single_sim(
                 _g = int(e.get('games') or 0)
                 if _g < 0:
                     _g = 0
-                if _g > 82:
-                    _g = 82
+                if _g > 84:
+                    _g = 84
                 # Keep the highest GP if a player appears in multiple lineups.
                 gp_by_pid[_pid] = max(gp_by_pid.get(_pid, 0), _g)
 

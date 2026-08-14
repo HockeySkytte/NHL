@@ -15,6 +15,15 @@ ENV/
 .coverage*
 htmlcov/
 
+# Rust (nhl_rust)
+target/
+Cargo.lock.orig
+
+# Logs / scratch
+*.log
+headers.txt
+_*.py
+
 # IDE/editor
 .vscode/
 .idea/

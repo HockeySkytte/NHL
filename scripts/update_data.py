@@ -50,6 +50,55 @@ except Exception:
     BeautifulSoup = None  # type: ignore
 
 
+# ── Internal service mode (PORT_PLAN §10 step 3) ──────────────────────────
+# When APP_INTERNAL_BASE_URL is set, fetch PBP/shifts from the Rust service
+# over HTTP instead of create_app().test_client(). The shim below mimics the
+# Flask test-client response surface (.status_code / .get_json(silent=True))
+# so the caller code is unchanged.
+APP_INTERNAL_BASE_URL = os.getenv('APP_INTERNAL_BASE_URL', '').strip().rstrip('/')
+
+
+class _HttpResponse:
+    """Minimal response shim (matches the Flask test client surface)."""
+
+    def __init__(self, status_code: int, json_data: Any):
+        self.status_code = status_code
+        self._json = json_data
+
+    def get_json(self, silent: bool = True) -> Any:  # noqa: ARG001
+        return self._json
+
+    def json(self) -> Any:
+        return self._json
+
+
+class _HttpClient:
+    """Test-client-compatible shim that calls the internal service over HTTP."""
+
+    def __init__(self, base: str):
+        self.base = base
+
+    def get(self, path: str, query_string: Optional[Dict[str, str]] = None) -> _HttpResponse:
+        import requests as _requests
+        try:
+            resp = _requests.get(self.base + path, params=query_string or {}, timeout=300)
+            status = resp.status_code
+            try:
+                data = resp.json() if status == 200 else {}
+            except Exception:
+                data = {}
+            return _HttpResponse(status, data)
+        except Exception as exc:
+            print(f'[warn] internal GET {path} failed: {exc}', file=sys.stderr)
+            return _HttpResponse(0, {})
+
+    def __enter__(self) -> "_HttpClient":
+        return self
+
+    def __exit__(self, *args: Any) -> bool:
+        return False
+
+
 
 
 def _validate_date(d: str) -> str:
@@ -348,13 +397,14 @@ def fetch_day(
         # No games on this date
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    app = create_app()
+    app = None if APP_INTERNAL_BASE_URL else create_app()
     df_pbp_list: List[pd.DataFrame] = []
     df_shifts_list: List[pd.DataFrame] = []
     df_gamedata_list: List[pd.DataFrame] = []
 
-    # Use a test client so requests are fully handled inside the app context
-    with app.test_client() as client:
+    # Use a test client so requests are fully handled inside the app context,
+    # or the HTTP shim when APP_INTERNAL_BASE_URL points at the Rust service.
+    with (app.test_client() if app is not None else _HttpClient(APP_INTERNAL_BASE_URL)) as client:
         for gid in game_ids:
             pbp_df = pd.DataFrame()
             # Play-by-play (xG always computed); force=1 ensures fresh data.
