@@ -48,83 +48,40 @@ fn value_to_map(v: Value) -> BTreeMap<i64, Value> {
     out
 }
 
-/// Supabase-first, CSV fallback. Keyed by int playerId.
-pub async fn load_map(caches: &Caches, sb: Option<&SbClient>, cfg: &Config) -> BTreeMap<i64, Value> {
+/// Supabase-only (the `player_projections` table is the source; no CSV).
+pub async fn load_map(caches: &Caches, sb: Option<&SbClient>, _cfg: &Config) -> BTreeMap<i64, Value> {
     if let Some(v) = caches.player_projections.get(&()) {
         return value_to_map(v);
     }
-    let out = load_map_inner(sb, cfg).await;
+    let out = load_map_inner(sb).await;
     caches.player_projections.insert((), map_to_value(&out));
     out
 }
 
-async fn load_map_inner(sb: Option<&SbClient>, cfg: &Config) -> BTreeMap<i64, Value> {
-    if let Some(sb) = sb {
-        if let Some(rows) = sb.read("player_projections", "*", None, Some(&col_map()), None, 0).await {
-            let mut out = BTreeMap::new();
-            for row in rows {
-                let pid = safe_int(
-                    row.get("PlayerID")
-                        .or_else(|| row.get("playerId"))
-                        .or_else(|| row.get("player_id")),
-                );
-                if let Some(pid) = pid {
-                    if pid > 0 {
-                        out.insert(pid, row);
-                    }
+async fn load_map_inner(sb: Option<&SbClient>) -> BTreeMap<i64, Value> {
+    let Some(sb) = sb else {
+        return BTreeMap::new();
+    };
+    if let Some(rows) = sb.read("player_projections", "*", None, Some(&col_map()), None, 0).await {
+        let mut out = BTreeMap::new();
+        for row in rows {
+            let pid = safe_int(
+                row.get("PlayerID")
+                    .or_else(|| row.get("playerId"))
+                    .or_else(|| row.get("player_id")),
+            );
+            if let Some(pid) = pid {
+                if pid > 0 {
+                    out.insert(pid, row);
                 }
             }
-            return out;
         }
-    }
-    // CSV fallback (flexible id column, like Python).
-    load_csv(&cfg.static_dir.join("player_projections.csv"))
-}
-
-fn load_csv(path: &std::path::Path) -> BTreeMap<i64, Value> {
-    let mut out = BTreeMap::new();
-    if !path.exists() {
         return out;
     }
-    let Ok(mut reader) = csv::ReaderBuilder::new().has_headers(true).from_path(path) else {
-        return out;
-    };
-    let headers: Vec<String> = reader
-        .headers()
-        .map(|h| h.iter().map(|s| s.to_string()).collect())
-        .unwrap_or_default();
-    let lower_map: HashMap<String, String> = headers
-        .iter()
-        .map(|h| (h.to_lowercase(), h.clone()))
-        .collect();
-    let id_col = ["playerid", "player_id", "id"]
-        .iter()
-        .find_map(|c| lower_map.get(*c))
-        .cloned()
-        .or_else(|| {
-            if headers.iter().any(|h| h == "playerId") {
-                Some("playerId".to_string())
-            } else {
-                None
-            }
-        });
-    for record in reader.records() {
-        let Ok(record) = record else { continue };
-        let row: HashMap<String, Value> = headers
-            .iter()
-            .enumerate()
-            .map(|(i, h)| (h.clone(), Value::from(record.get(i).unwrap_or(""))))
-            .collect();
-        let pid_raw = id_col.as_ref().and_then(|c| row.get(c));
-        let Some(pid) = pid_raw.and_then(|v| safe_int(Some(v))) else {
-            continue;
-        };
-        out.insert(pid, serde_json::to_value(&row).unwrap_or(Value::Null));
-    }
-    out
+    BTreeMap::new()
 }
 
-/// `_parse_proj_row`: player_projections.csv column semantics; total excludes GSAx.
+/// `_parse_proj_row`: player_projections column semantics; total excludes GSAx.
 pub fn parse_proj_row(row: &Value) -> Value {
     let pid = safe_int(
         row.get("PlayerID")

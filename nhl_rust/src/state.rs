@@ -32,7 +32,6 @@ pub struct Caches {
     pub all_rosters: TtlCache<(), Value>,
     pub teamseasonstats: TtlCache<(), Value>,
     pub club_schedule: TtlCache<(String, i64), Value>,
-    pub seasonstats_csv: TtlCache<(), Value>,
     pub seasonstats_agg: TtlCache<String, Value>,
     pub goalies_agg: TtlCache<String, Value>,
     pub career_matrix: TtlCache<String, Value>,
@@ -127,11 +126,6 @@ impl Caches {
             club_schedule: TtlCache::new(
                 env_ttl("CLUB_SCHEDULE_CACHE_TTL_SECONDS", 21600),
                 64,
-            ),
-            seasonstats_csv: TtlCache::new_weighted(
-                env_ttl("SEASONSTATS_CSV_CACHE_TTL_SECONDS", 1800),
-                32 * 1024 * 1024,
-                |v: &Value| crate::cache::json_value_weight(v),
             ),
             seasonstats_agg: TtlCache::new_weighted(
                 env_ttl("SEASONSTATS_AGG_CACHE_TTL_SECONDS", 1800),
@@ -273,7 +267,7 @@ pub struct AppState {
     pub caches: Arc<Caches>,
     pub teams: Arc<Vec<Value>>,
     pub about: Arc<AboutData>,
-    /// Season → last date (`Last_date.csv` / Supabase `last_dates`), loaded once.
+    /// Season → last date (Supabase `last_dates` table), loaded once.
     pub last_dates: Arc<BTreeMap<i64, String>>,
     /// Admin background jobs (e.g. lineup + GP refresh) keyed by job id.
     pub jobs: Arc<std::sync::Mutex<HashMap<String, serde_json::Value>>>,
@@ -289,7 +283,7 @@ impl AppState {
         let sb = SbClient::from_env(http.clone());
         let templates = TemplateEnv::new(&cfg)?;
         let teams = Arc::new(teams::load(sb.as_ref(), &cfg).await);
-        let last_dates = Arc::new(crate::data::last_dates::load(&cfg));
+        let last_dates = Arc::new(crate::data::last_dates::load(sb.as_ref(), &cfg).await);
         let about = Arc::new(AboutData::load(&cfg.about_data_json).unwrap_or_else(|e| {
             tracing::warn!("about data unavailable ({e}); serving empty about page");
             AboutData::empty()

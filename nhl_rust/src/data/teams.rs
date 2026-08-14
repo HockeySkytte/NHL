@@ -1,7 +1,6 @@
 //! Team rows — port of `_load_teams_csv()` / `TEAM_ROWS`.
 //!
-//! Supabase `teams` table first, `Teams.csv` fallback. Loaded once at startup
-//! (the Flask module loads it once at import).
+//! Supabase `teams` table ONLY (no CSV fallback). Loaded once at startup.
 
 use std::collections::HashMap;
 
@@ -40,43 +39,14 @@ fn normalize_active(mut row: Value) -> Value {
     row
 }
 
-pub async fn load(sb: Option<&SbClient>, cfg: &Config) -> Vec<Value> {
-    if let Some(sb) = sb {
-        if let Some(rows) = sb.read("teams", "*", None, Some(&col_map()), None, 0).await {
-            return rows.into_iter().map(normalize_active).collect();
-        }
-    }
-    load_csv(&cfg.teams_csv_path)
-}
-
-fn load_csv(path: &std::path::Path) -> Vec<Value> {
-    if !path.exists() {
-        tracing::warn!("Teams.csv not found at {} — serving no teams", path.display());
-        return Vec::new();
-    }
-    let Ok(mut reader) = csv::ReaderBuilder::new().has_headers(true).from_path(path) else {
-        tracing::warn!("failed to open Teams.csv at {}", path.display());
+pub async fn load(sb: Option<&SbClient>, _cfg: &Config) -> Vec<Value> {
+    let Some(sb) = sb else {
         return Vec::new();
     };
-    let headers: Vec<String> = match reader.headers() {
-        Ok(h) => h
-            .iter()
-            .map(|s| s.trim_start_matches('\u{feff}').to_string())
-            .collect(),
-        Err(_) => return Vec::new(),
-    };
-    let mut out = Vec::new();
-    for record in reader.records() {
-        let Ok(record) = record else { continue };
-        let mut map = serde_json::Map::new();
-        for (i, value) in record.iter().enumerate() {
-            if let Some(header) = headers.get(i) {
-                map.insert(header.clone(), json!(value));
-            }
-        }
-        out.push(Value::Object(map));
-    }
-    out
+    sb.read("teams", "*", None, Some(&col_map()), None, 0)
+        .await
+        .map(|rows| rows.into_iter().map(normalize_active).collect())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

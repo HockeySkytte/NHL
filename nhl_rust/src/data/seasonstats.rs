@@ -3,7 +3,7 @@
 //! `_build_goalies_career_season_matrix`, `_build_team_base_stats` and
 //! `_team_stats_rest_get` from `app/routes.py`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde_json::{json, Map, Value};
 
@@ -62,109 +62,51 @@ pub fn season_stats_col_map() -> HashMap<String, String> {
     .collect()
 }
 
-/// Full player SeasonStats CSV (cached), used as the base for full scans and
-/// as the fallback for missing seasons.
-pub async fn load_seasonstats_csv(caches: &Caches, cfg: &Config) -> Vec<Value> {
-    if let Some(v) = caches.seasonstats_csv.get(&()) {
-        if let Value::Array(rows) = v {
-            return rows;
-        }
-    }
-    let rows = read_csv_rows(&cfg.static_dir.join("nhl_seasonstats.csv"));
-    caches.seasonstats_csv.insert((), Value::Array(rows.clone()));
-    rows
-}
-
-pub fn read_csv_rows(path: &std::path::Path) -> Vec<Value> {
-    let mut out = Vec::new();
-    if !path.exists() {
-        return out;
-    }
-    let Ok(mut reader) = csv::ReaderBuilder::new().has_headers(true).from_path(path) else {
-        return out;
-    };
-    let headers: Vec<String> = reader
-        .headers()
-        .map(|h| h.iter().map(|s| s.trim_start_matches('\u{feff}').to_string()).collect())
-        .unwrap_or_default();
-    for record in reader.records() {
-        let Ok(record) = record else { continue };
-        let mut map = Map::new();
-        for (i, value) in record.iter().enumerate() {
-            if let Some(header) = headers.get(i) {
-                map.insert(header.clone(), Value::String(value.to_string()));
-            }
-        }
-        out.push(Value::Object(map));
-    }
-    out
-}
-
-/// `_iter_seasonstats_static_rows(seasons=...)`.
+/// `_iter_seasonstats_static_rows(seasons=...)` — Supabase-only (the season
+/// stats all live in the `season_stats` table; there is NO CSV fallback).
 pub async fn iter_player_rows(
-    caches: &Caches,
+    _caches: &Caches,
     sb: Option<&SbClient>,
-    cfg: &Config,
+    _cfg: &Config,
     seasons: &[i64],
     goalie_only: bool,
 ) -> Vec<Value> {
+    let Some(sb) = sb else {
+        return Vec::new();
+    };
     if !seasons.is_empty() {
         let mut all: Vec<Value> = Vec::new();
-        let mut missing: Vec<i64> = Vec::new();
-        if let Some(sb) = sb {
-            for s in seasons {
-                let mut f = std::collections::BTreeMap::new();
-                f.insert("season".to_string(), format!("eq.{s}"));
-                if goalie_only {
-                    f.insert("position".to_string(), "eq.G".to_string());
-                }
-                match sb
-                    .read(
-                        "season_stats",
-                        "*",
-                        Some(&f),
-                        Some(&season_stats_col_map()),
-                        None,
-                        0,
-                    )
-                    .await
-                {
-                    Some(rows) => all.extend(rows),
-                    None => missing.push(*s),
-                }
+        for s in seasons {
+            let mut f = std::collections::BTreeMap::new();
+            f.insert("season".to_string(), format!("eq.{s}"));
+            if goalie_only {
+                f.insert("position".to_string(), "eq.G".to_string());
             }
-        } else {
-            missing = seasons.to_vec();
-        }
-        if missing.is_empty() {
-            return all;
-        }
-        // Mixed-source fallback: Supabase rows + CSV for the missing seasons.
-        let csv = load_seasonstats_csv(caches, cfg).await;
-        let missing_set: HashSet<i64> = missing.into_iter().collect();
-        for r in &csv {
-            if let Some(s) = safe_int(r.get("Season")) {
-                if missing_set.contains(&s) {
-                    all.push(r.clone());
-                }
+            if let Some(rows) = sb
+                .read(
+                    "season_stats",
+                    "*",
+                    Some(&f),
+                    Some(&season_stats_col_map()),
+                    None,
+                    0,
+                )
+                .await
+            {
+                all.extend(rows);
             }
         }
         return all;
     }
-    let csv = load_seasonstats_csv(caches, cfg).await;
-    if !goalie_only {
-        return csv;
+    // Career scope: read all rows from Supabase (optionally goalies only).
+    let mut f = std::collections::BTreeMap::new();
+    if goalie_only {
+        f.insert("position".to_string(), "eq.G".to_string());
     }
-    csv.into_iter()
-        .filter(|r| {
-            let pos = r
-                .as_object()
-                .and_then(|o| ci_get(o, "Position"))
-                .map(|v| str_value(Some(v)).to_uppercase())
-                .unwrap_or_default();
-            pos.starts_with('G')
-        })
-        .collect()
+    let f = if f.is_empty() { None } else { Some(f) };
+    sb.read("season_stats", "*", f.as_ref(), Some(&season_stats_col_map()), None, 0)
+        .await
+        .unwrap_or_default()
 }
 
 fn flt(v: Option<&Value>) -> f64 {
@@ -465,7 +407,7 @@ pub async fn build_goalie_agg(
 pub async fn build_goalies_career_matrix(
     caches: &Caches,
     sb: Option<&SbClient>,
-    cfg: &Config,
+    _cfg: &Config,
     season_state: &str,
     strength_state: &str,
     target_pid: i64,
@@ -482,9 +424,7 @@ pub async fn build_goalies_career_matrix(
     }
 
     // Read ONLY goalie rows (position = G) across all seasons from Supabase.
-    // Never load the whole 135k-row season-stats CSV as serde Values — that
-    // alone is ~300MB of working set, and a league-wide goalie matrix on top
-    // of it blew past Render's memory limit (measured +653MB for one request).
+    // There is no CSV fallback — all data lives in Supabase.
     let rows = if let Some(sb) = sb {
         sb.read(
             "season_stats",
@@ -497,18 +437,7 @@ pub async fn build_goalies_career_matrix(
         .await
         .unwrap_or_default()
     } else {
-        // Fallback: filtered CSV rows only (goalies), never the whole file.
-        let csv = load_seasonstats_csv(caches, cfg).await;
-        csv.into_iter()
-            .filter(|r| {
-                let pos = r
-                    .as_object()
-                    .and_then(|o| ci_get(o, "Position"))
-                    .map(|v| str_value(Some(v)).to_uppercase())
-                    .unwrap_or_default();
-                pos.starts_with('G')
-            })
-            .collect()
+        Vec::new()
     };
     let mut by_pid_season: Map<String, Value> = Map::new();
     let mut league_acc: Map<String, Value> = Map::new();

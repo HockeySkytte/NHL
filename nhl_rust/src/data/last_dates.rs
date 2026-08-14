@@ -1,26 +1,44 @@
-//! `Last_date.csv` → { season: last date } (port of `_load_last_dates`).
+//! Supabase `last_dates` table → { season: last date } (port of Flask
+//! `_load_last_dates`, which reads the same Supabase table — no CSV).
 
 use std::collections::BTreeMap;
 
-use crate::config::Config;
+use serde_json::Value;
 
-pub fn load(cfg: &Config) -> BTreeMap<i64, String> {
+use crate::config::Config;
+use crate::supabase::read::SbClient;
+
+fn col_map() -> std::collections::HashMap<String, String> {
+    let mut m = std::collections::HashMap::new();
+    m.insert("season".to_string(), "Season".to_string());
+    m.insert("last_date".to_string(), "Last_Date".to_string());
+    m
+}
+
+pub async fn load(sb: Option<&SbClient>, _cfg: &Config) -> BTreeMap<i64, String> {
     let mut out = BTreeMap::new();
-    let path = &cfg.last_dates_csv_path;
-    if !path.exists() {
-        tracing::warn!("Last_date.csv not found at {} — standings season dates unavailable", path.display());
-        return out;
-    }
-    let Ok(mut reader) = csv::ReaderBuilder::new().has_headers(true).from_path(path) else {
+    let Some(sb) = sb else {
         return out;
     };
-    for record in reader.records() {
-        let Ok(record) = record else { continue };
-        let season = record.get(0).unwrap_or("").trim();
-        let date = record.get(1).unwrap_or("").trim();
-        if let Ok(s) = season.parse::<i64>() {
-            if !date.is_empty() {
-                out.insert(s, date.to_string());
+    if let Some(rows) = sb.read("last_dates", "*", None, Some(&col_map()), None, 0).await {
+        for row in rows {
+            let season = row
+                .get("Season")
+                .and_then(Value::as_i64)
+                .or_else(|| {
+                    row.get("Season")
+                        .and_then(Value::as_str)
+                        .and_then(|s| s.trim().parse::<i64>().ok())
+                });
+            let date = row
+                .get("Last_Date")
+                .and_then(Value::as_str)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            if let Some(s) = season {
+                if !date.is_empty() {
+                    out.insert(s, date);
+                }
             }
         }
     }
@@ -30,19 +48,16 @@ pub fn load(cfg: &Config) -> BTreeMap<i64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
 
     #[test]
-    fn parses_last_dates() {
-        let mut cfg = Config::from_env();
-        // Point at the real repo CSV (default path is ../Last_date.csv relative
-        // to the nhl_rust working dir).
-        let path = std::path::Path::new("..").join("Last_date.csv");
-        if path.exists() {
-            cfg.last_dates_csv_path = path;
-            let map = load(&cfg);
-            assert!(!map.is_empty());
-            assert!(map.contains_key(&20242025));
-        }
+    fn parses_last_dates_shape() {
+        // Supabase `last_dates` rows (season number + last_date string) map to
+        // `Season`/`Last_Date` after the col_map rename.
+        let row = serde_json::json!({"Season": 20242025, "Last_Date": "2025-06-30"});
+        assert_eq!(row["Season"].as_i64(), Some(20242025));
+        assert_eq!(row["Last_Date"].as_str(), Some("2025-06-30"));
+        let cm = col_map();
+        assert_eq!(cm.get("season").map(String::as_str), Some("Season"));
+        assert_eq!(cm.get("last_date").map(String::as_str), Some("Last_Date"));
     }
 }

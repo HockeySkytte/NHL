@@ -239,7 +239,7 @@ async fn live_games_page(State(state): State<AppState>, headers: HeaderMap) -> R
 
 /// `GET /standings` (`standings_page`).
 async fn standings_page(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
-    // Seasons from Last_date.csv, newest first (matches Flask `standings_page`).
+    // Seasons from the Supabase `last_dates` table, newest first (matches Flask).
     let season_objs: Vec<Value> = state
         .last_dates
         .keys()

@@ -49,89 +49,38 @@ pub async fn iter_rows(caches: &Caches, sb: Option<&SbClient>, cfg: &Config) -> 
     rows
 }
 
-/// `_iter_teamseasonstats_static_rows(seasons=...)`: Supabase per-season first,
-/// CSV fallback for missing seasons (or all when `seasons` is empty).
+/// `_iter_teamseasonstats_static_rows(seasons=...)`: Supabase-only (the team
+/// season stats live in the `season_stats_teams` table; NO CSV fallback).
 pub async fn iter_rows_filtered(
     _caches: &Caches,
     sb: Option<&SbClient>,
-    cfg: &Config,
+    _cfg: &Config,
     seasons: &[i64],
     _primary: i64,
 ) -> Vec<Value> {
+    let Some(sb) = sb else {
+        return Vec::new();
+    };
     if !seasons.is_empty() {
         let mut all: Vec<Value> = Vec::new();
-        let mut missing: Vec<i64> = Vec::new();
-        if let Some(sb) = sb {
-            for s in seasons {
-                match sb
-                    .read(
-                        "season_stats_teams",
-                        "*",
-                        Some(&crate::supabase::read::filters(&[("season", &format!("eq.{s}"))])),
-                        Some(&col_map()),
-                        None,
-                        0,
-                    )
-                    .await
-                {
-                    Some(rows) => all.extend(rows),
-                    None => missing.push(*s),
-                }
-            }
-        } else {
-            missing = seasons.to_vec();
-        }
-        if missing.is_empty() {
-            return all;
-        }
-        let csv = load_csv(&cfg.static_dir.join("nhl_seasonstats_teams.csv"));
-        let missing_set: std::collections::HashSet<i64> = missing.into_iter().collect();
-        for r in &csv {
-            if let Some(s) = r
-                .get("Season")
-                .and_then(Value::as_str)
-                .and_then(|v| v.trim().parse::<i64>().ok())
+        for s in seasons {
+            if let Some(rows) = sb
+                .read(
+                    "season_stats_teams",
+                    "*",
+                    Some(&crate::supabase::read::filters(&[("season", &format!("eq.{s}"))])),
+                    Some(&col_map()),
+                    None,
+                    0,
+                )
+                .await
             {
-                if missing_set.contains(&s) {
-                    all.push(r.clone());
-                }
+                all.extend(rows);
             }
         }
         return all;
     }
-    if let Some(sb) = sb {
-        match sb.read("season_stats_teams", "*", None, Some(&col_map()), None, 0).await {
-            Some(rows) => return rows,
-            None => return load_csv(&cfg.static_dir.join("nhl_seasonstats_teams.csv")),
-        }
-    }
-    load_csv(&cfg.static_dir.join("nhl_seasonstats_teams.csv"))
-}
-
-fn load_csv(path: &std::path::Path) -> Vec<Value> {
-    let mut out = Vec::new();
-    if !path.exists() {
-        return out;
-    }
-    let Ok(mut reader) = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .from_path(path)
-    else {
-        return out;
-    };
-    let headers: Vec<String> = reader
-        .headers()
-        .map(|h| h.iter().map(|s| s.trim_start_matches('\u{feff}').to_string()).collect())
-        .unwrap_or_default();
-    for record in reader.records() {
-        let Ok(record) = record else { continue };
-        let mut map = serde_json::Map::new();
-        for (i, value) in record.iter().enumerate() {
-            if let Some(header) = headers.get(i) {
-                map.insert(header.clone(), Value::String(value.to_string()));
-            }
-        }
-        out.push(Value::Object(map));
-    }
-    out
+    sb.read("season_stats_teams", "*", None, Some(&col_map()), None, 0)
+        .await
+        .unwrap_or_default()
 }

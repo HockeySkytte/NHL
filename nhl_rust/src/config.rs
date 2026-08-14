@@ -30,10 +30,6 @@ pub struct Config {
     pub template_dir: PathBuf,
     /// `STATIC_DIR` — static assets folder (default `../app/static`).
     pub static_dir: PathBuf,
-    /// `TEAMS_CSV_PATH` — fallback Teams.csv location (default `../Teams.csv`).
-    pub teams_csv_path: PathBuf,
-    /// `LAST_DATES_CSV_PATH` — Last_date.csv location (default `../Last_date.csv`).
-    pub last_dates_csv_path: PathBuf,
     /// `MODEL_DIR` — directory of the pickled xG model files (default `../Model`).
     pub model_dir: PathBuf,
     /// `ABOUT_DATA_JSON` — about-page content extracted from routes.py (default `data/about.json`).
@@ -124,12 +120,6 @@ impl Config {
             static_dir: env_nonempty("STATIC_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| cwd.join("../app/static")),
-            teams_csv_path: env_nonempty("TEAMS_CSV_PATH")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| cwd.join("../Teams.csv")),
-            last_dates_csv_path: env_nonempty("LAST_DATES_CSV_PATH")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| cwd.join("../Last_date.csv")),
             model_dir: env_nonempty("MODEL_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| cwd.join("../Model")),
