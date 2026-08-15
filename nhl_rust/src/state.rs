@@ -7,9 +7,10 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::cache::{env_max, env_ttl, SingleSlot, TtlCache};
+use crate::cache::{env_max, env_ttl, InFlight, SingleSlot, TtlCache};
 use crate::config::Config;
 use crate::data::about::AboutData;
+use crate::data::rapm::RapmRows;
 use crate::data::teams;
 use crate::error::ApiError;
 use crate::supabase::read::SbClient;
@@ -35,8 +36,8 @@ pub struct Caches {
     pub seasonstats_agg: TtlCache<String, Value>,
     pub goalies_agg: TtlCache<String, Value>,
     pub career_matrix: TtlCache<String, Value>,
-    pub rapm_static: TtlCache<(), Value>,
-    pub context_static: TtlCache<(), Value>,
+    pub rapm_static: TtlCache<i64, std::sync::Arc<RapmRows>>,
+    pub context_static: TtlCache<i64, std::sync::Arc<Vec<Value>>>,
     pub card_metrics_defs: TtlCache<String, Value>,
     pub team_stats_rest: TtlCache<String, Value>,
     pub edge_api: TtlCache<String, Value>,
@@ -61,6 +62,9 @@ pub struct Caches {
     pub custom_lineups: TtlCache<(String, i64), Value>,
     pub playoff_bracket: TtlCache<i64, Value>,
     pub community_feed: TtlCache<String, Value>,
+    /// Singleflight coalescing for the expensive shared loads (season-stats
+    /// aggregates, RAPM/context) so concurrent users can't multiply memory.
+    pub inflight: InFlight,
 }
 
 impl Caches {
@@ -142,15 +146,22 @@ impl Caches {
                 32 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
+            // RAPM/context rows are cached PER SEASON (the current season is
+            // ~1.4k rows, not the full 21k) and shared via Arc so a cache hit
+            // is a pointer clone. Total budget covers ~all seasons combined;
+            // warm caches only grow when career-scope endpoints are used.
             rapm_static: TtlCache::new_weighted(
                 env_ttl("RAPM_STATIC_CACHE_TTL_SECONDS", 600),
                 48 * 1024 * 1024,
-                |v: &Value| crate::cache::json_value_weight(v),
+                |v: &std::sync::Arc<RapmRows>| {
+                    crate::cache::json_rows_weight(&v.totals)
+                        .saturating_add(crate::cache::json_rows_weight(&v.rates))
+                },
             ),
             context_static: TtlCache::new_weighted(
                 env_ttl("CONTEXT_STATIC_CACHE_TTL_SECONDS", 600),
                 16 * 1024 * 1024,
-                |v: &Value| crate::cache::json_value_weight(v),
+                |v: &std::sync::Arc<Vec<Value>>| crate::cache::json_rows_weight(v),
             ),
             card_metrics_defs: TtlCache::new(
                 env_ttl("CARD_METRICS_DEF_CACHE_TTL_SECONDS", 600),
@@ -246,6 +257,7 @@ impl Caches {
                 env_ttl("COMMUNITY_FEED_CACHE_TTL_SECONDS", 300),
                 8,
             ),
+            inflight: InFlight::new(),
         }
     }
 

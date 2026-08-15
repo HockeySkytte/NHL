@@ -2,6 +2,7 @@
 //! `/api/context/player`, `/api/rapm/scale`, `/api/rapm/career`.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -43,10 +44,9 @@ fn current_season() -> i64 {
 }
 
 /// `_load_rapm_player_rows_static` equivalent: rows filtered to a player.
-fn rows_for_player(rows: &[Value], pid: i64) -> Vec<Value> {
+fn rows_for_player<'a>(rows: &'a [Value], pid: i64) -> Vec<&'a Value> {
     rows.iter()
         .filter(|r| safe_int(r.get("PlayerID")).unwrap_or(0) == pid)
-        .cloned()
         .collect()
 }
 
@@ -92,8 +92,17 @@ async fn api_rapm_player(
     let season_param = q(&params, "season", "");
     let season = season_param.parse::<i64>().ok();
 
-    let rows = rapm::load_rapm_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
-    let mut out: Vec<Value> = rows_for_player(&rows, pid)
+    let season_list: Vec<i64> = match season {
+        Some(s) => vec![s],
+        None => state.last_dates.keys().copied().collect(),
+    };
+    let data = rapm::load_rapm_seasons(&state.caches, state.sb.as_ref(), &season_list).await;
+    let mut player_rows: Vec<&Value> = Vec::new();
+    for d in &data {
+        player_rows.extend(rows_for_player(&d.totals, pid));
+        player_rows.extend(rows_for_player(&d.rates, pid));
+    }
+    let mut out: Vec<Value> = player_rows
         .into_iter()
         .filter(|r| {
             if let Some(s) = season {
@@ -102,7 +111,7 @@ async fn api_rapm_player(
                 true
             }
         })
-        .map(|r| project_row(&r, &RAPM_PROJECT_COLS))
+        .map(|r| project_row(r, &RAPM_PROJECT_COLS))
         .collect();
     out.sort_by(|a, b| {
         let sa = safe_int(a.get("Season")).unwrap_or(0);
@@ -128,8 +137,16 @@ async fn api_context_player(
     let season_param = q(&params, "season", "");
     let season = season_param.parse::<i64>().ok();
 
-    let rows = rapm::load_context_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
-    let mut out: Vec<Value> = rows_for_player(&rows, pid)
+    let season_list: Vec<i64> = match season {
+        Some(s) => vec![s],
+        None => state.last_dates.keys().copied().collect(),
+    };
+    let ctx_rows = rapm::load_context_seasons(&state.caches, state.sb.as_ref(), &season_list).await;
+    let mut player_rows: Vec<&Value> = Vec::new();
+    for rows in &ctx_rows {
+        player_rows.extend(rows_for_player(rows, pid));
+    }
+    let mut out: Vec<Value> = player_rows
         .into_iter()
         .filter(|r| {
             if let Some(s) = season {
@@ -138,7 +155,7 @@ async fn api_context_player(
                 true
             }
         })
-        .map(|r| project_row(&r, &CONTEXT_PROJECT_COLS))
+        .map(|r| project_row(r, &CONTEXT_PROJECT_COLS))
         .collect();
     out.sort_by(|a, b| {
         let sa = safe_int(a.get("Season")).unwrap_or(0);
@@ -162,19 +179,17 @@ fn metric_cols(
     }
 }
 
-fn rows_kind(rows: &[Value], rates: &str) -> Vec<Value> {
+fn rows_kind<'a>(rows: impl Iterator<Item = &'a Value>, rates: &str) -> Vec<&'a Value> {
     let want_totals = rates == "Totals";
-    rows.iter()
-        .filter(|r| {
-            let rt = str_value(r.get("Rates_Totals")).to_lowercase();
-            if want_totals {
-                rt.starts_with("tot")
-            } else {
-                rt.starts_with("rate")
-            }
-        })
-        .cloned()
-        .collect()
+    rows.filter(|r| {
+        let rt = str_value(r.get("Rates_Totals")).to_lowercase();
+        if want_totals {
+            rt.starts_with("tot")
+        } else {
+            rt.starts_with("rate")
+        }
+    })
+    .collect()
 }
 
 fn minutes_map(ctx_rows: &[Value]) -> HashMap<(String, String, String), f64> {
@@ -190,6 +205,14 @@ fn minutes_map(ctx_rows: &[Value]) -> HashMap<(String, String, String), f64> {
                 out.insert(key, m);
             }
         }
+    }
+    out
+}
+
+fn minutes_map_all(arcs: &[Arc<Vec<Value>>]) -> HashMap<(String, String, String), f64> {
+    let mut out = HashMap::new();
+    for rows in arcs {
+        out.extend(minutes_map(rows));
     }
     out
 }
@@ -263,12 +286,13 @@ async fn api_rapm_scale(
     let player_id = param_i64(&params, &["playerId"]);
     let player_id = if player_id == 0 { None } else { Some(player_id) };
 
-    let rapm_all = rapm::load_rapm_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
-    let ctx_all = rapm::load_context_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
+    let rapm_all = rapm::load_rapm_data(&state.caches, state.sb.as_ref(), primary).await;
+    let ctx_all = rapm::load_context_rows(&state.caches, state.sb.as_ref(), primary).await;
     let (col5_off, col5_def, col_pp, col_sh, _, _) = metric_cols(&metric);
     let minutes = minutes_map(&ctx_all);
 
-    let (seen_pids, by_key) = index_season(&rapm_all, primary, &rates);
+    let rows_slice: &[Value] = if rates == "Totals" { &rapm_all.totals } else { &rapm_all.rates };
+    let (seen_pids, by_key) = index_season(rows_slice, primary, &rates);
 
     // Values per player (season scope: use primary season).
     let mut off5: BTreeMap<i64, f64> = BTreeMap::new();
@@ -379,18 +403,23 @@ async fn api_rapm_career(
     let metric = q(&params, "metric", "corsi");
     let strength = q(&params, "strength", "All");
 
-    let rapm_all = rapm::load_rapm_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
-    let ctx_all = rapm::load_context_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
-    let rows: Vec<Value> = rows_kind(&rapm_all, &rates);
+    let season_list: Vec<i64> = state.last_dates.keys().copied().collect();
+    let rapm_all = rapm::load_rapm_seasons(&state.caches, state.sb.as_ref(), &season_list).await;
+    let ctx_arcs = rapm::load_context_seasons(&state.caches, state.sb.as_ref(), &season_list).await;
+    let mut rows: Vec<&Value> = Vec::new();
+    for d in &rapm_all {
+        let slice: &[Value] = if rates == "Totals" { &d.totals } else { &d.rates };
+        rows.extend(rows_kind(slice.iter(), &rates));
+    }
     let (col5_off, col5_def, col_pp, col_sh, _, _) = metric_cols(&metric);
-    let minutes = minutes_map(&ctx_all);
+    let minutes = minutes_map_all(&ctx_arcs);
 
     // Group by season.
-    let mut seasons: BTreeMap<i64, Vec<Value>> = BTreeMap::new();
+    let mut seasons: BTreeMap<i64, Vec<&Value>> = BTreeMap::new();
     for r in &rows {
         let s = safe_int(r.get("Season")).unwrap_or(0);
         if s > 0 {
-            seasons.entry(s).or_default().push(r.clone());
+            seasons.entry(s).or_default().push(*r);
         }
     }
     let mut seasons_sorted: Vec<i64> = seasons.keys().copied().collect();

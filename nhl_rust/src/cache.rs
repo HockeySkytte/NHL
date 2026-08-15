@@ -10,6 +10,8 @@ use std::io::Write;
 use std::time::Duration;
 
 use moka::sync::Cache;
+use serde::ser::{SerializeSeq, Serializer};
+use serde::Serialize;
 
 /// Reads a `*_CACHE_TTL_SECONDS` env var with a default, clamped >= 1.
 /// Mirrors the Flask env conventions.
@@ -91,6 +93,28 @@ pub fn json_value_weight(v: &serde_json::Value) -> u32 {
     let mut sink = CountingSink { n: &mut n };
     let _ = serde_json::to_writer(&mut sink, v);
     n.clamp(1, u32::MAX as usize) as u32
+}
+
+/// Serialized byte length of a `&[Value]` row array (without allocating the
+/// wrapping array Value). Used as the weigher for `Arc<Vec<Value>>` caches.
+pub fn json_rows_weight(rows: &[serde_json::Value]) -> u32 {
+    let mut n = 0usize;
+    let mut sink = CountingSink { n: &mut n };
+    let _ = serde_json::to_writer(&mut sink, &JsonArrayRef(rows));
+    n.clamp(1, u32::MAX as usize) as u32
+}
+
+/// Borrows a slice of Values as a JSON array for length counting.
+struct JsonArrayRef<'a>(&'a [serde_json::Value]);
+
+impl Serialize for JsonArrayRef<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for v in self.0 {
+            seq.serialize_element(v)?;
+        }
+        seq.end()
+    }
 }
 
 struct CountingSink<'a> {
@@ -194,6 +218,70 @@ where
 
     pub fn invalidate(&self, key: &K) {
         self.inner.invalidate(key);
+    }
+}
+
+/// Request coalescing ("singleflight") for expensive loads: concurrent calls
+/// with the same key share ONE load instead of each doing the full work
+/// (e.g. N users triggering N full-table Supabase reads on a cache miss).
+///
+/// The owner holds a per-key async mutex for the duration of the load;
+/// waiters queue on it, then re-run the closure (which re-checks the cache
+/// first), so a finished load is never duplicated and a dropped/cancelled
+/// owner never deadlocks the key.
+pub struct InFlight {
+    map: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    >,
+}
+
+impl InFlight {
+    pub fn new() -> Self {
+        Self {
+            map: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        }
+    }
+
+    pub async fn run<T, F, Fut>(&self, key: &str, f: F) -> T
+    where
+        F: FnOnce() -> Fut + Send,
+        Fut: std::future::Future<Output = T> + Send,
+    {
+        loop {
+            let slot = {
+                let mut map = self.map.lock().unwrap_or_else(|p| p.into_inner());
+                match map.get(key) {
+                    Some(m) => (m.clone(), false),
+                    None => {
+                        let m = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+                        map.insert(key.to_string(), m.clone());
+                        (m, true)
+                    }
+                }
+            };
+            if !slot.1 {
+                // Another task is loading; wait for it to finish, then loop
+                // back so the closure re-checks the (now warm) cache.
+                let _guard = slot.0.lock().await;
+                continue;
+            }
+            // We own this key: run the load while holding the lock so other
+            // tasks on the same key queue behind us.
+            let mutex = slot.0;
+            let _guard = mutex.lock().await;
+            let out = f().await;
+            if let Ok(mut map) = self.map.lock() {
+                map.remove(key);
+            }
+            drop(_guard);
+            return out;
+        }
+    }
+}
+
+impl Default for InFlight {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

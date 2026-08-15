@@ -201,15 +201,7 @@ async fn read_sequential(
 
 /// Applies the column rename map and truncates to `limit` (0 = no limit).
 fn finish_rows(rows: Vec<Value>, col_map: Option<&HashMap<String, String>>, limit: usize) -> Vec<Value> {
-    let mut all: Vec<Value> = Vec::with_capacity(rows.len());
-    for row in rows {
-        let row = if let Some(col_map) = col_map {
-            rename_keys(row, col_map)
-        } else {
-            row
-        };
-        all.push(row);
-    }
+    let mut all = map_rows(rows, col_map);
     if limit > 0 && all.len() > limit {
         all.truncate(limit);
     }
@@ -236,6 +228,176 @@ pub fn filters(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()
+}
+
+/// Applies the column rename map to an entire page of rows.
+fn map_rows(rows: Vec<Value>, col_map: Option<&HashMap<String, String>>) -> Vec<Value> {
+    let mut all: Vec<Value> = Vec::with_capacity(rows.len());
+    for row in rows {
+        let row = if let Some(col_map) = col_map {
+            rename_keys(row, col_map)
+        } else {
+            row
+        };
+        all.push(row);
+    }
+    all
+}
+
+/// Memory-bounded read: like [`SbClient::read`], but pages are handed to
+/// `on_page` (in order) and dropped immediately instead of being accumulated
+/// into one giant `Vec`. This lets a full-table scan of `season_stats`
+/// (~135k rows → several hundred MB as serde Values) aggregate with only a
+/// handful of pages in memory at once.
+///
+/// Pages are fetched with bounded in-flight concurrency (`CONCURRENCY`)
+/// but emitted strictly in order, so downstream aggregation stays
+/// deterministic. Falls back to the sequential loop when no exact count is
+/// available. `limit == 0` means no limit (same as `read`).
+#[allow(clippy::too_many_arguments)]
+pub async fn read_each(
+    sb: &SbClient,
+    table: &str,
+    columns: &str,
+    filters: Option<&BTreeMap<String, String>>,
+    col_map: Option<&HashMap<String, String>>,
+    order: Option<&str>,
+    limit: usize,
+    mut on_page: impl FnMut(Vec<Value>),
+) -> Option<()> {
+    let mut query: Vec<(String, String)> = Vec::new();
+    query.push(("select".to_string(), columns.to_string()));
+    if let Some(filters) = filters {
+        for (col, expr) in filters {
+            query.push((col.clone(), expr.clone()));
+        }
+    }
+    if let Some(order) = order {
+        query.push(("order".to_string(), order.to_string()));
+    }
+    let url = format!("{}/rest/v1/{table}", sb.url);
+
+    let (page0, content_range) =
+        match fetch_page(&sb.http, &url, &query, &sb.service_key, 0, true).await {
+            Some(v) => v,
+            None => return None,
+        };
+    let mut remaining = if limit > 0 { limit } else { usize::MAX };
+    let page0_count = page0.len();
+
+    // Single page (short table) or a limit that fits in the first page.
+    if page0_count < PAGE_SIZE || remaining <= page0_count {
+        let rows = map_rows(page0, col_map);
+        let n = rows.len().min(remaining);
+        if n > 0 {
+            on_page(rows.into_iter().take(n).collect());
+        }
+        return Some(());
+    }
+
+    on_page(map_rows(page0, col_map));
+    remaining -= page0_count;
+
+    let Some(total) = content_range
+        .and_then(|cr| cr.rsplit('/').next().map(|s| s.parse::<usize>().ok()).flatten())
+    else {
+        // No exact count available; use the sequential path.
+        return read_sequential_each(sb, &url, &query, col_map, remaining, PAGE_SIZE, on_page)
+            .await;
+    };
+    let pages = total.div_ceil(PAGE_SIZE);
+
+    // Bounded in-flight window: keeps peak transient memory to ~CONCURRENCY
+    // pages instead of the whole table.
+    const CONCURRENCY: usize = 8;
+    type PageHandle = tokio::task::JoinHandle<Option<(Vec<Value>, Option<String>)>>;
+    let mut handles: std::collections::VecDeque<(usize, PageHandle)> = std::collections::VecDeque::new();
+    let mut next_page: usize = 1;
+    let spawn_page = |handles: &mut std::collections::VecDeque<(usize, PageHandle)>, page: usize| {
+        let http = sb.http.clone();
+        let url = url.clone();
+        let query = query.clone();
+        let service_key = sb.service_key.clone();
+        handles.push_back((page, tokio::spawn(async move {
+            fetch_page(&http, &url, &query, &service_key, page * PAGE_SIZE, false).await
+        })));
+    };
+    while next_page < pages && handles.len() < CONCURRENCY {
+        spawn_page(&mut handles, next_page);
+        next_page += 1;
+    }
+    while let Some((_, handle)) = handles.pop_front() {
+        let result = match handle.await {
+            Ok(r) => r,
+            Err(_) => return None,
+        };
+        let rows = match result {
+            Some((rows, _)) => rows,
+            None => return None,
+        };
+        let count = rows.len();
+        let rows = map_rows(rows, col_map);
+        if remaining <= count {
+            if remaining > 0 {
+                on_page(rows.into_iter().take(remaining).collect());
+            }
+            return Some(());
+        }
+        on_page(rows);
+        remaining -= count;
+        if count < PAGE_SIZE {
+            return Some(());
+        }
+        if next_page < pages {
+            spawn_page(&mut handles, next_page);
+            next_page += 1;
+        }
+    }
+    Some(())
+}
+
+/// Sequential fallback for [`SbClient::read_each`] (used when the exact count
+/// is unavailable); emits pages through `on_page` and drops them.
+async fn read_sequential_each(
+    sb: &SbClient,
+    url: &str,
+    query: &[(String, String)],
+    col_map: Option<&HashMap<String, String>>,
+    mut remaining: usize,
+    mut offset: usize,
+    mut on_page: impl FnMut(Vec<Value>),
+) -> Option<()> {
+    loop {
+        let resp = sb
+            .http
+            .get(url)
+            .query(query)
+            .header("apikey", &sb.service_key)
+            .header("Authorization", format!("Bearer {}", sb.service_key))
+            .header("Range", format!("{offset}-{}", offset + PAGE_SIZE - 1))
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let rows: Vec<Value> = resp.json().await.ok()?;
+        let count = rows.len();
+        let rows = map_rows(rows, col_map);
+        if remaining <= count {
+            if remaining > 0 {
+                on_page(rows.into_iter().take(remaining).collect());
+            }
+            return Some(());
+        }
+        on_page(rows);
+        remaining -= count;
+        offset += count;
+        if count < PAGE_SIZE {
+            break;
+        }
+    }
+    Some(())
 }
 
 #[cfg(test)]

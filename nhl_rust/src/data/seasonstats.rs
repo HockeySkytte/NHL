@@ -10,7 +10,7 @@ use serde_json::{json, Map, Value};
 use crate::state::Caches;
 use crate::config::Config;
 use crate::nhl::client::{get_json_with_ua, API_STATS};
-use crate::supabase::read::{filters, SbClient};
+use crate::supabase::read::{filters, read_each, SbClient};
 use crate::util::parse::{ci_get, parse_locale_float, safe_int, str_value};
 
 pub fn season_stats_col_map() -> HashMap<String, String> {
@@ -62,51 +62,36 @@ pub fn season_stats_col_map() -> HashMap<String, String> {
     .collect()
 }
 
-/// `_iter_seasonstats_static_rows(seasons=...)` — Supabase-only (the season
-/// stats all live in the `season_stats` table; there is NO CSV fallback).
-pub async fn iter_player_rows(
-    _caches: &Caches,
+/// `_iter_seasonstats_static_rows(seasons=...)` — Supabase-only, streamed:
+/// rows are delivered page-by-page to `on_page` and dropped immediately, so a
+/// full-table (career-scope) scan never materializes ~135k rows (hundreds of
+/// MB as serde Values) in memory at once. Failed season reads are skipped
+/// (same as the previous per-season loop); a failed career read yields no
+/// rows.
+pub(crate) async fn for_each_player_row(
     sb: Option<&SbClient>,
-    _cfg: &Config,
     seasons: &[i64],
     goalie_only: bool,
-) -> Vec<Value> {
-    let Some(sb) = sb else {
-        return Vec::new();
-    };
+    mut on_page: impl FnMut(Vec<Value>),
+) {
+    let Some(sb) = sb else { return };
+    let cm = season_stats_col_map();
     if !seasons.is_empty() {
-        let mut all: Vec<Value> = Vec::new();
         for s in seasons {
             let mut f = std::collections::BTreeMap::new();
             f.insert("season".to_string(), format!("eq.{s}"));
             if goalie_only {
                 f.insert("position".to_string(), "eq.G".to_string());
             }
-            if let Some(rows) = sb
-                .read(
-                    "season_stats",
-                    "*",
-                    Some(&f),
-                    Some(&season_stats_col_map()),
-                    None,
-                    0,
-                )
-                .await
-            {
-                all.extend(rows);
-            }
+            let _ = read_each(sb, "season_stats", "*", Some(&f), Some(&cm), None, 0, |page| on_page(page))
+                .await;
         }
-        return all;
+        return;
     }
-    // Career scope: read all rows from Supabase (optionally goalies only).
-    let mut f = std::collections::BTreeMap::new();
-    if goalie_only {
-        f.insert("position".to_string(), "eq.G".to_string());
-    }
-    let f = if f.is_empty() { None } else { Some(f) };
-    sb.read("season_stats", "*", f.as_ref(), Some(&season_stats_col_map()), None, 0)
-        .await
-        .unwrap_or_default()
+    // Career scope: stream all rows (optionally goalies only).
+    let f = if goalie_only { Some(filters(&[("position", "eq.G")])) } else { None };
+    let _ = read_each(sb, "season_stats", "*", f.as_ref(), Some(&cm), None, 0, |page| on_page(page))
+        .await;
 }
 
 fn flt(v: Option<&Value>) -> f64 {
@@ -132,13 +117,97 @@ fn parse_ss(v: Option<&Value>) -> String {
     }
 }
 
+/// Aggregation state for `build_skater_agg` — rows are ingested page-by-page
+/// from the Supabase stream and dropped, so peak memory is the (small) final
+/// per-player aggregate rather than the full row set.
+struct SkaterAggState {
+    scope_career: bool,
+    primary: i64,
+    ss_norm: &'static str,
+    st_norm: String,
+    agg: Map<String, Value>,
+    pos_group: Map<String, Value>,
+    gp_max: HashMap<(i64, i64, String), i64>,
+}
+
+impl SkaterAggState {
+    fn new(scope_career: bool, primary: i64, ss_norm: &'static str, st_norm: String) -> Self {
+        Self {
+            scope_career,
+            primary,
+            ss_norm,
+            st_norm,
+            agg: Map::new(),
+            pos_group: Map::new(),
+            gp_max: HashMap::new(),
+        }
+    }
+
+    fn ingest(&mut self, obj: &Map<String, Value>) {
+        let pos = str_value(ci_get(obj, "Position")).to_uppercase();
+        if pos.starts_with('G') {
+            return;
+        }
+        let season_row = i64v(ci_get(obj, "Season"));
+        let season_row = if season_row == 0 {
+            if self.scope_career { 20252026 } else { self.primary }
+        } else {
+            season_row
+        };
+        let ss = parse_ss(ci_get(obj, "SeasonState"));
+        let st = str_value(ci_get(obj, "StrengthState"));
+        let st = if st.is_empty() { "Other".to_string() } else { st };
+        if self.ss_norm != "all" && ss != self.ss_norm {
+            return;
+        }
+        if self.st_norm != "all" && st != self.st_norm {
+            return;
+        }
+        let pid = i64v(ci_get(obj, "PlayerID"));
+        if pid <= 0 {
+            return;
+        }
+        let gp_row = i64v(ci_get(obj, "GP"));
+        let k = (pid, season_row, ss.clone());
+        let prev = self.gp_max.get(&k).copied();
+        if prev.is_none() || gp_row > prev.unwrap_or(0) {
+            self.gp_max.insert(k, gp_row);
+        }
+        if !self.pos_group.contains_key(&pid.to_string()) {
+            self.pos_group
+                .insert(pid.to_string(), json!(if pos.starts_with('D') { "D" } else { "F" }));
+        }
+        let d = self
+            .agg
+            .entry(pid.to_string())
+            .or_insert_with(empty_skater_row);
+        let d = d.as_object_mut().expect("agg row object");
+        sum_row(d, obj);
+    }
+
+    fn finish(mut self) -> (Value, Value) {
+        let mut gp_sum: HashMap<i64, i64> = HashMap::new();
+        for ((pid, _, _), gp) in &self.gp_max {
+            *gp_sum.entry(*pid).or_insert(0) += *gp;
+        }
+        for (pid_s, d) in self.agg.iter_mut() {
+            if let Some(pid) = pid_s.parse::<i64>().ok() {
+                d.as_object_mut()
+                    .expect("agg row object")
+                    .insert("GP".into(), json!(gp_sum.get(&pid).copied().unwrap_or(0)));
+            }
+        }
+        (Value::Object(self.agg), Value::Object(self.pos_group))
+    }
+}
+
 /// `_build_seasonstats_agg` (skaters). Returns `(agg, pos_group_by_pid)` as
 /// JSON objects keyed by playerId string.
 #[allow(clippy::too_many_arguments)]
 pub async fn build_skater_agg(
     caches: &Caches,
     sb: Option<&SbClient>,
-    cfg: &Config,
+    _cfg: &Config,
     scope: &str,
     season_int: i64,
     season_ids: &[i64],
@@ -158,88 +227,43 @@ pub async fn build_skater_agg(
         st_norm,
     ])
     .to_string();
-    if let Some(cached) = caches.seasonstats_agg.get(&key) {
-        if let Some(arr) = cached.as_array() {
-            if arr.len() == 2 {
-                return (arr[0].clone(), arr[1].clone());
+    let inflight_key = format!("ssagg:{key}");
+    caches
+        .inflight
+        .run(&inflight_key, || async {
+            if let Some(cached) = caches.seasonstats_agg.get(&key) {
+                if let Some(arr) = cached.as_array() {
+                    if arr.len() == 2 {
+                        return (arr[0].clone(), arr[1].clone());
+                    }
+                }
             }
-        }
-    }
 
-    let rows = if scope_norm == "career" {
-        iter_player_rows(caches, sb, cfg, &[], false).await
-    } else {
-        let seasons = if season_ids.is_empty() {
-            vec![primary]
-        } else {
-            season_ids.to_vec()
-        };
-        iter_player_rows(caches, sb, cfg, &seasons, false).await
-    };
-
-    let mut agg: Map<String, Value> = Map::new();
-    let mut pos_group: Map<String, Value> = Map::new();
-    let mut gp_max: HashMap<(i64, i64, String), i64> = HashMap::new();
-
-    for r in &rows {
-        let Some(obj) = r.as_object() else { continue };
-        let pos = str_value(ci_get(obj, "Position"))
-            .to_uppercase();
-        if pos.starts_with('G') {
-            continue;
-        }
-        let season_row = i64v(ci_get(obj, "Season"));
-        let season_row = if season_row == 0 {
-            if scope_norm == "career" {
-                20252026
+            let mut aggst =
+                SkaterAggState::new(scope_norm == "career", primary, ss_norm, st_norm.clone());
+            let seasons: Vec<i64> = if scope_norm == "career" {
+                Vec::new()
+            } else if season_ids.is_empty() {
+                vec![primary]
             } else {
-                primary
-            }
-        } else {
-            season_row
-        };
-        let ss = parse_ss(ci_get(obj, "SeasonState"));
-        let st = str_value(ci_get(obj, "StrengthState"));
-        let st = if st.is_empty() { "Other".to_string() } else { st };
-        if ss_norm != "all" && ss != ss_norm {
-            continue;
-        }
-        if st_norm != "all" && st != st_norm {
-            continue;
-        }
-        let pid = i64v(ci_get(obj, "PlayerID"));
-        if pid <= 0 {
-            continue;
-        }
-        let gp_row = i64v(ci_get(obj, "GP"));
-        let k = (pid, season_row, ss.clone());
-        let prev = gp_max.get(&k).copied();
-        if prev.is_none() || gp_row > prev.unwrap_or(0) {
-            gp_max.insert(k, gp_row);
-        }
-        if !pos_group.contains_key(&pid.to_string()) {
-            pos_group.insert(pid.to_string(), json!(if pos.starts_with('D') { "D" } else { "F" }));
-        }
-        let d = agg.entry(pid.to_string()).or_insert_with(|| empty_skater_row());
-        let d = d.as_object_mut().expect("agg row object");
-        sum_row(d, obj);
-    }
+                season_ids.to_vec()
+            };
+            for_each_player_row(sb, &seasons, false, |page| {
+                for r in page {
+                    if let Some(obj) = r.as_object() {
+                        aggst.ingest(obj);
+                    }
+                }
+            })
+            .await;
 
-    let mut gp_sum: HashMap<i64, i64> = HashMap::new();
-    for ((pid, _, _), gp) in &gp_max {
-        *gp_sum.entry(*pid).or_insert(0) += *gp;
-    }
-    for (pid_s, d) in agg.iter_mut() {
-        if let Some(pid) = pid_s.parse::<i64>().ok() {
-            d.as_object_mut()
-                .expect("agg row object")
-                .insert("GP".into(), json!(gp_sum.get(&pid).copied().unwrap_or(0)));
-        }
-    }
-
-    let result = (Value::Object(agg), Value::Object(pos_group));
-    caches.seasonstats_agg.insert(key, json!([result.0.clone(), result.1.clone()]));
-    result
+            let result = aggst.finish();
+            caches
+                .seasonstats_agg
+                .insert(key, json!([result.0.clone(), result.1.clone()]));
+            result
+        })
+        .await
 }
 
 fn empty_skater_row() -> Value {
@@ -293,12 +317,94 @@ fn primary_or(season_ids: &[i64], fallback: i64) -> i64 {
     season_ids.iter().copied().max().unwrap_or(fallback).max(0)
 }
 
+/// Aggregation state for `build_goalie_agg` — streamed page-by-page.
+struct GoalieAggState {
+    scope_career: bool,
+    primary: i64,
+    ss_norm: &'static str,
+    st_norm: String,
+    agg: Map<String, Value>,
+    pos_group: Map<String, Value>,
+    gp_max: HashMap<(i64, i64, String), i64>,
+}
+
+impl GoalieAggState {
+    fn new(scope_career: bool, primary: i64, ss_norm: &'static str, st_norm: String) -> Self {
+        Self {
+            scope_career,
+            primary,
+            ss_norm,
+            st_norm,
+            agg: Map::new(),
+            pos_group: Map::new(),
+            gp_max: HashMap::new(),
+        }
+    }
+
+    fn ingest(&mut self, obj: &Map<String, Value>) {
+        let pos = str_value(ci_get(obj, "Position")).to_uppercase();
+        if !pos.starts_with('G') {
+            return;
+        }
+        let season_row = i64v(ci_get(obj, "Season"));
+        let season_row = if season_row == 0 {
+            if self.scope_career { 20252026 } else { self.primary }
+        } else {
+            season_row
+        };
+        let ss = parse_ss(ci_get(obj, "SeasonState"));
+        let st = str_value(ci_get(obj, "StrengthState"));
+        let st = if st.is_empty() { "Other".to_string() } else { st };
+        if self.ss_norm != "all" && ss != self.ss_norm {
+            return;
+        }
+        if self.st_norm != "all" && st != self.st_norm {
+            return;
+        }
+        let pid = i64v(ci_get(obj, "PlayerID"));
+        if pid <= 0 {
+            return;
+        }
+        let gp_row = i64v(ci_get(obj, "GP"));
+        let k = (pid, season_row, ss.clone());
+        let prev = self.gp_max.get(&k).copied();
+        if prev.is_none() || gp_row > prev.unwrap_or(0) {
+            self.gp_max.insert(k, gp_row);
+        }
+        self.pos_group.insert(pid.to_string(), json!("G"));
+        let d = self.agg.entry(pid.to_string()).or_insert_with(|| {
+            json!({"GP": 0, "TOI": 0.0, "FA": 0.0, "SA": 0.0, "GA": 0.0,
+                   "xGA_S": 0.0, "xGA_F": 0.0, "xGA_F2": 0.0})
+        });
+        let d = d.as_object_mut().expect("goalie agg row object");
+        for key in ["TOI", "FA", "SA", "GA", "xGA_S", "xGA_F", "xGA_F2"] {
+            let cur = d.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+            d.insert(key.to_string(), json!(cur + flt(ci_get(obj, key))));
+        }
+    }
+
+    fn finish(mut self) -> (Value, Value) {
+        let mut gp_sum: HashMap<i64, i64> = HashMap::new();
+        for ((pid, _, _), gp) in &self.gp_max {
+            *gp_sum.entry(*pid).or_insert(0) += *gp;
+        }
+        for (pid_s, d) in self.agg.iter_mut() {
+            if let Some(pid) = pid_s.parse::<i64>().ok() {
+                d.as_object_mut()
+                    .expect("goalie agg row object")
+                    .insert("GP".into(), json!(gp_sum.get(&pid).copied().unwrap_or(0)));
+            }
+        }
+        (Value::Object(self.agg), Value::Object(self.pos_group))
+    }
+}
+
 /// `_build_goalies_seasonstats_agg`. Returns `(agg, pos_group)` keyed by pid.
 #[allow(clippy::too_many_arguments)]
 pub async fn build_goalie_agg(
     caches: &Caches,
     sb: Option<&SbClient>,
-    cfg: &Config,
+    _cfg: &Config,
     scope: &str,
     season_int: i64,
     season_ids: &[i64],
@@ -316,91 +422,130 @@ pub async fn build_goalie_agg(
         primary, ss_norm, st_norm,
     ])
     .to_string();
-    if let Some(cached) = caches.goalies_agg.get(&key) {
-        if let Some(arr) = cached.as_array() {
-            if arr.len() == 2 {
-                return (arr[0].clone(), arr[1].clone());
+    let inflight_key = format!("gagg:{key}");
+    caches
+        .inflight
+        .run(&inflight_key, || async {
+            if let Some(cached) = caches.goalies_agg.get(&key) {
+                if let Some(arr) = cached.as_array() {
+                    if arr.len() == 2 {
+                        return (arr[0].clone(), arr[1].clone());
+                    }
+                }
             }
+
+            let mut aggst =
+                GoalieAggState::new(scope_norm == "career", primary, ss_norm, st_norm.clone());
+            let seasons: Vec<i64> = if scope_norm == "career" {
+                Vec::new()
+            } else if season_ids.is_empty() {
+                vec![primary]
+            } else {
+                season_ids.to_vec()
+            };
+            for_each_player_row(sb, &seasons, true, |page| {
+                for r in page {
+                    if let Some(obj) = r.as_object() {
+                        aggst.ingest(obj);
+                    }
+                }
+            })
+            .await;
+
+            let result = aggst.finish();
+            caches
+                .goalies_agg
+                .insert(key, json!([result.0.clone(), result.1.clone()]));
+            result
+        })
+        .await
+}
+
+/// Aggregation state for `build_goalies_career_matrix` — streamed page-by-page
+/// over all goalie rows (only the requested goalie's rows are retained).
+struct CareerMatrixState {
+    ss_norm: &'static str,
+    st_norm: String,
+    target_pid: i64,
+    by_pid_season: Map<String, Value>,
+    league_acc: Map<String, Value>,
+}
+
+impl CareerMatrixState {
+    fn new(ss_norm: &'static str, st_norm: String, target_pid: i64) -> Self {
+        Self {
+            ss_norm,
+            st_norm,
+            target_pid,
+            by_pid_season: Map::new(),
+            league_acc: Map::new(),
         }
     }
 
-    let rows = if scope_norm == "career" {
-        iter_player_rows(caches, sb, cfg, &[], true).await
-    } else {
-        let seasons = if season_ids.is_empty() {
-            vec![primary]
-        } else {
-            season_ids.to_vec()
-        };
-        iter_player_rows(caches, sb, cfg, &seasons, true).await
-    };
-
-    let mut agg: Map<String, Value> = Map::new();
-    let mut pos_group: Map<String, Value> = Map::new();
-    let mut gp_max: HashMap<(i64, i64, String), i64> = HashMap::new();
-
-    for r in &rows {
-        let Some(obj) = r.as_object() else { continue };
+    fn ingest(&mut self, obj: &Map<String, Value>) {
         let pos = str_value(ci_get(obj, "Position")).to_uppercase();
         if !pos.starts_with('G') {
-            continue;
+            return;
         }
         let season_row = i64v(ci_get(obj, "Season"));
-        let season_row = if season_row == 0 {
-            if scope_norm == "career" {
-                20252026
-            } else {
-                primary
-            }
-        } else {
-            season_row
-        };
+        let season_row = if season_row == 0 { 20252026 } else { season_row };
         let ss = parse_ss(ci_get(obj, "SeasonState"));
         let st = str_value(ci_get(obj, "StrengthState"));
         let st = if st.is_empty() { "Other".to_string() } else { st };
-        if ss_norm != "all" && ss != ss_norm {
-            continue;
+        if self.ss_norm != "all" && ss != self.ss_norm {
+            return;
         }
-        if st_norm != "all" && st != st_norm {
-            continue;
+        if self.st_norm != "all" && st != self.st_norm {
+            return;
         }
         let pid = i64v(ci_get(obj, "PlayerID"));
         if pid <= 0 {
-            continue;
+            return;
         }
-        let gp_row = i64v(ci_get(obj, "GP"));
-        let k = (pid, season_row, ss.clone());
-        let prev = gp_max.get(&k).copied();
-        if prev.is_none() || gp_row > prev.unwrap_or(0) {
-            gp_max.insert(k, gp_row);
+        let la = self
+            .league_acc
+            .entry(season_row.to_string())
+            .or_insert_with(|| json!({"SA": 0.0, "GA": 0.0}));
+        let la = la.as_object_mut().expect("league acc object");
+        la.insert(
+            "SA".into(),
+            json!(la.get("SA").and_then(Value::as_f64).unwrap_or(0.0) + flt(ci_get(obj, "SA"))),
+        );
+        la.insert(
+            "GA".into(),
+            json!(la.get("GA").and_then(Value::as_f64).unwrap_or(0.0) + flt(ci_get(obj, "GA"))),
+        );
+        // Only retain the requested goalie's per-season rows.
+        if pid != self.target_pid {
+            return;
         }
-        pos_group.insert(pid.to_string(), json!("G"));
-        let d = agg.entry(pid.to_string()).or_insert_with(|| {
-            json!({"GP": 0, "TOI": 0.0, "FA": 0.0, "SA": 0.0, "GA": 0.0,
-                   "xGA_S": 0.0, "xGA_F": 0.0, "xGA_F2": 0.0})
+        let pmap = self
+            .by_pid_season
+            .entry(pid.to_string())
+            .or_insert_with(|| json!({}));
+        let pmap = pmap.as_object_mut().expect("pid map object");
+        let d = pmap.entry(season_row.to_string()).or_insert_with(|| {
+            json!({"TOI": 0.0, "FA": 0.0, "SA": 0.0, "GA": 0.0, "xGA_S": 0.0, "xGA_F": 0.0, "xGA_F2": 0.0})
         });
-        let d = d.as_object_mut().expect("goalie agg row object");
+        let d = d.as_object_mut().expect("season row object");
         for key in ["TOI", "FA", "SA", "GA", "xGA_S", "xGA_F", "xGA_F2"] {
             let cur = d.get(key).and_then(Value::as_f64).unwrap_or(0.0);
             d.insert(key.to_string(), json!(cur + flt(ci_get(obj, key))));
         }
     }
 
-    let mut gp_sum: HashMap<i64, i64> = HashMap::new();
-    for ((pid, _, _), gp) in &gp_max {
-        *gp_sum.entry(*pid).or_insert(0) += *gp;
-    }
-    for (pid_s, d) in agg.iter_mut() {
-        if let Some(pid) = pid_s.parse::<i64>().ok() {
-            d.as_object_mut()
-                .expect("goalie agg row object")
-                .insert("GP".into(), json!(gp_sum.get(&pid).copied().unwrap_or(0)));
+    fn finish(self) -> (Value, Value) {
+        let mut league_sa_ga: Map<String, Value> = Map::new();
+        for (s, d) in &self.league_acc {
+            let sa = d.get("SA").and_then(Value::as_f64).unwrap_or(0.0);
+            let ga = d.get("GA").and_then(Value::as_f64).unwrap_or(0.0);
+            league_sa_ga.insert(s.clone(), json!([sa, ga]));
         }
+        (
+            Value::Object(self.by_pid_season),
+            Value::Object(league_sa_ga),
+        )
     }
-
-    let result = (Value::Object(agg), Value::Object(pos_group));
-    caches.goalies_agg.insert(key, json!([result.0.clone(), result.1.clone()]));
-    result
 }
 
 /// `_build_goalies_career_season_matrix`. Returns `(by_pid_season, league_sa_ga)`.
@@ -415,88 +560,37 @@ pub async fn build_goalies_career_matrix(
     let ss_norm = normalize_ss(season_state);
     let st_norm = normalize_st(strength_state);
     let key = json!(["goalies_career", ss_norm, st_norm, target_pid]).to_string();
-    if let Some(cached) = caches.career_matrix.get(&key) {
-        if let Some(arr) = cached.as_array() {
-            if arr.len() == 2 {
-                return (arr[0].clone(), arr[1].clone());
+    let inflight_key = format!("cm:{key}");
+    caches
+        .inflight
+        .run(&inflight_key, || async {
+            if let Some(cached) = caches.career_matrix.get(&key) {
+                if let Some(arr) = cached.as_array() {
+                    if arr.len() == 2 {
+                        return (arr[0].clone(), arr[1].clone());
+                    }
+                }
             }
-        }
-    }
 
-    // Read ONLY goalie rows (position = G) across all seasons from Supabase.
-    // There is no CSV fallback — all data lives in Supabase.
-    let rows = if let Some(sb) = sb {
-        sb.read(
-            "season_stats",
-            "*",
-            Some(&filters(&[("position", "eq.G")])),
-            Some(&season_stats_col_map()),
-            None,
-            0,
-        )
+            // Stream ONLY goalie rows (position = G) across all seasons from
+            // Supabase; there is no CSV fallback — all data lives in Supabase.
+            let mut state = CareerMatrixState::new(ss_norm, st_norm.clone(), target_pid);
+            for_each_player_row(sb, &[], true, |page| {
+                for r in page {
+                    if let Some(obj) = r.as_object() {
+                        state.ingest(obj);
+                    }
+                }
+            })
+            .await;
+
+            let result = state.finish();
+            caches
+                .career_matrix
+                .insert(key, json!([result.0.clone(), result.1.clone()]));
+            result
+        })
         .await
-        .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    let mut by_pid_season: Map<String, Value> = Map::new();
-    let mut league_acc: Map<String, Value> = Map::new();
-
-    for r in &rows {
-        let Some(obj) = r.as_object() else { continue };
-        let pos = str_value(ci_get(obj, "Position")).to_uppercase();
-        if !pos.starts_with('G') {
-            continue;
-        }
-        let season_row = i64v(ci_get(obj, "Season"));
-        let season_row = if season_row == 0 { 20252026 } else { season_row };
-        let ss = parse_ss(ci_get(obj, "SeasonState"));
-        let st = str_value(ci_get(obj, "StrengthState"));
-        let st = if st.is_empty() { "Other".to_string() } else { st };
-        if ss_norm != "all" && ss != ss_norm {
-            continue;
-        }
-        if st_norm != "all" && st != st_norm {
-            continue;
-        }
-        let pid = i64v(ci_get(obj, "PlayerID"));
-        if pid <= 0 {
-            continue;
-        }
-        let la = league_acc
-            .entry(season_row.to_string())
-            .or_insert_with(|| json!({"SA": 0.0, "GA": 0.0}));
-        let la = la.as_object_mut().expect("league acc object");
-        la.insert("SA".into(), json!(la.get("SA").and_then(Value::as_f64).unwrap_or(0.0) + flt(ci_get(obj, "SA"))));
-        la.insert("GA".into(), json!(la.get("GA").and_then(Value::as_f64).unwrap_or(0.0) + flt(ci_get(obj, "GA"))));
-        // Only retain the requested goalie's per-season rows.
-        if pid != target_pid {
-            continue;
-        }
-        let pmap = by_pid_season
-            .entry(pid.to_string())
-            .or_insert_with(|| json!({}));
-        let pmap = pmap.as_object_mut().expect("pid map object");
-        let d = pmap
-            .entry(season_row.to_string())
-            .or_insert_with(|| json!({"TOI": 0.0, "FA": 0.0, "SA": 0.0, "GA": 0.0, "xGA_S": 0.0, "xGA_F": 0.0, "xGA_F2": 0.0}));
-        let d = d.as_object_mut().expect("season row object");
-        for key in ["TOI", "FA", "SA", "GA", "xGA_S", "xGA_F", "xGA_F2"] {
-            let cur = d.get(key).and_then(Value::as_f64).unwrap_or(0.0);
-            d.insert(key.to_string(), json!(cur + flt(ci_get(obj, key))));
-        }
-    }
-
-    let mut league_sa_ga: Map<String, Value> = Map::new();
-    for (s, d) in &league_acc {
-        let sa = d.get("SA").and_then(Value::as_f64).unwrap_or(0.0);
-        let ga = d.get("GA").and_then(Value::as_f64).unwrap_or(0.0);
-        league_sa_ga.insert(s.clone(), json!([sa, ga]));
-    }
-
-    let result = (Value::Object(by_pid_season), Value::Object(league_sa_ga));
-    caches.career_matrix.insert(key, json!([result.0.clone(), result.1.clone()]));
-    result
 }
 
 /// `_team_id_by_abbrev()`.

@@ -192,10 +192,10 @@ async fn api_skaters_current_projections(
 
     let proj_map = p::load_current_player_projections_cached(&state).await;
     let roster_map = rosters::all_rosters_for_season(&state.caches, &state.http, season).await;
-    let ctx_rows = rapm::load_context_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
+    let ctx_rows = rapm::load_context_rows(&state.caches, state.sb.as_ref(), season).await;
 
     let mut ctx_by_pid: HashMap<i64, Value> = HashMap::new();
-    for row in &ctx_rows {
+    for row in ctx_rows.iter() {
         let row_season = safe_int(row.get("Season")).unwrap_or(0);
         if season > 0 && row_season != 0 && row_season != season {
             continue;

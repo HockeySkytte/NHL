@@ -205,9 +205,9 @@ fn norm_rates_totals(v: Option<&Value>) -> String {
 }
 
 /// Picks the RAPM row for the requested strength + rates for a player/season.
-fn pick_rapm_row(rows: &[Value], pid: i64, season: i64, want_strength: &str, want_rates: &str) -> Option<Value> {
+fn pick_rapm_row(data: &rapm::RapmRows, pid: i64, season: i64, want_strength: &str, want_rates: &str) -> Option<Value> {
     let mut candidates: Vec<&Value> = Vec::new();
-    for r in rows {
+    for r in data.iter() {
         let p = safe_int(r.get("PlayerID")).unwrap_or(0);
         let s = safe_int(r.get("Season")).unwrap_or(0);
         if p != pid || (season != 0 && s != season) {
@@ -253,43 +253,57 @@ fn pick_ctx_row(rows: &[Value], pid: i64, season: i64, want_strength: &str) -> O
     candidates.first().map(|r| (*r).clone())
 }
 
-/// Pre-builds an index of RAPM row indices keyed by (PlayerID, Season) so
-/// bulk table requests (940+ players) don't do an O(rows) scan per player.
-fn build_rapm_index(rows: &[Value]) -> HashMap<(i64, i64), Vec<usize>> {
-    let mut idx: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+/// Index entries point into either the Totals slice (`false`) or the Rates
+/// slice (`true`) of the shared `RapmRows`.
+fn push_rapm_idx(
+    idx: &mut HashMap<(i64, i64), Vec<(bool, usize)>>,
+    part: bool,
+    rows: &[Value],
+) {
     for (i, r) in rows.iter().enumerate() {
         let p = safe_int(r.get("PlayerID")).unwrap_or(0);
         let s = safe_int(r.get("Season")).unwrap_or(0);
-        idx.entry((p, s)).or_default().push(i);
+        idx.entry((p, s)).or_default().push((part, i));
     }
+}
+
+/// Pre-builds an index of RAPM row indices keyed by (PlayerID, Season) so
+/// bulk table requests (940+ players) don't do an O(rows) scan per player.
+fn build_rapm_index(data: &rapm::RapmRows) -> HashMap<(i64, i64), Vec<(bool, usize)>> {
+    let mut idx: HashMap<(i64, i64), Vec<(bool, usize)>> = HashMap::new();
+    push_rapm_idx(&mut idx, false, &data.totals);
+    push_rapm_idx(&mut idx, true, &data.rates);
     idx
 }
 
 /// Indexed variant of `pick_rapm_row` — O(few) instead of a full-table scan.
 fn pick_rapm_row_indexed(
-    rows: &[Value],
-    idx: &HashMap<(i64, i64), Vec<usize>>,
+    data: &rapm::RapmRows,
+    idx: &HashMap<(i64, i64), Vec<(bool, usize)>>,
     pid: i64,
     season: i64,
     want_strength: &str,
     want_rates: &str,
 ) -> Option<Value> {
+    let row_at = |(part, i): (bool, usize)| -> &Value {
+        if part { &data.rates[i] } else { &data.totals[i] }
+    };
     let indices = idx.get(&(pid, season))?;
-    for &i in indices {
-        let r = &rows[i];
+    for &e in indices {
+        let r = row_at(e);
         if str_value(r.get("StrengthState")) == want_strength
             && norm_rates_totals(r.get("Rates_Totals")) == want_rates
         {
-            return Some((*r).clone());
+            return Some(r.clone());
         }
     }
-    for &i in indices {
-        let r = &rows[i];
+    for &e in indices {
+        let r = row_at(e);
         if norm_rates_totals(r.get("Rates_Totals")) == want_rates {
-            return Some((*r).clone());
+            return Some(r.clone());
         }
     }
-    indices.first().map(|&i| rows[i].clone())
+    indices.first().map(|&e| row_at(e).clone())
 }
 
 fn build_ctx_index(rows: &[Value]) -> HashMap<(i64, i64), Vec<usize>> {
@@ -704,13 +718,13 @@ async fn api_skaters_card(
     let needs_ctx = metric_ids.iter().any(|m| matches!(m.as_str(), "Context|QoT" | "Context|QoC" | "Context|ZS"));
 
     let rapm_row = if needs_rapm {
-        let rows = rapm::load_rapm_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
-        pick_rapm_row(&rows, pid, p.season, &want_strength, want_rapm_rates)
+        let data = rapm::load_rapm_data(&state.caches, state.sb.as_ref(), p.season).await;
+        pick_rapm_row(&data, pid, p.season, &want_strength, want_rapm_rates)
     } else {
         None
     };
     let ctx_row = if needs_ctx {
-        let rows = rapm::load_context_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
+        let rows = rapm::load_context_rows(&state.caches, state.sb.as_ref(), p.season).await;
         pick_ctx_row(&rows, pid, p.season, &want_strength)
     } else {
         None
@@ -1454,12 +1468,12 @@ async fn skaters_table_endpoint(state: AppState, params: &HashMap<String, String
     let needs_rapm = metric_ids.iter().any(|m| m.contains("|RAPM "));
     let needs_ctx = metric_ids.iter().any(|m| matches!(m.as_str(), "Context|QoT" | "Context|QoC" | "Context|ZS"));
     let rapm_all = if needs_rapm {
-        Some(rapm::load_rapm_rows(&state.caches, state.sb.as_ref(), &state.cfg).await)
+        Some(rapm::load_rapm_data(&state.caches, state.sb.as_ref(), p.season).await)
     } else {
         None
     };
     let ctx_all = if needs_ctx {
-        Some(rapm::load_context_rows(&state.caches, state.sb.as_ref(), &state.cfg).await)
+        Some(rapm::load_context_rows(&state.caches, state.sb.as_ref(), p.season).await)
     } else {
         None
     };
@@ -1467,7 +1481,7 @@ async fn skaters_table_endpoint(state: AppState, params: &HashMap<String, String
     // Pre-index RAPM/context rows by (PlayerID, Season) once so the per-player
     // pick below is O(few) instead of a full-table scan per player (~40M ops
     // for 940 players x 42k RAPM rows).
-    let rapm_idx = rapm_all.as_ref().map(|rows| build_rapm_index(rows));
+    let rapm_idx = rapm_all.as_ref().map(|data| build_rapm_index(data));
     let ctx_idx = ctx_all.as_ref().map(|rows| build_ctx_index(rows));
     let mut special_pct: BTreeMap<String, Option<f64>> = BTreeMap::new();
     let mut players_out: Vec<Value> = Vec::new();
@@ -1478,10 +1492,10 @@ async fn skaters_table_endpoint(state: AppState, params: &HashMap<String, String
             continue;
         }
         let rapm_row = match (&rapm_all, &rapm_idx) {
-            (Some(rows), Some(idx)) => {
-                pick_rapm_row_indexed(rows, idx, *pid, p.season, &want_strength, want_rapm_rates)
+            (Some(data), Some(idx)) => {
+                pick_rapm_row_indexed(data, idx, *pid, p.season, &want_strength, want_rapm_rates)
             }
-            (Some(rows), None) => pick_rapm_row(rows, *pid, p.season, &want_strength, want_rapm_rates),
+            (Some(data), None) => pick_rapm_row(data, *pid, p.season, &want_strength, want_rapm_rates),
             _ => None,
         };
         let ctx_row = match (&ctx_all, &ctx_idx) {

@@ -360,10 +360,11 @@ pub async fn build_v2_player_projections(
     }
 
     // Context data.
-    let ctx_rows = crate::data::rapm::load_context_rows(&state.caches, state.sb.as_ref(), &state.cfg).await;
     let season_filter = season.unwrap_or_else(|| current_season_id(None));
+    let ctx_rows =
+        crate::data::rapm::load_context_rows(&state.caches, state.sb.as_ref(), season_filter).await;
     let mut ctx_by_pid: HashMap<i64, (Option<f64>, Option<f64>, Option<f64>)> = HashMap::new();
-    for row in &ctx_rows {
+    for row in ctx_rows.iter() {
         if safe_int(row.get("Season")).unwrap_or(0) != season_filter {
             continue;
         }
