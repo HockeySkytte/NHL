@@ -11,7 +11,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::{json, Map, Value};
 
-use crate::data::{card_defs, rapm, seasonstats};
+use crate::data::{card_defs, projections, rapm, seasonstats};
 use crate::nhl::client::API_WEB;
 use crate::state::AppState;
 use crate::util::parse::{parse_locale_float, parse_season_ids, primary_season_id, safe_int, str_value};
@@ -921,13 +921,40 @@ async fn api_goalies_card(
         p.metric_ids.clone()
     };
 
+    // Goalie projection percentile (mirrors Flask `projection_special_pct`).
+    // Computed against the goalie-only projection pool, bypassing the derived
+    // metrics pool, since goalie projection values are not part of SeasonStats.
+    let needs_projection = metric_ids.iter().any(|m| m.starts_with("Projection|"));
+    let mut proj_val_by_pid: HashMap<i64, f64> = HashMap::new();
+    let mut proj_pool: Vec<f64> = Vec::new();
+    if needs_projection {
+        let pmap = projections::load_v2_player_projections_cached(&state).await;
+        for (k, raw) in &pmap {
+            let pg = projection_position_group(str_value(raw.get("position")).as_str());
+            if pg != "G" {
+                continue;
+            }
+            if let Some(v) = parse_locale_float(raw.get("projected_value")) {
+                if v.is_finite() {
+                    proj_val_by_pid.insert(*k, v);
+                    proj_pool.push(v);
+                }
+            }
+        }
+        proj_pool.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    }
+
     let mut derived: BTreeMap<i64, BTreeMap<String, Option<f64>>> = BTreeMap::new();
     for (pid_s, v) in &agg_map {
         let Some(vobj) = v.as_object() else { continue };
         let pid_i = pid_s.parse::<i64>().unwrap_or(0);
         let mut per_player: BTreeMap<String, Option<f64>> = BTreeMap::new();
         for mid in &metric_ids {
-            per_player.insert(mid.clone(), goalie_metric(mid, vobj, &p, league_sv_pct));
+            if mid.starts_with("Projection|") {
+                per_player.insert(mid.clone(), proj_val_by_pid.get(&pid_i).copied());
+            } else {
+                per_player.insert(mid.clone(), goalie_metric(mid, vobj, &p, league_sv_pct));
+            }
         }
         derived.insert(pid_i, per_player);
     }
@@ -954,8 +981,13 @@ async fn api_goalies_card(
     let mut out_metrics: Map<String, Value> = Map::new();
     for mid in &metric_ids {
         let val = mine.get(mid).copied().flatten();
-        let mut pct = stats::percentile_sorted(dist_all.get(mid).map(|v| v.as_slice()).unwrap_or(&[]), val);
-        if pct.is_some() && stats::lower_is_better(mid) {
+        let mut pct = if mid.starts_with("Projection|") {
+            // Projection percentile is computed against goalie-only pool.
+            val.and_then(|v| stats::percentile_sorted(&proj_pool, Some(v)))
+        } else {
+            stats::percentile_sorted(dist_all.get(mid).map(|v| v.as_slice()).unwrap_or(&[]), val)
+        };
+        if pct.is_some() && !mid.starts_with("Projection|") && stats::lower_is_better(mid) {
             pct = pct.map(|x| 100.0 - x);
         }
         out_metrics.insert(mid.clone(), json!({"value": val, "pct": pct}));
@@ -975,6 +1007,18 @@ async fn api_goalies_card(
         "labels": {"Attempts": "SA", "Sv": "Sv%", "xSv": "xSv%", "dSv": "dSv%"},
         "metrics": Value::Object(out_metrics),
     }))
+}
+
+/// `_projection_position_group`: L/R/C/F -> F, D -> D, G -> G, else F.
+fn projection_position_group(raw: &str) -> &'static str {
+    let pos = raw.trim().to_uppercase();
+    let c = pos.chars().next().unwrap_or('F');
+    match c {
+        'L' | 'R' | 'C' | 'F' => "F",
+        'D' => "D",
+        'G' => "G",
+        _ => "F",
+    }
 }
 
 fn goalie_metric(metric_id: &str, v: &Map<String, Value>, p: &CardParams, league_sv_pct: f64) -> Option<f64> {
@@ -1830,6 +1874,9 @@ async fn api_goalies_series(
 }
 
 /// Goalie primary team per season from the NHL `goalie/summary` endpoint.
+///
+/// Seasons split across multiple teams return the `"NHL"` sentinel so the
+/// frontend can draw the league shield instead of one arbitrary team logo.
 async fn goalie_team_by_season(state: &AppState, pid: i64) -> BTreeMap<String, String> {
     let cache_key = (pid, "all".to_string());
     if let Some(v) = state.caches.goalie_team_by_season.get(&cache_key) {
@@ -1841,28 +1888,81 @@ async fn goalie_team_by_season(state: &AppState, pid: i64) -> BTreeMap<String, S
         }
         return out;
     }
-    let mut out: BTreeMap<String, (i64, f64, String)> = BTreeMap::new();
+    let mut best: BTreeMap<String, (i64, f64, String)> = BTreeMap::new();
+    let mut teams_by_season: BTreeMap<String, HashSet<String>> = BTreeMap::new();
+    let mut multi_seasons: HashSet<String> = HashSet::new();
     let cay = format!("playerId={pid}");
     let rows = crate::nhl::stats_rest::summary_rows(&state.http, "goalie", &cay).await.unwrap_or_default();
     for r in rows {
         let season = str_value(r.get("seasonId"));
-        let team = str_value(r.get("teamAbbrev")).to_uppercase();
+        if season.is_empty() {
+            continue;
+        }
+        // `teamAbbrev` is normally a plain abbrev, but tolerate list values and
+        // slash-joined multi-team forms like "MTL/VGK".
+        let raw = r
+            .get("teamAbbrev")
+            .or_else(|| r.get("teamAbbrevs"))
+            .or_else(|| r.get("currentTeamAbbrev"));
+        let mut vals: Vec<String> = Vec::new();
+        match raw {
+            Some(Value::Array(arr)) => {
+                for x in arr {
+                    let s = str_value(Some(x)).trim().to_uppercase();
+                    if !s.is_empty() {
+                        vals.push(s);
+                    }
+                }
+            }
+            Some(x) => {
+                let s = str_value(Some(x)).trim().to_uppercase();
+                if s.contains('/') || s.contains(',') {
+                    // Multi-team forms: "MTL/VGK" or the comma-joined "SJS,FLA"
+                    // the summary endpoint returns for mid-season trades.
+                    for part in s.split(|c| c == '/' || c == ',') {
+                        let t = part.trim();
+                        if !t.is_empty() {
+                            vals.push(t.to_string());
+                        }
+                    }
+                } else if !s.is_empty() {
+                    vals.push(s);
+                }
+            }
+            None => {}
+        }
+        if vals.is_empty() {
+            continue;
+        }
+        if vals.len() > 1 {
+            multi_seasons.insert(season.clone());
+        }
+        teams_by_season
+            .entry(season.clone())
+            .or_default()
+            .insert(vals[0].clone());
         let gp = safe_int(r.get("gamesPlayed")).unwrap_or(0);
         let toi_sec = num(r.get("timeOnIce"));
         let weight = gp * 100_000 + toi_sec as i64;
-        let entry = out.entry(season.clone()).or_insert((0, 0.0, String::new()));
+        let entry = best.entry(season).or_insert((0, 0.0, String::new()));
         if weight >= entry.0 {
-            *entry = (weight, toi_sec, team);
+            *entry = (weight, toi_sec, vals[0].clone());
         }
     }
     let mut result: BTreeMap<String, String> = BTreeMap::new();
-    for (s, (_, _, t)) in out {
-        result.insert(s, t);
+    for (s, (_, _, t)) in best {
+        let is_multi = multi_seasons.contains(&s)
+            || teams_by_season.get(&s).map(|set| set.len() >= 2).unwrap_or(false);
+        result.insert(s, if is_multi { "NHL".to_string() } else { t });
     }
-    state
-        .caches
-        .goalie_team_by_season
-        .insert(cache_key, json!(result));
+    // Only cache successful, non-empty lookups: an empty result would pin a
+    // week of blank season logos after one transient NHL API failure.
+    if !result.is_empty() {
+        state
+            .caches
+            .goalie_team_by_season
+            .insert(cache_key, json!(result));
+    }
     result
 }
 

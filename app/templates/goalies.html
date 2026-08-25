@@ -286,15 +286,19 @@
   .metrics-table tbody tr:hover td{ background:rgba(255,255,255,0.055); }
   .metrics-table tbody tr.selected td{ background:var(--league-highlight-color, rgba(77,163,255,0.13)); }
   .metrics-table tbody tr.selected td.rank{ box-shadow: inset 3px 0 0 var(--accent); }
-  /* Skip rendering offscreen rows: big scroll performance win with 900+ rows */
-  .metrics-table tbody tr{ content-visibility:auto; contain-intrinsic-size:auto 52px; }
+  /* NOTE: no `content-visibility:auto` on rows here — its `contain: paint` breaks
+     the sticky Rank/Name cells from painting their background OVER columns that
+     scroll beneath them, so old column values show through. */
   .metrics-table td.name, .metrics-table th.name{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ width:64px; min-width:64px; max-width:64px; }
   .metrics-table td.rank, .metrics-table td.name{ position:sticky; background:#111827; z-index:1; }
   .metrics-table tbody tr:nth-child(even) td.rank, .metrics-table tbody tr:nth-child(even) td.name{ background:#131c2c; }
   .metrics-table tbody tr:hover td.rank, .metrics-table tbody tr:hover td.name{ background:#1a2436; }
-  .metrics-table tbody tr.selected td.rank, .metrics-table tbody tr.selected td.name{ background:color-mix(in srgb, var(--league-highlight-color, rgba(77,163,255,0.13)) 30%, #111827); }
+  /* Opaque variant so the selected row's sticky cells still mask scrolled columns.
+     (The plain `--league-highlight-color` is 15%-alpha, so mixing it yields a
+     translucent bg that lets scrolled values show through.) */
+  .metrics-table tbody tr.selected td.rank, .metrics-table tbody tr.selected td.name{ background:color-mix(in srgb, var(--league-highlight-strong, #4da3ff) 30%, #111827); }
   .metrics-table td.rank{ left:0; border-right:1px solid #232c3c; }
   .metrics-table td.name{ left:64px; width:264px; min-width:264px; max-width:264px; border-right:1px solid #232c3c; }
   .metrics-table th.rank, .metrics-table th.name{ position:sticky; background:linear-gradient(180deg, #1a2337, #121a2b); z-index:4; }
@@ -586,6 +590,24 @@
       z-index:auto !important;
     }
     .metrics-table td.rank{ border-right:none !important; }
+  }
+
+  /* Mobile: compact data tables so more columns fit (schedule tables excluded) */
+  @media (max-width: 980px){
+    .metrics-table{ font-size:11px; }
+    .metrics-table th{ font-size:10px; padding:8px 6px; }
+    .metrics-table td{ font-size:11px; padding:6px 6px; }
+    .metrics-table th, .metrics-table td{ min-width:58px; }
+    .metrics-table td.rank, .metrics-table th.rank{ width:38px; min-width:38px; max-width:38px; }
+    .metrics-table td.name, .metrics-table th.name{ width:200px; min-width:200px; max-width:200px; }
+    .pl-mug{ width:22px; height:22px; }
+    .pl-team-logo{ width:24px; height:24px; }
+    .proj-table{ font-size:11px; }
+    .proj-table th{ font-size:10px; padding:8px 6px; }
+    .proj-table td{ font-size:11px; padding:6px 6px; }
+    .mini-table{ font-size:11px; }
+    .mini-table th{ font-size:10px; padding:6px 5px; }
+    .mini-table td{ font-size:11px; padding:5px 5px; }
   }
 </style>
 {% endblock %}
@@ -1042,8 +1064,11 @@ const teams = JSON.parse(document.getElementById('teams-data').textContent);
 
 function teamLogoUrl(abbrev){
   const a = String(abbrev||'').toUpperCase();
+  if(!a) return '';
+  // "NHL" is the sentinel the API sends for a season split across multiple teams.
+  if(a === 'NHL') return '/static/link-logos/nhl-official.png';
   // Use same-origin proxy for SVG logos so canvas rendering works reliably.
-  return a ? `/api/team-logo/${encodeURIComponent(a)}.svg` : '';
+  return `/api/team-logo/${encodeURIComponent(a)}.svg`;
 }
 
 function getTeamLogoImage(abbrev, onLoad){
@@ -3787,7 +3812,7 @@ function __renderGoalieProjectionKpi(enabled, pct){
     goalieProjectionKpiValue.textContent = '--%';
     return;
   }
-  const n = Number(pct);
+  const n = (pct == null || pct === '') ? NaN : Number(pct);
   const ok = Number.isFinite(n);
   const clamped = ok ? clamp(n, 0, 100) : null;
   const color = ok ? pctToColor(clamped) : 'rgba(255,255,255,0.35)';
@@ -6008,6 +6033,7 @@ async function loadProjectionsPanel(){
       const rgb = hexToRgb(teamColor);
       if(rgb){
         document.documentElement.style.setProperty('--league-highlight-color', `rgba(${rgb.r},${rgb.g},${rgb.b},0.15)`);
+        document.documentElement.style.setProperty('--league-highlight-strong', `rgb(${rgb.r},${rgb.g},${rgb.b})`);
       }
     }
 

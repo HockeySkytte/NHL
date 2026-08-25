@@ -44,6 +44,7 @@ pub struct Caches {
     pub skaters_scatter: TtlCache<String, Value>,
     pub goalies_scatter: TtlCache<String, Value>,
     pub goalie_team_by_season: TtlCache<(i64, String), Value>,
+    pub skater_team_by_season: TtlCache<i64, Value>,
     pub lt_shifts: SingleSlot<String, Value>,
     pub lt_pbp: SingleSlot<String, Value>,
     pub lt_data: SingleSlot<String, Value>,
@@ -65,6 +66,11 @@ pub struct Caches {
     /// Singleflight coalescing for the expensive shared loads (season-stats
     /// aggregates, RAPM/context) so concurrent users can't multiply memory.
     pub inflight: InFlight,
+    /// Serializes the heavy line-tool loads (a full team-season of shifts+BPP
+    /// is ~100MB+ working set each). Without a cap, a few concurrent
+    /// `/api/line-tool/*` requests (a user toggling teams/seasons) load many
+    /// giant datasets simultaneously and blow past the memory limit.
+    pub lt_gate: Arc<tokio::sync::Semaphore>,
 }
 
 impl Caches {
@@ -97,12 +103,12 @@ impl Caches {
             ),
             lineups_all: TtlCache::new_weighted(
                 env_ttl("LINEUPS_SHEET_CACHE_TTL_SECONDS", 300),
-                8 * 1024 * 1024,
+                6 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             player_projections: TtlCache::new_weighted(
                 env_ttl("PLAYER_PROJECTIONS_CACHE_TTL_SECONDS", 300),
-                8 * 1024 * 1024,
+                6 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             odds_snapshot_rows: TtlCache::new(
@@ -119,12 +125,12 @@ impl Caches {
             ),
             all_rosters: TtlCache::new_weighted(
                 env_ttl("ALL_ROSTERS_CACHE_TTL_SECONDS", 21600),
-                16 * 1024 * 1024,
+                8 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             teamseasonstats: TtlCache::new_weighted(
                 env_ttl("SEASONSTATS_CACHE_TTL_SECONDS", 1800),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             club_schedule: TtlCache::new(
@@ -133,17 +139,17 @@ impl Caches {
             ),
             seasonstats_agg: TtlCache::new_weighted(
                 env_ttl("SEASONSTATS_AGG_CACHE_TTL_SECONDS", 1800),
-                32 * 1024 * 1024,
+                16 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             goalies_agg: TtlCache::new_weighted(
                 env_ttl("SEASONSTATS_AGG_CACHE_TTL_SECONDS", 1800),
-                32 * 1024 * 1024,
+                16 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             career_matrix: TtlCache::new_weighted(
                 env_ttl("SEASONSTATS_AGG_CACHE_TTL_SECONDS", 1800),
-                32 * 1024 * 1024,
+                16 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             // RAPM/context rows are cached PER SEASON (the current season is
@@ -152,7 +158,7 @@ impl Caches {
             // warm caches only grow when career-scope endpoints are used.
             rapm_static: TtlCache::new_weighted(
                 env_ttl("RAPM_STATIC_CACHE_TTL_SECONDS", 600),
-                48 * 1024 * 1024,
+                24 * 1024 * 1024,
                 |v: &std::sync::Arc<RapmRows>| {
                     crate::cache::json_rows_weight(&v.totals)
                         .saturating_add(crate::cache::json_rows_weight(&v.rates))
@@ -160,7 +166,7 @@ impl Caches {
             ),
             context_static: TtlCache::new_weighted(
                 env_ttl("CONTEXT_STATIC_CACHE_TTL_SECONDS", 600),
-                16 * 1024 * 1024,
+                8 * 1024 * 1024,
                 |v: &std::sync::Arc<Vec<Value>>| crate::cache::json_rows_weight(v),
             ),
             card_metrics_defs: TtlCache::new(
@@ -169,26 +175,30 @@ impl Caches {
             ),
             team_stats_rest: TtlCache::new_weighted(
                 env_ttl("TEAM_STATS_REST_CACHE_TTL_SECONDS", 3600),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             edge_api: TtlCache::new_weighted(
                 env_ttl("EDGE_API_CACHE_TTL_SECONDS", 3600),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             skaters_scatter: TtlCache::new_weighted(
                 env_ttl("SKATERS_SCATTER_CACHE_TTL_SECONDS", 300),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             goalies_scatter: TtlCache::new_weighted(
                 env_ttl("GOALIES_SCATTER_CACHE_TTL_SECONDS", 180),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             goalie_team_by_season: TtlCache::new(
                 env_ttl("GOALIES_TEAM_BY_SEASON_CACHE_TTL_SECONDS", 7 * 24 * 3600),
+                128,
+            ),
+            skater_team_by_season: TtlCache::new(
+                env_ttl("SKATERS_TEAM_BY_SEASON_CACHE_TTL_SECONDS", 7 * 24 * 3600),
                 128,
             ),
             // The line-tool datasets are huge (a full team season of shifts +
@@ -202,55 +212,55 @@ impl Caches {
             lt_base: SingleSlot::new(),
             skaters_shooting: TtlCache::new_weighted(
                 env_ttl("SKATERS_SHOOTING_CACHE_TTL_SECONDS", 180),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             goalies_goaltending: TtlCache::new_weighted(
                 env_ttl("GOALIES_GOALTENDING_CACHE_TTL_SECONDS", 180),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             player_names: TtlCache::new(std::time::Duration::from_secs(21600), 8),
             pbp: TtlCache::new_weighted(
                 env_ttl("PBP_CACHE_TTL_SECONDS", 600),
-                32 * 1024 * 1024,
+                16 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             shifts: TtlCache::new_weighted(
                 env_ttl("SHIFTS_CACHE_TTL_SECONDS", 600),
-                32 * 1024 * 1024,
+                16 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             model: TtlCache::new(std::time::Duration::from_secs(7 * 24 * 3600), 24),
             box_id_map: TtlCache::new(std::time::Duration::from_secs(7 * 24 * 3600), 2),
             all_rosters_by_season: TtlCache::new_weighted(
                 env_ttl("ALL_ROSTERS_BY_SEASON_CACHE_TTL_SECONDS", 21600),
-                16 * 1024 * 1024,
+                8 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             v2_build: TtlCache::new_weighted(
                 env_ttl("V2_PROJECTIONS_BUILD_CACHE_TTL_SECONDS", 300),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             current_player_projections: TtlCache::new_weighted(
                 env_ttl("PLAYER_PROJECTIONS_CACHE_TTL_SECONDS", 300),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             gm_projections: TtlCache::new_weighted(
                 env_ttl("GM_PROJECTIONS_CACHE_TTL_SECONDS", 300),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             custom_lineups: TtlCache::new_weighted(
                 env_ttl("CUSTOM_LINEUPS_CACHE_TTL_SECONDS", 43200),
-                24 * 1024 * 1024,
+                12 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             playoff_bracket: TtlCache::new_weighted(
                 env_ttl("PLAYOFF_BRACKET_CACHE_TTL_SECONDS", 300),
-                8 * 1024 * 1024,
+                6 * 1024 * 1024,
                 |v: &Value| crate::cache::json_value_weight(v),
             ),
             community_feed: TtlCache::new(
@@ -258,6 +268,7 @@ impl Caches {
                 8,
             ),
             inflight: InFlight::new(),
+            lt_gate: Arc::new(tokio::sync::Semaphore::new(1)),
         }
     }
 

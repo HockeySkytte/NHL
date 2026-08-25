@@ -179,9 +179,9 @@
   .rapm-controls select{ color:var(--value-text, var(--text)); }
 
   .rapm-split{ display:grid; grid-template-columns: 1.4fr 0.8fr 0.8fr; gap:14px; max-width:1150px; margin:0 auto; }
-  .rapm-sect{ --rapmBarH: 340px; border:1px solid #232a3a; border-radius:14px; padding:16px 16px 12px; background:linear-gradient(180deg, rgba(20,27,42,0.85), rgba(11,16,26,0.92)); box-shadow:0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03); }
-  .rapm-sect h3{ margin:0 0 10px; font-size:16px; letter-spacing:.8px; text-transform:uppercase; color:rgba(255,255,255,0.98); font-weight:850; }
-  .toi{ margin:10px auto 0; width:fit-content; padding:4px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.07); background:rgba(255,255,255,0.04); font-size:11px; color:var(--text-dim); text-align:center; font-weight:750; letter-spacing:.3px; }
+  .rapm-sect{ --rapmBarH: 340px; padding:14px 14px 10px; }
+  .rapm-sect h3{ margin:0 0 12px; font-size:15px; letter-spacing:.9px; text-transform:uppercase; color:rgba(255,255,255,0.92); font-weight:800; }
+  .toi{ margin:14px auto 0; width:fit-content; padding:0; font-size:11px; color:var(--text-dim); text-align:center; font-weight:700; letter-spacing:.4px; opacity:.85; }
 
   .charts-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:stretch; }
   @media (max-width: 1100px){ .charts-grid{ grid-template-columns:1fr; } }
@@ -211,9 +211,9 @@
   .bar-col{ width:112px; }
   .bar-label{ text-align:center; font-size:12px; color:var(--text-dim); margin-top:8px; letter-spacing:.4px; }
   .bar-value{ text-align:center; font-size:12px; font-weight:800; margin-top:6px; color:#ffffff; font-variant-numeric:tabular-nums; }
-  .bar-area{ position:relative; height:var(--rapmBarH); border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01)); border:1px solid rgba(255,255,255,0.05); overflow:hidden; }
-  .bar-line{ position:absolute; left:0; right:0; height:1px; background:rgba(255,255,255,0.22); }
-  .bar{ position:absolute; left:18%; width:64%; border-radius:6px 6px 3px 3px; background-color:var(--accent); background-image:linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.02) 55%, rgba(0,0,0,0.14)); box-shadow:0 0 16px -4px var(--barC, var(--accent)); min-height:4px; }
+  .bar-area{ position:relative; height:var(--rapmBarH); }
+  .bar-line{ position:absolute; left:0; right:0; height:1px; background:rgba(255,255,255,0.18); }
+  .bar{ position:absolute; left:18%; width:64%; border-radius:4px 4px 2px 2px; background-color:var(--accent); min-height:3px; }
   .bar.neg{ background-color:#ff6a6a; }
 
   .rapm-career{ max-width:1150px; margin:0 auto; }
@@ -345,15 +345,19 @@
   .metrics-table tbody tr:hover td{ background:rgba(255,255,255,0.055); }
   .metrics-table tbody tr.selected td{ background:var(--league-highlight-color, rgba(77,163,255,0.13)); }
   .metrics-table tbody tr.selected td.rank{ box-shadow: inset 3px 0 0 var(--accent); }
-  /* Skip rendering offscreen rows: big scroll performance win with 900+ rows */
-  .metrics-table tbody tr{ content-visibility:auto; contain-intrinsic-size:auto 52px; }
+  /* NOTE: no `content-visibility:auto` on rows here — its `contain: paint` breaks
+     the sticky Rank/Name cells from painting their background OVER columns that
+     scroll beneath them, so old column values show through. */
   .metrics-table td.name, .metrics-table th.name{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ text-align:left; }
   .metrics-table td.rank, .metrics-table th.rank{ width:64px; min-width:64px; max-width:64px; }
   .metrics-table td.rank, .metrics-table td.name{ position:sticky; background:#111827; z-index:1; }
   .metrics-table tbody tr:nth-child(even) td.rank, .metrics-table tbody tr:nth-child(even) td.name{ background:#131c2c; }
   .metrics-table tbody tr:hover td.rank, .metrics-table tbody tr:hover td.name{ background:#1a2436; }
-  .metrics-table tbody tr.selected td.rank, .metrics-table tbody tr.selected td.name{ background:color-mix(in srgb, var(--league-highlight-color, rgba(77,163,255,0.13)) 30%, #111827); }
+  /* Opaque variant so the selected row's sticky cells still mask scrolled columns.
+     (The plain `--league-highlight-color` is 15%-alpha, so mixing it yields a
+     translucent bg that lets scrolled values show through.) */
+  .metrics-table tbody tr.selected td.rank, .metrics-table tbody tr.selected td.name{ background:color-mix(in srgb, var(--league-highlight-strong, #4da3ff) 30%, #111827); }
   .metrics-table td.rank{ left:0; border-right:1px solid #232c3c; }
   .metrics-table td.name{ left:64px; width:264px; min-width:264px; max-width:264px; border-right:1px solid #232c3c; }
   .metrics-table th.rank, .metrics-table th.name{ position:sticky; background:linear-gradient(180deg, #1a2337, #121a2b); z-index:4; }
@@ -629,7 +633,7 @@
   .rapm-export-content{ width:100%; }
   .rapm-export-card .rapm-controls{ display:none !important; }
   .rapm-export-card .rapm-split{ gap:28px; max-width:none; }
-  .rapm-export-card .rapm-sect{ padding:12px; background:transparent; border-color:rgba(255,255,255,0.05); box-shadow:none; }
+  .rapm-export-card .rapm-sect{ padding:12px; }
   .rapm-export-card .rapm-sect h3{ font-size:28px; margin:0 0 14px; }
   .rapm-export-card .rapm-axis .lbl{ font-size:16px; }
   .rapm-export-card .bar-col{ width:136px; }
@@ -806,6 +810,24 @@
     .proj-grid{ display:flex; flex-direction:column; gap:12px; }
     .proj-grid > :nth-child(1){ order:2; }
     .proj-grid > :nth-child(2){ order:1; }
+  }
+
+  /* Mobile: compact data tables so more columns fit (schedule tables excluded) */
+  @media (max-width: 980px){
+    .metrics-table{ font-size:11px; }
+    .metrics-table th{ font-size:10px; padding:8px 6px; }
+    .metrics-table td{ font-size:11px; padding:6px 6px; }
+    .metrics-table th, .metrics-table td{ min-width:58px; }
+    .metrics-table td.rank, .metrics-table th.rank{ width:38px; min-width:38px; max-width:38px; }
+    .metrics-table td.name, .metrics-table th.name{ width:200px; min-width:200px; max-width:200px; }
+    .pl-mug{ width:22px; height:22px; }
+    .pl-team-logo{ width:24px; height:24px; }
+    .proj-table{ font-size:11px; }
+    .proj-table th{ font-size:10px; padding:8px 6px; }
+    .proj-table td{ font-size:11px; padding:6px 6px; }
+    .mini-table{ font-size:11px; }
+    .mini-table th{ font-size:10px; padding:6px 5px; }
+    .mini-table td{ font-size:11px; padding:5px 5px; }
   }
 </style>
 {% endblock %}
@@ -1442,8 +1464,11 @@ const teams = JSON.parse(document.getElementById('teams-data').textContent);
 
 function teamLogoUrl(abbrev){
   const a = String(abbrev||'').toUpperCase();
+  if(!a) return '';
+  // "NHL" is the sentinel the API sends for a season split across multiple teams.
+  if(a === 'NHL') return '/static/link-logos/nhl-official.png';
   // Use same-origin proxy for SVG logos so canvas rendering works reliably.
-  return a ? `/api/team-logo/${encodeURIComponent(a)}.svg` : '';
+  return `/api/team-logo/${encodeURIComponent(a)}.svg`;
 }
 
 function getTeamLogoImage(abbrev, onLoad){
@@ -5076,7 +5101,7 @@ function renderBarSection(title, bars, scale){
             ? `<div class="bar-line" style="top:${axis.midPct}%;"></div>`
             : `<div class="bar-line" style="top:${axis.zeroPct}%;"></div>`
           }
-          <div class="bar ${neg ? 'neg' : ''}" style="top:${topPct}%; height:${heightPct}%; background-color:${color}; --barC:${color};"></div>
+          <div class="bar ${neg ? 'neg' : ''}" style="top:${topPct}%; height:${heightPct}%; background-color:${color};"></div>
         </div>
         <div class="bar-label">${b.label}</div>
         <div class="bar-value">${label}</div>
@@ -5787,6 +5812,7 @@ async function loadProjectionsPanel(){
       const rgb = hexToRgb(teamColor);
       if(rgb){
         document.documentElement.style.setProperty('--league-highlight-color', `rgba(${rgb.r},${rgb.g},${rgb.b},0.15)`);
+        document.documentElement.style.setProperty('--league-highlight-strong', `rgb(${rgb.r},${rgb.g},${rgb.b})`);
       }
     }
 

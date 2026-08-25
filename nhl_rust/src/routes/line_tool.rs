@@ -350,6 +350,20 @@ async fn get_lt_base_context(
         return v;
     }
 
+    // Serialize the heavy line-tool loads (a full team-season of shifts + BBP
+    // is ~100MB+ working set each). A few concurrent `/api/line-tool/*`
+    // requests otherwise load many giant datasets simultaneously and blow
+    // past the memory limit. Re-check the cache after acquiring so a
+    // concurrent same-key load that finished first is reused.
+    let _permit = caches
+        .lt_gate
+        .acquire()
+        .await
+        .unwrap_or_else(|_| unreachable!("lt_gate closed"));
+    if let Some(v) = caches.lt_base.get(&cache_key) {
+        return v;
+    }
+
     let shift_rows = get_lt_shifts_parallel(caches, sb, team, season_ids).await;
     if shift_rows.is_empty() {
         let result = json!({"shiftRows": [], "baseShifts": [], "allPbp": []});

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use crate::state::{AppState, Caches};
-use crate::supabase::read::{filters, SbClient};
+use crate::supabase::read::{filters, read_each, SbClient};
 use crate::util::dates::current_season_id;
 use crate::util::mt19937::Mt19937;
 use crate::util::parse::{parse_locale_float, safe_int, str_value};
@@ -259,20 +259,6 @@ pub async fn build_v2_player_projections(
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
-    let rows = sb
-        .read(
-            "nhl_current_playerprojections",
-            "*",
-            if fmap.is_empty() { None } else { Some(&fmap) },
-            None,
-            Some("playerid,strengthstate"),
-            0,
-        )
-        .await
-        .unwrap_or_default();
-    if rows.is_empty() {
-        return Vec::new();
-    }
 
     let ss_groups: [(&str, &[&str]); 4] = [
         ("5v5", &["5v5"]),
@@ -302,61 +288,80 @@ pub async fn build_v2_player_projections(
     }
 
     let mut players: BTreeMap<i64, Acc> = BTreeMap::new();
-    for r in &rows {
-        let pid = safe_int(r.get("nhl_api_player_id"))
-            .or_else(|| safe_int(r.get("playerid")))
-            .unwrap_or(0);
-        if pid <= 0 {
-            continue;
-        }
-        let ss = str_value(r.get("strengthstate"));
-        let acc = players.entry(pid).or_insert_with(|| Acc {
-            player_id: pid,
-            name: str_value(r.get("nhl_player_name")),
-            position: str_value(r.get("position")),
-            team: str_value(r.get("team")),
-            gp: safe_int(r.get("gp")).unwrap_or(0),
-            ..Default::default()
-        });
-        if !ss.is_empty() {
-            acc.proj_by_ss.insert(ss.clone(), compute_projection_value(r));
-        }
-        acc.ig += parse_locale_float(r.get("ig")).unwrap_or(0.0);
-        acc.a1 += parse_locale_float(r.get("a1")).unwrap_or(0.0);
-        acc.a2 += parse_locale_float(r.get("a2")).unwrap_or(0.0);
-        let f = parse_locale_float(r.get("faceoffs")).unwrap_or(0.0);
-        let pa = parse_locale_float(r.get("passes")).unwrap_or(0.0);
-        let ca = parse_locale_float(r.get("carries")).unwrap_or(0.0);
-        let de = parse_locale_float(r.get("defensive")).unwrap_or(0.0);
-        let di = parse_locale_float(r.get("dump_ins_outs")).unwrap_or(0.0);
-        let ot = parse_locale_float(r.get("off_the_puck")).unwrap_or(0.0);
-        let xg = parse_locale_float(r.get("xga")).unwrap_or(0.0);
-        let xf = parse_locale_float(r.get("xgf")).unwrap_or(0.0);
-        let ga = parse_locale_float(r.get("gax")).unwrap_or(0.0);
-        let gs = parse_locale_float(r.get("gsax")).unwrap_or(0.0);
-        if EV_SS.contains(&ss.as_str()) {
-            acc.evo += (f + pa + ca) * coef("poss_value_ev");
-            acc.evd += (de + di) * coef("poss_value_ev") + xg * coef("xga_ev");
-        }
-        if PP_SS.contains(&ss.as_str()) {
-            acc.pp_raw += f * coef("poss_value_st") + xf * coef("xgf_pp");
-        }
-        if SH_SS.contains(&ss.as_str()) {
-            acc.sh_raw += (f + de + di) * coef("poss_value_st") + ot * coef("off_the_puck_sh") + xg * coef("xga_sh");
-        }
-        acc.gax += ga * coef("gax");
-        acc.gsax += gs * coef("gsax");
-        if ss == "5v5" {
-            let pos = str_value(r.get("position"));
-            let rv = parse_locale_float(r.get("rookie")).unwrap_or(0.0);
-            if rv > 0.0 {
-                acc.rookie += rv * match pos.as_str() {
-                    "D" => coef("rookie_d"),
-                    "G" => coef("rookie_g"),
-                    _ => coef("rookie_f"),
-                };
+    let mut seen_any = false;
+    // Stream pages (bounded in-flight) instead of accumulating the whole
+    // table, so a large `nhl_current_playerprojections` scan stays bounded.
+    let streamed = read_each(
+        sb,
+        "nhl_current_playerprojections",
+        "*",
+        if fmap.is_empty() { None } else { Some(&fmap) },
+        None,
+        Some("playerid,strengthstate"),
+        0,
+        |page| {
+            for r in &page {
+                seen_any = true;
+                let pid = safe_int(r.get("nhl_api_player_id"))
+                    .or_else(|| safe_int(r.get("playerid")))
+                    .unwrap_or(0);
+                if pid <= 0 {
+                    continue;
+                }
+                let ss = str_value(r.get("strengthstate"));
+                let acc = players.entry(pid).or_insert_with(|| Acc {
+                    player_id: pid,
+                    name: str_value(r.get("nhl_player_name")),
+                    position: str_value(r.get("position")),
+                    team: str_value(r.get("team")),
+                    gp: safe_int(r.get("gp")).unwrap_or(0),
+                    ..Default::default()
+                });
+                if !ss.is_empty() {
+                    acc.proj_by_ss.insert(ss.clone(), compute_projection_value(r));
+                }
+                acc.ig += parse_locale_float(r.get("ig")).unwrap_or(0.0);
+                acc.a1 += parse_locale_float(r.get("a1")).unwrap_or(0.0);
+                acc.a2 += parse_locale_float(r.get("a2")).unwrap_or(0.0);
+                let f = parse_locale_float(r.get("faceoffs")).unwrap_or(0.0);
+                let pa = parse_locale_float(r.get("passes")).unwrap_or(0.0);
+                let ca = parse_locale_float(r.get("carries")).unwrap_or(0.0);
+                let de = parse_locale_float(r.get("defensive")).unwrap_or(0.0);
+                let di = parse_locale_float(r.get("dump_ins_outs")).unwrap_or(0.0);
+                let ot = parse_locale_float(r.get("off_the_puck")).unwrap_or(0.0);
+                let xg = parse_locale_float(r.get("xga")).unwrap_or(0.0);
+                let xf = parse_locale_float(r.get("xgf")).unwrap_or(0.0);
+                let ga = parse_locale_float(r.get("gax")).unwrap_or(0.0);
+                let gs = parse_locale_float(r.get("gsax")).unwrap_or(0.0);
+                if EV_SS.contains(&ss.as_str()) {
+                    acc.evo += (f + pa + ca) * coef("poss_value_ev");
+                    acc.evd += (de + di) * coef("poss_value_ev") + xg * coef("xga_ev");
+                }
+                if PP_SS.contains(&ss.as_str()) {
+                    acc.pp_raw += f * coef("poss_value_st") + xf * coef("xgf_pp");
+                }
+                if SH_SS.contains(&ss.as_str()) {
+                    acc.sh_raw += (f + de + di) * coef("poss_value_st") + ot * coef("off_the_puck_sh") + xg * coef("xga_sh");
+                }
+                acc.gax += ga * coef("gax");
+                acc.gsax += gs * coef("gsax");
+                if ss == "5v5" {
+                    let pos = str_value(r.get("position"));
+                    let rv = parse_locale_float(r.get("rookie")).unwrap_or(0.0);
+                    if rv > 0.0 {
+                        acc.rookie += rv * match pos.as_str() {
+                            "D" => coef("rookie_d"),
+                            "G" => coef("rookie_g"),
+                            _ => coef("rookie_f"),
+                        };
+                    }
+                }
             }
-        }
+        },
+    )
+    .await;
+    if streamed.is_none() || !seen_any {
+        return Vec::new();
     }
 
     // Context data.

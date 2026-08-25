@@ -1,7 +1,7 @@
 //! RAPM / context API routes — ports of `/api/rapm/player`,
 //! `/api/context/player`, `/api/rapm/scale`, `/api/rapm/career`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
@@ -12,6 +12,7 @@ use axum::{Json, Router};
 use serde_json::{json, Value};
 
 use crate::data::rapm;
+use crate::nhl::stats_rest;
 use crate::routes::analytics::param_i64;
 use crate::state::AppState;
 use crate::util::parse::{parse_locale_float, parse_season_ids, primary_season_id, safe_int, str_value};
@@ -403,6 +404,10 @@ async fn api_rapm_career(
     let metric = q(&params, "metric", "corsi");
     let strength = q(&params, "strength", "All");
 
+    // Team per season for the career-chart logo markers (multi-team seasons
+    // come back as the "NHL" sentinel).
+    let team_map = skater_team_by_season(&state, pid).await;
+
     let season_list: Vec<i64> = state.last_dates.keys().copied().collect();
     let rapm_all = rapm::load_rapm_seasons(&state.caches, state.sb.as_ref(), &season_list).await;
     let ctx_arcs = rapm::load_context_seasons(&state.caches, state.sb.as_ref(), &season_list).await;
@@ -484,6 +489,21 @@ async fn api_rapm_career(
         let el_pp = eligible(&minutes, pid, *s, "PP");
         let el_sh = eligible(&minutes, pid, *s, "SH");
 
+        // Only include seasons where the player actually has data for the
+        // requested view; otherwise the chart would render empty gap points.
+        // (Missing rows yield `None`; a present-but-unparseable field yields
+        // NaN from parse_locale_float, so both are treated as absent.)
+        let finite = |v: Option<f64>| v.map(|x| x.is_finite()).unwrap_or(false);
+        let has_view_data = match strength.as_str() {
+            "PP" => finite(pp),
+            "SH" => finite(sh),
+            "All" => finite(total),
+            _ => finite(o5) || finite(d5) || finite(diff),
+        };
+        if !has_view_data {
+            continue;
+        }
+
         let pct = |dist: &[f64], v: Option<f64>| v.and_then(|x| percentile_sorted_asc(dist, x));
         let z = |dist: &[f64], v: Option<f64>| -> Option<f64> {
             if dist.is_empty() {
@@ -507,6 +527,7 @@ async fn api_rapm_career(
 
         let point = json!({
             "Season": s,
+            "team": team_map.get(&s.to_string()).cloned().unwrap_or_default(),
             "minutes": json!({"fivev5": min_5, "pp": min_pp, "sh": min_sh}),
             "eligible": el5 || el_pp || el_sh,
             "5v5_off": o5, "5v5_off_z": z(&so5, o5), "5v5_off_pct": pct(&so5, o5),
@@ -538,4 +559,96 @@ async fn api_rapm_career(
         "points": points,
         "scale": {"min": overall_min, "max": overall_max},
     }))
+}
+
+/// Skater primary team per season from the NHL `skater/summary` endpoint.
+///
+/// Mirrors `goalie_team_by_season` in `analytics.rs`: seasons split across
+/// multiple teams return the `"NHL"` sentinel, and empty lookups are not cached
+/// so a transient NHL API failure retries on the next request instead of
+/// blanking every season logo for a week.
+async fn skater_team_by_season(state: &AppState, pid: i64) -> BTreeMap<String, String> {
+    if let Some(v) = state.caches.skater_team_by_season.get(&pid) {
+        let mut out = BTreeMap::new();
+        if let Some(obj) = v.as_object() {
+            for (k, val) in obj {
+                out.insert(k.clone(), str_value(Some(val)));
+            }
+        }
+        return out;
+    }
+    let mut best: BTreeMap<String, i64> = BTreeMap::new();
+    let mut top: BTreeMap<String, String> = BTreeMap::new();
+    let mut teams_by_season: BTreeMap<String, HashSet<String>> = BTreeMap::new();
+    let mut multi_seasons: BTreeSet<String> = BTreeSet::new();
+    let cay = format!("(gameTypeId=2 or gameTypeId=3) and playerId={pid}");
+    let rows = stats_rest::summary_rows(&state.http, "skater", &cay)
+        .await
+        .unwrap_or_default();
+    for r in rows {
+        let season = str_value(r.get("seasonId"));
+        if season.is_empty() {
+            continue;
+        }
+        let raw = r
+            .get("teamAbbrev")
+            .or_else(|| r.get("teamAbbrevs"))
+            .or_else(|| r.get("currentTeamAbbrev"));
+        let mut vals: Vec<String> = Vec::new();
+        match raw {
+            Some(Value::Array(arr)) => {
+                for x in arr {
+                    let s = str_value(Some(x)).trim().to_uppercase();
+                    if !s.is_empty() {
+                        vals.push(s);
+                    }
+                }
+            }
+            Some(x) => {
+                let s = str_value(Some(x)).trim().to_uppercase();
+                if s.contains('/') || s.contains(',') {
+                    // Multi-team forms: "MTL/VGK" or the comma-joined "SJS,FLA"
+                    // the summary endpoint returns for mid-season trades.
+                    for part in s.split(|c| c == '/' || c == ',') {
+                        let t = part.trim();
+                        if !t.is_empty() {
+                            vals.push(t.to_string());
+                        }
+                    }
+                } else if !s.is_empty() {
+                    vals.push(s);
+                }
+            }
+            None => {}
+        }
+        if vals.is_empty() {
+            continue;
+        }
+        if vals.len() > 1 {
+            multi_seasons.insert(season.clone());
+        }
+        teams_by_season
+            .entry(season.clone())
+            .or_default()
+            .insert(vals[0].clone());
+        let gp = safe_int(r.get("gamesPlayed")).unwrap_or(0);
+        let weight = gp * 100_000;
+        match best.get(&season) {
+            Some(w) if *w >= weight => {}
+            _ => {
+                best.insert(season.clone(), weight);
+                top.insert(season, vals[0].clone());
+            }
+        }
+    }
+    let mut result: BTreeMap<String, String> = BTreeMap::new();
+    for (s, t) in top {
+        let is_multi = multi_seasons.contains(&s)
+            || teams_by_season.get(&s).map(|set| set.len() >= 2).unwrap_or(false);
+        result.insert(s, if is_multi { "NHL".to_string() } else { t });
+    }
+    if !result.is_empty() {
+        state.caches.skater_team_by_season.insert(pid, json!(result));
+    }
+    result
 }

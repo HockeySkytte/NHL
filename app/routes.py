@@ -11927,6 +11927,8 @@ def api_goalies_series():
                 rows = data.get('data') if isinstance(data, dict) else None
                 if isinstance(rows, list) and rows:
                     best: Dict[int, Tuple[int, str]] = {}
+                    teams_by_sid: Dict[int, set] = {}
+                    multi_sids: set = set()
                     for row in rows:
                         if not isinstance(row, dict):
                             continue
@@ -11938,14 +11940,29 @@ def api_goalies_series():
 
                         team_raw = row.get('teamAbbrev') or row.get('teamAbbrevs') or row.get('currentTeamAbbrev') or ''
                         team_abbrev = ''
-                        if isinstance(team_raw, list) and team_raw:
-                            team_abbrev = str(team_raw[0] or '').strip().upper()
+                        if isinstance(team_raw, (list, tuple, set)):
+                            vals = [str(x or '').strip().upper() for x in team_raw]
+                            vals = [x for x in vals if x]
+                            if len(vals) > 1:
+                                multi_sids.add(season_id_i)
+                            if vals:
+                                team_abbrev = vals[0]
                         else:
-                            team_abbrev = str(team_raw or '').strip().upper()
-                        if '/' in team_abbrev:
-                            team_abbrev = team_abbrev.split('/')[0].strip().upper()
+                            s = str(team_raw or '').strip().upper()
+                            if '/' in s or ',' in s:
+                                # Multi-team forms: "MTL/VGK" or the comma-joined
+                                # "SJS,FLA" the summary endpoint returns for
+                                # mid-season trades.
+                                parts = [p.strip().upper() for p in re.split(r'[/,]', s) if p.strip()]
+                                if len(parts) > 1:
+                                    multi_sids.add(season_id_i)
+                                if parts:
+                                    team_abbrev = parts[0]
+                            elif s:
+                                team_abbrev = s
                         if not team_abbrev:
                             continue
+                        teams_by_sid.setdefault(season_id_i, set()).add(team_abbrev)
 
                         gp = row.get('gamesPlayed') or row.get('games') or 0
                         toi = row.get('timeOnIce') or row.get('toi') or 0
@@ -11959,14 +11976,21 @@ def api_goalies_series():
                         if not prev or weight > int(prev[0]):
                             best[season_id_i] = (int(weight), team_abbrev)
 
-                    team_map: Dict[int, str] = {sid: t for sid, (_, t) in best.items()}
+                    # Seasons split across multiple teams get the NHL shield instead of
+                    # one arbitrary team logo.
+                    team_map: Dict[int, str] = {
+                        sid_: ('NHL' if (sid_ in multi_sids or len(teams_by_sid.get(sid_) or ()) >= 2) else abbr_)
+                        for sid_, (_, abbr_) in best.items()
+                    }
                     _cache_set_multi_bounded(_GOALIES_TEAM_BY_SEASON_MAP_CACHE, ck, team_map, ttl_s=ttl_s, max_items=max_items)
                     return team_map
         except Exception:
             pass
 
+        # A failed/empty lookup is cached only briefly so a transient NHL API hiccup
+        # does not blank every season logo for a full week.
         try:
-            _cache_set_multi_bounded(_GOALIES_TEAM_BY_SEASON_MAP_CACHE, ck, {}, ttl_s=ttl_s, max_items=max_items)
+            _cache_set_multi_bounded(_GOALIES_TEAM_BY_SEASON_MAP_CACHE, ck, {}, ttl_s=300, max_items=max_items)
         except Exception:
             pass
         return {}
@@ -14250,6 +14274,7 @@ def _skater_team_by_season_map(pid_i: int) -> Dict[int, str]:
         return cached[1] or {}
 
     team_map: Dict[int, str] = {}
+    fetch_ok = False
     try:
         url = 'https://api.nhle.com/stats/rest/en/skater/summary'
         r = requests.get(
@@ -14260,40 +14285,72 @@ def _skater_team_by_season_map(pid_i: int) -> Dict[int, str]:
             allow_redirects=True,
         )
         if r.status_code == 200:
+            fetch_ok = True
             data = r.json() if r.content else {}
             rows = data.get('data') if isinstance(data, dict) else None
             if isinstance(rows, list) and rows:
                 best: Dict[int, Tuple[int, str]] = {}
+                teams_by_sid: Dict[int, set] = {}
+                multi_sids: set = set()
                 for row in rows:
                     if not isinstance(row, dict):
                         continue
                     sid = _safe_int(row.get('seasonId'))
                     if not sid:
                         continue
+                    sid_i = int(sid)
                     team_raw = row.get('teamAbbrev') or row.get('teamAbbrevs') or row.get('currentTeamAbbrev') or ''
                     team_abbrev = ''
-                    if isinstance(team_raw, list) and team_raw:
-                        team_abbrev = str(team_raw[0] or '').strip().upper()
+                    if isinstance(team_raw, (list, tuple, set)):
+                        vals = [str(x or '').strip().upper() for x in team_raw]
+                        vals = [x for x in vals if x]
+                        if len(vals) > 1:
+                            multi_sids.add(sid_i)
+                        if vals:
+                            team_abbrev = vals[0]
                     else:
-                        team_abbrev = str(team_raw or '').strip().upper()
-                    if '/' in team_abbrev:
-                        team_abbrev = team_abbrev.split('/')[0].strip().upper()
+                        s = str(team_raw or '').strip().upper()
+                        if '/' in s or ',' in s:
+                            # Multi-team forms: "MTL/VGK" or the comma-joined
+                            # "SJS,FLA" the summary endpoint returns for
+                            # mid-season trades.
+                            parts = [p.strip().upper() for p in re.split(r'[/,]', s) if p.strip()]
+                            if len(parts) > 1:
+                                multi_sids.add(sid_i)
+                            if parts:
+                                team_abbrev = parts[0]
+                        elif s:
+                            team_abbrev = s
                     if not team_abbrev:
                         continue
+                    teams_by_sid.setdefault(sid_i, set()).add(team_abbrev)
                     gp = _safe_int(row.get('gamesPlayed') or row.get('games') or 0) or 0
                     try:
                         weight = int(gp) * 100000
                     except Exception:
                         weight = 0
-                    prev = best.get(int(sid))
+                    prev = best.get(sid_i)
                     if not prev or weight > int(prev[0]):
-                        best[int(sid)] = (weight, team_abbrev)
-                team_map = {sid: t for sid, (_, t) in best.items()}
+                        best[sid_i] = (weight, team_abbrev)
+                # Seasons split across multiple teams get the NHL shield instead of
+                # one arbitrary team logo.
+                team_map = {
+                    sid: ('NHL' if (sid in multi_sids or len(teams_by_sid.get(sid) or ()) >= 2) else abbr)
+                    for sid, (_, abbr) in best.items()
+                }
     except Exception:
         team_map = {}
 
+    # A failed/empty lookup is cached only briefly so a transient NHL API hiccup
+    # does not blank every season logo for a full week.
     try:
-        _cache_set_multi_bounded(_SKATER_TEAM_BY_SEASON_MAP_CACHE, int(pid_i), team_map, ttl_s=ttl_s, max_items=max_items)
+        _cache_set_multi_bounded(
+            _SKATER_TEAM_BY_SEASON_MAP_CACHE,
+            int(pid_i),
+            team_map,
+            ttl_s=(ttl_s if (fetch_ok and team_map) else 300),
+            max_items=max_items,
+        )
     except Exception:
         pass
     return team_map
@@ -14721,6 +14778,22 @@ def api_rapm_career():
         team_map = {}
 
     seasons = sorted(series.keys())
+
+    def _view_has_data(q: Dict[str, Any]) -> bool:
+        """True when this season carries a value for the requested chart view.
+
+        Seasons below the minutes thresholds (or missing entirely from context)
+        produce all-null points, which would render as empty gaps in the career
+        chart, so they are filtered out here.
+        """
+        if strength == 'All':
+            return q.get('all_total') is not None
+        if strength == 'PP':
+            return q.get('pp_off') is not None
+        if strength == 'SH':
+            return q.get('sh_def') is not None
+        return any(q.get(k) is not None for k in ('5v5_off', '5v5_def', '5v5_diff'))
+
     points: List[Dict[str, Any]] = []
     for season_int in seasons:
         row = series.get(season_int) or {'Season': season_int}
@@ -14789,6 +14862,8 @@ def api_rapm_career():
                 p['all_total_z'] = _z(season_int, 'all_total', total_all)
         except Exception:
             pass
+        if not _view_has_data(p):
+            continue
         points.append(p)
 
     # Global scale across seasons (league min/max per season, then overall min/max)
