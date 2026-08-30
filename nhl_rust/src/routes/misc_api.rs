@@ -31,6 +31,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/player/{player_id}/landing", get(api_player_landing))
         .route("/api/game/{game_id}/boxscore", get(api_game_boxscore))
         .route("/api/game/{game_id}/right-rail", get(api_game_right_rail))
+        .route("/api/game-data", get(api_game_data))
         .route("/api/team-logo/{team_abbrev}", get(api_team_logo_svg))
         .route("/api/player-headshot/{player_id}", get(api_player_headshot_png))
         .route("/api/diag/models", get(api_diag_models))
@@ -583,6 +584,106 @@ async fn api_game_right_rail(
     }
 }
 
+/// `GET /api/game-data` — per-game rows from the Supabase `game_data` table.
+///
+/// Query parameters:
+/// - `season`    (required) 8-digit season ID, e.g. 20242025
+/// - `player_id` (required) NHL player ID
+/// - `game_id`   (optional) single game ID; omit it to get all games the
+///   player appeared in for the season.
+///
+/// Semantics mirrored from the Flask `api_game_data` handler: validation errors
+/// are 400, an unavailable Supabase source is 503 (never a silent fallback),
+/// and an empty result set is an honest `count: 0` / `games: []`.
+async fn api_game_data(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let parsed = match parse_game_data_query(&params) {
+        Ok(q) => q,
+        Err(msg) => return json_err(StatusCode::BAD_REQUEST, json!({ "error": msg })),
+    };
+    let Some(sb) = state.sb.as_ref() else {
+        return json_err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({ "error": "data source unavailable" }),
+        );
+    };
+    let mut filters = BTreeMap::new();
+    filters.insert("season".to_string(), format!("eq.{}", parsed.season));
+    filters.insert("player_id".to_string(), format!("eq.{}", parsed.player_id));
+    if let Some(game_id) = parsed.game_id {
+        filters.insert("game_id".to_string(), format!("eq.{game_id}"));
+    }
+    let Some(rows) = sb
+        .read("game_data", "*", Some(&filters), None, Some("game_id"), 0)
+        .await
+    else {
+        return json_err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({ "error": "data source unavailable" }),
+        );
+    };
+    json_no_store(game_data_payload(parsed.season, parsed.player_id, parsed.game_id, rows))
+}
+
+#[derive(Debug, PartialEq)]
+struct GameDataQuery {
+    season: i64,
+    player_id: i64,
+    game_id: Option<i64>,
+}
+
+fn parse_game_data_query(
+    params: &HashMap<String, String>,
+) -> Result<GameDataQuery, &'static str> {
+    let season_raw = params.get("season").map(String::as_str).unwrap_or("").trim();
+    if season_raw.is_empty() {
+        return Err("season is required");
+    }
+    let season_i = parse_id_param(season_raw).filter(|v| *v > 0).ok_or("invalid season")?;
+    let player_raw = params
+        .get("player_id")
+        .map(String::as_str)
+        .unwrap_or("")
+        .trim();
+    if player_raw.is_empty() {
+        return Err("player_id is required");
+    }
+    let player_i = parse_id_param(player_raw)
+        .filter(|v| *v > 0)
+        .ok_or("invalid player_id")?;
+    let game_raw = params.get("game_id").map(String::as_str).unwrap_or("").trim();
+    let game_i = if game_raw.is_empty() {
+        None
+    } else {
+        Some(parse_id_param(game_raw).filter(|v| *v > 0).ok_or("invalid game_id")?)
+    };
+    Ok(GameDataQuery {
+        season: season_i,
+        player_id: player_i,
+        game_id: game_i,
+    })
+}
+
+/// `_safe_int`-style: accepts ints and float-representing strings ("8478402",
+/// "8478402.0"), returns None for empty/invalid.
+fn parse_id_param(raw: &str) -> Option<i64> {
+    raw.parse::<i64>()
+        .ok()
+        .or_else(|| raw.parse::<f64>().ok().map(|f| f as i64))
+}
+
+fn game_data_payload(season: i64, player_id: i64, game_id: Option<i64>, rows: Vec<Value>) -> Value {
+    json!({
+        "season": season,
+        "player_id": player_id,
+        "game_id": game_id,
+        "count": rows.len(),
+        "games": rows,
+    })
+}
+
 fn params_to_map(params: &HashMap<String, String>) -> serde_json::Map<String, Value> {
     let mut out = serde_json::Map::new();
     for (k, v) in params {
@@ -1083,4 +1184,217 @@ async fn players_endpoint(state: AppState, is_goalie: bool, params: HashMap<Stri
     // player slicer's loadPlayers).
     cache.insert(cache_key, json!({ "players": players }));
     json_no_store(json!({ "players": players }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    use crate::config::Config;
+    use crate::data::about::AboutData;
+    use crate::state::Caches;
+    use crate::supabase::read::SbClient;
+    use crate::web::templates::TemplateEnv;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn game_data_query_requires_season() {
+        let mut p = HashMap::new();
+        p.insert("player_id".to_string(), "8478402".to_string());
+        assert_eq!(parse_game_data_query(&p), Err("season is required"));
+    }
+
+    #[test]
+    fn game_data_query_requires_player_id() {
+        let mut p = HashMap::new();
+        p.insert("season".to_string(), "20242025".to_string());
+        assert_eq!(parse_game_data_query(&p), Err("player_id is required"));
+    }
+
+    #[test]
+    fn game_data_query_invalid_values() {
+        let mut p = HashMap::new();
+        p.insert("season".to_string(), "abc".to_string());
+        p.insert("player_id".to_string(), "8478402".to_string());
+        assert_eq!(parse_game_data_query(&p), Err("invalid season"));
+
+        p.insert("season".to_string(), "20242025".to_string());
+        p.insert("player_id".to_string(), "-1".to_string());
+        assert_eq!(parse_game_data_query(&p), Err("invalid player_id"));
+
+        p.insert("player_id".to_string(), "8478402".to_string());
+        p.insert("game_id".to_string(), "not-a-game".to_string());
+        assert_eq!(parse_game_data_query(&p), Err("invalid game_id"));
+    }
+
+    #[test]
+    fn game_data_query_happy_path() {
+        let mut p = HashMap::new();
+        p.insert("season".to_string(), "20242025".to_string());
+        p.insert("player_id".to_string(), "8478402".to_string());
+        let q = parse_game_data_query(&p).unwrap();
+        assert_eq!(
+            q,
+            GameDataQuery {
+                season: 20242025,
+                player_id: 8478402,
+                game_id: None,
+            }
+        );
+
+        p.insert("game_id".to_string(), "2024020001".to_string());
+        let q = parse_game_data_query(&p).unwrap();
+        assert_eq!(q.game_id, Some(2024020001));
+    }
+
+    #[test]
+    fn game_data_payload_shape() {
+        let rows = vec![json!({
+            "game_id": 2024020001,
+            "season": 20242025,
+            "player_id": 8478402,
+        })];
+        let payload = game_data_payload(20242025, 8478402, None, rows);
+        assert_eq!(payload["season"], 20242025);
+        assert_eq!(payload["player_id"], 8478402);
+        assert!(payload["game_id"].is_null());
+        assert_eq!(payload["count"], 1);
+        assert_eq!(payload["games"].as_array().unwrap().len(), 1);
+
+        let payload = game_data_payload(20242025, 8478402, Some(2024020001), vec![]);
+        assert_eq!(payload["count"], 0);
+        assert_eq!(payload["game_id"], 2024020001);
+        assert_eq!(payload["games"].as_array().unwrap().len(), 0);
+    }
+
+    fn test_state(sb: Option<SbClient>) -> AppState {
+        let cfg = Arc::new(Config::from_env());
+        AppState {
+            cfg: cfg.clone(),
+            http: reqwest::Client::new(),
+            templates: TemplateEnv::new(&cfg).unwrap(),
+            sb,
+            caches: Arc::new(Caches::new()),
+            teams: Arc::new(Vec::new()),
+            about: Arc::new(AboutData::empty()),
+            last_dates: Arc::new(BTreeMap::new()),
+            jobs: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        }
+    }
+
+    async fn params(s: &[(&str, &str)]) -> HashMap<String, String> {
+        s.iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn game_data_handler_returns_rows() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/game_data"))
+            .and(query_param("season", "eq.20242025"))
+            .and(query_param("player_id", "eq.8478402"))
+            .and(query_param("order", "game_id"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                {"game_id": 2024020001, "season": 20242025, "player_id": 8478402, "toi_all": 18.5},
+                {"game_id": 2024020002, "season": 20242025, "player_id": 8478402, "toi_all": 15.0},
+            ])))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let state = test_state(Some(SbClient::new(
+            reqwest::Client::new(),
+            server.uri(),
+            "svc".to_string(),
+        )));
+        let resp = api_game_data(
+            State(state),
+            Query(params(&[("season", "20242025"), ("player_id", "8478402")]).await),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).and_then(|v| v.to_str().ok()),
+            Some("no-store")
+        );
+        let (_, body) = resp.into_parts();
+        let bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap();
+        let payload: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(payload["count"], 2);
+        assert_eq!(payload["games"][0]["game_id"], 2024020001);
+    }
+
+    #[tokio::test]
+    async fn game_data_handler_filters_by_game_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/game_data"))
+            .and(query_param("season", "eq.20242025"))
+            .and(query_param("player_id", "eq.8478402"))
+            .and(query_param("game_id", "eq.2024020001"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let state = test_state(Some(SbClient::new(
+            reqwest::Client::new(),
+            server.uri(),
+            "svc".to_string(),
+        )));
+        let resp = api_game_data(
+            State(state),
+            Query(
+                params(&[
+                    ("season", "20242025"),
+                    ("player_id", "8478402"),
+                    ("game_id", "2024020001"),
+                ])
+                .await,
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let (_, body) = resp.into_parts();
+        let bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap();
+        let payload: Value = serde_json::from_slice(&bytes).unwrap();
+        // Honest empty state: no re-query with relaxed filters.
+        assert_eq!(payload["count"], 0);
+        assert_eq!(payload["game_id"], 2024020001);
+        assert_eq!(payload["games"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn game_data_handler_validation_errors() {
+        let state = test_state(None);
+        let resp = api_game_data(State(state), Query(params(&[("player_id", "8478402")]).await))
+            .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn game_data_handler_source_unavailable() {
+        // sb configured but Supabase down → 503, never a silent empty result.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let state = test_state(Some(SbClient::new(
+            reqwest::Client::new(),
+            server.uri(),
+            "svc".to_string(),
+        )));
+        let resp = api_game_data(
+            State(state),
+            Query(params(&[("season", "20242025"), ("player_id", "8478402")]).await),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
 }
