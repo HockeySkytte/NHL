@@ -19595,6 +19595,62 @@ def api_game_boxscore(game_id: int):
     return resp_json
 
 
+@main_bp.route('/api/game-data')
+def api_game_data():
+    """Return per-game rows from the `game_data` table.
+
+    Query parameters:
+        season    (required) 8-digit season ID, e.g. 20242025
+        player_id (required) NHL player ID
+        game_id   (optional) single game ID; omit it to get all games
+                  the player appeared in for the season.
+    """
+    season_raw = str(request.args.get('season') or '').strip()
+    player_raw = str(request.args.get('player_id') or '').strip()
+    game_raw = str(request.args.get('game_id') or '').strip()
+
+    if not season_raw:
+        return jsonify({'error': 'season is required'}), 400
+    season_i = _safe_int(season_raw)
+    if season_i is None or season_i <= 0:
+        return jsonify({'error': 'invalid season'}), 400
+    if not player_raw:
+        return jsonify({'error': 'player_id is required'}), 400
+    player_i = _safe_int(player_raw)
+    if player_i is None or player_i <= 0:
+        return jsonify({'error': 'invalid player_id'}), 400
+    game_i = None
+    if game_raw:
+        game_i = _safe_int(game_raw)
+        if game_i is None or game_i <= 0:
+            return jsonify({'error': 'invalid game_id'}), 400
+
+    filters: Dict[str, str] = {
+        'season': f'eq.{season_i}',
+        'player_id': f'eq.{player_i}',
+    }
+    if game_i is not None:
+        filters['game_id'] = f'eq.{game_i}'
+
+    rows = _sb_read('game_data', columns='*', filters=filters, order='game_id')
+    if rows is None:
+        return jsonify({'error': 'data source unavailable'}), 503
+
+    payload = {
+        'season': int(season_i),
+        'player_id': int(player_i),
+        'game_id': int(game_i) if game_i is not None else None,
+        'count': len(rows),
+        'games': rows,
+    }
+    j = jsonify(payload)
+    try:
+        j.headers['Cache-Control'] = 'no-store'
+    except Exception:
+        pass
+    return j
+
+
 @main_bp.route('/api/game/<int:game_id>/right-rail')
 def api_game_right_rail(game_id: int):
     """Proxy NHL right-rail endpoint for a game to avoid browser CORS."""
