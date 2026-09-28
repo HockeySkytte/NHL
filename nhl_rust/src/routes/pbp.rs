@@ -356,10 +356,43 @@ async fn api_game_pbp(
         }
     }
 
+    let (mapped, game_state) = match build_plays(&state, game_id, &xg_scope, lite_mode).await {
+        Ok(v) => v,
+        Err(_) => return json_err(StatusCode::BAD_GATEWAY, json!({"error": "Fetch failed"})),
+    };
+
+    let out_obj = json!({
+        "gameId": json!(game_id),
+        "plays": mapped,
+        "gameState": game_state,
+    });
+    state.caches.pbp.insert(cache_key, out_obj.clone());
+    let mut js = out_obj.clone();
+    if let Value::Object(o) = &mut js {
+        o.insert("_cachedAt".to_string(), json!(now_epoch()));
+    }
+    disk_cache::write_json(&disk_path, &js).ok();
+    if force {
+        return json_no_store(out_obj);
+    }
+    (StatusCode::OK, Json(out_obj)).into_response()
+}
+
+/// Core play-by-play builder: fetch gamecenter PBP, orient, normalize into
+/// wide rows, and compute xG. Returns `(plays, game_state)` for the caller to
+/// wrap/respond. Shared by the HTTP handler and, in-process, by the Manager
+/// scoring engine (which needs the on-ice fields, so it passes
+/// `lite_mode=false`).
+pub(crate) async fn build_plays(
+    state: &AppState,
+    game_id: i64,
+    xg_scope: &str,
+    lite_mode: bool,
+) -> Result<(Vec<Value>, String), ()> {
     let url = format!("{API_WEB}/v1/gamecenter/{game_id}/play-by-play");
     let data = match get_json(&state.http, &url, 25).await {
         Ok(d) => d,
-        Err(_) => return json_err(StatusCode::BAD_GATEWAY, json!({"error": "Fetch failed"})),
+        Err(_) => return Err(()),
     };
     let game_state = str_value(data.get("gameState").or_else(|| data.get("gameStatus"))).to_uppercase();
 
@@ -1057,24 +1090,7 @@ async fn api_game_pbp(
         }
     }
 
-    let out_obj = json!({
-        "gameId": data.get("id"),
-        "plays": mapped,
-        "gameState": game_state,
-    });
-    state
-        .caches
-        .pbp
-        .insert(cache_key, out_obj.clone());
-    let mut js = out_obj.clone();
-    if let Value::Object(o) = &mut js {
-        o.insert("_cachedAt".to_string(), json!(now_epoch()));
-    }
-    disk_cache::write_json(&disk_path, &js).ok();
-    if force {
-        return json_no_store(out_obj);
-    }
-    (StatusCode::OK, Json(out_obj)).into_response()
+    Ok((mapped, game_state))
 }
 
 fn round_to(x: f64, places: i32) -> f64 {

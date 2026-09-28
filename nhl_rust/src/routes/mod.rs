@@ -4,6 +4,7 @@ pub mod analytics;
 pub mod auth;
 pub mod community;
 pub mod line_tool;
+pub mod manager;
 pub mod misc_api;
 pub mod pages;
 pub mod pbp;
@@ -41,6 +42,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(analytics::router())
         .merge(rapm_api::router())
         .merge(line_tool::router())
+        .merge(manager::router())
         .merge(shooting::router())
         .merge(pbp::router())
         .merge(projections_api::router())

@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/manager.css?v=2" />
+<script src="/static/manager-theme.js?v=1"></script>
+<script id="mgr-teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+{% endblock %}
+
+{% block filters_content %}
+<div class="hqj-section">
+  <div class="hqj-header">Manager Game</div>
+  <nav class="hqj-nav" aria-label="Manager game">
+    <a class="hqj-link" href="/manager">
+      <span class="hqj-dot">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="12" cy="16.5" rx="7" ry="3"></ellipse>
+          <path d="M5 16.5V8c0 1.66 3.13 3 7 3s7-1.34 7-3v8.5"></path>
+        </svg>
+      </span>
+      <span class="hqj-copy"><strong>Manager home</strong><small>My leagues</small></span>
+    </a>
+    <a class="hqj-link" href="/manager/{{ manager_league_id }}">
+      <span class="hqj-copy"><strong>League</strong><small>Draft · standings · schedule</small></span>
+    </a>
+    <a class="hqj-link active" href="/manager/{{ manager_league_id }}/lineup">
+      <span class="hqj-copy"><strong>Lineup</strong><small>Active 12 F · 6 D · 2 G</small></span>
+    </a>
+    <a class="hqj-link" href="/manager/{{ manager_league_id }}/trades">
+      <span class="hqj-copy"><strong>Trades</strong><small>Offers with other managers</small></span>
+    </a>
+  </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="mgr-wrap narrow">
+  <div class="mgr-hero">
+    <div class="mgr-hero-top">
+      <span id="lp-hero-logo" class="mgr-hero-logo" hidden></span>
+      <div class="mgr-hero-main">
+        <div class="mgr-kicker">Manager Game · Lineup</div>
+        <h1 id="lp-title">Lineup</h1>
+        <p class="sub" id="lp-sub">Loading…</p>
+        <div class="mgr-chips">
+          <span class="chip" id="lp-mode"></span>
+          <span class="chip" id="lp-team"></span>
+          <span class="chip accent" id="lp-round"></span>
+          <span class="chip danger" id="lp-locked-chip" hidden>Locked</span>
+        </div>
+        <div class="lp-counts" id="lp-counts"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mgr-grid2">
+    <div class="mgr-panel">
+      <div class="mgr-panel-hd">
+        <h2>Active lineup</h2>
+        <div class="aside"><span class="chip outline">Click a slot to clear it</span></div>
+      </div>
+      <div id="lp-lineup"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="mgr-panel">
+      <div class="mgr-panel-hd">
+        <h2>Roster pool</h2>
+      </div>
+      <p class="mgr-sub">Click a player to fill the next empty slot of their position.</p>
+      <div id="lp-pool"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="mgr-panel">
+    <div class="lp-lock" id="lp-lock"></div>
+    <div class="lp-actions">
+      <span class="field-err" id="lp-err"></span>
+      <a class="btn ghost" href="/manager/{{ manager_league_id }}">Back to league</a>
+      <button class="btn primary" id="lp-save">Save lineup</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const CSRF_TOKEN = {{ csrf_token|tojson|safe }};
+  const AUTH_ENABLED = {{ auth_enabled|tojson|safe }};
+  const AUTH_USER = {{ auth_user|tojson|safe }};
+  const LEAGUE_ID = {{ manager_league_id|tojson|safe }};
+  const TEAMS = {{ teams|tojson|safe }};
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const setErr = (msg, ok) => { const el = $('lp-err'); el.textContent = msg || ''; el.classList.toggle('ok', !!ok); };
+  const hs = pid => `/api/player-headshot/${pid}.png`;
+  const teamInfo = {};
+  (TEAMS || []).forEach(t => { teamInfo[String(t.Team).toUpperCase()] = { name: t.Name || '', logo: t.Logo || '' }; });
+  const teamName = a => (teamInfo[a] && teamInfo[a].name ? teamInfo[a].name : a);
+  const teamLogo = a => (teamInfo[a] && teamInfo[a].logo ? teamInfo[a].logo : '');
+  const logoTag = (a, size) => {
+    const src = teamLogo(a);
+    return src
+      ? `<img class="tlogo" style="width:${size || 20}px;height:${size || 20}px" src="${esc(src)}" alt="${esc(a)}" loading="lazy">`
+      : `<span class="tlogo miss" style="width:${size || 20}px;height:${size || 20}px">${esc(a.slice(0,1))}</span>`;
+  };
+
+  const F_SLOTS = Array.from({length: 12}, (_, i) => 'F' + (i + 1));
+  const D_SLOTS = Array.from({length: 6}, (_, i) => 'D' + (i + 1));
+  const G_SLOTS = ['G1', 'G2'];
+  const SLOT_POS = {};
+  F_SLOTS.forEach(s => SLOT_POS[s] = 'F');
+  D_SLOTS.forEach(s => SLOT_POS[s] = 'D');
+  G_SLOTS.forEach(s => SLOT_POS[s] = 'G');
+
+  let team = null, round = 1, pool = { forwards: [], defense: [], goalies: [] }, locked = false, status = '';
+  // slots: { F1: {pid, name, pos}, ... }
+  const slots = {};
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-csrf-token': CSRF_TOKEN },
+      body: JSON.stringify(body || {}),
+    }).then(async r => {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'request_failed_' + r.status);
+      return d;
+    });
+  }
+
+  function assignedPid(pid) {
+    return Object.values(slots).some(v => v && v.pid === pid);
+  }
+
+  async function load() {
+    setErr('');
+    try {
+      const detail = await fetch(`/api/manager/leagues/${LEAGUE_ID}`).then(r => r.json());
+      status = detail.status || '';
+      $('lp-mode').textContent = detail.mode === 'draft' ? 'Draft' : 'True rosters';
+      $('lp-title').textContent = detail.name || 'Lineup';
+      $('lp-sub').textContent = `Season ${detail.season}`;
+      const my = (detail.teams || []).find(t => t.user_id === (AUTH_USER && AUTH_USER.user_id));
+      if (!my) {
+        $('lp-sub').textContent = 'You are not a member of this league.';
+        $('lp-lineup').innerHTML = '<div class="empty"><a href="/login?next=/manager/' + encodeURIComponent(LEAGUE_ID) + '/lineup">Log in</a> or join to set a lineup.</div>';
+        $('lp-save').disabled = true;
+        return;
+      }
+      team = my.team_abbrev;
+      if (window.mgrApplyTeamTheme) window.mgrApplyTeamTheme(team);
+      const heroLogo = $('lp-hero-logo');
+      const heroSrc = teamLogo(team);
+      if (heroLogo && heroSrc) { heroLogo.innerHTML = `<img style="width:100%;height:100%;object-fit:contain" src="${esc(heroSrc)}" alt="${esc(team)}">`; heroLogo.hidden = false; }
+      $('lp-team').innerHTML = `${logoTag(my.team_abbrev, 18)} ${esc(teamName(my.team_abbrev))} (${esc(my.team_abbrev)})`;
+
+      // Current round from the rounds endpoint.
+      const rounds = await fetch(`/api/manager/leagues/${LEAGUE_ID}/rounds`).then(r => r.json());
+      const tr = (rounds.teams || []).find(t => t.team_abbrev === team);
+      round = tr ? (tr.next_round || 1) : 1;
+      $('lp-round').textContent = `Round ${round}`;
+
+      // Roster pool first: it doubles as the pid → name map for saved slots
+      // (the lineup API may return empty names).
+      const roster = await fetch(`/api/manager/leagues/${LEAGUE_ID}/roster?team=${encodeURIComponent(team)}`).then(r => r.json());
+      pool = { forwards: roster.forwards || [], defense: roster.defense || [], goalies: roster.goalies || [] };
+
+      // Current lineup + lock.
+      const lu = await fetch(`/api/manager/leagues/${LEAGUE_ID}/lineup?team=${encodeURIComponent(team)}&round=${round}`).then(r => r.json());
+      locked = !!lu.locked;
+      $('lp-locked-chip').hidden = !locked;
+      const luSlots = lu.slots || {};
+      for (const s of [...F_SLOTS, ...D_SLOTS, ...G_SLOTS]) {
+        const v = luSlots[s];
+        const pid = v && v.player_id ? parseInt(v.player_id, 10) : 0;
+        if (pid > 0) slots[s] = { pid: pid, name: v.name || '', pos: SLOT_POS[s] };
+      }
+      if (locked) {
+        $('lp-lock').classList.add('show');
+        $('lp-lock').innerHTML = '<div class="banner danger">This round has already started (the game is live/final), so your lineup is <b>locked</b>. It unlocks after the round.</div>';
+      } else {
+        $('lp-lock').classList.remove('show');
+        $('lp-lock').innerHTML = '';
+      }
+
+      renderPool();
+      renderLineup();
+    } catch (e) {
+      setErr(e.message || 'Failed to load.');
+    }
+  }
+
+  function slotName(v) {
+    if (v.name) return v.name;
+    const p = [...pool.forwards, ...pool.defense, ...pool.goalies].find(x => x.player_id === v.pid);
+    return p ? p.name : '#' + v.pid;
+  }
+
+  function renderLineup() {
+    const group = (label, slotList, g2) => {
+      const rows = slotList.map(s => {
+        const v = slots[s];
+        const name = v ? slotName(v) : 'Empty — pick from the pool';
+        const empty = !v ? ' empty' : '';
+        const g2cls = (g2 && s === 'G2') ? ' goalie-g2' : '';
+        const pct = s === 'G2' ? ' <span class="pct">50%</span>' : s === 'G1' ? ' <span class="pct">100%</span>' : '';
+        const pic = v
+          ? `<img class="pic" src="${hs(v.pid)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`
+          : `<span class="pic empty"></span>`;
+        return `<div class="lp-slot${empty}${g2cls}" data-slot="${s}">
+          <span class="lp-slotlabel">${s}${pct}</span>
+          ${pic}
+          <span class="lp-pname">${esc(name)}</span>
+          <span class="lp-remove">${v ? 'Clear ✕' : ''}</span>
+        </div>`;
+      }).join('');
+      return `<div class="lp-group"><div class="sec-label">${label}</div>${rows}</div>`;
+    };
+    $('lp-lineup').innerHTML = group('Forwards', F_SLOTS)
+      + group('Defense', D_SLOTS)
+      + group('Goalies', G_SLOTS, true);
+
+    document.querySelectorAll('.lp-slot').forEach(el => {
+      el.addEventListener('click', () => {
+        if (locked) return;
+        const s = el.dataset.slot;
+        if (slots[s]) { delete slots[s]; renderLineup(); renderPool(); }
+      });
+    });
+    renderCounts();
+  }
+
+  function renderPool() {
+    const group = (label, arr, pos) => {
+      const rows = arr.map(p => {
+        const used = assignedPid(p.player_id);
+        if (used) return '';
+        return `<div class="lp-prow" data-pid="${p.player_id}" data-pos="${pos}">
+          <img class="pic" src="${hs(p.player_id)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+          <div class="grow">
+            <div class="name">${esc(p.name)}</div>
+            <div class="meta">${esc(teamName(p.team))}</div>
+          </div>
+          <span class="pos">${esc(p.position)}</span>
+          <span class="add">Add +</span>
+        </div>`;
+      }).join('');
+      return `<div class="lp-group"><div class="sec-label">${label} (${arr.length})</div>${rows || '<div class="empty compact">No players.</div>'}</div>`;
+    };
+    $('lp-pool').innerHTML = group('Forwards', pool.forwards, 'F')
+      + group('Defense', pool.defense, 'D')
+      + group('Goalies', pool.goalies, 'G');
+
+    document.querySelectorAll('.lp-prow').forEach(el => {
+      el.addEventListener('click', () => {
+        if (locked) return;
+        const pid = parseInt(el.dataset.pid, 10);
+        const pos = el.dataset.pos;
+        const slotList = pos === 'F' ? F_SLOTS : pos === 'D' ? D_SLOTS : G_SLOTS;
+        const slot = slotList.find(s => !slots[s]);
+        if (!slot) return; // group full
+        const p = [...pool.forwards, ...pool.defense, ...pool.goalies].find(x => x.player_id === pid);
+        if (!p) return;
+        slots[slot] = { pid: pid, name: p.name, pos: pos };
+        renderLineup();
+        renderPool();
+      });
+    });
+  }
+
+  function renderCounts() {
+    const n = pos => Object.values(slots).filter(v => v && v.pos === pos).length;
+    const f = n('F'), d = n('D'), g = n('G');
+    const ok = f >= 12 && d >= 6 && g >= 2;
+    $('lp-counts').innerHTML =
+      `<span class="count ${f >= 12 ? 'ok' : 'bad'}">Forwards <b>${f}/12</b></span>
+       <span class="count ${d >= 6 ? 'ok' : 'bad'}">Defense <b>${d}/6</b></span>
+       <span class="count ${g >= 2 ? 'ok' : 'bad'}">Goalies <b>${g}/2</b></span>
+       <span class="count ${ok ? 'ok' : ''}">Total <b>${f + d + g}/20</b></span>`;
+    $('lp-save').disabled = locked || !(f === 12 && d === 6 && g === 2);
+  }
+
+  $('lp-save').addEventListener('click', async () => {
+    setErr('');
+    if (locked) return;
+    const payload = {};
+    for (const s of [...F_SLOTS, ...D_SLOTS, ...G_SLOTS]) {
+      if (slots[s]) payload[s] = slots[s].pid;
+    }
+    try {
+      await postJson(`/api/manager/leagues/${LEAGUE_ID}/lineup`, { team: team, round: round, slots: payload });
+      setErr('Lineup saved.', true);
+    } catch (e) {
+      setErr(e.message);
+    }
+  });
+
+  if (!AUTH_ENABLED || !AUTH_USER) {
+    $('lp-sub').textContent = '';
+    $('lp-lineup').innerHTML = '<div class="empty"><a href="/login?next=/manager/' + encodeURIComponent(LEAGUE_ID) + '/lineup">Log in</a> to set a lineup.</div>';
+    $('lp-save').disabled = true;
+  } else {
+    load();
+  }
+})();
+</script>
+{% endblock %}

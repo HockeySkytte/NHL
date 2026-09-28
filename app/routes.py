@@ -18732,15 +18732,60 @@ def _load_lineups_all() -> Dict[str, Any]:
     return out
 
 
-def _merge_gp_est_from_json(out: Dict[str, Any]) -> None:
-    """Load gp_est/gp_est_note from app/static/lineups_all.json and merge into out dict.
-    
-    Keys on (team, playerId). Adds gp_est/gp_est_note to existing players.
-    Also appends EXT/scratch players from JSON that are missing from Supabase data,
-    ensuring complete rosters (12F/6D/2G + extras) even when Supabase is incomplete.
+# A static `lineups_all.json` is a *snapshot* produced by scripts/lineups.py +
+# scripts/estimate_gp.py. Supabase is the live source, so a snapshot must never
+# re-introduce players Supabase has already dropped (e.g. someone traded away
+# after the snapshot was committed and shipped in the deploy image).
+#
+# scripts/sync_lineups_to_supabase.py PATCHes every row and the `updated_at`
+# trigger stamps that *after* the snapshot was generated, so a snapshot from the
+# current pipeline run is legitimately a little older than the Supabase rows.
+# This window absorbs the scrape -> estimate -> sync cycle; anything older is a
+# stale bundle and may only contribute gp_est, never players.
+_JSON_SNAPSHOT_SYNC_TOLERANCE_SECONDS = 6 * 3600
+
+
+def _parse_iso_utc(value: Any) -> Optional[datetime]:
+    """Parse an ISO-8601 timestamp ('Z', explicit offset, or naive) as aware UTC."""
+    s = str(value or '').strip()
+    if not s:
+        return None
+    if s[-1] in ('Z', 'z'):
+        s = s[:-1] + '+00:00'
+    try:
+        dt = datetime.fromisoformat(s)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _json_snapshot_may_add_players(json_generated_at: Any, supabase_generated_at: Any) -> bool:
+    """True when the static snapshot is current enough to complete a team's pool.
+
+    Unknown/unparseable timestamps keep the historical behaviour, so a missing
+    timestamp can never silently empty a team's scratch pool.
+    """
+    json_dt = _parse_iso_utc(json_generated_at)
+    sb_dt = _parse_iso_utc(supabase_generated_at)
+    if json_dt is None or sb_dt is None:
+        return True
+    return (sb_dt - json_dt).total_seconds() <= _JSON_SNAPSHOT_SYNC_TOLERANCE_SECONDS
+
+
+def _merge_gp_est_from_json(out: Dict[str, Any], json_path: Optional[str] = None) -> None:
+    """Merge gp_est/gp_est_note from app/static/lineups_all.json into `out`.
+
+    Keys on (team, playerId):
+      * players already in Supabase always pick up a missing gp_est/gp_est_note;
+      * players present only in the snapshot are appended (EXT/scratches) so
+        rosters stay complete (12F/6D/2G + extras) - but only while the snapshot
+        is current, so an out-of-date bundle shipped in the deploy image cannot
+        inject players who have since left the team.
     """
     import json as _json_local
-    json_path = os.path.join(os.path.dirname(__file__), 'static', 'lineups_all.json')
+    json_path = json_path or os.path.join(os.path.dirname(__file__), 'static', 'lineups_all.json')
     try:
         if not os.path.exists(json_path):
             return
@@ -18758,6 +18803,10 @@ def _merge_gp_est_from_json(out: Dict[str, Any]) -> None:
         out_team = out.get(team_abbrev)
         if not out_team:
             continue
+        # A stale snapshot may still supply gp_est, but must not add players.
+        snapshot_may_add = _json_snapshot_may_add_players(
+            team_node.get('generated_at'), out_team.get('generated_at')
+        )
         for group_key in ('forwards', 'defense', 'goalies'):
             json_players = team_node.get(group_key, [])
             out_players = out_team.get(group_key, [])
@@ -18782,6 +18831,8 @@ def _merge_gp_est_from_json(out: Dict[str, Any]) -> None:
                         op['gp_est'] = jp['gp_est']
                     if 'gp_est_note' in jp and 'gp_est_note' not in op:
                         op['gp_est_note'] = jp['gp_est_note']
+            if not snapshot_may_add:
+                continue
             # Append players from JSON that are missing from Supabase (EXT/scratches)
             for jp in json_players:
                 pid = jp.get('playerId')

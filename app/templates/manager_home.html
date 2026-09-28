@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/manager.css?v=2" />
+<script src="/static/manager-theme.js?v=1"></script>
+<script id="mgr-teams-data" type="application/json">{{ teams|tojson|safe }}</script>
+{% endblock %}
+
+{% block filters_content %}
+<div class="hqj-section">
+  <div class="hqj-header">Manager Game</div>
+  <nav class="hqj-nav" aria-label="Manager game">
+    <a class="hqj-link active" href="/manager">
+      <span class="hqj-dot">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="12" cy="16.5" rx="7" ry="3"></ellipse>
+          <path d="M5 16.5V8c0 1.66 3.13 3 7 3s7-1.34 7-3v8.5"></path>
+        </svg>
+      </span>
+      <span class="hqj-copy"><strong>Manager home</strong><small>My leagues · create · join</small></span>
+    </a>
+  </nav>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="mgr-wrap narrow">
+  <div class="mgr-hero">
+    <div class="mgr-hero-top">
+      <div class="mgr-hero-main">
+        <div class="mgr-kicker">Manager Game</div>
+        <h1>Run your own NHL league</h1>
+        <p class="sub">
+          Claim a franchise and manage it on the <b>real 2026/27 NHL schedule</b> — take the true roster or draft
+          your own, set a lineup for every round, trade with other managers, and finish on top of the standings.
+        </p>
+        <div class="mgr-chips">
+          <span class="chip outline">2026/27 season</span>
+          <span class="chip outline">84 rounds</span>
+          <span class="chip outline">Free with account</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mgr-panel">
+    <div class="mgr-panel-hd">
+      <h2>My leagues</h2>
+      <div class="aside"><span class="chip outline">Unclaimed franchises are CPU-controlled</span></div>
+    </div>
+    <div id="mgr-my-leagues"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div class="mgr-grid2">
+    <div class="mgr-panel">
+      <div class="mgr-panel-hd">
+        <h2>Create a league</h2>
+        <span class="chip">You are the commissioner</span>
+      </div>
+      <p class="mgr-sub">Pick a mode and claim your franchise. Other managers join with your league code; every empty franchise is run by the computer.</p>
+      <div class="form-grid">
+        <label class="field">
+          <span>League name</span>
+          <input id="mgr-c-name" type="text" maxlength="80" placeholder="e.g. Friday Night Managers" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Mode</span>
+          <select id="mgr-c-mode"></select>
+        </label>
+        <label class="field">
+          <span>Your franchise</span>
+          <select id="mgr-c-franchise"></select>
+        </label>
+        <div class="form-actions">
+          <span class="field-err" id="mgr-c-err"></span>
+          <button class="btn primary" id="mgr-c-btn">Create league</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mgr-panel">
+      <div class="mgr-panel-hd">
+        <h2>Join a league</h2>
+        <span class="chip">Invite code</span>
+      </div>
+      <p class="mgr-sub">Enter the league code from a friend and pick a franchise that is still free.</p>
+      <div class="form-grid">
+        <label class="field">
+          <span>League code</span>
+          <input id="mgr-j-code" class="code-input" type="text" maxlength="8" placeholder="ABCDEFGH" autocomplete="off" />
+          <span class="hint">8 characters — ask the commissioner.</span>
+        </label>
+        <label class="field">
+          <span>Your franchise</span>
+          <select id="mgr-j-franchise"></select>
+        </label>
+        <div class="form-actions">
+          <span class="field-err" id="mgr-j-err"></span>
+          <button class="btn primary" id="mgr-j-btn">Join league</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const CSRF_TOKEN = {{ csrf_token|tojson|safe }};
+  const AUTH_ENABLED = {{ auth_enabled|tojson|safe }};
+  const AUTH_USER = {{ auth_user|tojson|safe }};
+  const SEASON_DEFAULT = {{ manager_season_default|tojson|safe }};
+  const MODES = {{ manager_modes|tojson|safe }};
+  const TEAMS = {{ teams|tojson|safe }};
+  const ACTIVE = TEAMS.filter(t => String(t.Active) === '1').sort((a, b) => a.Name.localeCompare(b.Name));
+
+  const $ = id => document.getElementById(id);
+  const err = (id, msg) => { $(id).textContent = msg || ''; };
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const teamInfo = {};
+  (TEAMS || []).forEach(t => { teamInfo[String(t.Team).toUpperCase()] = { name: t.Name || '', logo: t.Logo || '' }; });
+  const teamLogo = a => (teamInfo[a] && teamInfo[a].logo ? teamInfo[a].logo : '');
+
+  function logoTag(a, size) {
+    const src = teamLogo(a);
+    return src
+      ? `<img class="tlogo" style="width:${size || 22}px;height:${size || 22}px" src="${esc(src)}" alt="${esc(a)}" loading="lazy">`
+      : `<span class="tlogo miss" style="width:${size || 22}px;height:${size || 22}px">${esc(a.slice(0, 1))}</span>`;
+  }
+
+  function puckTile() {
+    return `<span class="tlogo miss" style="width:46px;height:46px;border-radius:11px">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="16.5" rx="7" ry="3"></ellipse>
+        <path d="M5 16.5V8c0 1.66 3.13 3 7 3s7-1.34 7-3v8.5"></path>
+      </svg></span>`;
+  }
+
+  function fillFranchiseSelect(sel) {
+    for (const t of ACTIVE) {
+      const o = document.createElement('option');
+      o.value = t.Team;
+      o.textContent = `${t.Name} (${t.Team})`;
+      sel.appendChild(o);
+    }
+  }
+
+  function fillModeSelect(sel) {
+    for (const m of MODES) {
+      const o = document.createElement('option');
+      o.value = m.value;
+      o.textContent = m.label;
+      sel.appendChild(o);
+    }
+  }
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-csrf-token': CSRF_TOKEN,
+      },
+      body: JSON.stringify(body),
+    }).then(async r => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { throw new Error(data.error || `request_failed_${r.status}`); }
+      return data;
+    });
+  }
+
+  function loginLink() {
+    return '<a href="/login?next=/manager">Log in</a>';
+  }
+
+  function statusChip(s) {
+    const map = { setup: '', drafting: 'accent', running: 'ok', finished: 'gold' };
+    return `<span class="chip ${map[s] || ''}">${esc(s || '')}</span>`;
+  }
+
+  function renderLeagues() {
+    const box = $('mgr-my-leagues');
+    if (!AUTH_ENABLED || !AUTH_USER) {
+      box.innerHTML = `<div class="empty">${loginLink()} to create or join a league. Unclaimed franchises are computer-controlled.</div>`;
+      return;
+    }
+    fetch('/api/manager/leagues', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(data => {
+        const leagues = (data.leagues || []);
+        if (!leagues.length) {
+          box.innerHTML = '<div class="empty">No leagues yet — <b>create one below</b> or join with a code.</div>';
+          return;
+        }
+        box.innerHTML = `<div class="row-list">` + leagues.map(l => {
+          const modeLabel = (MODES.find(m => m.value === l.mode) || { label: l.mode }).label;
+          const myTeam = l.my_team || '';
+          if (leagues.length === 1 && myTeam && window.mgrApplyTeamTheme) window.mgrApplyTeamTheme(myTeam);
+          return `<a class="mgr-row${myTeam ? ' me-team' : ''}" href="/manager/${encodeURIComponent(l.id)}">
+            ${myTeam ? logoTag(myTeam, 46) : puckTile()}
+            <div class="grow">
+              <div class="mgr-name">${esc(l.name)}</div>
+              <div class="mgr-meta">
+                <span class="chip">${esc(modeLabel)}</span>
+                ${statusChip(l.status)}
+                ${myTeam ? `<span>My team <b>${esc(myTeam)}</b></span>` : ''}
+                <span>Season ${esc(String(l.season))}</span>
+              </div>
+            </div>
+            <div class="mgr-side">
+              <span class="mgr-code">${esc(l.join_code || '')}</span>
+              <span class="mgr-chev">→</span>
+            </div>
+          </a>`;
+        }).join('') + `</div>`;
+      })
+      .catch(() => { box.innerHTML = '<div class="empty">Could not load leagues.</div>'; });
+  }
+
+  function requireLogin() {
+    if (!AUTH_ENABLED || !AUTH_USER) {
+      err('mgr-c-err', 'Log in to create a league.');
+      err('mgr-j-err', 'Log in to join a league.');
+      return false;
+    }
+    return true;
+  }
+
+  function wireCreate() {
+    const btn = $('mgr-c-btn');
+    btn.addEventListener('click', async () => {
+      err('mgr-c-err', '');
+      if (!requireLogin()) return;
+      const name = $('mgr-c-name').value.trim();
+      const mode = $('mgr-c-mode').value;
+      const franchise = $('mgr-c-franchise').value;
+      if (!name) { err('mgr-c-err', 'Enter a league name.'); return; }
+      btn.disabled = true;
+      try {
+        await postJson('/api/manager/leagues', { name, mode, franchise, season: SEASON_DEFAULT });
+        $('mgr-c-name').value = '';
+        renderLeagues();
+      } catch (e) {
+        err('mgr-c-err', e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  function wireJoin() {
+    const btn = $('mgr-j-btn');
+    btn.addEventListener('click', async () => {
+      err('mgr-j-err', '');
+      if (!requireLogin()) return;
+      const join_code = $('mgr-j-code').value.trim();
+      const franchise = $('mgr-j-franchise').value;
+      if (!join_code) { err('mgr-j-err', 'Enter a league code.'); return; }
+      btn.disabled = true;
+      try {
+        await postJson('/api/manager/leagues/join', { join_code, franchise });
+        $('mgr-j-code').value = '';
+        renderLeagues();
+      } catch (e) {
+        err('mgr-j-err', e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  fillModeSelect($('mgr-c-mode'));
+  fillFranchiseSelect($('mgr-c-franchise'));
+  fillFranchiseSelect($('mgr-j-franchise'));
+  renderLeagues();
+  wireCreate();
+  wireJoin();
+})();
+</script>
+{% endblock %}

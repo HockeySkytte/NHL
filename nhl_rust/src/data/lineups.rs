@@ -3,11 +3,50 @@
 
 use std::path::Path;
 
+use chrono::{DateTime, Utc};
 use serde_json::{json, Map, Value};
 
 use crate::state::Caches;
 use crate::supabase::read::SbClient;
 use crate::util::parse::{ci_get, safe_int, str_value};
+
+/// Mirrors Python `_JSON_SNAPSHOT_SYNC_TOLERANCE_SECONDS`. A static
+/// `lineups_all.json` is a *snapshot*; Supabase is the live source, so a snapshot
+/// must never re-introduce players Supabase has already dropped (e.g. someone
+/// traded away after the snapshot was committed and shipped in the deploy image).
+/// `sync_lineups_to_supabase.py` PATCHes every row and the `updated_at` trigger
+/// stamps that *after* the snapshot was generated, so a snapshot from the current
+/// pipeline run is legitimately a little older than the Supabase rows. This window
+/// absorbs the scrape -> estimate -> sync cycle.
+const JSON_SNAPSHOT_SYNC_TOLERANCE_SECONDS: i64 = 6 * 3600;
+
+/// Parse an ISO-8601 timestamp ('Z', explicit offset, or naive) as UTC.
+fn parse_iso_utc(value: Option<&Value>) -> Option<DateTime<Utc>> {
+    let s = str_value(value);
+    if s.is_empty() {
+        return None;
+    }
+    if let Ok(dt) = DateTime::parse_from_rfc3339(&s) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    // Naive timestamp (no offset) - assume UTC, matching `datetime.replace(tzinfo=utc)`.
+    for fmt in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S"] {
+        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, fmt) {
+            return Some(dt.and_utc());
+        }
+    }
+    None
+}
+
+/// True when the static snapshot is current enough to complete a team's pool.
+/// Unknown/unparseable timestamps keep the historical behaviour, so a missing
+/// timestamp can never silently empty a team's scratch pool.
+fn snapshot_may_add_players(json_generated_at: Option<&Value>, supabase_generated_at: Option<&Value>) -> bool {
+    match (parse_iso_utc(json_generated_at), parse_iso_utc(supabase_generated_at)) {
+        (Some(j), Some(s)) => (s - j).num_seconds() <= JSON_SNAPSHOT_SYNC_TOLERANCE_SECONDS,
+        _ => true,
+    }
+}
 
 fn lineups_json_path(static_dir: &Path) -> std::path::PathBuf {
     static_dir.join("lineups_all.json")
@@ -199,7 +238,8 @@ fn normalize_supabase_row(r: &Map<String, Value>) -> Map<String, Value> {
 }
 
 /// Port of `_merge_gp_est_from_json`: merges gp_est into existing players and
-/// appends EXT/scratch players missing from Supabase.
+/// appends EXT/scratch players missing from Supabase - the append only happens
+/// while the snapshot is current (see `snapshot_may_add_players`).
 fn merge_gp_est_from_json(out: &mut Map<String, Value>, static_dir: &Path) {
     let json_path = lineups_json_path(static_dir);
     let raw = match std::fs::read_to_string(&json_path) {
@@ -217,6 +257,11 @@ fn merge_gp_est_from_json(out: &mut Map<String, Value>, static_dir: &Path) {
         let Some(out_team) = out.get_mut(team_abbrev).and_then(Value::as_object_mut) else {
             continue;
         };
+        // A stale snapshot may still supply gp_est, but must not add players.
+        let snapshot_may_add = snapshot_may_add_players(
+            team_node.get("generated_at"),
+            out_team.get("generated_at"),
+        );
         for group_key in ["forwards", "defense", "goalies"] {
             let json_players: Vec<Value> = team_node
                 .get(group_key)
@@ -257,6 +302,9 @@ fn merge_gp_est_from_json(out: &mut Map<String, Value>, static_dir: &Path) {
                         }
                     }
                 }
+            }
+            if !snapshot_may_add {
+                continue;
             }
             // Append JSON players missing from Supabase.
             let default_pos = if group_key == "forwards" {
@@ -299,5 +347,195 @@ fn merge_gp_est_from_json(out: &mut Map<String, Value>, static_dir: &Path) {
                 out_players.push(Value::Object(extra));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // Snapshot from the 2026-08-14 deploy vs the Supabase rows written on
+    // 2026-09-28 - the stale bundle that produced duplicate starter slots.
+    const STALE_JSON_GENERATED_AT: &str = "2026-08-14T01:02:26.942467+00:00";
+    const SUPABASE_GENERATED_AT: &str = "2026-09-28T19:04:40.711208+00:00";
+    // Same pipeline run: the snapshot is generated first, then synced to Supabase.
+    const PIPELINE_JSON_GENERATED_AT: &str = "2026-09-28T19:02:26.000000+00:00";
+
+    const CURRENT_LW_PID: i64 = 111;
+    const TRADED_AWAY_PID: i64 = 999;
+    const EXTRA_D_PID: i64 = 222;
+
+    fn temp_static_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("nhl-lineups-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
+    fn write_snapshot(dir: &Path, generated_at: Value) -> PathBuf {
+        let snapshot = json!({
+            "ANA": {
+                "team": "ANA",
+                "generated_at": generated_at,
+                "forwards": [
+                    {"name": "Current LW", "playerId": CURRENT_LW_PID, "unit": "LW1", "pos": "F",
+                     "gp_est": 75, "gp_est_note": "wtd-avg last 3"},
+                    {"name": "Traded Away", "playerId": TRADED_AWAY_PID, "unit": "LW1", "pos": "F",
+                     "gp_est": 70, "gp_est_note": "stale-note"}
+                ],
+                "defense": [
+                    {"name": "Extra D", "playerId": EXTRA_D_PID, "unit": "EXT", "pos": "D"}
+                ],
+                "goalies": []
+            }
+        });
+        let path = dir.join("lineups_all.json");
+        std::fs::write(&path, snapshot.to_string()).expect("write snapshot");
+        path
+    }
+
+    fn supabase_side(generated_at: Value) -> Map<String, Value> {
+        let mut out = Map::new();
+        out.insert(
+            "ANA".into(),
+            json!({
+                "team": "ANA",
+                "generated_at": generated_at,
+                "forwards": [{"name": "Current LW", "playerId": CURRENT_LW_PID, "unit": "LW1", "pos": "F"}],
+                "defense": [],
+                "goalies": []
+            }),
+        );
+        out
+    }
+
+    fn group_pids(out: &Map<String, Value>, group: &str) -> Vec<i64> {
+        out["ANA"][group]
+            .as_array()
+            .map(|a| a.iter().filter_map(|p| p.get("playerId").and_then(Value::as_i64)).collect())
+            .unwrap_or_default()
+    }
+
+    // ── the regression ───────────────────────────────────────────────────────
+
+    #[test]
+    fn stale_snapshot_does_not_add_players() {
+        let dir = temp_static_dir("stale");
+        write_snapshot(&dir, json!(STALE_JSON_GENERATED_AT));
+        let mut out = supabase_side(json!(SUPABASE_GENERATED_AT));
+
+        merge_gp_est_from_json(&mut out, &dir);
+
+        assert_eq!(group_pids(&out, "forwards"), vec![CURRENT_LW_PID]);
+        assert!(group_pids(&out, "defense").is_empty());
+    }
+
+    #[test]
+    fn stale_snapshot_does_not_duplicate_a_starter_slot() {
+        let dir = temp_static_dir("stale-dup");
+        write_snapshot(&dir, json!(STALE_JSON_GENERATED_AT));
+        let mut out = supabase_side(json!(SUPABASE_GENERATED_AT));
+
+        merge_gp_est_from_json(&mut out, &dir);
+
+        let lw1: Vec<i64> = out["ANA"]["forwards"]
+            .as_array()
+            .expect("forwards array")
+            .iter()
+            .filter(|p| p.get("unit").and_then(Value::as_str) == Some("LW1"))
+            .filter_map(|p| p.get("playerId").and_then(Value::as_i64))
+            .collect();
+        assert_eq!(lw1, vec![CURRENT_LW_PID]);
+    }
+
+    #[test]
+    fn stale_snapshot_still_fills_missing_gp_est() {
+        let dir = temp_static_dir("stale-gp");
+        write_snapshot(&dir, json!(STALE_JSON_GENERATED_AT));
+        let mut out = supabase_side(json!(SUPABASE_GENERATED_AT));
+
+        merge_gp_est_from_json(&mut out, &dir);
+
+        let rec = &out["ANA"]["forwards"][0];
+        assert_eq!(rec.get("gp_est").and_then(Value::as_i64), Some(75));
+        assert_eq!(rec.get("gp_est_note").and_then(Value::as_str), Some("wtd-avg last 3"));
+    }
+
+    // ── the behaviour that must keep working ─────────────────────────────────
+
+    #[test]
+    fn fresh_snapshot_completes_the_pool() {
+        let dir = temp_static_dir("fresh");
+        write_snapshot(&dir, json!("2026-10-01T12:00:00+00:00"));
+        let mut out = supabase_side(json!(SUPABASE_GENERATED_AT));
+
+        merge_gp_est_from_json(&mut out, &dir);
+
+        assert_eq!(group_pids(&out, "forwards"), vec![CURRENT_LW_PID, TRADED_AWAY_PID]);
+        assert_eq!(group_pids(&out, "defense"), vec![EXTRA_D_PID]);
+    }
+
+    #[test]
+    fn snapshot_from_the_current_pipeline_run_still_completes_the_pool() {
+        let dir = temp_static_dir("pipeline");
+        write_snapshot(&dir, json!(PIPELINE_JSON_GENERATED_AT));
+        let mut out = supabase_side(json!(SUPABASE_GENERATED_AT));
+
+        merge_gp_est_from_json(&mut out, &dir);
+
+        assert!(group_pids(&out, "forwards").contains(&TRADED_AWAY_PID));
+        assert_eq!(group_pids(&out, "defense"), vec![EXTRA_D_PID]);
+    }
+
+    #[test]
+    fn unknown_timestamps_keep_legacy_behaviour() {
+        let dir = temp_static_dir("unknown");
+        write_snapshot(&dir, Value::Null);
+        let mut out = supabase_side(Value::Null);
+
+        merge_gp_est_from_json(&mut out, &dir);
+
+        assert!(group_pids(&out, "forwards").contains(&TRADED_AWAY_PID));
+    }
+
+    #[test]
+    fn missing_snapshot_is_a_noop() {
+        let dir = temp_static_dir("absent");
+        let mut out = supabase_side(json!(SUPABASE_GENERATED_AT));
+
+        merge_gp_est_from_json(&mut out, &dir);
+
+        assert_eq!(group_pids(&out, "forwards"), vec![CURRENT_LW_PID]);
+    }
+
+    // ── timestamp helpers ────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_iso_utc_accepts_offset_z_and_naive() {
+        for s in [
+            "2026-09-28T19:04:40.711208+00:00",
+            "2026-09-28T19:04:40Z",
+            "2026-09-28T19:04:40",
+        ] {
+            let dt = parse_iso_utc(Some(&json!(s))).unwrap_or_else(|| panic!("failed to parse {s}"));
+            assert_eq!(dt.format("%Y-%m-%d").to_string(), "2026-09-28");
+        }
+        assert!(parse_iso_utc(None).is_none());
+        assert!(parse_iso_utc(Some(&json!("nope"))).is_none());
+    }
+
+    #[test]
+    fn tolerance_boundary() {
+        let sb = json!(SUPABASE_GENERATED_AT);
+        assert!(snapshot_may_add_players(Some(&sb), Some(&sb)));
+
+        let base = DateTime::parse_from_rfc3339(SUPABASE_GENERATED_AT).expect("rfc3339");
+        let inside = (base - chrono::Duration::seconds(JSON_SNAPSHOT_SYNC_TOLERANCE_SECONDS)).to_rfc3339();
+        assert!(snapshot_may_add_players(Some(&json!(inside)), Some(&sb)));
+
+        let outside =
+            (base - chrono::Duration::seconds(JSON_SNAPSHOT_SYNC_TOLERANCE_SECONDS + 1)).to_rfc3339();
+        assert!(!snapshot_may_add_players(Some(&json!(outside)), Some(&sb)));
     }
 }
