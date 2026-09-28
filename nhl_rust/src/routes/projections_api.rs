@@ -591,7 +591,7 @@ async fn api_projections_team_season_points(
         return json_err(StatusCode::BAD_REQUEST, json!({"error": "team_required"}));
     }
     let lineups_all = lineups::load_all(&state.caches, state.sb.as_ref(), &state.cfg.static_dir).await;
-    let proj_map = p::load_v2_player_projections_cached(&state).await;
+    let proj_map = p::load_v2_player_projections_cached(&state, Some(season)).await;
     let custom_lineups = custom_lineups_cache_get(&state, &season).await;
     let team_proj_map = p::team_proj_map_for_season(&lineups_all, &proj_map, &custom_lineups, &state);
     let (points, games) = p::projected_points_for_team(&state, &team, season, &team_proj_map, None, None, None).await;
@@ -626,7 +626,7 @@ async fn api_projections_team_season_points_custom(
     custom_lineups_cache_set(&state, &season, &key, &custom_lineups).await;
 
     let lineups_all = lineups::load_all(&state.caches, state.sb.as_ref(), &state.cfg.static_dir).await;
-    let proj_map = p::load_v2_player_projections_cached(&state).await;
+    let proj_map = p::load_v2_player_projections_cached(&state, Some(season)).await;
     let team_proj_map = p::team_proj_map_for_season(&lineups_all, &proj_map, &custom_lineups, &state);
     let injuries = p::normalize_injuries(body.get("injuries"));
     let lineup_entries = custom_lineups.get(&team).cloned().unwrap_or_default();
@@ -669,7 +669,7 @@ async fn api_projections_all_teams_custom(
     custom_lineups_cache_set(&state, &season, &key, &custom_lineups).await;
 
     let lineups_all = lineups::load_all(&state.caches, state.sb.as_ref(), &state.cfg.static_dir).await;
-    let proj_map = p::load_v2_player_projections_cached(&state).await;
+    let proj_map = p::load_v2_player_projections_cached(&state, Some(season)).await;
     let team_proj_map = p::team_proj_map_for_season(&lineups_all, &proj_map, &custom_lineups, &state);
 
     let all_team_abbrevs = p::all_team_abbrevs(&state);
@@ -965,7 +965,7 @@ async fn api_projections_simulate_season(
     custom_lineups_cache_set(&state, &season, &key, &custom_lineups).await;
 
     let lineups_all = lineups::load_all(&state.caches, state.sb.as_ref(), &state.cfg.static_dir).await;
-    let proj_map = p::load_v2_player_projections_cached(&state).await;
+    let proj_map = p::load_v2_player_projections_cached(&state, Some(season)).await;
     let team_proj_map = p::team_proj_map_for_season(&lineups_all, &proj_map, &custom_lineups, &state);
 
     let teams = p::active_team_abbrevs(&state);
@@ -1081,7 +1081,7 @@ async fn api_projections_simulate_season_batch(
     }
 
     let lineups_all = lineups::load_all(&state.caches, state.sb.as_ref(), &state.cfg.static_dir).await;
-    let proj_map = p::load_v2_player_projections_cached(&state).await;
+    let proj_map = p::load_v2_player_projections_cached(&state, Some(season)).await;
     let team_proj_map = p::team_proj_map_for_season(&lineups_all, &proj_map, &custom_lineups, &state);
 
     let teams = p::active_team_abbrevs(&state);

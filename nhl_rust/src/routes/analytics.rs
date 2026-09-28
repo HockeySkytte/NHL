@@ -928,7 +928,7 @@ async fn api_goalies_card(
     let mut proj_val_by_pid: HashMap<i64, f64> = HashMap::new();
     let mut proj_pool: Vec<f64> = Vec::new();
     if needs_projection {
-        let pmap = projections::load_v2_player_projections_cached(&state).await;
+        let pmap = projections::load_v2_player_projections_cached(&state, None).await;
         for (k, raw) in &pmap {
             let pg = projection_position_group(str_value(raw.get("position")).as_str());
             if pg != "G" {

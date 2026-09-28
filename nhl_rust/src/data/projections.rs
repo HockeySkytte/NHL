@@ -434,10 +434,56 @@ pub async fn build_v2_player_projections(
     result
 }
 
-/// `_load_v2_player_projections_cached()`: keyed by nhl_api_player_id, current season.
-pub async fn load_v2_player_projections_cached(state: &AppState) -> HashMap<i64, Value> {
-    let season = current_season_id(None);
-    let players = build_v2_player_projections(state, Some(season)).await;
+/// Max season value in a sample of `nhl_current_playerprojections` rows.
+fn max_season_from_rows(rows: &[Value]) -> Option<i64> {
+    rows.iter().filter_map(|r| safe_int(r.get("season"))).max()
+}
+
+/// Newest season present in `nhl_current_playerprojections`, or None.
+///
+/// Reads a small ordered sample rather than the whole table; `season` is a
+/// fixed-width text column, so DESC order is chronological.
+async fn latest_v2_projection_season(state: &AppState) -> Option<i64> {
+    let sb = state.sb.as_ref()?;
+    let rows = sb
+        .read(
+            "nhl_current_playerprojections",
+            "season",
+            None,
+            None,
+            Some("season.desc"),
+            50,
+        )
+        .await?;
+    max_season_from_rows(&rows)
+}
+
+/// `_load_v2_player_projections_cached()`: keyed by nhl_api_player_id.
+///
+/// `nhl_current_playerprojections` only contains rows once a season's possession
+/// values have been exported, so the season `current_season_id()` names is empty
+/// from September until that season's data lands. Building from that empty season
+/// silently collapsed every lineup player onto the rookie fallback, which drove
+/// every team to an identical team-projection value and made all 32 teams project
+/// ~84 points. Fall back to the newest season that actually has rows.
+pub async fn load_v2_player_projections_cached(
+    state: &AppState,
+    season: Option<i64>,
+) -> HashMap<i64, Value> {
+    let season = season.unwrap_or_else(|| current_season_id(None));
+    let mut players = build_v2_player_projections(state, Some(season)).await;
+    if players.is_empty() {
+        if let Some(fallback_season) = latest_v2_projection_season(state).await {
+            if fallback_season != season {
+                tracing::warn!(
+                    season,
+                    fallback_season,
+                    "no V2 player projections for season; falling back to newest available"
+                );
+                players = build_v2_player_projections(state, Some(fallback_season)).await;
+            }
+        }
+    }
     let mut out: HashMap<i64, Value> = HashMap::new();
     for p in players {
         let pid = safe_int(p.get("player_id")).unwrap_or(0);
@@ -1445,4 +1491,26 @@ pub fn team_proj_map_for_season(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_season_ignores_junk_and_picks_latest() {
+        let rows = vec![
+            json!({"season": "20252026"}),
+            json!({"season": Value::Null}),
+            json!({"season": "junk"}),
+            json!({"season": "20242025"}),
+        ];
+        assert_eq!(max_season_from_rows(&rows), Some(20252026));
+    }
+
+    #[test]
+    fn max_season_is_none_without_usable_rows() {
+        assert_eq!(max_season_from_rows(&[]), None);
+        assert_eq!(max_season_from_rows(&[json!({"season": "not-a-season"})]), None);
+    }
 }

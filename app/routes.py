@@ -7417,7 +7417,7 @@ def api_projections_team_season_points():
         return jsonify({'error': 'team_required'}), 400
 
     lineups_all = _load_lineups_all()
-    proj_map = _load_v2_player_projections_cached()
+    proj_map = _load_v2_player_projections_cached(season)
     custom_lineups = _custom_lineups_cache_get(season)
     team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
     projected_points, usable_games = _projected_points_for_team(team, season, team_proj_map)
@@ -7473,7 +7473,7 @@ def api_projections_team_season_points_custom():
     _custom_lineups_cache_set(season, custom_lineups)
 
     lineups_all = _load_lineups_all()
-    proj_map = _load_v2_player_projections_cached()
+    proj_map = _load_v2_player_projections_cached(season)
     team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
 
     injuries = _normalize_injuries(body.get('injuries'))
@@ -7522,7 +7522,7 @@ def api_projections_all_teams_custom():
     _custom_lineups_cache_set(season, custom_lineups)
 
     lineups_all = _load_lineups_all()
-    proj_map = _load_v2_player_projections_cached()
+    proj_map = _load_v2_player_projections_cached(season)
     team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
 
     all_teams_points: Dict[str, float] = {}
@@ -8096,7 +8096,7 @@ def api_projections_simulate_season():
     _custom_lineups_cache_set(season, custom_lineups)
 
     lineups_all = _load_lineups_all()
-    proj_map = _load_v2_player_projections_cached()
+    proj_map = _load_v2_player_projections_cached(season)
     team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
 
     teams = _active_team_abbrevs()
@@ -8335,7 +8335,7 @@ def api_projections_simulate_season_batch():
         custom_lineups[team_ab] = _normalize_custom_lineup_entries(lineup_raw)
 
     lineups_all = _load_lineups_all()
-    proj_map = _load_v2_player_projections_cached()
+    proj_map = _load_v2_player_projections_cached(season)
     team_proj_map = _team_proj_map_for_season(season, lineups_all, proj_map, custom_lineups)
 
     teams = _active_team_abbrevs()
@@ -15492,7 +15492,13 @@ def _sb_read(table: str, *, columns: str = "*",
         while True:
             q = sb.table(table).select(columns).range(offset, offset + PAGE - 1)
             if order:
-                q = q.order(order)
+                # A leading '-' requests descending order. The PostgREST syntax
+                # ("season.desc") would be taken as a column name by the supabase
+                # client's order(), so it has to go through its `desc` argument.
+                if order.startswith('-'):
+                    q = q.order(order[1:], desc=True)
+                else:
+                    q = q.order(order)
             if filters:
                 for col, expr in filters.items():
                     op, val = expr.split(".", 1)
@@ -18302,18 +18308,69 @@ def _load_current_player_projections_cached() -> Dict[int, Dict[str, Any]]:
 # ── V2 current-player projections cache (from nhl_current_playerprojections) ──
 _CURRENT_V2_PLAYER_PROJECTIONS_CACHE: Optional[Tuple[float, Dict[int, Dict[str, Any]]]] = None
 
-def _load_v2_player_projections_cached() -> Dict[int, Dict[str, Any]]:
+# nhl_current_playerprojections only contains rows once a season's possession
+# values have been exported, so the season current_season_id() names is empty
+# from September until that season's data lands. Building from that empty season
+# silently collapsed every lineup player onto _ROOKIE_FALLBACK, which drove every
+# team to an identical team-projection value and made all 32 teams project ~84
+# points. Fall back to the newest season that actually has rows.
+_V2_FALLBACK_SEASON_CACHE: Optional[Tuple[float, Optional[int]]] = None
+
+
+def _latest_v2_projection_season() -> Optional[int]:
+    """Newest season present in nhl_current_playerprojections, or None.
+
+    Reads a small ordered sample rather than the whole table; `season` is a
+    fixed-width text column, so lexicographic DESC order is chronological.
+    """
+    global _V2_FALLBACK_SEASON_CACHE
+    try:
+        ttl_s = max(60, int(os.getenv('V2_LATEST_SEASON_CACHE_TTL_SECONDS', '600') or '600'))
+    except Exception:
+        ttl_s = 600
+    now = time.time()
+    if _V2_FALLBACK_SEASON_CACHE and (now - _V2_FALLBACK_SEASON_CACHE[0]) < ttl_s:
+        return _V2_FALLBACK_SEASON_CACHE[1]
+
+    rows = _sb_read(
+        'nhl_current_playerprojections',
+        columns='season',
+        order='-season',
+        limit=50,
+    ) or []
+    latest: Optional[int] = None
+    for r in rows:
+        try:
+            s = int(str(r.get('season')).strip())
+        except Exception:
+            continue
+        if latest is None or s > latest:
+            latest = s
+    _V2_FALLBACK_SEASON_CACHE = (now, latest)
+    return latest
+
+
+def _load_v2_player_projections_cached(season: Optional[int] = None) -> Dict[int, Dict[str, Any]]:
     """Return V2 player projections keyed by nhl_api_player_id.
 
     Uses the shared _build_v2_player_projections() so values are identical to the
     /api/player-projections/v2 endpoint.  No caching — always fresh.
+
+    `season` defaults to current_season_id(); if that season has no projection
+    rows yet the newest season that does is used instead (see the note above).
     """
     try:
-        season_i = int(current_season_id())
+        season_i = int(season) if season else int(current_season_id())
     except Exception:
         season_i = 0
 
     players = _build_v2_player_projections(season_i)
+    if not players:
+        fallback_season = _latest_v2_projection_season()
+        if fallback_season and fallback_season != season_i:
+            print(f'[projections] no V2 player projections for season {season_i}; '
+                  f'falling back to {fallback_season}', file=sys.stderr)
+            players = _build_v2_player_projections(fallback_season)
 
     out: Dict[int, Dict[str, Any]] = {}
     for p in players:
