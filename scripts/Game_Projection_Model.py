@@ -32,6 +32,25 @@ load_dotenv()
 # ── DB connection (lazy – only created when --refresh-data is used) ────
 _engine = None
 
+
+def postgres_url_with_psycopg2(db_url):
+    """Force the psycopg2 driver onto a bare `postgresql://` URL.
+
+    SQLAlchemy 2.1 changed the default DBAPI for `postgresql://` from psycopg2 to
+    psycopg (v3), which this project does not install. Because requirements.txt
+    is unpinned, every scheduled run started dying the day 2.1 shipped with
+    `ModuleNotFoundError: No module named 'psycopg'` — 2 seconds in, before any
+    data was read. Naming the driver explicitly keeps the already-required
+    psycopg2-binary in use on both 2.0 and 2.1.
+    """
+    if not db_url:
+        return db_url
+    for prefix in ("postgresql://", "postgres://"):
+        if db_url.startswith(prefix):
+            return "postgresql+psycopg2://" + db_url[len(prefix):]
+    return db_url
+
+
 def _get_engine():
     global _engine
     if _engine is not None:
@@ -40,7 +59,7 @@ def _get_engine():
     if not db_url:
         raise RuntimeError("DATABASE_MONCTON_URL not set in .env")
     db_url = db_url.replace(":6543/", ":5432/")
-    _engine = create_engine(db_url)
+    _engine = create_engine(postgres_url_with_psycopg2(db_url))
 
     @event.listens_for(_engine, "connect")
     def _set_timeout(dbapi_conn, connection_record):

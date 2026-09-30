@@ -44,6 +44,7 @@ from scripts.Game_Projection_Model import (
     load_pvm,
     load_skaters,
     load_team_map,
+    postgres_url_with_psycopg2,
     prev_season,
     season_years_ago,
 )
@@ -1088,7 +1089,7 @@ def apply_sql_statements(db_url: str, sql_paths: list[pathlib.Path]) -> bool:
     if not db_url:
         print("SUPABASE_DB_URL is not set; skipping live table creation")
         return False
-    engine = create_engine(db_url)
+    engine = create_engine(postgres_url_with_psycopg2(db_url))
     with engine.begin() as conn:
         for sql_path in sql_paths:
             if not sql_path.exists():

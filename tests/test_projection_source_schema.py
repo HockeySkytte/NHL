@@ -268,3 +268,49 @@ def test_excluded_seasons_are_removed():
     games = _games('20222023')
 
     assert E.get_requested_seasons(_args(latest=True), games) == set()
+
+
+# ── explicit postgres driver ─────────────────────────────────────────────────
+
+@pytest.mark.parametrize('url,expected', [
+    ('postgresql://u:p@h:5432/db', 'postgresql+psycopg2://u:p@h:5432/db'),
+    ('postgres://u:p@h:5432/db', 'postgresql+psycopg2://u:p@h:5432/db'),
+    ('postgresql+psycopg2://u:p@h:5432/db', 'postgresql+psycopg2://u:p@h:5432/db'),
+    ('mysql+mysqlconnector://root@localhost:3306/moncton',
+     'mysql+mysqlconnector://root@localhost:3306/moncton'),
+    ('', ''),
+    (None, None),
+])
+def test_postgres_url_gets_an_explicit_driver(url, expected):
+    assert G.postgres_url_with_psycopg2(url) == expected
+
+
+def test_bare_postgres_url_never_relies_on_the_sqlalchemy_default():
+    """SQLAlchemy 2.1 defaults `postgresql://` to psycopg v3, which is not
+    installed - that broke every scheduled run the day 2.1 shipped."""
+    out = G.postgres_url_with_psycopg2('postgresql://u:p@h:5432/db')
+
+    assert '+psycopg2' in out
+    assert out.startswith('postgresql+psycopg2://')
+
+
+def test_get_engine_uses_the_psycopg2_driver(monkeypatch):
+    """create_engine is lazy, so no connection is attempted here."""
+    monkeypatch.setattr(G, '_engine', None)
+    monkeypatch.setenv('DATABASE_MONCTON_URL', 'postgresql://u:p@h:6543/db')
+
+    engine = G._get_engine()
+
+    assert engine.url.drivername == 'postgresql+psycopg2'
+    # The pooler port is still rewritten to the session port.
+    assert engine.url.port == 5432
+    assert engine.url.host == 'h'
+
+
+def test_get_engine_requires_the_moncton_url(monkeypatch):
+    monkeypatch.setattr(G, '_engine', None)
+    monkeypatch.delenv('DATABASE_MONCTON_URL', raising=False)
+    monkeypatch.setattr(G, 'load_dotenv', lambda *a, **k: None)
+
+    with pytest.raises(RuntimeError, match='DATABASE_MONCTON_URL'):
+        G._get_engine()
