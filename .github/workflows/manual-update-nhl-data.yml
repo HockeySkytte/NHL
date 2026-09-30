@@ -7,9 +7,8 @@ on:
         description: "Date to update (YYYY-MM-DD)"
         required: true
       season:
-        description: "Season code for table names (e.g., 20252026)"
-        required: true
-        default: "20252026"
+        description: "Season code for table names (e.g., 20262027). Leave blank to derive from the date."
+        required: false
       replace_date:
         description: "Replace existing rows for this date (recommended)"
         required: true
@@ -67,6 +66,10 @@ jobs:
         run: |
           DATE='${{ inputs.date }}'
           SEASON='${{ inputs.season }}'
+          if [ -z "$SEASON" ]; then
+            SEASON=$(python scripts/season_for_date.py --date "$DATE")
+          fi
+          echo "Processing date=$DATE season=$SEASON"
 
           if [ -z "${PROJECTIONS_SHEET_ID}" ]; then
             echo "Missing PROJECTIONS_SHEET_ID secret" >&2

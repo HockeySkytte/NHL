@@ -6993,51 +6993,56 @@ def _fetch_club_schedule_games(team_abbrev: str, season: int) -> List[Dict[str, 
     if cached and (now - cached[0]) < ttl_s:
         return cached[1]
 
-    # For future seasons with no published schedule yet, fetch the previous
-    # season and shift dates forward by the appropriate number of years.
-    fetch_season = season_i
-    shift_years = 0
-    if season_i >= 20262027:
-        shift_years = (season_i // 10000) - 2025
-        fetch_season = 20252026
-
-    url = f'https://api-web.nhle.com/v1/club-schedule-season/{team}/{fetch_season}'
-    try:
-        r = requests.get(url, timeout=25)
-        if r.status_code != 200:
-            return cached[1] if cached else []
-        js = r.json() or {}
-    except Exception:
-        return cached[1] if cached else []
-
-    out: List[Dict[str, Any]] = []
-    games = js.get('games') if isinstance(js, dict) else []
-    if not isinstance(games, list):
-        games = []
-    for g in games:
-        if not isinstance(g, dict):
-            continue
-        away_obj = g.get('awayTeam') if isinstance(g.get('awayTeam'), dict) else {}
-        home_obj = g.get('homeTeam') if isinstance(g.get('homeTeam'), dict) else {}
-        away_abbrev = str(away_obj.get('abbrev') or '').strip().upper()
-        home_abbrev = str(home_obj.get('abbrev') or '').strip().upper()
-        game_type_raw = g.get('gameType')
+    # Try the real schedule for the requested season first (20262027 and later
+    # are published by the NHL API). Only when that comes back empty do we fall
+    # back to shifting the previous published season forward - the old
+    # pre-publication behaviour. Mirrors nhl_rust `fetch_club_schedule_games`.
+    def _download(fetch_season: int) -> List[Dict[str, Any]]:
+        url = f'https://api-web.nhle.com/v1/club-schedule-season/{team}/{fetch_season}'
         try:
-            game_type = int(str(game_type_raw).strip())
+            r = requests.get(url, timeout=25)
+            if r.status_code != 200:
+                return []
+            js = r.json() or {}
         except Exception:
-            game_type = 0
-        date_raw = str(g.get('gameDate') or g.get('startTimeUTC') or '').strip()
-        date_iso = date_raw[:10] if len(date_raw) >= 10 else ''
-        if not away_abbrev or not home_abbrev or not date_iso:
-            continue
-        out.append({
-            'id': g.get('id') or g.get('gamePk') or g.get('gameId'),
-            'gameType': game_type,
-            'status': g.get('gameState') or g.get('gameStatus') or '',
-            'date': date_iso,
-            'away': away_abbrev,
-            'home': home_abbrev,
-        })
+            return []
+        parsed: List[Dict[str, Any]] = []
+        games = js.get('games') if isinstance(js, dict) else []
+        if not isinstance(games, list):
+            games = []
+        for g in games:
+            if not isinstance(g, dict):
+                continue
+            away_obj = g.get('awayTeam') if isinstance(g.get('awayTeam'), dict) else {}
+            home_obj = g.get('homeTeam') if isinstance(g.get('homeTeam'), dict) else {}
+            away_abbrev = str(away_obj.get('abbrev') or '').strip().upper()
+            home_abbrev = str(home_obj.get('abbrev') or '').strip().upper()
+            game_type_raw = g.get('gameType')
+            try:
+                game_type = int(str(game_type_raw).strip())
+            except Exception:
+                game_type = 0
+            date_raw = str(g.get('gameDate') or g.get('startTimeUTC') or '').strip()
+            date_iso = date_raw[:10] if len(date_raw) >= 10 else ''
+            if not away_abbrev or not home_abbrev or not date_iso:
+                continue
+            parsed.append({
+                'id': g.get('id') or g.get('gamePk') or g.get('gameId'),
+                'gameType': game_type,
+                'status': g.get('gameState') or g.get('gameStatus') or '',
+                'date': date_iso,
+                'away': away_abbrev,
+                'home': home_abbrev,
+            })
+        return parsed
+
+    out = _download(season_i)
+    shift_years = 0
+    if not out and season_i >= 20262027:
+        shift_years = (season_i // 10000) - 2025
+        out = _download(20252026)
+    if not out:
+        return cached[1] if cached else []
 
     out.sort(key=lambda x: (str(x.get('date') or ''), int(x.get('id') or 0) if str(x.get('id') or '').isdigit() else 0))
 
@@ -19532,16 +19537,84 @@ def current_season_id(now: Optional[datetime] = None) -> int:
         end_y = y
     return start_y * 10000 + end_y
 
+
+def season_window_prev(season: int) -> int:
+    """Previous season code, e.g. 20252026 -> 20242025."""
+    a = int(str(season)[:4]); b = int(str(season)[4:])
+    return (a - 1) * 10000 + (b - 1)
+
+
+def season_window_next(season: int) -> int:
+    """Next season code, e.g. 20252026 -> 20262027."""
+    a = int(str(season)[:4]); b = int(str(season)[4:])
+    return (a + 1) * 10000 + (b + 1)
+
+
+_XG_LATEST_MODEL_CACHE: Dict[str, Optional[str]] = {}
+
+
+def latest_xg_model_file(prefix: str) -> Optional[str]:
+    """Newest trained `{prefix}_<start>_<end>.pkl` in Model/, by window end year.
+
+    Used as the last-resort window for seasons that have no trained window of
+    their own yet.
+    """
+    key = str(prefix or '').strip()
+    if not key:
+        return None
+    if key in _XG_LATEST_MODEL_CACHE:
+        return _XG_LATEST_MODEL_CACHE[key]
+    best_name: Optional[str] = None
+    best_end = -1
+    try:
+        pattern = re.compile(rf'^{re.escape(key)}_(\d{{8}})_(\d{{8}})\.pkl$')
+        for fname in os.listdir(_model_dir()):
+            match = pattern.match(fname)
+            if not match:
+                continue
+            end_year = int(match.group(2))
+            if end_year > best_end:
+                best_end = end_year
+                best_name = fname
+    except Exception:
+        best_name = None
+    _XG_LATEST_MODEL_CACHE[key] = best_name
+    return best_name
+
+
+def xg_window_filenames(season: int, prefix: str) -> List[str]:
+    """Candidate xG model files for `season`, most-centred window first.
+
+    The trained windows slide (s-2..s, s-1..s+1, s..s+2). A season with no
+    trained window of its own — 20262027 at the time of writing — used to
+    resolve to no model at all, which silently left every shot's xG at None and
+    rendered the game report's xG card as 0.00. The newest available window for
+    the family is appended so a brand-new season still scores.
+    """
+    s_prev = season_window_prev(season)
+    s_next = season_window_next(season)
+    s_prev2 = season_window_prev(s_prev)
+    s_next2 = season_window_next(s_next)
+    windows = [
+        f"{prefix}_{s_prev2}_{season}.pkl",   # s-2 .. s
+        f"{prefix}_{s_prev}_{s_next}.pkl",    # s-1 .. s+1
+        f"{prefix}_{season}_{s_next2}.pkl",   # s   .. s+2
+    ]
+    names = [windows[1], windows[0], windows[2]]
+    fallback = latest_xg_model_file(prefix)
+    if fallback and fallback not in names:
+        names.append(fallback)
+    return names
+
+
 def preload_common_models() -> None:
     """Eager-load central window models for the current season to reduce cold-start latency."""
     try:
         s = current_season_id()
-        a = int(str(s)[:4]); b = int(str(s)[4:])
-        s_prev = (a-1)*10000 + (b-1)
-        s_next = (a+1)*10000 + (b+1)
-        middle = f"{s_prev}_{s_next}.pkl"
         for prefix in ('xgbs', 'xgb', 'xgb2'):
-            load_model_file(f"{prefix}_{middle}")
+            for fname in xg_window_filenames(s, prefix):
+                if load_model_file(fname) is not None:
+                    break
     except Exception:
         pass
 
@@ -20467,14 +20540,6 @@ def api_game_pbp(game_id: int):
             'xG_F2': 'xgb2',
         }.get(xg_scope)
 
-        # Helper: map season integer like 20142015 to previous, current, next for 3 sliding windows
-        def season_prev(s: int) -> int:
-            a = int(str(s)[:4]); b = int(str(s)[4:])
-            return (a-1)*10000 + (b-1)
-        def season_next(s: int) -> int:
-            a = int(str(s)[:4]); b = int(str(s)[4:])
-            return (a+1)*10000 + (b+1)
-
         # Low-memory per-row one-hot encoding without building a full dummy matrix
         base_feature_cols = [
             "Venue", "shotType2", "ScoreState2", "RinkVenue",
@@ -20501,96 +20566,6 @@ def api_game_pbp(game_id: int):
                 return cols
             except Exception:
                 return None
-
-        def _vectorize_row_for_model(row_obj: Dict[str, Any], m: Any):
-            cols = _required_columns_for_model(m)
-            if not cols:
-                return None, None  # can't align reliably
-            # Build one-hot vector aligned to cols
-            vec = [0.0] * len(cols)
-            # Precompute string values for the row features
-            vals = {}
-            for c in base_feature_cols:
-                v = row_obj.get(c)
-                vals[c] = 'missing' if v is None else str(v)
-            # For each required column, parse as prefix_value and set 1.0 if match
-            for i, cname in enumerate(cols):
-                if '_' not in cname:
-                    # Unexpected; leave as 0.0
-                    continue
-                base, suffix = cname.split('_', 1)
-                rv = vals.get(base)
-                if rv is None:
-                    continue
-                if rv == suffix:
-                    vec[i] = 1.0
-            return vec, cols
-
-        def predict_avg_for_row(row_obj: Dict[str, Any], season_val: Optional[int], model_prefix: str) -> Optional[float]:
-            if season_val is None:
-                return None
-            s_cur = int(season_val)
-            # Special-case for 20252026 games: use ..._20222023_20242025.pkl
-            if s_cur == 20252026:
-                names = [f"{model_prefix}_20222023_20242025.pkl"]
-            else:
-                s_prev = season_prev(s_cur)
-                s_next = season_next(s_cur)
-                s_prev2 = season_prev(s_prev)   # s-2
-                s_next2 = season_next(s_next)   # s+2
-                # Derive filenames; number of windows configurable via env XG_WINDOWS (default 1 for perf)
-                num_windows = 1
-                try:
-                    num_windows = max(1, min(3, int(os.getenv('XG_WINDOWS', '1'))))
-                except Exception:
-                    num_windows = 1
-                all_names = [
-                    f"{model_prefix}_{s_prev2}_{s_cur}.pkl",    # window 1: s-2..s
-                    f"{model_prefix}_{s_prev}_{s_next}.pkl",    # window 2: s-1..s+1
-                    f"{model_prefix}_{s_cur}_{s_next2}.pkl",    # window 3: s..s+2
-                ]
-                # Choose middle window first as most centered; try all, use first N that load
-                order = [1, 0, 2]
-                names = [all_names[i] for i in order]
-            # Try all candidates, keep the first num_windows that actually load
-            models = []
-            for n in names:
-                m = load_model_file(n)
-                if m is not None:
-                    models.append(m)
-                    if len(models) >= num_windows:
-                        break
-            if not models:
-                return None
-            preds = []
-            for m in models:
-                try:
-                    vec, cols = _vectorize_row_for_model(row_obj, m)
-                    if vec is None:
-                        # Fallback: try tiny pandas DF for this single row (still low-memory)
-                        try:
-                            import pandas as _pd2  # local import fallback
-                            _d = {c: [str(row_obj.get(c) if row_obj.get(c) is not None else 'missing')] for c in base_feature_cols}
-                            df1 = _pd2.DataFrame(_d)
-                            df1 = _pd2.get_dummies(df1).astype(float)
-                            if hasattr(m, 'feature_names_in_'):
-                                cols_needed = list(getattr(m, 'feature_names_in_'))
-                                df1 = df1.reindex(columns=cols_needed, fill_value=0.0)
-                            p = m.predict_proba(df1)[:, 1]
-                            preds.append(float(p[0]))
-                            continue
-                        except Exception:
-                            continue
-                    else:
-                        import numpy as _np2  # local import
-                        x_arr = _np2.asarray([vec], dtype=float)
-                        p = m.predict_proba(x_arr)[:, 1]
-                    preds.append(float(p[0]))
-                except Exception:
-                    continue
-            if not preds:
-                return None
-            return float(sum(preds) / len(preds))
 
         # Helper for ENA fenwick attempts
         def compute_empty_net_fenwick(sd: Optional[float], sa: Optional[float]) -> Optional[float]:
@@ -20627,25 +20602,6 @@ def api_game_pbp(game_id: int):
             if requested_family in (None, family)
         }
 
-        def window_filenames_for_season(s_cur: int, prefix: str) -> List[str]:
-            s_prev = season_prev(s_cur)
-            s_next = season_next(s_cur)
-            s_prev2 = season_prev(s_prev)
-            s_next2 = season_next(s_next)
-            num_windows = 1
-            try:
-                num_windows = max(1, min(3, int(os.getenv('XG_WINDOWS', '1'))))
-            except Exception:
-                num_windows = 1
-            all_names = [
-                f"{prefix}_{s_prev2}_{s_cur}.pkl",
-                f"{prefix}_{s_prev}_{s_next}.pkl",
-                f"{prefix}_{s_cur}_{s_next2}.pkl",
-            ]
-            # Return all candidates in preferred order; caller loads first N that exist
-            order = [1, 0, 2]
-            return [all_names[i] for i in order]
-
         for family, idxs in families.items():
             if not idxs:
                 continue
@@ -20657,10 +20613,7 @@ def api_game_pbp(game_id: int):
                     continue
                 by_season.setdefault(int(s), []).append(i)
             for s_cur, row_idx in by_season.items():
-                if s_cur == 20252026:
-                    names = [f"{family}_20222023_20242025.pkl"]
-                else:
-                    names = window_filenames_for_season(s_cur, family)
+                names = xg_window_filenames(s_cur, family)
                 # Try all candidates, keep first num_windows that actually load
                 num_windows_batch = 1
                 try:

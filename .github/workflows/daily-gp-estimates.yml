@@ -1,9 +1,17 @@
-name: Lineup refresh (every 30 min)
+name: Daily Estimated Games refresh
+
+# Keeps the Estimated Games (gp_est) used by the season simulations current.
+#
+# This is deliberately separate from the 30-minute lineup refresh: gp_est comes
+# from a per-player NHL career-stats fetch (~800 requests), so it runs once a
+# day while the lineup scrape runs every 30 minutes and simply carries the
+# existing estimates forward.
 
 on:
   schedule:
-    # Every 30 minutes — projected line combinations move close to puck drop.
-    - cron: "*/30 * * * *"
+    # 13:10 UTC — after the daily data update at 11:00 UTC, and offset from the
+    # :00/:30 lineup refresh.
+    - cron: "10 13 * * *"
   workflow_dispatch:
     inputs:
       season:
@@ -14,15 +22,15 @@ permissions:
   contents: read
 
 concurrency:
-  # Shared with daily-gp-estimates.yml: both delete + re-upsert the same
-  # season's `lineups` rows, so they must never run at the same time.
+  # Shared with update-lineups.yml: both delete + re-upsert the same season's
+  # `lineups` rows, so they must never run at the same time.
   group: lineups-write
   cancel-in-progress: false
 
 jobs:
-  lineups:
+  estimates:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -54,20 +62,19 @@ jobs:
           echo "season=$SEASON" >> "$GITHUB_OUTPUT"
           echo "Resolved season=$SEASON"
 
-      # Scraping overwrites lineups_all.json, which is also the file
-      # scripts/estimate_gp.py writes Estimated Games into. lineups.py carries
-      # gp_est/gp_est_note forward per (team, playerId) so this 30-minute loop
-      # never disturbs the season simulations' games-played weighting.
+      # Fresh scrape first so the estimates are computed against the current
+      # line combinations rather than the snapshot committed in the repo.
       - name: Scrape projected line combinations
         run: |
           python -u scripts/lineups.py --all --quiet \
             --season "${{ steps.params.outputs.season }}" \
             --out-all app/static/lineups_all.json
 
-      # upload_lineups.py also falls back to the stored estimated_gp for any
-      # player the scrape produced without an estimate, so the Supabase rows
-      # keep their Estimated Games even if the JSON snapshot is missing them.
-      - name: Upload lineups to Supabase
+      - name: Recompute Estimated Games
+        run: |
+          python -u scripts/estimate_gp.py
+
+      - name: Upload lineups + Estimated Games to Supabase
         run: |
           python -u scripts/upload_lineups.py \
             --season "${{ steps.params.outputs.season }}"

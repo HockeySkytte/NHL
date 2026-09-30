@@ -1180,7 +1180,7 @@ fn compute_xg(
             }
         }
         for (s_cur, row_idx) in by_season {
-            let names = xg::window_filenames_for_season(s_cur, family);
+            let names = xg::window_filenames_for_season(s_cur, family, &model_dir);
             let n_windows = xg::num_windows();
             let mut models: Vec<std::sync::Arc<xg::XgModel>> = Vec::new();
             for n in &names {

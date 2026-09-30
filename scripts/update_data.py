@@ -19,7 +19,7 @@ import os
 import sys
 import argparse
 import subprocess
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import List, Tuple, Optional, Dict, Any, cast
 import json
 import re
@@ -35,6 +35,16 @@ from sqlalchemy.exc import SQLAlchemyError
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+
+# A Windows console defaults to a legacy code page, where a stray non-ASCII
+# character in a progress message raises UnicodeEncodeError and aborts the run
+# *after* the idempotent pre-delete has already cleared the date. Never let
+# logging kill an export.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 # Disable xG model preload when creating the Flask app
 os.environ.setdefault('XG_PRELOAD', '0')
@@ -1575,7 +1585,7 @@ def export_to_supabase(
         if 'Event' in dfp.columns:
             before = len(dfp)
             dfp = dfp[dfp['Event'].isin(_PBP_KEEP_EVENTS)]
-            print(f"[supabase] pbp filtered {before} → {len(dfp)} rows (kept {_PBP_KEEP_EVENTS})")
+            print(f"[supabase] pbp filtered {before} -> {len(dfp)} rows (kept {_PBP_KEEP_EVENTS})")
 
         dfp = _rename_df_cols(dfp, _PBP_COL_MAP)
         dfp['season'] = season_i
@@ -1626,7 +1636,7 @@ def export_to_supabase(
         )
         before_shifts = len(dfs)
         dfs = agg
-        print(f"[supabase] shifts aggregated {before_shifts} → {len(dfs)} rows (by team+shift_index)")
+        print(f"[supabase] shifts aggregated {before_shifts} -> {len(dfs)} rows (by team+shift_index)")
 
         # First delete existing rows for these game_ids to be idempotent
         game_ids = dfs['game_id'].dropna().unique().tolist()
@@ -1819,6 +1829,25 @@ def rebuild_seasonstats_from_gamedata(season: str = '20252026') -> None:
     print(f"[seasonstats] upserted {len(df_out)} rows to season_stats for season {season_i}")
 
 
+# Counting columns declared INT in the season_stats_teams table.
+_TEAM_STAT_INT_COLUMNS = ('gp', 'cf', 'ca', 'ff', 'fa', 'sf', 'sa', 'gf', 'ga')
+
+
+def coerce_team_stat_int_columns(df: 'pd.DataFrame') -> 'pd.DataFrame':
+    """Cast the INT-declared season_stats_teams counters back to integers.
+
+    The outer merge that combines for/against/TOI frames introduces NaN whenever
+    a team has, say, shots-against but no shots-for in a strength state. pandas
+    then upcasts those columns to float64, PostgREST serialises them as "44.0",
+    and Postgres rejects the whole upsert with 22P02 (invalid input syntax for
+    type integer). The columns are zero-filled by then, so casting is lossless.
+    """
+    for c in _TEAM_STAT_INT_COLUMNS:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).astype('int64')
+    return df
+
+
 def rebuild_team_seasonstats_from_supabase(season: str = '20252026') -> None:
     """Rebuild season_stats_teams from Supabase pbp + shifts tables.
 
@@ -1935,6 +1964,7 @@ def rebuild_team_seasonstats_from_supabase(season: str = '20252026') -> None:
     for c in df.columns:
         if c not in key_cols:
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+    df = coerce_team_stat_int_columns(df)
     df['season'] = season_i
 
     print(f"[team-seasonstats] built {len(df)} team/state rows")
@@ -2690,12 +2720,12 @@ def rebuild_line_combos(season: str = '20242025') -> None:
     _reset_client()
 
     season_int = int(season)
-    print(f'[lines] rebuilding forward_lines / defense_pairings for season {season} …')
+    print(f'[lines] rebuilding forward_lines / defense_pairings for season {season} ...')
 
     # ── 1. Teams for this season ────────────────────────────────
     teams = _season_team_codes(season_int)
     if not teams:
-        print(f'[lines] no teams found for season {season} – aborting'); return
+        print(f'[lines] no teams found for season {season} - aborting'); return
 
     # ── 2. Player positions ─────────────────────────────────────
     players_df = read_table('players', columns='player_id,player,position',
@@ -2724,7 +2754,7 @@ def rebuild_line_combos(season: str = '20242025') -> None:
     # ── 3. Read shifts per team and group by combo ──────────────
     all_game_ids: set = set()
     for idx, team in enumerate(teams, 1):
-        print(f'[lines] ({idx}/{len(teams)}) reading shifts for {team} …', end=' ')
+        print(f'[lines] ({idx}/{len(teams)}) reading shifts for {team} ...', end=' ')
         df = read_table('shifts',
                         columns='shift_index,game_id,player_id,duration,strength_state',
                         filters={'team': f'eq.{team}', 'season': f'eq.{season_int}'})
@@ -2786,7 +2816,7 @@ def rebuild_line_combos(season: str = '20242025') -> None:
         if not df_pbp.empty:
             all_pbp.extend(df_pbp.to_dict(orient='records'))
         if (i // BATCH + 1) % 20 == 0:
-            print(f'[lines]   PBP batch {i // BATCH + 1}/{(len(game_list) + BATCH - 1) // BATCH} …')
+            print(f'[lines]   PBP batch {i // BATCH + 1}/{(len(game_list) + BATCH - 1) // BATCH} ...')
     print(f'[lines] loaded {len(all_pbp)} PBP events')
 
     # ── 5. Build shift_key → combo keys mapping ────────────────
@@ -2917,7 +2947,7 @@ def rebuild_line_combos_date(season: str, game_ids: List[int]) -> None:
     pre-computed tables (adding TOI, GP, and all counting stats).
     """
     if not game_ids:
-        print('[lines-date] no game IDs provided – skipping')
+        print('[lines-date] no game IDs provided - skipping')
         return
     from collections import defaultdict
     from dotenv import load_dotenv
@@ -2927,7 +2957,7 @@ def rebuild_line_combos_date(season: str, game_ids: List[int]) -> None:
     _reset_client()
 
     season_int = int(season)
-    print(f'[lines-date] updating line combos for {len(game_ids)} games …')
+    print(f'[lines-date] updating line combos for {len(game_ids)} games ...')
 
     # ── Player positions ────────────────────────────────────────
     players_df = read_table('players', columns='player_id,player,position',
@@ -3170,7 +3200,7 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument('--start-date', type=_validate_date, help='Optional lower bound for --all-dates (YYYY-MM-DD)')
     parser.add_argument('--end-date', type=_validate_date, help='Optional upper bound for --all-dates (YYYY-MM-DD)')
     parser.add_argument('--export', action='store_true', help='Export to Supabase after fetching')
-    parser.add_argument('--season', default='20252026', help='Season code for table names, e.g., 20252026')
+    parser.add_argument('--season', default=None, help='Season code for table names, e.g., 20262027 (default: derived from the date)')
     parser.add_argument('--replace-date', action='store_true', help='Pre-delete rows for this date before insert (idempotent loads)')
     parser.add_argument(
         '--seasonstats-sheets-id',
@@ -3198,6 +3228,19 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument('--rebuild-seasonstats', action='store_true', help='Rebuild season_stats table from game_data in Supabase after export')
     parser.add_argument('--rebuild-team-seasonstats', action='store_true', help='Rebuild season_stats_teams from Supabase pbp+shifts')
     args = parser.parse_args(argv)
+
+    # Resolve the season from the date being processed when not given. A
+    # hard-coded default silently wrote a new season's games into the previous
+    # season's tables.
+    if not args.season:
+        from scripts.season_for_date import season_code_for
+        anchor = args.date or args.start_date
+        if anchor:
+            anchor_day = datetime.strptime(anchor, '%Y-%m-%d').date()
+        else:
+            anchor_day = datetime.now(timezone.utc).date()
+        args.season = season_code_for(anchor_day)
+        print(f"[season] resolved season={args.season} from {anchor_day}")
 
     # Standalone team seasonstats rebuild
     if bool(args.rebuild_team_seasonstats) and not args.date and not args.all_dates and not args.seasonstats_only:

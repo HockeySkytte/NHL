@@ -947,6 +947,53 @@ def _validate_season(s: str) -> str:
     return s2
 
 
+def carry_over_gp_est(combined: Dict[str, Dict], previous_path: str) -> int:
+    """Copy gp_est/gp_est_note from a previous snapshot onto a fresh scrape.
+
+    This script runs every 30 minutes to refresh line combinations; the Estimated
+    Games used by the season simulations are produced separately (and far less
+    often) by scripts/estimate_gp.py. Re-scraping must therefore never drop them:
+    every player still on the same team keeps his previous estimate. Matching is
+    by playerId within a team, so a traded player does not inherit his old
+    team's estimate.
+
+    Returns the number of player entries that received a carried-over gp_est.
+    """
+    try:
+        with open(previous_path, 'r', encoding='utf-8') as f:
+            previous = json.load(f)
+    except Exception:
+        return 0
+    if not isinstance(previous, dict):
+        return 0
+
+    carried = 0
+    for team_abbrev, team_node in combined.items():
+        prev_node = previous.get(team_abbrev)
+        if not isinstance(team_node, dict) or not isinstance(prev_node, dict):
+            continue
+        prev_by_pid: Dict[int, Dict] = {}
+        for group_key in ('forwards', 'defense', 'goalies'):
+            for p in prev_node.get(group_key) or []:
+                pid = p.get('playerId') if isinstance(p, dict) else None
+                if pid:
+                    prev_by_pid[int(pid)] = p
+        for group_key in ('forwards', 'defense', 'goalies'):
+            for p in team_node.get(group_key) or []:
+                if not isinstance(p, dict):
+                    continue
+                pid = p.get('playerId')
+                prev = prev_by_pid.get(int(pid)) if pid else None
+                if not prev:
+                    continue
+                if 'gp_est' in prev and 'gp_est' not in p:
+                    p['gp_est'] = prev['gp_est']
+                    carried += 1
+                if 'gp_est_note' in prev and 'gp_est_note' not in p:
+                    p['gp_est_note'] = prev['gp_est_note']
+    return carried
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description='Scrape expected lineups and map to playerIds')
     g = ap.add_mutually_exclusive_group(required=True)
@@ -954,12 +1001,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     g.add_argument('--team', help='NHL team abbrev (e.g., ANA)')
     g.add_argument('--all', action='store_true', help='Scrape all active NHL teams and write one combined JSON file')
     g.add_argument('--teams', help='Comma-separated list of team abbrevs to scrape (e.g., ANA,BOS,BUF)')
-    ap.add_argument('--season', default='20252026', type=_validate_season, help='Season code for roster source, e.g., 20252026')
+    ap.add_argument('--season', default=None, type=_validate_season, help='Season code for roster source, e.g., 20262027 (default: current season)')
     ap.add_argument('--save', action='store_true', help='Save JSON to app/static/lineup_<TEAM>.json')
     ap.add_argument('--out', help='Custom output path for JSON (overrides --save default path)')
     ap.add_argument('--out-all', help='Output path for combined JSON when using --all/--teams (default app/static/lineups_all.json)')
     ap.add_argument('--quiet', action='store_true', help='Reduce console output in batch mode')
     args = ap.parse_args(argv)
+
+    # Default to the calendar season so the 30-minute refresh maps scraped names
+    # against the current rosters instead of a hard-coded older season.
+    if not args.season:
+        from scripts.season_for_date import season_code_for
+        args.season = season_code_for(datetime.now(timezone.utc).date())
 
     # Batch mode for all or selected teams
     if args.all or args.teams:
@@ -969,7 +1022,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             teams_list = [t.strip().upper() for t in (args.teams or '').split(',') if t.strip()]
         out_all_path = args.out_all or os.path.join(REPO_ROOT, 'app', 'static', 'lineups_all.json')
-        os.makedirs(os.path.dirname(out_all_path), exist_ok=True)
+        out_all_dir = os.path.dirname(out_all_path)
+        if out_all_dir:
+            os.makedirs(out_all_dir, exist_ok=True)
 
         combined: Dict[str, Dict] = {}
         season_int = int(args.season)
@@ -1008,6 +1063,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 d_list: List[Dict] = d_obj if isinstance(d_obj, list) else []
                 g_list: List[Dict] = g_obj if isinstance(g_obj, list) else []
                 print(f"  -> F:{len(f_list)} D:{len(d_list)} G:{len(g_list)}")
+
+        carried = carry_over_gp_est(combined, out_all_path)
+        if carried:
+            print(f"[gp_est] preserved {carried} Estimated Games values from the previous snapshot")
 
         with open(out_all_path, 'w', encoding='utf-8') as f:
             f.write(json.dumps(combined, ensure_ascii=False))
@@ -1062,7 +1121,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not out_path:
             out_path = os.path.join(REPO_ROOT, 'app', 'static', f'lineup_{team}.json')
         try:
-            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            out_dir = os.path.dirname(out_path)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
             # Attach generation timestamp
             try:
                 mapped_out = dict(mapped)

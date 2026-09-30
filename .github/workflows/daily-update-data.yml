@@ -10,9 +10,8 @@ on:
         description: "Override date (YYYY-MM-DD). Leave blank for yesterday."
         required: false
       season:
-        description: "Season code (e.g. 20252026)"
+        description: "Season code (e.g. 20262027). Leave blank to derive from the date."
         required: false
-        default: "20252026"
 
 permissions:
   contents: read
@@ -24,7 +23,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     env:
       # Supabase (read + write)
@@ -58,7 +57,13 @@ jobs:
           else
             DATE=$(python -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%d'))")
           fi
-          SEASON="${{ inputs.season || '20252026' }}"
+          # Derive the season from the date being processed. This used to be
+          # hard-coded to 20252026, which wrote every 20262027 game into the
+          # previous season's tables once the new season started.
+          SEASON="${{ inputs.season }}"
+          if [ -z "$SEASON" ]; then
+            SEASON=$(python scripts/season_for_date.py --date "$DATE")
+          fi
           echo "date=$DATE" >> "$GITHUB_OUTPUT"
           echo "season=$SEASON" >> "$GITHUB_OUTPUT"
           echo "Processing date=$DATE  season=$SEASON"
@@ -73,3 +78,8 @@ jobs:
             --rebuild-lines \
             --rebuild-seasonstats
 
+      - name: Rebuild team season stats
+        run: |
+          python -u scripts/update_data.py \
+            --season "${{ steps.params.outputs.season }}" \
+            --rebuild-team-seasonstats

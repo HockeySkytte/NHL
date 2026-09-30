@@ -69,9 +69,9 @@ services:
 cronJobs:
   - name: update-lineups-30m
     schedule: "*/30 * * * *"
-    command: "python -u scripts/lineups.py --all --quiet --out-all app/static/lineups_all.json"
+    command: "python -u scripts/lineups.py --all --quiet --out-all app/static/lineups_all.json && python -u scripts/upload_lineups.py --season $(python scripts/season_for_date.py)"
     timezone: UTC
   - name: daily-update-data
     schedule: "15 9 * * *"
-    command: "python -u scripts/update_data.py --date $(python -c 'from datetime import datetime, timedelta, timezone; import sys; sys.stdout.write((datetime.now(timezone.utc)-timedelta(days=1)).strftime(\"%Y-%m-%d\"))') --export --season 20252026 --replace-date --rebuild-team-seasonstats --run-rapm"
+    command: "python -u scripts/update_data.py --date $(python -c 'from datetime import datetime, timedelta, timezone; import sys; sys.stdout.write((datetime.now(timezone.utc)-timedelta(days=1)).strftime(\"%Y-%m-%d\"))') --export --season $(python scripts/season_for_date.py --days-ago 1) --replace-date --rebuild-team-seasonstats --run-rapm"
     timezone: UTC

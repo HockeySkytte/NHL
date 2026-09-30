@@ -14,8 +14,8 @@ Also adds `gp_est_note` with a brief explanation.
 estimate is scaled by 84/82 and capped at 84.
 
 Usage:
-    .\.venv\Scripts\python.exe .\scripts\estimate_gp.py
-    .\.venv\Scripts\python.exe .\scripts\estimate_gp.py --dry-run   (preview only)
+    .\\.venv\\Scripts\\python.exe .\\scripts\\estimate_gp.py
+    .\\.venv\\Scripts\\python.exe .\\scripts\\estimate_gp.py --dry-run   (preview only)
 """
 
 import json
@@ -35,6 +35,12 @@ LINEUPS_PATH = os.path.join(REPO_ROOT, 'app', 'static', 'lineups_all.json')
 # 2026-27 is an 84-game season (expanded from 82) — scale every GP estimate.
 SEASON_GAMES = 84
 GP_MULTIPLIER = SEASON_GAMES / 82.0
+
+# The season being projected. Its own (partial) games must never enter the
+# history window: after a single game it would dominate the weighted average and
+# collapse every estimate toward 1-2 games, which then silently zeroes out the
+# season simulations' games-played weighting.
+TARGET_SEASON = 20262027
 
 REQUEST_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -109,10 +115,12 @@ def fetch_player_landing(pid: int, timeout: int = 20) -> Optional[Dict]:
         return None
 
 
-def extract_gp_history(landing: Dict) -> List[int]:
+def extract_gp_history(landing: Dict, target_season: int = TARGET_SEASON) -> List[int]:
     """Extract regular-season NHL GP from seasonTotals, most recent first.
-    
-    Filters: leagueAbbrev=='NHL', gameTypeId==2 (regular season).
+
+    Filters: leagueAbbrev=='NHL', gameTypeId==2 (regular season), and
+    season < `target_season` — the season being projected is the thing we are
+    estimating, so its partial games are not history.
     Groups by season, taking the max GP within each season.
     """
     season_totals = landing.get('seasonTotals') or []
@@ -127,10 +135,13 @@ def extract_gp_history(landing: Dict) -> List[int]:
             continue
         season = entry.get('season')
         gp = entry.get('gamesPlayed')
-        if season is not None and gp is not None and gp > 0:
-            season = int(season)
-            # Sum GP for traded players (split across teams in same season)
-            season_gp[season] += gp
+        if season is None or gp is None or gp <= 0:
+            continue
+        season = int(season)
+        if season >= target_season:
+            continue
+        # Sum GP for traded players (split across teams in same season)
+        season_gp[season] += gp
     
     # Sort by season descending (most recent first)
     gp_list = [gp for season, gp in sorted(season_gp.items(), reverse=True)]
