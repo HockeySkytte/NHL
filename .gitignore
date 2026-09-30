@@ -36,6 +36,9 @@ Thumbs.db
 # Large data files (exceeds GitHub 100 MB limit)
 data/player_projections/
 
+# Per-run diagnostics written by the projection export
+data/game_projection/preseason_updating_player_projection_unmatched.csv
+
 # Environment
 .env
 .env.*

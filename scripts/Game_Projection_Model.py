@@ -59,6 +59,62 @@ _GAMESCORE_CSV = "gamescore.csv"
 _SKATER_EV_XG_CSV = "skater_ev_xg.csv"
 _REQUIRED_GOALIE_CACHE_COLS = {"manpower", "xga", "sa"}
 
+# The Moncton source renamed skaters_master/goalies_master `manpower` (EV/PP/SH)
+# to `strengthstate` with explicit skater counts (5V5, 5V4, 4V5, ENA, ...).
+# These sets restore the EV/PP/SH buckets the model consumes. ENA belongs with
+# EV: it is the equal-skater "net empty" label, and mapping it there reproduced
+# the legacy cached goalies.csv / skater_ev_xg.csv far better than any
+# alternative (mean |delta gsaa| 0.117 vs 0.132 / 0.122 / 0.173, and goalie TOI
+# to within ~1 second per game).
+EV_STRENGTH_STATES = frozenset({"5V5", "4V4", "3V3", "ENA"})
+PP_STRENGTH_STATES = frozenset({"5V4", "5V3", "4V3"})
+SH_STRENGTH_STATES = frozenset({"4V5", "3V5", "3V4"})
+
+
+def strength_bucket(state):
+    """Map a `strengthstate` value onto the model's EV/PP/SH bucket.
+
+    Returns None for a value we do not recognise; callers turn that into a loud
+    failure so an upstream vocabulary change cannot silently drop rows.
+    """
+    s = str(state or "").strip().upper()
+    if s in EV_STRENGTH_STATES:
+        return "EV"
+    if s in PP_STRENGTH_STATES:
+        return "PP"
+    if s in SH_STRENGTH_STATES:
+        return "SH"
+    return None
+
+
+# Identifier columns, in the spelling each loader sees them under.
+ID_COLUMNS = ("playerid", "gameid", "game_id", "away_team_id", "home_team_id")
+
+
+def normalize_id_columns(df: pd.DataFrame, columns=ID_COLUMNS) -> pd.DataFrame:
+    """Coerce identifier columns to int64.
+
+    The Moncton source migrated some tables to text and left others numeric:
+    playerid/gameid are text in skaters_master, goalies_master and
+    gamescore_master, but numeric in possession_values_master and games, and
+    away_team_id/home_team_id are text while teams.teamid is bigint. Mixing
+    those frames raised "You are trying to merge on float64 and str columns",
+    and the team-id mismatch silently dropped every game. One canonical integer
+    type keeps every join working.
+
+    Anything non-numeric is a loud error rather than a coerced null.
+    """
+    for col in columns:
+        if col not in df.columns:
+            continue
+        numeric = pd.to_numeric(df[col], errors="coerce")
+        bad = int(numeric.isna().sum() - df[col].isna().sum())
+        if bad:
+            sample = df.loc[numeric.isna() & df[col].notna(), col].astype(str).unique()[:5]
+            raise ValueError(f"{col} has {bad} non-numeric value(s): {list(sample)}")
+        df[col] = numeric.fillna(0).astype("int64")
+    return df
+
 
 def _base_csv_exists():
     return all(os.path.exists(os.path.join(DATA_DIR, f)) for f in _BASE_CSV_FILES)
@@ -126,21 +182,21 @@ def _load_skater_ev_xg_csv():
 
 def _load_csvs(include_gamescore=True):
     kw = {"dtype": {"season": str}}
-    games = pd.read_csv(os.path.join(DATA_DIR, "games.csv"),
-                        parse_dates=["date"], **kw)
-    pvm = pd.read_csv(os.path.join(DATA_DIR, "pvm.csv"), **kw)
-    skaters = pd.read_csv(os.path.join(DATA_DIR, "skaters.csv"), **kw)
-    goalies = pd.read_csv(os.path.join(DATA_DIR, "goalies.csv"), **kw)
+    games = normalize_id_columns(pd.read_csv(
+        os.path.join(DATA_DIR, "games.csv"), parse_dates=["date"], **kw))
+    pvm = normalize_id_columns(pd.read_csv(os.path.join(DATA_DIR, "pvm.csv"), **kw))
+    skaters = normalize_id_columns(pd.read_csv(os.path.join(DATA_DIR, "skaters.csv"), **kw))
+    goalies = normalize_id_columns(pd.read_csv(os.path.join(DATA_DIR, "goalies.csv"), **kw))
     print(f"  Games: {len(games)},  PVM: {len(pvm):,},"
           f"  Skaters: {len(skaters):,},  Goalies: {len(goalies):,}")
     if not include_gamescore:
         return games, pvm, skaters, goalies
 
-    gamescore = pd.read_csv(
+    gamescore = normalize_id_columns(pd.read_csv(
         os.path.join(DATA_DIR, _GAMESCORE_CSV),
         parse_dates=["date"],
         **kw,
-    )
+    ))
     print(f"  Gamescore rows: {len(gamescore):,}")
     return games, pvm, skaters, goalies, gamescore
 
@@ -265,10 +321,17 @@ def compute_combined_weights(gp_before: pd.Series):
 
 # ── 1. Load raw tables ───────────────────────────────────────────────
 def load_team_map(conn):
-    """Build {teamid: abbrev} and {full_name: abbrev} from teams table."""
+    """Build {teamid: abbrev} and {full_name: abbrev} from teams table.
+
+    Keyed by int to match the normalized id columns (see normalize_id_columns).
+    """
     q = text("SELECT teamid, team, teamname FROM teams WHERE competition_id = 1")
     df = pd.read_sql(q, conn)
-    id_to_abbr = dict(zip(df["teamid"], df["team"]))
+    id_to_abbr = {}
+    for tid, team in zip(df["teamid"], df["team"]):
+        if tid is None or pd.isna(tid):
+            continue
+        id_to_abbr[int(tid)] = team
     name_to_abbr = dict(zip(df["teamname"], df["team"]))
     for a in df["team"]:
         name_to_abbr[a] = a
@@ -288,6 +351,7 @@ def load_games(conn, id_to_abbr: dict) -> pd.DataFrame:
         ORDER BY date, game_id
     """)
     df = pd.read_sql(q, conn)
+    df = normalize_id_columns(df)
     df["awayteam"] = df["away_team_id"].map(id_to_abbr)
     df["hometeam"] = df["home_team_id"].map(id_to_abbr)
     df["home_win"] = (df["home_score"] > df["away_score"]).astype(int)
@@ -311,6 +375,7 @@ def load_pvm(conn, name_to_abbr: dict) -> pd.DataFrame:
     print("    Loading PVM …", end=" ", flush=True)
     df = pd.read_sql(q, conn)
     print(f"{len(df):,} rows")
+    df = normalize_id_columns(df)
     df["team"] = df["team"].map(name_to_abbr).fillna(df["team"])
     return df
 
@@ -326,34 +391,51 @@ def load_skaters(conn) -> pd.DataFrame:
     print("    Loading Skaters …", end=" ", flush=True)
     df = pd.read_sql(q, conn)
     print(f"{len(df):,} rows")
-    return df
+    return normalize_id_columns(df)
 
 
 def load_skater_ev_xg(conn) -> pd.DataFrame:
     """Skater EV xGF/xGA per player-game (NHL regular season only)."""
-    q = text("""
+    states = sorted(EV_STRENGTH_STATES)
+    placeholders = ", ".join(f":s{i}" for i in range(len(states)))
+    q = text(f"""
         SELECT season, playerid, gameid, xgf, xga
         FROM skaters_master
         WHERE league = '1'
           AND seasonstage = 'regular'
-          AND manpower = 'EV'
+          AND UPPER(TRIM(strengthstate)) IN ({placeholders})
     """)
     print("    Loading Skater EV xG …", end=" ", flush=True)
-    df = pd.read_sql(q, conn)
+    params = {f"s{i}": s for i, s in enumerate(states)}
+    df = pd.read_sql(q, conn, params=params)
     print(f"{len(df):,} rows")
-    return df
+    return normalize_id_columns(df)
 
 
 def load_goalies(conn) -> pd.DataFrame:
-    """Goalie per-game results inputs (NHL regular season only)."""
+    """Goalie per-game results inputs (NHL regular season only).
+
+    `strengthstate` is bucketed back to the EV/PP/SH `manpower` column the
+    downstream profile builder expects.
+    """
     q = text("""
-        SELECT season, playerid, gameid, manpower, xg_on_a, xga, ga, sa, toi
+        SELECT season, playerid, gameid, strengthstate, xg_on_a, xga, ga, sa, toi
         FROM goalies_master
         WHERE league = '1'
           AND seasonstage = 'regular'
     """)
     print("    Loading Goalies …", end=" ", flush=True)
     df = pd.read_sql(q, conn)
+    df = normalize_id_columns(df)
+    df["manpower"] = df["strengthstate"].map(strength_bucket)
+    unknown = sorted(df.loc[df["manpower"].isna(), "strengthstate"].astype(str).unique())
+    if unknown:
+        raise RuntimeError(
+            "goalies_master returned strength states with no EV/PP/SH bucket: "
+            f"{unknown}. Update EV_STRENGTH_STATES / PP_STRENGTH_STATES / "
+            "SH_STRENGTH_STATES in Game_Projection_Model.py."
+        )
+    df = df.drop(columns=["strengthstate"])
     print(f"{len(df):,} rows")
     return df
 
@@ -371,6 +453,7 @@ def load_gamescore(conn, name_to_abbr: dict) -> pd.DataFrame:
         print("    Loading Gamescore …", end=" ", flush=True)
         df = pd.read_sql(q, conn)
         print(f"{len(df):,} rows")
+        df = normalize_id_columns(df)
         df["team"] = df["team"].map(name_to_abbr).fillna(df["team"])
         df["date"] = pd.to_datetime(df["date"])
         df["manpower"] = df["manpower"].astype(str).str.upper().str.strip()

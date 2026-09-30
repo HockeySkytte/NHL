@@ -1120,6 +1120,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional season filter, e.g. 20252026",
     )
+    parser.add_argument(
+        "--latest-season",
+        action="store_true",
+        help=(
+            "Export only the newest season present in the source data. "
+            "Self-maintaining: projections are per game, so the season to "
+            "export is the newest one that actually has games, which is not "
+            "necessarily the calendar season (the Moncton games table lags "
+            "the player-stats tables at the start of a season)."
+        ),
+    )
     parser.add_argument("--refresh-data", action="store_true", help="Reload Moncton base inputs from DB")
     parser.add_argument(
         "--refresh-player-cache",
@@ -1138,6 +1149,11 @@ def parse_args() -> argparse.Namespace:
 def get_requested_seasons(args: argparse.Namespace, games: pd.DataFrame) -> set[str]:
     if args.season:
         requested = {str(season).strip() for season in args.season if str(season).strip()}
+    elif getattr(args, "latest_season", False):
+        # Per-game projections need games; take the newest season that has them.
+        seasons = {str(s).strip() for s in games["season"].dropna().unique() if str(s).strip()}
+        requested = {max(seasons)} if seasons else set()
+        print(f"Latest season with games in the source: {sorted(requested) or 'none'}")
     else:
         requested = set(games["season"].astype(str).unique())
 

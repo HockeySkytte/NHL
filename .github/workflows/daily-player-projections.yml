@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       season:
-        description: "Season code (e.g. 20262027). Leave blank to derive from today."
+        description: "Season code to export (e.g. 20262027). Leave blank for the newest season the source has games for."
         required: false
 
 permissions:
@@ -43,21 +43,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Resolve season
-        id: params
-        run: |
-          # Follow the calendar season rather than a hard-coded code.
-          SEASON="${{ inputs.season }}"
-          if [ -z "$SEASON" ]; then
-            SEASON=$(python scripts/season_for_date.py)
-          fi
-          echo "season=$SEASON" >> "$GITHUB_OUTPUT"
-          echo "Processing season=$SEASON"
-
       - name: Export player-game projections
         run: |
+          SEASON="${{ inputs.season }}"
+          if [ -n "$SEASON" ]; then
+            SEASON_ARG="--season $SEASON"
+            echo "Exporting season $SEASON"
+          else
+            # Target the newest season the source actually has games for rather
+            # than the calendar season: the Moncton `games` table lags its
+            # player-stats tables at the start of a season, so pinning the new
+            # season made this step fail with "No projections were generated".
+            SEASON_ARG="--latest-season"
+          fi
           python -u scripts/export_preseason_updating_player_projections.py \
-            --season "${{ steps.params.outputs.season }}" \
+            $SEASON_ARG \
             --skip-ensure-table \
             --refresh-data \
             --refresh-player-cache
