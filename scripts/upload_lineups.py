@@ -55,6 +55,28 @@ def is_starter(unit: str, pos: str) -> bool:
     return False
 
 
+def dedupe_rows(rows: List[Dict]) -> List[Dict]:
+    """Keep one row per (team, player_id, season).
+
+    That tuple is the `lineups` primary key, and PostgREST's upsert rejects a
+    batch that proposes the same key twice: `21000 ON CONFLICT DO UPDATE command
+    cannot affect row a second time`. Two distinct DailyFaceoff names can
+    resolve to the same player id — Justin and Dylan Hryckowian both matched
+    8484829 — so collapse them, preferring the starting slot over a scratch one.
+    """
+    out: Dict[tuple, Dict] = {}
+    order: List[tuple] = []
+    for row in rows:
+        key = (row['team'], row['player_id'], row['season'])
+        kept = out.get(key)
+        if kept is None:
+            out[key] = row
+            order.append(key)
+        elif row.get('starter') and not kept.get('starter'):
+            out[key] = row
+    return [out[k] for k in order]
+
+
 def build_rows(lineups: Dict[str, Any], season: str,
                existing: Dict[tuple, Dict] | None = None) -> List[Dict]:
     """Build the list of rows for the lineups table from the JSON data.
@@ -108,7 +130,7 @@ def build_rows(lineups: Dict[str, Any], season: str,
                         if prev.get(col) is not None:
                             row[col] = prev[col]
                 rows.append(row)
-    return rows
+    return dedupe_rows(rows)
 
 
 def fetch_existing_rows(season: str) -> Dict[tuple, Dict]:

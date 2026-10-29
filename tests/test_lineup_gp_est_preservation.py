@@ -220,3 +220,83 @@ def test_a_normal_scrape_is_accepted():
 def test_first_upload_has_nothing_to_shrink_from():
     assert is_implausible_shrink(0, 0) is False
     assert is_implausible_shrink(1, 0) is False
+
+
+# ── duplicate player slots ──────────────────────────────────────────────────
+# DailyFaceoff listed both Justin and Dylan Hryckowian; both fuzzy-matched to
+# 8484829, and PostgREST rejected the whole upsert with
+# "21000 ON CONFLICT DO UPDATE command cannot affect row a second time".
+
+def _two_players_same_id(unit_a='LW3', unit_b='LW4'):
+    return {
+        'DAL': {
+            'team': 'DAL',
+            'forwards': [
+                {'name': 'Justin Hryckowian', 'playerId': 8484829, 'unit': unit_a, 'pos': 'F'},
+                {'name': 'Dylan Hryckowian', 'playerId': 8484829, 'unit': unit_b, 'pos': 'F'},
+            ],
+            'defense': [], 'goalies': [],
+        }
+    }
+
+
+def test_build_rows_collapses_duplicate_player_ids():
+    rows = build_rows(_two_players_same_id(), '20262027', {})
+
+    assert len(rows) == 1
+    assert rows[0]['player_id'] == 8484829
+
+
+def test_starting_slot_wins_over_a_scratch_slot():
+    rows = build_rows(_two_players_same_id(unit_a='EXT', unit_b='LW4'), '20262027', {})
+
+    assert len(rows) == 1
+    assert rows[0]['line_unit'] == 'LW4'
+    assert rows[0]['starter'] == 1
+
+
+def test_dedupe_keeps_distinct_players():
+    lineups = _two_players_same_id()
+    lineups['DAL']['forwards'][1]['playerId'] = 8478402
+
+    rows = build_rows(lineups, '20262027', {})
+
+    assert len(rows) == 2
+
+
+def test_upload_never_proposes_a_duplicate_primary_key():
+    rows = build_rows(_two_players_same_id(), '20262027', {})
+    keys = [(r['team'], r['player_id'], r['season']) for r in rows]
+
+    assert len(keys) == len(set(keys))
+
+
+def test_scraper_dedupe_collapses_within_a_team():
+    from scripts.lineups import dedupe_team_players
+
+    combined = _two_players_same_id()
+
+    removed = dedupe_team_players(combined)
+
+    assert removed == 1
+    assert len(combined['DAL']['forwards']) == 1
+
+
+def test_scraper_dedupe_prefers_the_starter():
+    from scripts.lineups import dedupe_team_players
+
+    combined = _two_players_same_id(unit_a='EXT', unit_b='RW2')
+
+    dedupe_team_players(combined)
+
+    assert combined['DAL']['forwards'][0]['unit'] == 'RW2'
+
+
+def test_scraper_dedupe_leaves_clean_input_alone():
+    from scripts.lineups import dedupe_team_players
+
+    combined = _two_players_same_id()
+    combined['DAL']['forwards'][1]['playerId'] = 8478402
+
+    assert dedupe_team_players(combined) == 0
+    assert len(combined['DAL']['forwards']) == 2

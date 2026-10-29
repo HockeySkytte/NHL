@@ -947,6 +947,53 @@ def _validate_season(s: str) -> str:
     return s2
 
 
+def dedupe_team_players(combined: Dict[str, Dict]) -> int:
+    """Collapse playerIds that appear more than once for the same team.
+
+    DailyFaceoff can list two players whose names fuzzy-match to a single NHL id
+    — Justin and Dylan Hryckowian both resolved to 8484829 — and a duplicated
+    player breaks the `lineups` primary key `(team, player_id, season)` on
+    upload (`21000 ON CONFLICT DO UPDATE command cannot affect row a second
+    time`). The starting slot wins over a scratch slot; otherwise the first
+    occurrence is kept.
+
+    Returns the number of slots removed.
+    """
+    removed = 0
+    for node in combined.values():
+        if not isinstance(node, dict):
+            continue
+        best: Dict[int, Dict] = {}
+        for group_key in ('forwards', 'defense', 'goalies'):
+            for player in node.get(group_key) or []:
+                if not isinstance(player, dict):
+                    continue
+                pid = player.get('playerId')
+                if not pid:
+                    continue
+                pid = int(pid)
+                kept = best.get(pid)
+                if kept is None:
+                    best[pid] = player
+                elif (player.get('unit') or 'EXT').upper() != 'EXT' and \
+                        (kept.get('unit') or 'EXT').upper() == 'EXT':
+                    best[pid] = player
+                    removed += 1
+                else:
+                    removed += 1
+        for group_key in ('forwards', 'defense', 'goalies'):
+            players = node.get(group_key)
+            if not isinstance(players, list):
+                continue
+            node[group_key] = [
+                player for player in players
+                if not isinstance(player, dict)
+                or not player.get('playerId')
+                or best.get(int(player['playerId'])) is player
+            ]
+    return removed
+
+
 def carry_over_gp_est(combined: Dict[str, Dict], previous_path: str) -> int:
     """Copy gp_est/gp_est_note from a previous snapshot onto a fresh scrape.
 
@@ -1067,6 +1114,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         carried = carry_over_gp_est(combined, out_all_path)
         if carried:
             print(f"[gp_est] preserved {carried} Estimated Games values from the previous snapshot")
+
+        collapsed = dedupe_team_players(combined)
+        if collapsed:
+            print(f"[dedupe] collapsed {collapsed} duplicate player slot(s)")
 
         with open(out_all_path, 'w', encoding='utf-8') as f:
             f.write(json.dumps(combined, ensure_ascii=False))
