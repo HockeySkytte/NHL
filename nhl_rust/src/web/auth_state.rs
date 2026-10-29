@@ -40,6 +40,20 @@ pub fn isoformat_utc(value: Option<DateTime<Utc>>) -> String {
     }
 }
 
+/// `isoformat_utc` but `null` when absent — for payloads written to `timestamptz`
+/// columns.
+///
+/// `isoformat_utc(None)` yields an empty string, which Postgres rejects with
+/// `22007 invalid input syntax for type timestamp with time zone`. Any payload
+/// carrying an optional date must use this instead.
+pub fn isoformat_utc_or_null(value: Option<DateTime<Utc>>) -> serde_json::Value {
+    if value.is_none() {
+        serde_json::Value::Null
+    } else {
+        serde_json::Value::String(isoformat_utc(value))
+    }
+}
+
 fn now_utc() -> DateTime<Utc> {
     Utc::now()
 }

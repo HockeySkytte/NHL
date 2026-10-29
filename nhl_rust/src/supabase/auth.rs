@@ -211,6 +211,14 @@ impl SbClient {
             if let Some(col) = missing_column_name(&err_text, "user_accounts") {
                 if let Value::Object(map) = &mut payload {
                     if map.remove(&col).is_some() {
+                        // Say so loudly: a silently dropped `stripe_customer_id`
+                        // is how a never-applied migration went unnoticed while
+                        // paying customers stayed on "trial ended".
+                        tracing::warn!(
+                            column = %col,
+                            "user_accounts is missing this column; dropping it from the upsert \
+                             payload. Apply supabase/migrations to the deployed database."
+                        );
                         continue;
                     }
                 }

@@ -20,10 +20,13 @@ Environment variables (set in .env / Render / Supabase dashboard):
 import os
 import math
 import functools
+import logging
 import re
 
 import pandas as pd
 from supabase import create_client, Client
+
+logger = logging.getLogger(__name__)
 
 
 # ── Supabase REST client (supabase-py) ───────────────────────────
@@ -234,7 +237,10 @@ def upsert_user_account(record: dict) -> dict | None:
     payload = dict(record or {})
     client = get_client()
     # Some deployed environments may lag migrations. If a column is missing,
-    # retry without that column so core account sync still succeeds.
+    # retry without that column so core account sync still succeeds — but say so
+    # loudly: a missing `stripe_customer_id` used to be dropped in silence, which
+    # is how a never-applied migration went unnoticed while paying customers
+    # stayed on "trial ended".
     for _ in range(10):
         try:
             client.table('user_accounts').upsert(payload, on_conflict='auth_user_id').execute()
@@ -245,6 +251,11 @@ def upsert_user_account(record: dict) -> dict | None:
             missing_col = _missing_column_name(exc, 'user_accounts')
             if missing_col and missing_col in payload:
                 payload.pop(missing_col, None)
+                logger.warning(
+                    'user_accounts is missing column %r; dropping it from the upsert '
+                    'payload. Apply supabase/migrations to the deployed database.',
+                    missing_col,
+                )
                 continue
             raise
     return get_user_account(auth_user_id)

@@ -439,13 +439,53 @@ pub async fn sync_user_account_from_supabase_user(
         .or_else(|| existing.as_ref().and_then(|e| auth_state::parse_iso_datetime(e.get("subscription_started_at"))));
     payload.insert(
         "subscription_started_at".into(),
-        auth_state::isoformat_utc(started).into(),
+        auth_state::isoformat_utc_or_null(started),
     );
     let ends = auth_state::parse_iso_datetime(ov.get("subscription_ends_at"))
         .or_else(|| existing.as_ref().and_then(|e| auth_state::parse_iso_datetime(e.get("subscription_ends_at"))));
     payload.insert(
         "subscription_ends_at".into(),
-        auth_state::isoformat_utc(ends).into(),
+        auth_state::isoformat_utc_or_null(ends),
+    );
+    // Stripe linkage — mirrors Python `_build_account_payload`. The Stripe
+    // webhook is the only writer of these, and dropping them loses the customer
+    // id the billing portal needs.
+    let pick = |k: &str| -> String {
+        let v = ov_str(k);
+        if !v.is_empty() {
+            return v;
+        }
+        let v = ex(k);
+        if !v.is_empty() {
+            return v;
+        }
+        auth_state::as_str_of(base.get(k))
+    };
+    let nullify = |s: String| -> Value {
+        if s.is_empty() {
+            Value::Null
+        } else {
+            Value::String(s)
+        }
+    };
+    for key in [
+        "subscription_source",
+        "stripe_customer_id",
+        "stripe_subscription_id",
+        "stripe_price_id",
+    ] {
+        payload.insert(key.into(), nullify(pick(key)));
+    }
+    let period_end = auth_state::parse_iso_datetime(ov.get("stripe_current_period_end"))
+        .or_else(|| {
+            existing
+                .as_ref()
+                .and_then(|e| auth_state::parse_iso_datetime(e.get("stripe_current_period_end")))
+        })
+        .or_else(|| auth_state::parse_iso_datetime(base.get("stripe_current_period_end")));
+    payload.insert(
+        "stripe_current_period_end".into(),
+        auth_state::isoformat_utc_or_null(period_end),
     );
     payload.insert("updated_at".into(), auth_state::isoformat_utc(Some(now)).into());
 

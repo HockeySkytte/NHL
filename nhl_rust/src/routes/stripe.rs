@@ -430,18 +430,43 @@ fn stripe_updates_from_subscription(subscription: &Value, customer_id: Option<&s
         "subscription_status": status,
         "subscription_plan": plan_value,
         "billing_interval": billing_interval,
-        "subscription_started_at": auth_state::isoformat_utc(started_at),
-        "subscription_ends_at": auth_state::isoformat_utc(subscription_ends),
+        "subscription_started_at": auth_state::isoformat_utc_or_null(started_at),
+        "subscription_ends_at": auth_state::isoformat_utc_or_null(subscription_ends),
         "subscription_source": "stripe",
         "stripe_customer_id": if stripe_customer.is_empty() { Value::Null } else { Value::String(stripe_customer) },
         "stripe_subscription_id": subscription.get("id").and_then(Value::as_str).unwrap_or("").to_string(),
         "stripe_price_id": if price_id.is_empty() { Value::Null } else { Value::String(price_id) },
-        "stripe_current_period_end": auth_state::isoformat_utc(current_period_end),
+        "stripe_current_period_end": auth_state::isoformat_utc_or_null(current_period_end),
     })
 }
 
 fn as_str(v: Option<&Value>) -> String {
     crate::web::auth_state::as_str_of(v)
+}
+
+/// Persist a subscription update onto the owning account.
+///
+/// The payload describes the *subscription*, so it has no `auth_user_id` and no
+/// `email`; `upsert_user_account` needs both (`auth_user_id` to target the row,
+/// `email` to satisfy the NOT NULL constraint on the insert half of
+/// `merge-duplicates`). Build the full row from the GoTrue user plus these
+/// overrides, exactly as the Python `_persist_user_account_updates` does.
+async fn persist_account_updates(state: &AppState, auth_user_id: &str, updates: &Value) -> bool {
+    let Some(sb) = state.sb.as_ref() else {
+        return false;
+    };
+    let Some(user) = sb.admin_get_user(auth_user_id).await else {
+        tracing::warn!(auth_user_id = %auth_user_id, "Stripe sync could not load the auth user");
+        return false;
+    };
+    let merged = crate::routes::auth::sync_user_account_from_supabase_user(state, &user, Some(updates)).await;
+    // The merge path falls back to the in-memory record, so confirm the row.
+    if sb.get_user_account(auth_user_id).await.is_none() {
+        tracing::warn!(auth_user_id = %auth_user_id, "Stripe sync could not read back the account row");
+        return false;
+    }
+    let _ = merged;
+    true
 }
 
 /// Port of `_sync_stripe_subscription`.
@@ -481,7 +506,16 @@ pub async fn sync_subscription(
     }
     let user_id = resolved.filter(|s| !s.is_empty())?;
     let updates = stripe_updates_from_subscription(subscription, customer_id);
-    let _ = sb.upsert_user_account(updates).await;
+    let plan = as_str(updates.get("subscription_plan"));
+    if persist_account_updates(state, &user_id, &updates).await {
+        tracing::info!(auth_user_id = %user_id, plan = %plan, "Stripe subscription synced");
+    } else {
+        tracing::warn!(
+            auth_user_id = %user_id,
+            subscription_id = %as_str(subscription.get("id")),
+            "Stripe subscription sync did not persist"
+        );
+    }
     Some(user_id.into())
 }
 
@@ -512,14 +546,12 @@ pub async fn sync_checkout_session(state: &AppState, checkout: &Value) -> Option
         }
     }
     if let Some(user_id) = auth_user_id.filter(|s| !s.is_empty()) {
-        if let Some(sb) = state.sb.as_ref() {
-            let payload = json!({
-                "subscription_source": "stripe",
-                "stripe_customer_id": opt_str(customer_id.as_deref()),
-                "stripe_subscription_id": opt_str(subscription_id.as_deref()),
-            });
-            let _ = sb.upsert_user_account(payload).await;
-        }
+        let payload = json!({
+            "subscription_source": "stripe",
+            "stripe_customer_id": opt_str(customer_id.as_deref()),
+            "stripe_subscription_id": opt_str(subscription_id.as_deref()),
+        });
+        let _ = persist_account_updates(state, &user_id, &payload).await;
         return Some(user_id.into());
     }
     None
@@ -529,5 +561,99 @@ fn opt_str(v: Option<&str>) -> Value {
     match v {
         Some(s) if !s.is_empty() => Value::String(s.to_string()),
         _ => Value::Null,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn active_subscription() -> Value {
+        json!({
+            "id": "sub_1",
+            "customer": "cus_1",
+            "status": "active",
+            "start_date": 1_700_000_000,
+            "current_period_end": 1_700_200_000,
+            "cancel_at_period_end": false,
+            "items": {"data": [{"price": {
+                "id": "price_1",
+                "recurring": {"interval": "month"}
+            }}]},
+            "metadata": {"auth_user_id": "user-123", "plan_key": "monthly"}
+        })
+    }
+
+    /// The bug that let paying customers stay on "trial ended": the payload
+    /// describes the *subscription*, so it carries neither `auth_user_id` (the
+    /// upsert target) nor `email` (NOT NULL). It must be merged into a full
+    /// account row before it is written.
+    #[test]
+    fn subscription_updates_are_not_a_valid_account_payload_on_their_own() {
+        let updates = stripe_updates_from_subscription(&active_subscription(), None);
+
+        assert!(updates.get("auth_user_id").is_none());
+        assert!(updates.get("email").is_none());
+        assert_eq!(updates.get("subscription_plan").and_then(Value::as_str), Some("pro"));
+        assert_eq!(updates.get("billing_interval").and_then(Value::as_str), Some("monthly"));
+    }
+
+    #[test]
+    fn subscription_updates_carry_everything_the_account_needs() {
+        let updates = stripe_updates_from_subscription(&active_subscription(), Some("cus_1"));
+
+        assert_eq!(updates.get("subscription_plan").and_then(Value::as_str), Some("pro"));
+        assert_eq!(updates.get("subscription_status").and_then(Value::as_str), Some("active"));
+        assert_eq!(updates.get("stripe_customer_id").and_then(Value::as_str), Some("cus_1"));
+        assert_eq!(updates.get("stripe_subscription_id").and_then(Value::as_str), Some("sub_1"));
+        assert_eq!(updates.get("subscription_source").and_then(Value::as_str), Some("stripe"));
+    }
+
+    #[test]
+    fn canceled_subscription_still_maps_to_pro_when_it_has_a_price() {
+        // Matches the Python `_stripe_updates_from_subscription`; the app reads
+        // subscription_ends_at to decide whether access has actually lapsed.
+        let mut sub = active_subscription();
+        sub["status"] = json!("canceled");
+        sub["canceled_at"] = json!(1_700_300_000);
+
+        let updates = stripe_updates_from_subscription(&sub, None);
+
+        assert_eq!(updates.get("subscription_plan").and_then(Value::as_str), Some("pro"));
+        assert_eq!(updates.get("subscription_status").and_then(Value::as_str), Some("canceled"));
+        assert!(updates.get("subscription_ends_at").and_then(Value::as_str).is_some());
+    }
+
+    #[test]
+    fn cancel_at_period_end_sets_the_end_date() {
+        let mut sub = active_subscription();
+        sub["cancel_at_period_end"] = json!(true);
+
+        let updates = stripe_updates_from_subscription(&sub, None);
+
+        assert!(updates.get("subscription_ends_at").and_then(Value::as_str).is_some());
+    }
+
+    /// Postgres rejects `""` for a timestamptz column (22007), which failed the
+    /// whole upsert. Absent dates must serialise as JSON null.
+    #[test]
+    fn absent_dates_are_null_not_empty_strings() {
+        let updates = stripe_updates_from_subscription(&active_subscription(), None);
+
+        assert_eq!(updates.get("subscription_ends_at"), Some(&Value::Null));
+        assert_eq!(updates.get("subscription_started_at").and_then(Value::as_str).is_some(), true);
+        assert_eq!(updates.get("stripe_current_period_end").and_then(Value::as_str).is_some(), true);
+    }
+
+    #[test]
+    fn missing_dates_are_null_too() {
+        let mut sub = active_subscription();
+        sub.as_object_mut().unwrap().remove("start_date");
+        sub.as_object_mut().unwrap().remove("current_period_end");
+
+        let updates = stripe_updates_from_subscription(&sub, None);
+
+        assert_eq!(updates.get("subscription_started_at"), Some(&Value::Null));
+        assert_eq!(updates.get("stripe_current_period_end"), Some(&Value::Null));
     }
 }

@@ -528,13 +528,16 @@ def _stripe_updates_from_subscription(subscription: Dict[str, Any], *, customer_
         'subscription_status': status,
         'subscription_plan': plan_value,
         'billing_interval': billing_interval,
-        'subscription_started_at': _isoformat_utc(started_at),
-        'subscription_ends_at': _isoformat_utc(subscription_ends),
+        # `_isoformat_utc(None)` is '', which Postgres rejects for a timestamptz
+        # column ("22007 invalid input syntax for type timestamp with time
+        # zone"). Absent dates must be NULL.
+        'subscription_started_at': _isoformat_utc(started_at) or None,
+        'subscription_ends_at': _isoformat_utc(subscription_ends) or None,
         'subscription_source': 'stripe',
         'stripe_customer_id': str(customer_id or subscription.get('customer') or '').strip() or None,
         'stripe_subscription_id': str(subscription.get('id') or '').strip() or None,
         'stripe_price_id': price_id or None,
-        'stripe_current_period_end': _isoformat_utc(current_period_end),
+        'stripe_current_period_end': _isoformat_utc(current_period_end) or None,
     }
 
 
