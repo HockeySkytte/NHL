@@ -62,12 +62,33 @@ jobs:
         run: |
           python -u scripts/lineups.py --all --quiet \
             --season "${{ steps.params.outputs.season }}" \
-            --out-all app/static/lineups_all.json
+            --out-all app/static/lineups_all.json 2>&1 | tee /tmp/scrape.log
+          # Surface the scrape size as an annotation: a blocked or throttled
+          # DailyFaceoff returns fast with almost nothing, which is otherwise
+          # invisible from the run summary.
+          python - <<'PY'
+          import json
+          data = json.load(open("app/static/lineups_all.json", encoding="utf-8"))
+          total = sum(
+              len(data.get(t, {}).get(g) or [])
+              for t in data
+              for g in ("forwards", "defense", "goalies")
+          )
+          empty = [t for t in data if not any((data[t].get(g) or []) for g in ("forwards", "defense", "goalies"))]
+          print(f"::notice::scraped {total} players across {len(data)} teams; empty teams: {empty or 'none'}")
+          PY
 
       # upload_lineups.py also falls back to the stored estimated_gp for any
       # player the scrape produced without an estimate, so the Supabase rows
       # keep their Estimated Games even if the JSON snapshot is missing them.
       - name: Upload lineups to Supabase
         run: |
+          set +e
           python -u scripts/upload_lineups.py \
-            --season "${{ steps.params.outputs.season }}"
+            --season "${{ steps.params.outputs.season }}" 2>&1 | tee /tmp/upload.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            msg=$(grep -iE '\[error\]|refus|error:' /tmp/upload.log | tail -n 1)
+            echo "::error::lineup upload failed (exit $rc): ${msg:-see log}"
+          fi
+          exit "$rc"
