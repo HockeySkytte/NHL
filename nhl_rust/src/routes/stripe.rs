@@ -55,6 +55,58 @@ fn stripe_client(cfg: &Config) -> Option<reqwest::Client> {
     Some(reqwest::Client::new())
 }
 
+/// Stripe statuses that mean the subscription is still being billed.
+fn is_live_subscription(subscription: &Value) -> bool {
+    let status = subscription
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_lowercase();
+    matches!(status.as_str(), "active" | "trialing" | "past_due")
+}
+
+/// Fetch a subscription from Stripe and report whether it is still live.
+///
+/// `Some(false)` also covers a 404 (the subscription is gone), so a stale id
+/// recorded on an account cannot block updates forever. `None` means we could
+/// not tell — callers keep access rather than revoke on an unknown.
+async fn tracked_subscription_is_live(cfg: &Config, subscription_id: &str) -> Option<bool> {
+    let client = stripe_client(cfg)?;
+    let resp = client
+        .get(format!("{STRIPE_API}/subscriptions/{subscription_id}"))
+        .bearer_auth(cfg.stripe_secret_key.as_deref().unwrap_or(""))
+        .send()
+        .await
+        .ok()?;
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        return Some(false);
+    }
+    if !resp.status().is_success() {
+        return None;
+    }
+    let subscription: Value = resp.json().await.ok()?;
+    Some(is_live_subscription(&subscription))
+}
+
+/// Whether a subscription event must be ignored because the account is still
+/// being billed on a *different* subscription.
+///
+/// One account can own several subscriptions — two people can sign up with the
+/// same login, which produces two Stripe customers for one `auth_user_id` — but
+/// `user_accounts` records only one `stripe_subscription_id`. Without this
+/// check, cancelling the other subscription overwrites the row with
+/// `status=cancelled` and the customer who is still paying loses Pro access
+/// until their next billing event.
+///
+/// The comparison ignores the incoming status on purpose: cancelling at period
+/// end reports `status=active`, so a status-based rule would let it through.
+fn should_ignore_superseded_event(incoming_id: &str, tracked_id: &str, tracked_is_live: bool) -> bool {
+    if incoming_id.is_empty() || tracked_id.is_empty() || tracked_id == incoming_id {
+        return false;
+    }
+    tracked_is_live
+}
+
 fn flash_and_redirect(state: &AppState, session: &SessionData, to: &str, msg: (&str, &str)) -> Response {
     let mut s = session.clone();
     crate::routes::auth::flash(&mut s, msg.0, msg.1);
@@ -505,6 +557,38 @@ pub async fn sync_subscription(
         }
     }
     let user_id = resolved.filter(|s| !s.is_empty())?;
+    let incoming_id = as_str(subscription.get("id"));
+
+    // Do not let an event for a *different* subscription overwrite the one this
+    // account is still being billed on.
+    if !incoming_id.is_empty() {
+        if let Some(existing) = sb.get_user_account(&user_id).await {
+            let tracked = as_str(existing.get("stripe_subscription_id"));
+            if !tracked.is_empty() && tracked != incoming_id {
+                let tracked_is_live = match tracked_subscription_is_live(&state.cfg, &tracked).await {
+                    Some(live) => live,
+                    None => {
+                        tracing::warn!(
+                            auth_user_id = %user_id,
+                            tracked = %tracked,
+                            "Could not re-check the tracked subscription; leaving the account unchanged"
+                        );
+                        true
+                    }
+                };
+                if should_ignore_superseded_event(&incoming_id, &tracked, tracked_is_live) {
+                    tracing::info!(
+                        auth_user_id = %user_id,
+                        incoming = %incoming_id,
+                        tracked = %tracked,
+                        "Ignored a subscription event: the account is still billed on another subscription"
+                    );
+                    return Some(user_id.into());
+                }
+            }
+        }
+    }
+
     let updates = stripe_updates_from_subscription(subscription, customer_id);
     let plan = as_str(updates.get("subscription_plan"));
     if persist_account_updates(state, &user_id, &updates).await {
@@ -655,5 +739,53 @@ mod tests {
 
         assert_eq!(updates.get("subscription_started_at"), Some(&Value::Null));
         assert_eq!(updates.get("stripe_current_period_end"), Some(&Value::Null));
+    }
+
+    // ── several subscriptions on one account ────────────────────────────────
+
+    #[test]
+    fn live_statuses() {
+        for status in ["active", "trialing", "past_due", "ACTIVE"] {
+            assert!(is_live_subscription(&json!({ "status": status })), "{status}");
+        }
+        for status in ["canceled", "unpaid", "incomplete_expired", ""] {
+            assert!(!is_live_subscription(&json!({ "status": status })), "{status}");
+        }
+        assert!(!is_live_subscription(&json!({})));
+    }
+
+    /// The reported scenario: one login owns two subscriptions. Cancelling the
+    /// older one must not revoke access that the newer one is still paying for.
+    #[test]
+    fn cancelling_another_subscription_is_ignored() {
+        assert!(should_ignore_superseded_event("sub_old", "sub_current", true));
+    }
+
+    /// Cancelling at period end reports `status=active`, so the rule must not
+    /// depend on the incoming status.
+    #[test]
+    fn a_period_end_cancellation_of_another_subscription_is_ignored_too() {
+        assert!(should_ignore_superseded_event("sub_old", "sub_current", true));
+    }
+
+    #[test]
+    fn cancelling_the_tracked_subscription_still_applies() {
+        assert!(!should_ignore_superseded_event("sub_old", "sub_old", true));
+        assert!(!should_ignore_superseded_event("sub_old", "sub_old", false));
+    }
+
+    #[test]
+    fn a_tracked_subscription_that_lapsed_lets_the_event_through() {
+        assert!(!should_ignore_superseded_event("sub_old", "sub_current", false));
+    }
+
+    #[test]
+    fn no_tracked_subscription_applies_the_event() {
+        assert!(!should_ignore_superseded_event("sub_old", "", true));
+    }
+
+    #[test]
+    fn an_empty_incoming_id_applies_the_event() {
+        assert!(!should_ignore_superseded_event("", "sub_current", true));
     }
 }
