@@ -65,27 +65,50 @@ fn is_live_subscription(subscription: &Value) -> bool {
     matches!(status.as_str(), "active" | "trialing" | "past_due")
 }
 
-/// Fetch a subscription from Stripe and report whether it is still live.
-///
-/// `Some(false)` also covers a 404 (the subscription is gone), so a stale id
-/// recorded on an account cannot block updates forever. `None` means we could
-/// not tell — callers keep access rather than revoke on an unknown.
-async fn tracked_subscription_is_live(cfg: &Config, subscription_id: &str) -> Option<bool> {
-    let client = stripe_client(cfg)?;
-    let resp = client
+/// Result of looking a subscription up on Stripe.
+enum FetchOutcome {
+    Found(Value),
+    /// Stripe answered 404 — the subscription no longer exists.
+    Missing,
+    /// We could not tell (no key, network error, non-2xx).
+    Unknown,
+}
+
+async fn fetch_subscription(cfg: &Config, subscription_id: &str) -> FetchOutcome {
+    let Some(client) = stripe_client(cfg) else {
+        return FetchOutcome::Unknown;
+    };
+    let Ok(resp) = client
         .get(format!("{STRIPE_API}/subscriptions/{subscription_id}"))
         .bearer_auth(cfg.stripe_secret_key.as_deref().unwrap_or(""))
         .send()
         .await
-        .ok()?;
+    else {
+        return FetchOutcome::Unknown;
+    };
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
-        return Some(false);
+        return FetchOutcome::Missing;
     }
     if !resp.status().is_success() {
-        return None;
+        return FetchOutcome::Unknown;
     }
-    let subscription: Value = resp.json().await.ok()?;
-    Some(is_live_subscription(&subscription))
+    match resp.json::<Value>().await {
+        Ok(subscription) => FetchOutcome::Found(subscription),
+        Err(_) => FetchOutcome::Unknown,
+    }
+}
+
+/// Whether the subscription an account still tracks is live.
+///
+/// `Some(false)` also covers a 404, so a stale recorded id cannot block updates
+/// forever. `None` means we could not tell — callers keep access rather than
+/// revoke on an unknown.
+async fn tracked_subscription_is_live(cfg: &Config, subscription_id: &str) -> Option<bool> {
+    match fetch_subscription(cfg, subscription_id).await {
+        FetchOutcome::Found(subscription) => Some(is_live_subscription(&subscription)),
+        FetchOutcome::Missing => Some(false),
+        FetchOutcome::Unknown => None,
+    }
 }
 
 /// Whether a subscription event must be ignored because the account is still
@@ -405,7 +428,10 @@ async fn stripe_webhook(
 fn stripe_status_to_account_status(status: &str) -> String {
     let raw = status.trim().to_lowercase();
     match raw.as_str() {
-        "active" | "trialing" | "past_due" | "canceled" => raw,
+        // `incomplete` is the normal first state of a subscription whose payment
+        // has not settled yet. Keeping it distinct from `inactive` makes the
+        // admin view honest instead of showing a paid plan as inactive.
+        "active" | "trialing" | "past_due" | "canceled" | "incomplete" | "paused" => raw,
         "unpaid" => "past_due".to_string(),
         "incomplete_expired" => "expired".to_string(),
         _ => "inactive".to_string(),
@@ -589,14 +615,38 @@ pub async fn sync_subscription(
         }
     }
 
-    let updates = stripe_updates_from_subscription(subscription, customer_id);
+    // Read the subscription's current state instead of trusting the event body.
+    // Stripe retries deliveries, so the snapshot in a retried *older* event can
+    // arrive after a newer one: `customer.subscription.created` carries
+    // status=incomplete, and applying it last leaves a paying account on
+    // "inactive" even though Stripe reports active. Re-reading makes the write
+    // order-independent.
+    let current = if incoming_id.is_empty() {
+        subscription.clone()
+    } else {
+        match fetch_subscription(&state.cfg, &incoming_id).await {
+            FetchOutcome::Found(fresh) => fresh,
+            other => {
+                if !matches!(other, FetchOutcome::Missing) {
+                    tracing::warn!(
+                        subscription_id = %incoming_id,
+                        "Could not re-read the subscription; applying the event snapshot"
+                    );
+                }
+                subscription.clone()
+            }
+        }
+    };
+
+    let updates = stripe_updates_from_subscription(&current, customer_id);
+    let status = as_str(updates.get("subscription_status"));
     let plan = as_str(updates.get("subscription_plan"));
     if persist_account_updates(state, &user_id, &updates).await {
-        tracing::info!(auth_user_id = %user_id, plan = %plan, "Stripe subscription synced");
+        tracing::info!(auth_user_id = %user_id, plan = %plan, status = %status, "Stripe subscription synced");
     } else {
         tracing::warn!(
             auth_user_id = %user_id,
-            subscription_id = %as_str(subscription.get("id")),
+            subscription_id = %incoming_id,
             "Stripe subscription sync did not persist"
         );
     }
@@ -752,6 +802,35 @@ mod tests {
             assert!(!is_live_subscription(&json!({ "status": status })), "{status}");
         }
         assert!(!is_live_subscription(&json!({})));
+    }
+
+    /// A new subscription starts as `incomplete` until the first payment
+    /// settles. Reporting that as `inactive` made a paid plan look unpaid in
+    /// the admin view.
+    #[test]
+    fn incomplete_keeps_its_own_status() {
+        assert_eq!(stripe_status_to_account_status("incomplete"), "incomplete");
+        assert_eq!(stripe_status_to_account_status("incomplete_expired"), "expired");
+        assert_eq!(stripe_status_to_account_status("paused"), "paused");
+        assert_eq!(stripe_status_to_account_status("active"), "active");
+        assert_eq!(stripe_status_to_account_status("unpaid"), "past_due");
+        assert_eq!(stripe_status_to_account_status("weird"), "inactive");
+    }
+
+    /// The reported regression: an account created from the `incomplete`
+    /// snapshot must not stay inactive once the subscription is active.
+    #[test]
+    fn an_incomplete_snapshot_maps_to_incomplete_not_active() {
+        let mut sub = active_subscription();
+        sub["status"] = json!("incomplete");
+
+        let updates = stripe_updates_from_subscription(&sub, None);
+
+        assert_eq!(
+            updates.get("subscription_status").and_then(Value::as_str),
+            Some("incomplete")
+        );
+        assert!(!is_live_subscription(&sub));
     }
 
     /// The reported scenario: one login owns two subscriptions. Cancelling the
