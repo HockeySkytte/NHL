@@ -51,11 +51,14 @@ pub fn build_router(state: AppState) -> Router {
 
     // Premium gating must run while the router is still `Router<AppState>`
     // (the middleware extracts `State<AppState>`).
+    let slow_ms = state.cfg.slow_request_ms;
     let router = router.layer(middleware::from_fn_with_state(
         state.clone(),
         enforce_premium_gating,
     ));
-    let router = router.layer(middleware::from_fn(log_request_duration));
+    let router = router.layer(middleware::from_fn(move |req, next| {
+        log_request_duration(slow_ms, req, next)
+    }));
     let router = router.with_state(state);
     let router = router.layer(TraceLayer::new_for_http());
 
@@ -86,7 +89,7 @@ async fn enforce_premium_gating(
 ) -> Response {
     use crate::web::auth_state;
 
-    if !crate::supabase::read::auth_is_configured() {
+    if state.sb.is_none() {
         return next.run(req).await;
     }
     let path = req.uri().path().to_string();
@@ -146,11 +149,7 @@ async fn fallback_404() -> (StatusCode, &'static str) {
 /// Logs requests that exceed `SLOW_REQUEST_MS` (default 2000 ms) at WARN with
 /// method/path/status/duration — a lightweight latency monitor for the load
 /// test and general perf observability.
-async fn log_request_duration(req: Request, next: Next) -> Response {
-    let slow_ms: u128 = std::env::var("SLOW_REQUEST_MS")
-        .ok()
-        .and_then(|v| v.trim().parse().ok())
-        .unwrap_or(2000);
+async fn log_request_duration(slow_ms: u128, req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let uri = req.uri().clone();
     let start = std::time::Instant::now();

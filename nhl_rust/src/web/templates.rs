@@ -47,7 +47,17 @@ pub struct TemplateEnv {
 impl TemplateEnv {
     pub fn new(cfg: &Config) -> Result<Self, ApiError> {
         let mut env = Environment::new();
-        env.set_loader(minijinja::path_loader(&cfg.template_dir));
+        if cfg.template_auto_reload {
+            env.set_loader(minijinja::path_loader(&cfg.template_dir));
+        } else {
+            // Preload and compile all templates once at startup so every page
+            // render avoids synchronous disk I/O and Jinja re-parsing.
+            preload_templates(&mut env, &cfg.template_dir, &cfg.template_dir)?;
+            // Keep path_loader only as a fallback for tests using temp dirs.
+            if env.templates().next().is_none() {
+                env.set_loader(minijinja::path_loader(&cfg.template_dir));
+            }
+        }
         env.add_function("url_for", url_for_fn);
         env.add_function("get_flashed_messages", get_flashed_messages);
         Ok(Self { env })
@@ -63,6 +73,34 @@ impl TemplateEnv {
             ApiError::Template(format!("render {name}: {e}"))
         })
     }
+}
+
+fn preload_templates(
+    env: &mut Environment<'static>,
+    root: &std::path::Path,
+    dir: &std::path::Path,
+) -> Result<(), ApiError> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            preload_templates(env, root, &path)?;
+        } else if path.is_file() {
+            let Ok(rel) = path.strip_prefix(root) else {
+                continue;
+            };
+            let name = rel.to_string_lossy().replace('\\', "/");
+            if let Ok(src) = std::fs::read_to_string(&path) {
+                env.add_template_owned(name.clone(), src).map_err(|e| {
+                    tracing::error!("template compile failed for {name}: {e:#}");
+                    ApiError::Template(format!("template {name}: {e}"))
+                })?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `get_flashed_messages(with_categories=true)` — reads the `_flashes` context
@@ -106,7 +144,7 @@ pub fn base_context_with_session(
     let root = url_root(cfg, host);
     let mut map: BTreeMap<&'static str, Value> = BTreeMap::new();
     map.insert("teams", Value::from_serialize(teams));
-    let auth_enabled = crate::supabase::read::auth_is_configured();
+    let auth_enabled = cfg.supabase_url.is_some() && cfg.supabase_service_key.is_some();
     map.insert("auth_enabled", Value::from(auth_enabled));
     let auth_user = session
         .auth_user

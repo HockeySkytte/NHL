@@ -54,7 +54,9 @@ pub async fn load_map(caches: &Caches, sb: Option<&SbClient>, _cfg: &Config) -> 
         return value_to_map(v);
     }
     let out = load_map_inner(sb).await;
-    caches.player_projections.insert((), map_to_value(&out));
+    if !out.is_empty() {
+        caches.player_projections.insert((), map_to_value(&out));
+    }
     out
 }
 
@@ -62,7 +64,8 @@ async fn load_map_inner(sb: Option<&SbClient>) -> BTreeMap<i64, Value> {
     let Some(sb) = sb else {
         return BTreeMap::new();
     };
-    if let Some(rows) = sb.read("player_projections", "*", None, Some(&col_map()), None, 0).await {
+    const COLS: &str = "player_id,position,game_no,age,rookie,evo,evd,pp,sh,gsax";
+    if let Some(rows) = sb.read("player_projections", COLS, None, Some(&col_map()), None, 0).await {
         let mut out = BTreeMap::new();
         for row in rows {
             let pid = safe_int(

@@ -43,7 +43,7 @@ pub async fn load(sb: Option<&SbClient>, _cfg: &Config) -> Vec<Value> {
     let Some(sb) = sb else {
         return Vec::new();
     };
-    sb.read("teams", "*", None, Some(&col_map()), None, 0)
+    sb.read("teams", "team,team_id,name,logo,color,active", None, Some(&col_map()), None, 0)
         .await
         .map(|rows| rows.into_iter().map(normalize_active).collect())
         .unwrap_or_default()

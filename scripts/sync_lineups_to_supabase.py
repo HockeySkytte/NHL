@@ -9,10 +9,12 @@ Usage:
     .\\.venv\\Scripts\\python.exe .\\scripts\\sync_lineups_to_supabase.py [--season 20262027]
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import sys
-import urllib.request
+
+import requests
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 LINEUPS_PATH = os.path.join(REPO_ROOT, 'app', 'static', 'lineups_all.json')
@@ -49,8 +51,7 @@ def main():
     with open(args.input, 'r', encoding='utf-8') as f:
         lineups = json.load(f)
 
-    updates = 0
-    errors = 0
+    tasks = []
     for team_abbrev, team_data in lineups.items():
         for group in ('forwards', 'defense', 'goalies'):
             for p in team_data.get(group, []):
@@ -58,36 +59,51 @@ def main():
                 gp_est = p.get('gp_est')
                 if not pid or gp_est is None:
                     continue
-                updates += 1
-                if args.dry_run:
-                    continue
-                body = json.dumps({
-                    'estimated_gp': int(gp_est),
-                    'gp_note': p.get('gp_est_note', ''),
-                }).encode('utf-8')
-                q = f'season=eq.{args.season}&team=eq.{team_abbrev}&player_id=eq.{pid}'
-                req = urllib.request.Request(
-                    f'{url}/rest/v1/lineups?{q}',
-                    data=body,
-                    method='PATCH',
-                    headers={
-                        'apikey': key,
-                        'Authorization': f'Bearer {key}',
-                        'Content-Type': 'application/json',
-                        'Prefer': 'return=minimal',
-                    },
-                )
-                try:
-                    with urllib.request.urlopen(req, timeout=15):
-                        pass
-                except Exception as e:
-                    errors += 1
-                    if errors <= 5:
-                        print(f'  ERR {team_abbrev}/{pid}: {e}', file=sys.stderr)
-                if updates % 100 == 0:
-                    print(f'  progress: {updates}', flush=True)
+                tasks.append((team_abbrev, int(pid), int(gp_est), p.get('gp_est_note', '')))
 
-    print(f'{("dry-run: " if args.dry_run else "")}matched {updates} rows, errors: {errors}')
+    updates = len(tasks)
+    if args.dry_run:
+        print(f'dry-run: matched {updates} rows, errors: 0')
+        return 0
+
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(pool_connections=16, pool_maxsize=16)
+    session.mount('https://', adapter)
+    session.mount('http://', adapter)
+    session.headers.update({
+        'apikey': key,
+        'Authorization': f'Bearer {key}',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+    })
+
+    def _patch_one(item):
+        team_abbrev, pid, gp_est, gp_note = item
+        q = f'season=eq.{args.season}&team=eq.{team_abbrev}&player_id=eq.{pid}'
+        resp = session.patch(
+            f'{url}/rest/v1/lineups?{q}',
+            json={'estimated_gp': gp_est, 'gp_note': gp_note},
+            timeout=15,
+        )
+        resp.raise_for_status()
+
+    errors = 0
+    done = 0
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = {pool.submit(_patch_one, item): item for item in tasks}
+        for fut in as_completed(futs):
+            done += 1
+            try:
+                fut.result()
+            except Exception as e:
+                errors += 1
+                team_abbrev, pid, _, _ = futs[fut]
+                if errors <= 5:
+                    print(f'  ERR {team_abbrev}/{pid}: {e}', file=sys.stderr)
+            if done % 100 == 0:
+                print(f'  progress: {done}/{updates}', flush=True)
+
+    print(f'matched {updates} rows, errors: {errors}')
     return 0 if errors == 0 else 1
 
 

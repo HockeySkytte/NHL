@@ -143,23 +143,27 @@ pub async fn create_league(
             })
         })
         .collect();
-    write::upsert_rows(
+    if !write::upsert_rows_minimal(
         sb,
         "manager_league_teams",
         &team_rows,
         "league_id,team_abbrev",
     )
     .await
-    .ok_or_else(|| ApiError::Internal("league team rows failed".into()))?;
+    {
+        return Err(ApiError::Internal("league team rows failed".into()));
+    }
 
     // Schedule snapshot.
     let mut schedule_rows = schedule::build_league_schedule_rows(state, season).await?;
     for r in &mut schedule_rows {
         r["league_id"] = json!(league_id);
     }
-    write::upsert_rows(sb, "manager_games", &schedule_rows, "league_id,nhl_game_id")
+    if !write::upsert_rows_minimal(sb, "manager_games", &schedule_rows, "league_id,nhl_game_id")
         .await
-        .ok_or_else(|| ApiError::Internal("league schedule insert failed".into()))?;
+    {
+        return Err(ApiError::Internal("league schedule insert failed".into()));
+    }
 
     league_detail(state, &league_id).await
 }
@@ -169,34 +173,40 @@ pub async fn list_leagues_for_user(state: &AppState, user_id: &str) -> Result<Ve
     let sb = sb_required(state)?;
     let cols = "id,name,season,mode,status,join_code,commissioner_user_id,created_at";
 
-    let as_commissioner = sb
-        .read(
+    let f_comm = eq_filter("commissioner_user_id", user_id);
+    let f_user = eq_filter("user_id", user_id);
+    let (as_comm_opt, memb_opt) = tokio::join!(
+        sb.read(
             "manager_leagues",
             cols,
-            Some(&eq_filter("commissioner_user_id", user_id)),
+            Some(&f_comm),
             None,
             Some("created_at.desc"),
             0,
-        )
-        .await
-        .unwrap_or_default();
-
-    let memberships = sb
-        .read(
+        ),
+        sb.read(
             "manager_league_teams",
             "league_id,team_abbrev,team_name",
-            Some(&eq_filter("user_id", user_id)),
+            Some(&f_user),
             None,
             None,
             0,
-        )
-        .await
-        .unwrap_or_default();
-    let member_ids: BTreeSet<String> = memberships
+        ),
+    );
+    let as_commissioner = as_comm_opt.unwrap_or_default();
+    let memberships = memb_opt.unwrap_or_default();
+    let seen: BTreeSet<String> = as_commissioner
+        .iter()
+        .filter_map(|r| {
+            let id = str_value(r.get("id"));
+            if id.is_empty() { None } else { Some(id) }
+        })
+        .collect();
+    let missing_member_ids: BTreeSet<String> = memberships
         .iter()
         .filter_map(|r| {
             let id = str_value(r.get("league_id"));
-            if id.is_empty() {
+            if id.is_empty() || seen.contains(&id) {
                 None
             } else {
                 Some(id)
@@ -215,8 +225,8 @@ pub async fn list_leagues_for_user(state: &AppState, user_id: &str) -> Result<Ve
     }
 
     let mut out: Vec<Value> = as_commissioner;
-    if !member_ids.is_empty() {
-        let in_filter = member_ids.iter().cloned().collect::<Vec<_>>().join(",");
+    if !missing_member_ids.is_empty() {
+        let in_filter = missing_member_ids.iter().cloned().collect::<Vec<_>>().join(",");
         let extra = sb
             .read(
                 "manager_leagues",
@@ -231,22 +241,7 @@ pub async fn list_leagues_for_user(state: &AppState, user_id: &str) -> Result<Ve
             )
             .await
             .unwrap_or_default();
-        let seen: BTreeSet<String> = out
-            .iter()
-            .filter_map(|r| {
-                let id = str_value(r.get("id"));
-                if id.is_empty() {
-                    None
-                } else {
-                    Some(id)
-                }
-            })
-            .collect();
-        out.extend(
-            extra
-                .into_iter()
-                .filter(|r| !seen.contains(&str_value(r.get("id")))),
-        );
+        out.extend(extra);
     }
     for row in out.iter_mut() {
         let league_id = str_value(row.get("id"));
@@ -259,49 +254,44 @@ pub async fn list_leagues_for_user(state: &AppState, user_id: &str) -> Result<Ve
     Ok(out)
 }
 
-/// Full league detail: league row, teams, schedule summary.
+/// Full league detail: league row, teams, schedule summary (parallelized).
 pub async fn league_detail(state: &AppState, league_id: &str) -> Result<Value, ApiError> {
     let sb = sb_required(state)?;
-    let rows = sb
-        .read(
+    let f_id = eq_filter("id", league_id);
+    let f_lid = eq_filter("league_id", league_id);
+    let (league_opt, teams_opt, games_opt) = tokio::join!(
+        sb.read(
             "manager_leagues",
-            "*",
-            Some(&eq_filter("id", league_id)),
+            "id,name,season,mode,status,commissioner_user_id,join_code,cpu_trades,draft_round,draft_pick,draft_paused,created_at,updated_at",
+            Some(&f_id),
             None,
             None,
             1,
-        )
-        .await
-        .ok_or_else(|| ApiError::Internal("supabase unavailable".into()))?;
+        ),
+        sb.read(
+            "manager_league_teams",
+            "league_id,team_abbrev,user_id,team_name,draft_slot",
+            Some(&f_lid),
+            None,
+            Some("draft_slot.asc"),
+            0,
+        ),
+        sb.read(
+            "manager_games",
+            "status",
+            Some(&f_lid),
+            None,
+            None,
+            0,
+        ),
+    );
+    let rows = league_opt.ok_or_else(|| ApiError::Internal("supabase unavailable".into()))?;
     let league_row = rows
         .into_iter()
         .next()
         .ok_or_else(|| ApiError::NotFound("league not found".into()))?;
-
-    let teams = sb
-        .read(
-            "manager_league_teams",
-            "*",
-            Some(&eq_filter("league_id", league_id)),
-            None,
-            Some("draft_slot.asc"),
-            0,
-        )
-        .await
-        .unwrap_or_default();
-
-    // Game count by status (M1: totals only; per-game data via /schedule).
-    let game_rows = sb
-        .read(
-            "manager_games",
-            "status",
-            Some(&eq_filter("league_id", league_id)),
-            None,
-            None,
-            0,
-        )
-        .await
-        .unwrap_or_default();
+    let teams = teams_opt.unwrap_or_default();
+    let game_rows = games_opt.unwrap_or_default();
     let mut total = 0i64;
     let mut final_count = 0i64;
     for g in &game_rows {

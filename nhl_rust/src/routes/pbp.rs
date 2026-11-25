@@ -98,39 +98,51 @@ async fn load_shifts_for_game(
     let disk_base = disk_cache::disk_cache_base(state.cfg.xg_cache_dir.as_deref());
     let disk_path = disk_cache::shifts_path(&disk_base, game_id);
 
-    if !force && !no_disk {
-        if let Some(js) = disk_cache::read_json_if_fresh(&disk_path, 5.0, std_ttl as f64) {
-            let payload: Map<String, Value> = js
-                .as_object()
-                .map(|o| {
-                    o.iter()
-                        .filter(|(k, _)| !k.starts_with('_'))
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect()
-                })
-                .unwrap_or_default();
-            return Ok(Value::Object(payload));
-        }
-    }
+    // Check fast in-memory cache BEFORE hitting synchronous disk cache.
     if !force && !no_cache {
         if let Some(payload) = state.caches.shifts.get(&game_id) {
             return Ok(payload);
         }
     }
+    if !force && !no_disk {
+        let disk_path_c = disk_path.clone();
+        let disk_hit = tokio::task::spawn_blocking(move || {
+            disk_cache::read_json_if_fresh(&disk_path_c, 5.0, std_ttl as f64)
+        })
+        .await
+        .ok()
+        .flatten();
+        if let Some(Value::Object(mut o)) = disk_hit {
+            o.retain(|k, _| !k.starts_with('_'));
+            let payload = Value::Object(o);
+            if !no_cache {
+                state.caches.shifts.insert(game_id, payload.clone());
+            }
+            return Ok(payload);
+        }
+    }
 
-    // Fetch HTML reports (browser UA) and boxscore.
+    // Fetch away HTML, home HTML, and boxscore concurrently!
     let away_url = urls["away"].as_str().unwrap_or("").to_string();
     let home_url = urls["home"].as_str().unwrap_or("").to_string();
-    let away_html = fetch_shift_html(&state.http, &away_url).await;
-    let home_html = fetch_shift_html(&state.http, &home_url).await;
-
     let box_url = format!("{API_WEB}/v1/gamecenter/{game_id}/boxscore");
-    let boxscore = match get_json(&state.http, &box_url, 20).await {
+    let (away_html, home_html, box_res) = tokio::join!(
+        fetch_shift_html(&state.http, &away_url),
+        fetch_shift_html(&state.http, &home_url),
+        get_json(&state.http, &box_url, 20),
+    );
+    let boxscore = match box_res {
         Ok(b) => b,
         Err(_) => return Err(json_err(StatusCode::BAD_GATEWAY, json!({"error": "Failed to fetch boxscore"}))),
     };
 
-    let shifts = shifts_html::compute_shifts_from_html(game_id, &away_html, &home_html, &boxscore);
+    // Offload CPU-heavy HTML DOM parsing + shift slicing off the Tokio worker.
+    let boxscore_for_parse = boxscore.clone();
+    let shifts = tokio::task::spawn_blocking(move || {
+        shifts_html::compute_shifts_from_html(game_id, &away_html, &home_html, &boxscore_for_parse)
+    })
+    .await
+    .unwrap_or_else(|_| json!([]));
 
     let mut out = json!({
         "gameId": game_id,
@@ -156,7 +168,8 @@ async fn load_shifts_for_game(
         if let Value::Object(o) = &mut js {
             o.insert("_cachedAt".to_string(), json!(now_epoch()));
         }
-        disk_cache::write_json(&disk_path, &js).ok();
+        let disk_path_c = disk_path.clone();
+        let _ = tokio::task::spawn_blocking(move || disk_cache::write_json(&disk_path_c, &js)).await;
     }
     Ok(out)
 }
@@ -339,20 +352,22 @@ async fn api_game_pbp(
     );
 
     if !force {
-        if let Some(js) = disk_cache::read_json_if_fresh(&disk_path, 5.0, std_ttl as f64) {
-            let payload: Map<String, Value> = js
-                .as_object()
-                .map(|o| {
-                    o.iter()
-                        .filter(|(k, _)| !k.starts_with('_'))
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect()
-                })
-                .unwrap_or_default();
-            return (StatusCode::OK, Json(Value::Object(payload))).into_response();
-        }
+        // Check RAM cache first before touching disk.
         if let Some(cached) = state.caches.pbp.get(&cache_key) {
             return (StatusCode::OK, Json(cached)).into_response();
+        }
+        let disk_path_c = disk_path.clone();
+        let disk_hit = tokio::task::spawn_blocking(move || {
+            disk_cache::read_json_if_fresh(&disk_path_c, 5.0, std_ttl as f64)
+        })
+        .await
+        .ok()
+        .flatten();
+        if let Some(Value::Object(mut o)) = disk_hit {
+            o.retain(|k, _| !k.starts_with('_'));
+            let payload = Value::Object(o);
+            state.caches.pbp.insert(cache_key, payload.clone());
+            return (StatusCode::OK, Json(payload)).into_response();
         }
     }
 
@@ -371,7 +386,8 @@ async fn api_game_pbp(
     if let Value::Object(o) = &mut js {
         o.insert("_cachedAt".to_string(), json!(now_epoch()));
     }
-    disk_cache::write_json(&disk_path, &js).ok();
+    let disk_path_c = disk_path.clone();
+    let _ = tokio::task::spawn_blocking(move || disk_cache::write_json(&disk_path_c, &js)).await;
     if force {
         return json_no_store(out_obj);
     }

@@ -128,28 +128,42 @@ pub async fn build_league_schedule_rows(
         return Err(ApiError::Internal("no active teams".into()));
     }
 
-    let mut team_games: BTreeMap<String, Vec<Value>> = BTreeMap::new();
-    for team in &teams {
-        let games = projections::fetch_club_schedule_games(state, team, season).await;
-        let mut reg: Vec<Value> = games
-            .into_iter()
-            .filter(|g| safe_int(g.get("gameType")).unwrap_or(0) == 2)
-            .collect();
-        reg.sort_by(|a, b| {
-            str_value(a.get("date"))
-                .cmp(&str_value(b.get("date")))
-                .then_with(|| {
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
+    let mut handles = Vec::with_capacity(teams.len());
+    for team in teams {
+        let state_c = state.clone();
+        let sem_c = sem.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = sem_c.acquire_owned().await;
+            let games = projections::fetch_club_schedule_games(&state_c, &team, season).await;
+            let mut reg: Vec<Value> = games
+                .into_iter()
+                .filter(|g| safe_int(g.get("gameType")).unwrap_or(0) == 2)
+                .collect();
+            reg.sort_by(|a, b| {
+                let da = a.get("date").and_then(Value::as_str).unwrap_or("");
+                let db = b.get("date").and_then(Value::as_str).unwrap_or("");
+                da.cmp(db).then_with(|| {
                     safe_int(a.get("id"))
                         .unwrap_or(0)
                         .cmp(&safe_int(b.get("id")).unwrap_or(0))
                 })
-        });
+            });
+            (team, reg)
+        }));
+    }
+
+    let mut team_games: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for h in handles {
+        let (team, reg) = h
+            .await
+            .map_err(|e| ApiError::Internal(format!("schedule task failed: {e}")))?;
         if reg.is_empty() {
             return Err(ApiError::Internal(format!(
                 "no {season} schedule for {team}"
             )));
         }
-        team_games.insert(team.clone(), reg);
+        team_games.insert(team, reg);
     }
 
     Ok(league_rows_from_team_games(&team_games))

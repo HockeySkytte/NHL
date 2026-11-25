@@ -12,11 +12,15 @@ use crate::util::parse::{safe_int, str_value};
 /// Compute W/L standings from `manager_games` rows (final games only).
 /// W/L only — no OT, no ties (the winner is already resolved per game).
 pub fn standings_from_games(games: &[Value]) -> Vec<Value> {
-    let mut w: BTreeMap<String, i64> = BTreeMap::new();
-    let mut l: BTreeMap<String, i64> = BTreeMap::new();
-    let mut gf: BTreeMap<String, i64> = BTreeMap::new();
-    let mut ga: BTreeMap<String, i64> = BTreeMap::new();
-    let mut gp: BTreeMap<String, i64> = BTreeMap::new();
+    #[derive(Default)]
+    struct TeamLine {
+        wins: i64,
+        losses: i64,
+        gp: i64,
+        gf: i64,
+        ga: i64,
+    }
+    let mut stats: BTreeMap<String, TeamLine> = BTreeMap::new();
 
     for g in games {
         if str_value(g.get("status")) != "final" {
@@ -29,44 +33,39 @@ pub fn standings_from_games(games: &[Value]) -> Vec<Value> {
         }
         let hs = parse_locale_float_val(g.get("home_score")).unwrap_or(0.0);
         let as_ = parse_locale_float_val(g.get("away_score")).unwrap_or(0.0);
+        let h_goals = hs.round() as i64;
+        let a_goals = as_.round() as i64;
+        let home_won = hs > as_;
 
-        *gp.entry(home.clone()).or_default() += 1;
-        *gp.entry(away.clone()).or_default() += 1;
-        *gf.entry(home.clone()).or_default() += hs.round() as i64;
-        *ga.entry(home.clone()).or_default() += as_.round() as i64;
-        *gf.entry(away.clone()).or_default() += as_.round() as i64;
-        *ga.entry(away.clone()).or_default() += hs.round() as i64;
+        let he = stats.entry(home).or_default();
+        he.gp += 1;
+        he.gf += h_goals;
+        he.ga += a_goals;
+        if home_won { he.wins += 1; } else { he.losses += 1; }
 
-        let (winner, loser) = if hs > as_ { (home, away) } else { (away, home) };
-        *w.entry(winner).or_default() += 1;
-        *l.entry(loser).or_default() += 1;
+        let ae = stats.entry(away).or_default();
+        ae.gp += 1;
+        ae.gf += a_goals;
+        ae.ga += h_goals;
+        if home_won { ae.losses += 1; } else { ae.wins += 1; }
     }
 
-    let mut rows: Vec<Value> = Vec::new();
-    let mut all_teams: Vec<String> = w
-        .keys()
-        .chain(l.keys())
-        .chain(gf.keys())
-        .map(|k| k.clone())
-        .collect();
-    all_teams.sort();
-    for t in all_teams {
-        let wins = *w.get(&t).unwrap_or(&0);
-        let losses = *l.get(&t).unwrap_or(&0);
-        let pct = if wins + losses > 0 {
-            wins as f64 / (wins + losses) as f64
+    let mut rows: Vec<Value> = Vec::with_capacity(stats.len());
+    for (t, s) in stats {
+        let pct = if s.wins + s.losses > 0 {
+            s.wins as f64 / (s.wins + s.losses) as f64
         } else {
             0.0
         };
         rows.push(json!({
             "team_abbrev": t,
-            "wins": wins,
-            "losses": losses,
-            "games_played": *gp.get(&t).unwrap_or(&0),
+            "wins": s.wins,
+            "losses": s.losses,
+            "games_played": s.gp,
             "win_pct": (pct * 1000.0).round() / 1000.0,
-            "goals_for": *gf.get(&t).unwrap_or(&0),
-            "goals_against": *ga.get(&t).unwrap_or(&0),
-            "goal_diff": gf.get(&t).unwrap_or(&0) - ga.get(&t).unwrap_or(&0),
+            "goals_for": s.gf,
+            "goals_against": s.ga,
+            "goal_diff": s.gf - s.ga,
         }));
     }
     // Sort by win% desc, then wins, then goal diff, then team.
@@ -77,7 +76,11 @@ pub fn standings_from_games(games: &[Value]) -> Vec<Value> {
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| safe_int(b.get("wins")).unwrap_or(0).cmp(&safe_int(a.get("wins")).unwrap_or(0)))
             .then_with(|| safe_int(b.get("goal_diff")).unwrap_or(0).cmp(&safe_int(a.get("goal_diff")).unwrap_or(0)))
-            .then_with(|| str_value(a.get("team_abbrev")).cmp(&str_value(b.get("team_abbrev"))))
+            .then_with(|| {
+                let ta = a.get("team_abbrev").and_then(Value::as_str).unwrap_or("");
+                let tb = b.get("team_abbrev").and_then(Value::as_str).unwrap_or("");
+                ta.cmp(tb)
+            })
     });
     rows
 }
@@ -86,16 +89,20 @@ fn parse_locale_float_val(v: Option<&Value>) -> Option<f64> {
     crate::util::parse::parse_locale_float(v)
 }
 
-/// League standings: read the league's games and compute W/L.
+/// League standings: read only finalized games (filtered in SQL) and compute W/L.
 pub async fn league_standings(state: &AppState, league_id: &str) -> Result<Value, ApiErrorT> {
     let sb = league::sb_required(state)?;
+    let filters = BTreeMap::from([
+        ("league_id".to_string(), format!("eq.{league_id}")),
+        ("status".to_string(), "eq.final".to_string()),
+    ]);
     let rows = sb
         .read(
             "manager_games",
             "home_abbrev,away_abbrev,home_score,away_score,status",
-            Some(&league::eq_filter("league_id", league_id)),
+            Some(&filters),
             None,
-            Some("date.asc,nhl_game_id.asc"),
+            None,
             0,
         )
         .await
@@ -106,37 +113,40 @@ pub async fn league_standings(state: &AppState, league_id: &str) -> Result<Value
     }))
 }
 
-/// League feed: recent trades and finalized results.
+/// League feed: recent trades and finalized results (filtered in SQL + parallelized).
 pub async fn league_feed(state: &AppState, league_id: &str, limit: usize) -> Result<Value, ApiErrorT> {
     let sb = league::sb_required(state)?;
-    let trades = sb
-        .read(
+    let trade_filters = BTreeMap::from([
+        ("league_id".to_string(), format!("eq.{league_id}")),
+        ("status".to_string(), "neq.pending".to_string()),
+    ]);
+    let game_filters = BTreeMap::from([
+        ("league_id".to_string(), format!("eq.{league_id}")),
+        ("status".to_string(), "eq.final".to_string()),
+    ]);
+    let (trades_opt, games_opt) = tokio::join!(
+        sb.read(
             "manager_trade_offers",
             "created_at,from_team,to_team,offered_player_ids,requested_player_ids,status,responded_at",
-            Some(&league::eq_filter("league_id", league_id)),
+            Some(&trade_filters),
             None,
             Some("created_at.desc"),
             limit,
-        )
-        .await
-        .unwrap_or_default();
-    let games = sb
-        .read(
+        ),
+        sb.read(
             "manager_games",
             "date,home_abbrev,away_abbrev,home_score,away_score,status,nhl_game_id",
-            Some(&league::eq_filter("league_id", league_id)),
+            Some(&game_filters),
             None,
             Some("date.desc,nhl_game_id.desc"),
             limit,
-        )
-        .await
-        .unwrap_or_default();
+        ),
+    );
+    let trades = trades_opt.unwrap_or_default();
+    let games = games_opt.unwrap_or_default();
 
-    let mut feed: Vec<Value> = Vec::new();
+    let mut feed: Vec<Value> = Vec::with_capacity(trades.len() + games.len());
     for t in &trades {
-        if str_value(t.get("status")) == "pending" {
-            continue;
-        }
         feed.push(json!({
             "kind": "trade",
             "at": t.get("created_at"),
@@ -148,9 +158,6 @@ pub async fn league_feed(state: &AppState, league_id: &str, limit: usize) -> Res
         }));
     }
     for g in &games {
-        if str_value(g.get("status")) != "final" {
-            continue;
-        }
         feed.push(json!({
             "kind": "result",
             "at": g.get("date"),
@@ -169,56 +176,63 @@ pub async fn league_feed(state: &AppState, league_id: &str, limit: usize) -> Res
 /// the roster pool. Idempotent per player (upsert). Returns the count seeded.
 pub async fn seed_true_rosters(state: &AppState, league_id: &str) -> Result<Value, ApiErrorT> {
     let sb = league::sb_required(state)?;
-    let league_row = league_meta(sb, league_id).await?;
-    if str_value(league_row.get("mode")) != crate::manager::MODE_TRUE_ROSTERS {
-        return Err(ApiErrorT::BadRequest(json!({"error": "invalid_mode"})));
-    }
-    let teams = sb
-        .read(
+    let f_lid = league::eq_filter("league_id", league_id);
+    let (league_res, teams_opt, pool) = tokio::join!(
+        league_meta(sb, league_id),
+        sb.read(
             "manager_league_teams",
             "team_abbrev",
-            Some(&league::eq_filter("league_id", league_id)),
+            Some(&f_lid),
             None,
             None,
             0,
-        )
-        .await
-        .ok_or_else(|| ApiErrorT::Internal("supabase unavailable".into()))?;
+        ),
+        crate::manager::draft::draft_pool(state),
+    );
+    let league_row = league_res?;
+    if str_value(league_row.get("mode")) != crate::manager::MODE_TRUE_ROSTERS {
+        return Err(ApiErrorT::BadRequest(json!({"error": "invalid_mode"})));
+    }
+    let teams = teams_opt.ok_or_else(|| ApiErrorT::Internal("supabase unavailable".into()))?;
+    let team_set: std::collections::HashSet<String> = teams
+        .iter()
+        .map(|t| str_value(t.get("team_abbrev")))
+        .filter(|s| !s.is_empty())
+        .collect();
 
-    let pool = crate::manager::draft::draft_pool(state).await;
     let mut rows: Vec<Value> = Vec::new();
-    for t in &teams {
-        let team = str_value(t.get("team_abbrev"));
-        for (pid, info) in &pool {
-            if str_value(info.get("team")) != team {
-                continue;
-            }
-            let pos = str_value(info.get("position"))
-                .chars()
-                .next()
-                .map(|c| c.to_string())
-                .unwrap_or_default();
-            if !matches!(pos.as_str(), "F" | "D" | "G") {
-                continue;
-            }
-            rows.push(json!({
-                "league_id": league_id,
-                "team_abbrev": team,
-                "player_id": pid,
-                "position": pos,
-                "acquired_via": "initial",
-            }));
+    for (pid, info) in &pool {
+        let team = str_value(info.get("team"));
+        if !team_set.contains(&team) {
+            continue;
         }
+        let pos = str_value(info.get("position"))
+            .chars()
+            .next()
+            .map(|c| c.to_string())
+            .unwrap_or_default();
+        if !matches!(pos.as_str(), "F" | "D" | "G") {
+            continue;
+        }
+        rows.push(json!({
+            "league_id": league_id,
+            "team_abbrev": team,
+            "player_id": pid,
+            "position": pos,
+            "acquired_via": "initial",
+        }));
     }
     if !rows.is_empty() {
-        crate::supabase::write::upsert_rows(
+        if !crate::supabase::write::upsert_rows_minimal(
             sb,
             "manager_rosters",
             &rows,
             "league_id,team_abbrev,player_id",
         )
         .await
-        .ok_or_else(|| ApiErrorT::Internal("roster seed failed".into()))?;
+        {
+            return Err(ApiErrorT::Internal("roster seed failed".into()));
+        }
     }
     Ok(json!({"league_id": league_id, "seeded": rows.len()}))
 }
@@ -265,6 +279,7 @@ mod tests {
             final_game("BOS", "CAR", 4.0, 2.0),
         ];
         let rows = standings_from_games(&games);
+        assert_eq!(rows.len(), 3, "standings must not contain duplicate teams");
         let by = |t: &str| rows.iter().find(|r| str_value(r.get("team_abbrev")) == t).cloned();
         let ana = by("ANA").unwrap();
         assert_eq!(safe_int(ana.get("wins")), Some(2));

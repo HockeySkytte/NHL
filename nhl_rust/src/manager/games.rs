@@ -174,9 +174,11 @@ pub async fn record_game_stats(
         })
         .collect();
     if !db_rows.is_empty() {
-        write::upsert_rows(sb, "manager_game_stats", &db_rows, "nhl_game_id,player_id")
+        if !write::upsert_rows_minimal(sb, "manager_game_stats", &db_rows, "nhl_game_id,player_id")
             .await
-            .ok_or_else(|| ApiError::Internal("stat storage failed".into()))?;
+        {
+            return Err(ApiError::Internal("stat storage failed".into()));
+        }
     }
     Ok((game_state, rows))
 }
@@ -271,20 +273,21 @@ pub async fn set_lineup(
         ],
     )
     .await;
-    write::upsert_rows(sb, "manager_lineups", &linelist, "league_id,team_abbrev,round,slot")
+    if !write::upsert_rows_minimal(sb, "manager_lineups", &linelist, "league_id,team_abbrev,round,slot")
         .await
-        .ok_or_else(|| ApiError::Internal("lineup save failed".into()))?;
+    {
+        return Err(ApiError::Internal("lineup save failed".into()));
+    }
 
     get_lineup(sb, league_id, &team, round).await
 }
 
-/// Get a team's active lineup for a round.
-pub async fn get_lineup(
+async fn read_lineup_slots(
     sb: &SbClient,
     league_id: &str,
     team: &str,
     round: i64,
-) -> Result<Value, ApiError> {
+) -> Result<Vec<(String, i64)>, ApiError> {
     let rows = sb
         .read(
             "manager_lineups",
@@ -300,15 +303,33 @@ pub async fn get_lineup(
         )
         .await
         .ok_or_else(|| ApiError::Internal("supabase unavailable".into()))?;
-    let locked = lineup_locked(sb, league_id, team, round).await;
+    Ok(rows
+        .into_iter()
+        .filter_map(|r| {
+            let slot = str_value(r.get("slot"));
+            let pid = safe_int(r.get("player_id"))?;
+            Some((slot, pid))
+        })
+        .collect())
+}
+
+/// Get a team's active lineup for a round.
+pub async fn get_lineup(
+    sb: &SbClient,
+    league_id: &str,
+    team: &str,
+    round: i64,
+) -> Result<Value, ApiError> {
+    let (slots_res, locked) = tokio::join!(
+        read_lineup_slots(sb, league_id, team, round),
+        lineup_locked(sb, league_id, team, round),
+    );
+    let rows = slots_res?;
     // Resolve names from the pool for a friendly response.
     let mut by_slot: BTreeMap<String, Value> = BTreeMap::new();
-    let mut pids: Vec<i64> = Vec::new();
-    for r in &rows {
-        let slot = str_value(r.get("slot"));
-        let pid = safe_int(r.get("player_id")).unwrap_or(0);
-        let key = slot.clone();
-        by_slot.insert(key, json!({"slot": slot, "player_id": pid, "name": ""}));
+    let mut pids: Vec<i64> = Vec::with_capacity(rows.len());
+    for (slot, pid) in rows {
+        by_slot.insert(slot.clone(), json!({"slot": slot, "player_id": pid, "name": ""}));
         if pid > 0 {
             pids.push(pid);
         }
@@ -391,22 +412,13 @@ pub async fn finalize_game(
     let home_round = safe_int(game.get("home_round")).unwrap_or(0);
     let away_round = safe_int(game.get("away_round")).unwrap_or(0);
 
-    let stats = load_stats(sb, nhl_game_id).await;
-    let home_lineup = get_lineup(sb, league_id, &home, home_round).await?;
-    let away_lineup = get_lineup(sb, league_id, &away, away_round).await?;
-    let lineup_slots = |lineup: &Value| -> Vec<(String, i64)> {
-        lineup
-            .get("slots")
-            .and_then(Value::as_object)
-            .map(|m| {
-                m.iter()
-                    .filter_map(|(slot, v)| v.get("player_id").and_then(|x| x.as_i64()).map(|pid| (slot.clone(), pid)))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let home_slots = lineup_slots(&home_lineup);
-    let away_slots = lineup_slots(&away_lineup);
+    let (stats, home_slots_res, away_slots_res) = tokio::join!(
+        load_stats(sb, nhl_game_id),
+        read_lineup_slots(sb, league_id, &home, home_round),
+        read_lineup_slots(sb, league_id, &away, away_round),
+    );
+    let home_slots = home_slots_res?;
+    let away_slots = away_slots_res?;
     if home_slots.len() < crate::manager::LINEUP_SLOTS || away_slots.len() < crate::manager::LINEUP_SLOTS {
         return Err(ApiError::BadRequest(json!({"error": "lineup_missing"})));
     }
@@ -421,8 +433,16 @@ pub async fn finalize_game(
         "away_score": round2(away_score),
         "finalized_at": chrono::Utc::now(),
     });
-    write::update_rows(sb, "manager_games", &[("league_id", league_id), ("nhl_game_id", &nhl_game_id.to_string())], &patch)
-        .await;
+    if !write::update_rows(
+        sb,
+        "manager_games",
+        &[("league_id", league_id), ("nhl_game_id", &nhl_game_id.to_string())],
+        &patch,
+    )
+    .await
+    {
+        return Err(ApiError::Internal("game finalize update failed".into()));
+    }
 
     Ok(json!({
         "league_id": league_id,

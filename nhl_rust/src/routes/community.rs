@@ -212,24 +212,30 @@ async fn fetch_posts_html(state: &AppState, sort: &str, limit: usize) -> Vec<Val
             continue;
         };
         let document = scraper::Html::parse_document(&html_text);
-        // Select article.post-card-compact cards (fallback: any article).
+        static SEL_COMPACT: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+        static SEL_ARTICLE: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+        static SEL_LINK: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+        static SEL_TITLE: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+        static SEL_META: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+        static SEL_SNIPPET: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+        static SEL_IMG: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+        static SEL_SCORE: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+        static SEL_COMMENTS: std::sync::OnceLock<scraper::Selector> = std::sync::OnceLock::new();
+
+        let compact_sel = SEL_COMPACT.get_or_init(|| scraper::Selector::parse("article.post-card-compact").unwrap());
+        let article_sel = SEL_ARTICLE.get_or_init(|| scraper::Selector::parse("article").unwrap());
+        let link_sel = SEL_LINK.get_or_init(|| scraper::Selector::parse("h2 a, h3 a").unwrap());
+        let title_sel = SEL_TITLE.get_or_init(|| scraper::Selector::parse("h2 a, h3 a, h2, h3").unwrap());
+        let meta_sel = SEL_META.get_or_init(|| scraper::Selector::parse(".post-meta-row span").unwrap());
+        let snippet_sel = SEL_SNIPPET.get_or_init(|| scraper::Selector::parse("p.post-body-preview").unwrap());
+        let img_sel = SEL_IMG.get_or_init(|| scraper::Selector::parse("img.post-card-thumb").unwrap());
+        let score_sel = SEL_SCORE.get_or_init(|| scraper::Selector::parse(".reaction-button .score-label, .reaction-button.no-pointer").unwrap());
+        let comments_sel = SEL_COMMENTS.get_or_init(|| scraper::Selector::parse("a[href*=\"#comments\"]").unwrap());
+
         let mut out: Vec<Value> = Vec::new();
-        let compact_sel = match scraper::Selector::parse("article.post-card-compact") {
-            Ok(s) => Some(s),
-            Err(_) => None,
-        };
-        let article_sel = match scraper::Selector::parse("article") {
-            Ok(s) => Some(s),
-            Err(_) => None,
-        };
-        let mut cards: Vec<scraper::ElementRef> = Vec::new();
-        if let Some(sel) = &compact_sel {
-            cards.extend(document.select(sel));
-        }
+        let mut cards: Vec<scraper::ElementRef> = document.select(compact_sel).collect();
         if cards.is_empty() {
-            if let Some(sel) = &article_sel {
-                cards.extend(document.select(sel));
-            }
+            cards.extend(document.select(article_sel));
         }
         for card in cards {
             let mut post_url = card
@@ -238,60 +244,39 @@ async fn fetch_posts_html(state: &AppState, sort: &str, limit: usize) -> Vec<Val
                 .map(|u| community_abs_url(&state.cfg, u))
                 .unwrap_or_default();
             if post_url.is_empty() {
-                if let Some(link) = card.select(&match scraper::Selector::parse("h2 a, h3 a") {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                }).next() {
+                if let Some(link) = card.select(link_sel).next() {
                     if let Some(href) = link.value().attr("href") {
                         post_url = community_abs_url(&state.cfg, href);
                     }
                 }
             }
             let title = card
-                .select(&match scraper::Selector::parse("h2 a, h3 a, h2, h3") {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                })
+                .select(title_sel)
                 .next()
                 .map(|el| el.text().collect::<Vec<_>>().join(" ").trim().to_string())
                 .unwrap_or_default();
             let meta: Vec<String> = card
-                .select(&match scraper::Selector::parse(".post-meta-row span") {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                })
+                .select(meta_sel)
                 .map(|el| el.text().collect::<Vec<_>>().join(" ").trim().to_string())
                 .collect();
             let snippet = card
-                .select(&match scraper::Selector::parse("p.post-body-preview") {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                })
+                .select(snippet_sel)
                 .next()
                 .map(|el| el.text().collect::<Vec<_>>().join(" ").trim().to_string())
                 .unwrap_or_default();
             let img_src = card
-                .select(&match scraper::Selector::parse("img.post-card-thumb") {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                })
+                .select(img_sel)
                 .next()
                 .and_then(|el| el.value().attr("src"))
                 .map(|s| community_abs_url(&state.cfg, s))
                 .unwrap_or_default();
             let score_txt = card
-                .select(&match scraper::Selector::parse(".reaction-button .score-label, .reaction-button.no-pointer") {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                })
+                .select(score_sel)
                 .next()
                 .map(|el| el.text().collect::<Vec<_>>().join(" ").trim().to_string())
                 .unwrap_or_else(|| "0".to_string());
             let comments_txt = card
-                .select(&match scraper::Selector::parse("a[href*=\"#comments\"]") {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                })
+                .select(comments_sel)
                 .next()
                 .map(|el| el.text().collect::<Vec<_>>().join(" ").trim().to_string())
                 .unwrap_or_else(|| "0 comments".to_string());
@@ -320,10 +305,8 @@ async fn fetch_posts_html(state: &AppState, sort: &str, limit: usize) -> Vec<Val
 }
 
 fn first_int(text: &str) -> i64 {
-    let re = match regex::Regex::new(r"-?\d+") {
-        Ok(re) => re,
-        Err(_) => return 0,
-    };
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"-?\d+").unwrap());
     re.find(text)
         .and_then(|m| m.as_str().parse::<i64>().ok())
         .unwrap_or(0)

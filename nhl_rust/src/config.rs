@@ -64,6 +64,12 @@ pub struct Config {
     /// `PRESTART_CSV` / `PRESTART_DIR` — prestart snapshot output.
     pub prestart_csv: String,
     pub prestart_dir: Option<std::path::PathBuf>,
+    /// Pre-parsed runtime thresholds (avoids per-request `std::env::var` lookups).
+    pub slow_request_ms: u128,
+    pub fetch_bios: bool,
+    pub xg_disabled: bool,
+    pub line_tool_pbp_batch_size: usize,
+    pub template_auto_reload: bool,
 }
 
 fn env_nonempty(name: &str) -> Option<String> {
@@ -151,6 +157,16 @@ impl Config {
             prestart_dir: env_nonempty("PRESTART_DIR")
                 .or_else(|| env_nonempty("XG_CACHE_DIR"))
                 .map(std::path::PathBuf::from),
+            slow_request_ms: env_nonempty("SLOW_REQUEST_MS")
+                .and_then(|v| v.parse::<u128>().ok())
+                .unwrap_or(2000),
+            fetch_bios: env_is_one("FETCH_BIOS", false),
+            xg_disabled: env_is_one("XG_DISABLED", false),
+            line_tool_pbp_batch_size: env_nonempty("LINE_TOOL_PBP_BATCH_SIZE")
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(50)
+                .clamp(10, 100),
+            template_auto_reload: env_is_one("TEMPLATE_AUTO_RELOAD", false),
         }
     }
 }

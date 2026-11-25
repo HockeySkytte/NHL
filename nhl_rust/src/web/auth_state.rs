@@ -3,7 +3,10 @@
 //! transforms of the Supabase user / `user_accounts` records so the Rust app
 //! reproduces the exact trial/access/plan semantics.
 
-use chrono::{DateTime, Datelike, Timelike, Utc};
+use std::sync::OnceLock;
+
+use chrono::{DateTime, Timelike, Utc};
+use regex::Regex;
 use serde_json::{json, Value};
 
 /// Default trial length (days), overridable via `AUTH_TRIAL_DAYS`.
@@ -81,32 +84,34 @@ fn add_days(dt: DateTime<Utc>, days: i64) -> DateTime<Utc> {
 
 // ── username / email validation (regex parity with Python) ───────
 
+fn re_non_username_chars() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"[^a-z0-9._-]+").expect("valid regex"))
+}
+
 pub fn normalize_username(value: &str) -> String {
     // re.sub(r'[^a-z0-9._-]+', '-', lower).strip('-')
     let lower = value.trim().to_lowercase();
-    let re = match regex::Regex::new(r"[^a-z0-9._-]+") {
-        Ok(re) => re,
-        Err(_) => return lower,
-    };
-    re.replace_all(&lower, "-").trim_matches('-').to_string()
+    re_non_username_chars()
+        .replace_all(&lower, "-")
+        .trim_matches('-')
+        .to_string()
 }
 
 pub fn valid_username(value: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
     let username = normalize_username(value);
     // r'[a-z0-9](?:[a-z0-9._-]{1,30}[a-z0-9])?'
-    let re = match regex::Regex::new(r"^[a-z0-9](?:[a-z0-9._-]{1,30}[a-z0-9])?$") {
-        Ok(re) => re,
-        Err(_) => return false,
-    };
+    let re = RE.get_or_init(|| {
+        Regex::new(r"^[a-z0-9](?:[a-z0-9._-]{1,30}[a-z0-9])?$").expect("valid regex")
+    });
     re.is_match(&username)
 }
 
 pub fn valid_email(value: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
     // r'^[^@\s]+@[^@\s]+\.[^@\s]+$'
-    let re = match regex::Regex::new(r"^[^@\s]+@[^@\s]+\.[^@\s]+$") {
-        Ok(re) => re,
-        Err(_) => return false,
-    };
+    let re = RE.get_or_init(|| Regex::new(r"^[^@\s]+@[^@\s]+\.[^@\s]+$").expect("valid regex"));
     re.is_match(&value.trim().to_lowercase())
 }
 
@@ -129,11 +134,10 @@ pub fn auth_username_candidate(record: &Value, existing_record: Option<&Value>) 
     }
     let name = as_str_of(record.get("display_name")).to_lowercase();
     // re.sub(r'[^a-z0-9._-]+', '-', name).strip('-')
-    let re = match regex::Regex::new(r"[^a-z0-9._-]+") {
-        Ok(re) => re,
-        Err(_) => return String::new(),
-    };
-    let cleaned_name = re.replace_all(&name, "-").trim_matches('-').to_string();
+    let cleaned_name = re_non_username_chars()
+        .replace_all(&name, "-")
+        .trim_matches('-')
+        .to_string();
     if !cleaned_name.is_empty() {
         return cleaned_name.chars().take(64).collect();
     }

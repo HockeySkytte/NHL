@@ -655,41 +655,6 @@ async fn api_skaters_card(
         return (StatusCode::BAD_REQUEST, Json(json!({"error": "missing_playerId"}))).into_response();
     }
 
-    let (agg, pos_group) = seasonstats::build_skater_agg(
-        &state.caches,
-        state.sb.as_ref(),
-        &state.cfg,
-        &p.scope,
-        p.season,
-        &p.season_ids,
-        &p.season_state,
-        &p.strength_state,
-    )
-    .await;
-    let (mut agg_map, mut pos_map) = (agg.as_object().cloned().unwrap_or_default(), pos_group.as_object().cloned().unwrap_or_default());
-
-    if p.min_gp > 0 || p.min_toi > 0.0 {
-        let eligible: HashSet<String> = agg_map
-            .iter()
-            .filter(|(_, d)| {
-                num(d.get("GP")) >= p.min_gp as f64 && num(d.get("TOI")) >= p.min_toi
-            })
-            .map(|(k, _)| k.clone())
-            .collect();
-        agg_map.retain(|k, _| eligible.contains(k));
-        pos_map.retain(|k, _| eligible.contains(k));
-    }
-
-    let defs = card_defs::load_defs(&state.caches, &state.cfg, "skaters").await;
-    let mut def_map: Map<String, Value> = Map::new();
-    if let Some(metrics) = defs.get("metrics").and_then(Value::as_array) {
-        for m in metrics {
-            if let Some(id) = m.get("id").and_then(Value::as_str) {
-                def_map.insert(id.to_string(), m.clone());
-            }
-        }
-    }
-
     let metric_ids: Vec<String> = if p.metric_ids.is_empty() {
         vec![
             "Ice Time|GP".to_string(),
@@ -713,22 +678,61 @@ async fn api_skaters_card(
         "5v5".to_string()
     };
     let want_rapm_rates = if p.rates == "Totals" { "Totals" } else { "Rates" };
-
     let needs_rapm = metric_ids.iter().any(|m| m.contains("|RAPM "));
     let needs_ctx = metric_ids.iter().any(|m| matches!(m.as_str(), "Context|QoT" | "Context|QoC" | "Context|ZS"));
 
-    let rapm_row = if needs_rapm {
-        let data = rapm::load_rapm_data(&state.caches, state.sb.as_ref(), p.season).await;
-        pick_rapm_row(&data, pid, p.season, &want_strength, want_rapm_rates)
-    } else {
-        None
-    };
-    let ctx_row = if needs_ctx {
-        let rows = rapm::load_context_rows(&state.caches, state.sb.as_ref(), p.season).await;
-        pick_ctx_row(&rows, pid, p.season, &want_strength)
-    } else {
-        None
-    };
+    let ((agg, pos_group), defs, rapm_row, ctx_row) = tokio::join!(
+        seasonstats::build_skater_agg(
+            &state.caches,
+            state.sb.as_ref(),
+            &state.cfg,
+            &p.scope,
+            p.season,
+            &p.season_ids,
+            &p.season_state,
+            &p.strength_state,
+        ),
+        card_defs::load_defs(&state.caches, &state.cfg, "skaters"),
+        async {
+            if needs_rapm {
+                let data = rapm::load_rapm_data(&state.caches, state.sb.as_ref(), p.season).await;
+                pick_rapm_row(&data, pid, p.season, &want_strength, want_rapm_rates)
+            } else {
+                None
+            }
+        },
+        async {
+            if needs_ctx {
+                let rows = rapm::load_context_rows(&state.caches, state.sb.as_ref(), p.season).await;
+                pick_ctx_row(&rows, pid, p.season, &want_strength)
+            } else {
+                None
+            }
+        },
+    );
+    let mut agg_map = match agg { Value::Object(m) => m, _ => Map::new() };
+    let mut pos_map = match pos_group { Value::Object(m) => m, _ => Map::new() };
+
+    if p.min_gp > 0 || p.min_toi > 0.0 {
+        let eligible: HashSet<String> = agg_map
+            .iter()
+            .filter(|(_, d)| {
+                num(d.get("GP")) >= p.min_gp as f64 && num(d.get("TOI")) >= p.min_toi
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        agg_map.retain(|k, _| eligible.contains(k));
+        pos_map.retain(|k, _| eligible.contains(k));
+    }
+
+    let mut def_map: Map<String, Value> = Map::new();
+    if let Some(metrics) = defs.get("metrics").and_then(Value::as_array) {
+        for m in metrics {
+            if let Some(id) = m.get("id").and_then(Value::as_str) {
+                def_map.insert(id.to_string(), m.clone());
+            }
+        }
+    }
 
     let mut special_pct: BTreeMap<String, Option<f64>> = BTreeMap::new();
     let mut derived: BTreeMap<i64, BTreeMap<String, Option<f64>>> = BTreeMap::new();
@@ -1482,27 +1486,6 @@ async fn skaters_table_endpoint(state: AppState, params: &HashMap<String, String
         return (StatusCode::BAD_REQUEST, Json(json!({"error": "metricIds_required"}))).into_response();
     }
 
-    let (agg, _pos_group) = seasonstats::build_skater_agg(
-        &state.caches,
-        state.sb.as_ref(),
-        &state.cfg,
-        &p.scope,
-        p.season,
-        &p.season_ids,
-        &p.season_state,
-        &p.strength_state,
-    )
-    .await;
-    let agg_map = agg.as_object().cloned().unwrap_or_default();
-    let defs = card_defs::load_defs(&state.caches, &state.cfg, "skaters").await;
-    let mut def_map: Map<String, Value> = Map::new();
-    if let Some(metrics) = defs.get("metrics").and_then(Value::as_array) {
-        for m in metrics {
-            if let Some(id) = m.get("id").and_then(Value::as_str) {
-                def_map.insert(id.to_string(), m.clone());
-            }
-        }
-    }
     let want_strength = if matches!(p.strength_state.as_str(), "5v5" | "PP" | "SH") {
         p.strength_state.clone()
     } else {
@@ -1511,16 +1494,42 @@ async fn skaters_table_endpoint(state: AppState, params: &HashMap<String, String
     let want_rapm_rates = if p.rates == "Totals" { "Totals" } else { "Rates" };
     let needs_rapm = metric_ids.iter().any(|m| m.contains("|RAPM "));
     let needs_ctx = metric_ids.iter().any(|m| matches!(m.as_str(), "Context|QoT" | "Context|QoC" | "Context|ZS"));
-    let rapm_all = if needs_rapm {
-        Some(rapm::load_rapm_data(&state.caches, state.sb.as_ref(), p.season).await)
-    } else {
-        None
-    };
-    let ctx_all = if needs_ctx {
-        Some(rapm::load_context_rows(&state.caches, state.sb.as_ref(), p.season).await)
-    } else {
-        None
-    };
+    let ((agg, _pos_group), defs, rapm_all, ctx_all) = tokio::join!(
+        seasonstats::build_skater_agg(
+            &state.caches,
+            state.sb.as_ref(),
+            &state.cfg,
+            &p.scope,
+            p.season,
+            &p.season_ids,
+            &p.season_state,
+            &p.strength_state,
+        ),
+        card_defs::load_defs(&state.caches, &state.cfg, "skaters"),
+        async {
+            if needs_rapm {
+                Some(rapm::load_rapm_data(&state.caches, state.sb.as_ref(), p.season).await)
+            } else {
+                None
+            }
+        },
+        async {
+            if needs_ctx {
+                Some(rapm::load_context_rows(&state.caches, state.sb.as_ref(), p.season).await)
+            } else {
+                None
+            }
+        },
+    );
+    let agg_map = match agg { Value::Object(m) => m, _ => Map::new() };
+    let mut def_map: Map<String, Value> = Map::new();
+    if let Some(metrics) = defs.get("metrics").and_then(Value::as_array) {
+        for m in metrics {
+            if let Some(id) = m.get("id").and_then(Value::as_str) {
+                def_map.insert(id.to_string(), m.clone());
+            }
+        }
+    }
 
     // Pre-index RAPM/context rows by (PlayerID, Season) once so the per-player
     // pick below is O(few) instead of a full-table scan per player (~40M ops
@@ -1701,35 +1710,37 @@ async fn scatter_endpoint(state: AppState, params: Query<HashMap<String, String>
         return json_no_store(cached);
     }
 
-    let (agg, _pos_group) = if is_goalie {
-        seasonstats::build_goalie_agg(
-            &state.caches,
-            state.sb.as_ref(),
-            &state.cfg,
-            &p.scope,
-            p.season,
-            &p.season_ids,
-            &p.season_state,
-            &p.strength_state,
-        )
-        .await
-    } else {
-        seasonstats::build_skater_agg(
-            &state.caches,
-            state.sb.as_ref(),
-            &state.cfg,
-            &p.scope,
-            p.season,
-            &p.season_ids,
-            &p.season_state,
-            &p.strength_state,
-        )
-        .await
-    };
-    let agg_map = agg.as_object().cloned().unwrap_or_default();
-
-    // Names/teams from current rosters (best-effort).
-    let roster_map = crate::data::rosters::all_rosters(&state.caches, &state.http).await;
+    let ((agg, _pos_group), roster_map) = tokio::join!(
+        async {
+            if is_goalie {
+                seasonstats::build_goalie_agg(
+                    &state.caches,
+                    state.sb.as_ref(),
+                    &state.cfg,
+                    &p.scope,
+                    p.season,
+                    &p.season_ids,
+                    &p.season_state,
+                    &p.strength_state,
+                )
+                .await
+            } else {
+                seasonstats::build_skater_agg(
+                    &state.caches,
+                    state.sb.as_ref(),
+                    &state.cfg,
+                    &p.scope,
+                    p.season,
+                    &p.season_ids,
+                    &p.season_state,
+                    &p.strength_state,
+                )
+                .await
+            }
+        },
+        crate::data::rosters::all_rosters(&state.caches, &state.http),
+    );
+    let agg_map = match agg { Value::Object(m) => m, _ => Map::new() };
 
     let mut points: Vec<Value> = Vec::new();
     if is_goalie {
@@ -1832,17 +1843,17 @@ async fn api_goalies_series(
         _ => "xGA_F",
     };
 
-    let (by_pid_season, league_sa_ga) = seasonstats::build_goalies_career_matrix(
-        &state.caches,
-        state.sb.as_ref(),
-        &state.cfg,
-        &season_state,
-        &strength_state,
-        pid,
-    )
-    .await;
-
-    let team_map = goalie_team_by_season(&state, pid).await;
+    let ((by_pid_season, league_sa_ga), team_map) = tokio::join!(
+        seasonstats::build_goalies_career_matrix(
+            &state.caches,
+            state.sb.as_ref(),
+            &state.cfg,
+            &season_state,
+            &strength_state,
+            pid,
+        ),
+        goalie_team_by_season(&state, pid),
+    );
     let mut seasons_out: Vec<Value> = Vec::new();
     let Some(seasons_map) = by_pid_season.get(&pid.to_string()).and_then(Value::as_object) else {
         return json_no_store(json!({"playerId": pid, "seasonState": season_state, "strengthState": strength_state, "xgModel": xg_model, "seasons": []}));

@@ -151,6 +151,11 @@ async fn api_skaters_shooting(State(state): State<AppState>, Query(params): Quer
         None
     };
 
+    let mut roster_key: Vec<i64> = roster_ids
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+    roster_key.sort_unstable();
     let cache_key = json!({
         "team": team,
         "seasons": season_ids,
@@ -158,7 +163,7 @@ async fn api_skaters_shooting(State(state): State<AppState>, Query(params): Quer
         "strength": strength,
         "xg_model": xg_model,
         "player": player_id,
-        "roster": roster_ids.iter().flat_map(|s| s.iter().copied()).collect::<Vec<i64>>(),
+        "roster": roster_key,
     })
     .to_string();
     if let Some(v) = state.caches.skaters_shooting.get(&cache_key) {
@@ -167,44 +172,45 @@ async fn api_skaters_shooting(State(state): State<AppState>, Query(params): Quer
 
     let Some(sb) = state.sb.as_ref() else {
         let payload = empty_shooting_payload();
-        state.caches.skaters_shooting.insert(cache_key, payload.clone());
         return json_no_store(payload);
     };
 
-    let mut all_events: Vec<Value> = Vec::new();
-    let mut sb_failed = false;
     let cols = format!(
         "event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,shot_type,player1_id,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,event,highlight_url,period"
     );
-    for season_id in &season_ids {
-        let mut db_filters = vec![
-            ("event_team", format!("eq.{team}")),
-            ("season", format!("eq.{season_id}")),
-            ("corsi", "eq.1".to_string()),
-        ];
-        if !player_id.is_empty() {
-            db_filters.push(("player1_id", format!("eq.{player_id}")));
-        }
-        if !ss.is_empty() && ss != "all" {
-            db_filters.push(("season_state", format!("eq.{ss}")));
-        }
-        let fmap: BTreeMap<String, String> =
-            db_filters.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-        match sb
-            .read("pbp", &cols, Some(&fmap), None, Some("event_index"), 0)
-            .await
-        {
-            Some(rows) => {
-                all_events.extend(rows.into_iter().filter(|e| i_of(e, "period") != 5));
-            }
-            None => {
-                sb_failed = true;
-                all_events.clear();
-                break;
-            }
-        }
+    let season_expr = if season_ids.len() == 1 {
+        format!("eq.{}", season_ids[0])
+    } else {
+        let csv = season_ids
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("in.({csv})")
+    };
+    let mut db_filters = vec![
+        ("event_team", format!("eq.{team}")),
+        ("season", season_expr),
+        ("corsi", "eq.1".to_string()),
+    ];
+    if !player_id.is_empty() {
+        db_filters.push(("player1_id", format!("eq.{player_id}")));
     }
-    let _ = sb_failed; // fallback deferred to M3.
+    if !ss.is_empty() && ss != "all" {
+        db_filters.push(("season_state", format!("eq.{ss}")));
+    }
+    let fmap: BTreeMap<String, String> =
+        db_filters.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+
+    let (pbp_rows_opt, player_names) = tokio::join!(
+        sb.read("pbp", &cols, Some(&fmap), None, Some("event_index"), 0),
+        players_data::load_player_names_for_seasons(&state.caches, state.sb.as_ref(), &season_ids),
+    );
+    let mut all_events: Vec<Value> = pbp_rows_opt
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|e| i_of(e, "period") != 5)
+        .collect();
 
     if !player_id.is_empty() {
         if let Ok(pid) = player_id.parse::<i64>() {
@@ -338,7 +344,6 @@ async fn api_skaters_shooting(State(state): State<AppState>, Query(params): Quer
         b_net.partial_cmp(&a_net).unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let player_names = players_data::load_player_names_for_seasons(&state.caches, state.sb.as_ref(), &season_ids).await;
     for ev in &mut events_out {
         if let Some(pid) = safe_int(ev.get("playerId")) {
             let name = player_names
@@ -427,6 +432,11 @@ async fn api_goalies_goaltending(State(state): State<AppState>, Query(params): Q
         None
     };
 
+    let mut roster_key: Vec<i64> = roster_ids
+        .iter()
+        .flat_map(|s| s.iter().copied())
+        .collect();
+    roster_key.sort_unstable();
     let cache_key = json!({
         "team": team,
         "seasons": season_ids,
@@ -434,7 +444,7 @@ async fn api_goalies_goaltending(State(state): State<AppState>, Query(params): Q
         "strength": strength,
         "xg_model": xg_model,
         "player": goalie_id,
-        "roster": roster_ids.iter().flat_map(|s| s.iter().copied()).collect::<Vec<i64>>(),
+        "roster": roster_key,
     })
     .to_string();
     if let Some(v) = state.caches.goalies_goaltending.get(&cache_key) {
@@ -443,41 +453,45 @@ async fn api_goalies_goaltending(State(state): State<AppState>, Query(params): Q
 
     let Some(sb) = state.sb.as_ref() else {
         let payload = empty_goaltending_payload();
-        state.caches.goalies_goaltending.insert(cache_key, payload.clone());
         return json_no_store(payload);
     };
 
-    let mut all_events: Vec<Value> = Vec::new();
     let cols = format!(
         "event_index,game_id,x,y,box_id,shot,goal,corsi,fenwick,{xg_col},goalie_id,shot_type,player1_id,position,shoots,event_team,opponent,score_state,shot_distance,strength_state,highlight_url,period"
     );
-    for season_id in &season_ids {
-        let mut db_filters = vec![
-            ("opponent", format!("eq.{team}")),
-            ("season", format!("eq.{season_id}")),
-            ("corsi", "eq.1".to_string()),
-        ];
-        if !goalie_id.is_empty() {
-            db_filters.push(("goalie_id", format!("eq.{goalie_id}")));
-        }
-        if !ss.is_empty() && ss != "all" {
-            db_filters.push(("season_state", format!("eq.{ss}")));
-        }
-        let fmap: BTreeMap<String, String> =
-            db_filters.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-        match sb
-            .read("pbp", &cols, Some(&fmap), None, Some("event_index"), 0)
-            .await
-        {
-            Some(rows) => {
-                all_events.extend(rows.into_iter().filter(|e| i_of(e, "period") != 5));
-            }
-            None => {
-                all_events.clear();
-                break;
-            }
-        }
+    let season_expr = if season_ids.len() == 1 {
+        format!("eq.{}", season_ids[0])
+    } else {
+        let csv = season_ids
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("in.({csv})")
+    };
+    let mut db_filters = vec![
+        ("opponent", format!("eq.{team}")),
+        ("season", season_expr),
+        ("corsi", "eq.1".to_string()),
+    ];
+    if !goalie_id.is_empty() {
+        db_filters.push(("goalie_id", format!("eq.{goalie_id}")));
     }
+    if !ss.is_empty() && ss != "all" {
+        db_filters.push(("season_state", format!("eq.{ss}")));
+    }
+    let fmap: BTreeMap<String, String> =
+        db_filters.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+
+    let (pbp_rows_opt, player_names) = tokio::join!(
+        sb.read("pbp", &cols, Some(&fmap), None, Some("event_index"), 0),
+        players_data::load_player_names_for_seasons(&state.caches, state.sb.as_ref(), &season_ids),
+    );
+    let mut all_events: Vec<Value> = pbp_rows_opt
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|e| i_of(e, "period") != 5)
+        .collect();
 
     if !goalie_id.is_empty() {
         if let Ok(pid) = goalie_id.parse::<i64>() {
@@ -612,7 +626,6 @@ async fn api_goalies_goaltending(State(state): State<AppState>, Query(params): Q
         b_net.partial_cmp(&a_net).unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let player_names = players_data::load_player_names_for_seasons(&state.caches, state.sb.as_ref(), &season_ids).await;
     for ev in &mut events_out {
         if let Some(pid) = safe_int(ev.get("playerId")) {
             let name = player_names

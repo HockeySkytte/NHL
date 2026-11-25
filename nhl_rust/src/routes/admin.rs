@@ -288,8 +288,12 @@ async fn user_management_rows(
     let Some(sb) = state.sb.as_ref() else {
         return Vec::new();
     };
-    let auth_users = sb.admin_list_users(1, 1000).await.unwrap_or_default();
-    let accounts = sb.list_user_accounts().await.unwrap_or_default();
+    let (auth_users_opt, accounts_opt) = tokio::join!(
+        sb.admin_list_users(1, 1000),
+        sb.list_user_accounts(),
+    );
+    let auth_users = auth_users_opt.unwrap_or_default();
+    let accounts = accounts_opt.unwrap_or_default();
     let mut account_by_id: HashMap<String, Value> = HashMap::new();
     for row in &accounts {
         let uid = crate::web::auth_state::as_str_of(row.get("auth_user_id"));
@@ -431,8 +435,12 @@ async fn user_management_sync(
     let Some(sb) = state.sb.as_ref() else {
         return Ok(user_management_redirect(&query, Some(&form)));
     };
-    let auth_users = sb.admin_list_users(1, 1000).await.unwrap_or_default();
-    let accounts = sb.list_user_accounts().await.unwrap_or_default();
+    let (auth_users_opt, accounts_opt) = tokio::join!(
+        sb.admin_list_users(1, 1000),
+        sb.list_user_accounts(),
+    );
+    let auth_users = auth_users_opt.unwrap_or_default();
+    let accounts = accounts_opt.unwrap_or_default();
     let mut account_by_id: HashMap<String, Value> = HashMap::new();
     for row in &accounts {
         account_by_id.insert(crate::web::auth_state::as_str_of(row.get("auth_user_id")), row.clone());
@@ -596,17 +604,17 @@ fn merge_updates(target: &mut Value, source: &Value) {
 
 async fn get_user_record(state: &AppState, user_id: &str) -> Option<Value> {
     let sb = state.sb.as_ref()?;
-    let auth_row = sb.admin_get_user(user_id).await?;
-    let account = sb.get_user_account(user_id).await;
+    let (auth_row_opt, account) = tokio::join!(
+        sb.admin_get_user(user_id),
+        sb.get_user_account(user_id),
+    );
+    let auth_row = auth_row_opt?;
     Some(crate::web::auth_state::auth_record_from_supabase_user(&auth_row, account.as_ref(), state.cfg.auth_trial_days))
 }
 
-async fn persist_for_user(state: &AppState, user_id: &str, updates: &Value) -> Option<Value> {
+async fn persist_record_updates(state: &AppState, auth_like: &Value, updates: &Value) -> Option<Value> {
     let sb = state.sb.as_ref()?;
-    let auth_row = sb.admin_get_user(user_id).await?;
-    let account = sb.get_user_account(user_id).await;
-    let auth_like = crate::web::auth_state::auth_record_from_supabase_user(&auth_row, account.as_ref(), state.cfg.auth_trial_days);
-    let payload = crate::web::auth_state::build_account_payload(&auth_like, Some(updates));
+    let payload = crate::web::auth_state::build_account_payload(auth_like, Some(updates));
     sb.upsert_user_account(payload).await
 }
 
@@ -630,7 +638,7 @@ async fn user_management_free(
     }
     if let Some(auth_like) = get_user_record(&state, &user_id).await {
         let plan = crate::web::auth_state::subscription_update_for_plan("free", &auth_like);
-        let _ = persist_for_user(&state, &user_id, &plan).await;
+        let _ = persist_record_updates(&state, &auth_like, &plan).await;
         let email = crate::web::auth_state::as_str_of(auth_like.get("email"));
         return Ok(redirect_with_flash(&state, &mut session, &query, Some(&form), "success", &format!("{email} now has free access.")));
     }
@@ -661,7 +669,7 @@ async fn user_management_cancel_free(
         }
         let mut updates = crate::web::auth_state::subscription_update_for_plan("unsubscribe", &auth_like);
         updates["trial_expires_at"] = json!(crate::web::auth_state::isoformat_utc(Some(chrono::Utc::now())));
-        let _ = persist_for_user(&state, &user_id, &updates).await;
+        let _ = persist_record_updates(&state, &auth_like, &updates).await;
         let email = crate::web::auth_state::as_str_of(auth_like.get("email"));
         return Ok(redirect_with_flash(&state, &mut session, &query, Some(&form), "success", &format!("{email} free access has been canceled.")));
     }

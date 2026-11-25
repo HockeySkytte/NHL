@@ -20,7 +20,10 @@ pub async fn load(sb: Option<&SbClient>, _cfg: &Config) -> BTreeMap<i64, String>
     let Some(sb) = sb else {
         return out;
     };
-    if let Some(rows) = sb.read("last_dates", "*", None, Some(&col_map()), None, 0).await {
+    if let Some(rows) = sb
+        .read("last_dates", "season,last_date", None, Some(&col_map()), None, 0)
+        .await
+    {
         for row in rows {
             let season = row
                 .get("Season")

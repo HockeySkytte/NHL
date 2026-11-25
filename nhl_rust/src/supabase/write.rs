@@ -15,7 +15,7 @@ const CHUNK: usize = 500;
 
 fn apply_auth(sb: &SbClient, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     req.header("apikey", &sb.service_key)
-        .header("Authorization", format!("Bearer {}", sb.service_key))
+        .header("Authorization", &sb.auth_header)
         .header("Content-Type", "application/json")
 }
 
@@ -33,19 +33,16 @@ pub async fn upsert_rows(
         return Some(Vec::new());
     }
     let url = format!("{}/rest/v1/{table}?on_conflict={on_conflict}", sb.url);
-    let mut out: Vec<Value> = Vec::new();
+    let mut out: Vec<Value> = Vec::with_capacity(rows.len());
     for chunk in rows.chunks(CHUNK) {
-        let body = if chunk.len() == 1 {
-            chunk[0].clone()
+        let req = apply_auth(sb, sb.http.post(&url))
+            .header("Prefer", "resolution=merge-duplicates,return=representation");
+        let req = if chunk.len() == 1 {
+            req.json(&chunk[0])
         } else {
-            Value::Array(chunk.to_vec())
+            req.json(chunk)
         };
-        let resp = apply_auth(sb, sb.http.post(&url))
-            .header("Prefer", "resolution=merge-duplicates,return=representation")
-            .json(&body)
-            .send()
-            .await
-            .ok()?;
+        let resp = req.send().await.ok()?;
         if !resp.status().is_success() {
             return None;
         }
@@ -59,8 +56,37 @@ pub async fn upsert_rows(
     Some(out)
 }
 
+/// Upsert `rows` with `Prefer: resolution=merge-duplicates,return=minimal` so
+/// PostgREST does not serialize and return the inserted rows when the caller
+/// only cares about success/failure.
+pub async fn upsert_rows_minimal(
+    sb: &SbClient,
+    table: &str,
+    rows: &[Value],
+    on_conflict: &str,
+) -> bool {
+    if rows.is_empty() {
+        return true;
+    }
+    let url = format!("{}/rest/v1/{table}?on_conflict={on_conflict}", sb.url);
+    for chunk in rows.chunks(CHUNK) {
+        let req = apply_auth(sb, sb.http.post(&url))
+            .header("Prefer", "resolution=merge-duplicates,return=minimal");
+        let req = if chunk.len() == 1 {
+            req.json(&chunk[0])
+        } else {
+            req.json(chunk)
+        };
+        match req.send().await {
+            Ok(resp) if resp.status().is_success() => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
 /// Patch rows matching `filters` (`(column, value)` pairs → `eq.` filters)
-/// with `patch`. Returns true on success.
+/// with `patch`. Uses `return=minimal` since only success/failure is returned.
 pub async fn update_rows(
     sb: &SbClient,
     table: &str,
@@ -73,7 +99,7 @@ pub async fn update_rows(
         .map(|(col, val)| (col.to_string(), format!("eq.{val}")))
         .collect();
     let resp = apply_auth(sb, sb.http.patch(&url).query(&pairs))
-        .header("Prefer", "return=representation")
+        .header("Prefer", "return=minimal")
         .json(patch)
         .send()
         .await;

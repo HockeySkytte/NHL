@@ -44,10 +44,10 @@ pub async fn skater_bios(caches: &Caches, http: &reqwest::Client, season: i64) -
             let name = str_value(row.get("skaterFullName"));
             let pos_raw = str_value(row.get("positionCode")).to_uppercase();
             let pos = if pos_raw.starts_with('D') { "D" } else { "F" };
-            let shoots_raw = first_nonempty(&[
-                str_value(row.get("shootsCatches")),
-                str_value(row.get("shoots")),
-                str_value(row.get("ShootsCatches")),
+            let shoots_raw = first_nonempty_val(&[
+                row.get("shootsCatches"),
+                row.get("shoots"),
+                row.get("ShootsCatches"),
             ])
             .to_uppercase();
             let shoots = if shoots_raw.starts_with('L') {
@@ -57,20 +57,23 @@ pub async fn skater_bios(caches: &Caches, http: &reqwest::Client, season: i64) -
             } else {
                 ""
             };
+            let pid_s = pid.to_string();
             let entry = bios_record(pid, &name, &team, pos, &pos_raw, shoots, &str_value(row.get("birthDate")));
             // Python prefers keeping an existing record when the new name is empty.
-            let existing = out.get(&pid.to_string());
-            let keep_new = match existing {
+            let keep_new = match out.get(&pid_s) {
                 None => true,
                 Some(e) => !name.is_empty() && str_value(e.get("name")).is_empty(),
             };
             if keep_new {
-                out.insert(pid.to_string(), entry);
+                out.insert(pid_s, entry);
             }
         }
     }
+    let has_rows = !out.is_empty();
     let v = Value::Object(out);
-    caches.skater_bios.insert(season, v.clone());
+    if has_rows {
+        caches.skater_bios.insert(season, v.clone());
+    }
     v
 }
 
@@ -87,16 +90,16 @@ pub async fn goalie_bios(caches: &Caches, http: &reqwest::Client, season: i64) -
                 continue;
             }
             let team = str_value(row.get("currentTeamAbbrev")).to_uppercase();
-            let name = first_nonempty(&[
-                str_value(row.get("goalieFullName")),
-                str_value(row.get("playerFullName")),
-                str_value(row.get("skaterFullName")),
+            let name = first_nonempty_val(&[
+                row.get("goalieFullName"),
+                row.get("playerFullName"),
+                row.get("skaterFullName"),
             ]);
             let pos_raw = str_value(row.get("positionCode")).to_uppercase();
             let pos_raw = if pos_raw.is_empty() { "G".to_string() } else { pos_raw };
-            let shoots_raw = first_nonempty(&[
-                str_value(row.get("shootsCatches")),
-                str_value(row.get("catches")),
+            let shoots_raw = first_nonempty_val(&[
+                row.get("shootsCatches"),
+                row.get("catches"),
             ])
             .to_uppercase();
             let shoots = if shoots_raw.starts_with('L') {
@@ -112,28 +115,35 @@ pub async fn goalie_bios(caches: &Caches, http: &reqwest::Client, season: i64) -
             );
         }
     }
+    let has_rows = !out.is_empty();
     let v = Value::Object(out);
-    caches.goalie_bios.insert(season, v.clone());
+    if has_rows {
+        caches.goalie_bios.insert(season, v.clone());
+    }
     v
 }
 
-fn first_nonempty(values: &[String]) -> String {
-    values
-        .iter()
-        .find(|v| !v.is_empty())
-        .cloned()
-        .unwrap_or_default()
+fn first_nonempty_val(values: &[Option<&Value>]) -> String {
+    for v in values {
+        let s = str_value(*v);
+        if !s.is_empty() {
+            return s;
+        }
+    }
+    String::new()
 }
 
 /// `_load_all_rosters_cached()`: skater bios merged with goalie bios for the
-/// current season.
+/// current season (fetched concurrently).
 pub async fn all_rosters(caches: &Caches, http: &reqwest::Client) -> Value {
     if let Some(v) = caches.all_rosters.get(&()) {
         return v;
     }
     let season = current_season_id(None);
-    let skaters = skater_bios(caches, http, season).await;
-    let goalies = goalie_bios(caches, http, season).await;
+    let (skaters, goalies) = tokio::join!(
+        skater_bios(caches, http, season),
+        goalie_bios(caches, http, season),
+    );
     let merged = match (skaters, goalies) {
         (Value::Object(mut a), Value::Object(b)) => {
             for (k, v) in b {
@@ -145,21 +155,25 @@ pub async fn all_rosters(caches: &Caches, http: &reqwest::Client) -> Value {
         (_, Value::Object(b)) => Value::Object(b),
         _ => Value::Object(Map::new()),
     };
-    caches.all_rosters.insert((), merged.clone());
+    if merged.as_object().is_some_and(|m| !m.is_empty()) {
+        caches.all_rosters.insert((), merged.clone());
+    }
     merged
 }
 
 /// `_load_all_rosters_for_season_cached(season)`: per-season playerId->info map.
-/// Current season uses skater+goalie bios; historical seasons use a best-effort
-/// per-team roster fetch from api-web.nhle.com.
+/// Current season uses skater+goalie bios; historical seasons use bounded-parallel
+/// per-team roster fetches from api-web.nhle.com.
 pub async fn all_rosters_for_season(caches: &Caches, http: &reqwest::Client, season: i64) -> Value {
     if let Some(v) = caches.all_rosters_by_season.get(&season) {
         return v;
     }
     let current = current_season_id(None);
     let out: Value = if season == current {
-        let skaters = skater_bios(caches, http, season).await;
-        let goalies = goalie_bios(caches, http, season).await;
+        let (skaters, goalies) = tokio::join!(
+            skater_bios(caches, http, season),
+            goalie_bios(caches, http, season),
+        );
         match (skaters, goalies) {
             (Value::Object(mut a), Value::Object(b)) => {
                 for (k, v) in b {
@@ -172,23 +186,38 @@ pub async fn all_rosters_for_season(caches: &Caches, http: &reqwest::Client, sea
             _ => Value::Object(Map::new()),
         }
     } else {
-        // Historical: fetch each team's roster from api-web.nhle.com.
-        let mut out_map: Map<String, Value> = Map::new();
-        let season_str = season.to_string();
-        let abbrevs: Vec<&str> = [
+        // Historical: fetch all teams with bounded concurrency instead of 35 serial HTTP requests.
+        const ABBREVS: [&str; 35] = [
             "ANA", "BOS", "BUF", "CAR", "CBJ", "CGY", "CHI", "COL", "DAL", "DET",
             "EDM", "FLA", "LAK", "MIN", "MTL", "NJD", "NSH", "NYI", "NYR", "OTT",
             "PHI", "PIT", "SEA", "SJS", "STL", "TBL", "TOR", "UTA", "VAN", "VGK",
             "WPG", "WSH", "PHX", "ATL", "ARI",
-        ]
-        .to_vec();
-        for abbr in abbrevs {
+        ];
+        const CONCURRENCY: usize = 8;
+        let season_str = season.to_string();
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(CONCURRENCY));
+        let mut handles = Vec::with_capacity(ABBREVS.len());
+        for abbr in ABBREVS {
+            let http = http.clone();
+            let sem = sem.clone();
             let url = format!("https://api-web.nhle.com/v1/roster/{abbr}/{season_str}");
-            let Ok(resp) = http.get(&url).send().await else { continue };
-            if !resp.status().is_success() {
-                continue;
-            }
-            let Ok(data) = resp.json::<Value>().await else { continue };
+            handles.push(tokio::spawn(async move {
+                let _permit = sem.acquire_owned().await.ok()?;
+                let resp = http
+                    .get(&url)
+                    .timeout(std::time::Duration::from_secs(15))
+                    .send()
+                    .await
+                    .ok()?;
+                if !resp.status().is_success() {
+                    return None;
+                }
+                resp.json::<Value>().await.ok()
+            }));
+        }
+        let mut out_map: Map<String, Value> = Map::new();
+        for h in handles {
+            let Ok(Some(data)) = h.await else { continue };
             for grp in ["forwards", "defenses", "goalies"] {
                 let Some(rows) = data.get(grp).and_then(|v| v.as_array()) else { continue };
                 for row in rows {
@@ -214,19 +243,23 @@ pub async fn all_rosters_for_season(caches: &Caches, http: &reqwest::Client, sea
                         "F"
                     };
                     let shoots = str_value(row.get("shootsCatches")).to_uppercase();
-                    let entry = json!({
-                        "playerId": pid.to_string(),
-                        "name": name,
-                        "position": pos,
-                        "positionCode": pos_raw,
-                        "shoots": shoots,
+                    let pid_s = pid.to_string();
+                    out_map.entry(pid_s.clone()).or_insert_with(|| {
+                        json!({
+                            "playerId": pid_s,
+                            "name": name,
+                            "position": pos,
+                            "positionCode": pos_raw,
+                            "shoots": shoots,
+                        })
                     });
-                    out_map.entry(pid.to_string()).or_insert(entry);
                 }
             }
         }
         Value::Object(out_map)
     };
-    caches.all_rosters_by_season.insert(season, out.clone());
+    if out.as_object().is_some_and(|m| !m.is_empty()) {
+        caches.all_rosters_by_season.insert(season, out.clone());
+    }
     out
 }

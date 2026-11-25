@@ -46,3 +46,8 @@ getrandom = "0.2"
 
 [dev-dependencies]
 wiremock = "0.6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "symbols"

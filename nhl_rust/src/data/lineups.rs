@@ -63,9 +63,10 @@ pub async fn load_all(caches: &Caches, sb: Option<&SbClient>, static_dir: &Path)
 }
 
 async fn load_all_inner(sb: Option<&SbClient>, static_dir: &Path) -> Value {
-    // Supabase first.
+    // Supabase first (narrowed columns instead of `*`).
     if let Some(sb) = sb {
-        if let Some(rows) = sb.read("lineups", "*", None, None, None, 0).await {
+        const COLS: &str = "team,player_id,player_name,position,line_unit,starter,estimated_gp,gp_note,is_injured,injury_start,injury_end,replacement_id,replacement_name,updated_at";
+        if let Some(rows) = sb.read("lineups", COLS, None, None, None, 0).await {
             if !rows.is_empty() {
                 return build_from_supabase_rows(rows, static_dir);
             }
@@ -91,11 +92,11 @@ fn build_from_supabase_rows(sb_raw: Vec<Value>, static_dir: &Path) -> Value {
         let Some(obj) = r.as_object() else { continue };
         rows.push(normalize_supabase_row(obj));
     }
-    // Sort by Timestamp descending (latest wins the dedupe).
+    // Sort by Timestamp descending (latest wins the dedupe) without allocating per comparison.
     rows.sort_by(|a, b| {
-        let ta = str_value(a.get("Timestamp")).to_string();
-        let tb = str_value(b.get("Timestamp")).to_string();
-        tb.cmp(&ta)
+        let ta = a.get("Timestamp").and_then(Value::as_str).unwrap_or("");
+        let tb = b.get("Timestamp").and_then(Value::as_str).unwrap_or("");
+        tb.cmp(ta)
     });
 
     let mut out: Map<String, Value> = Map::new();

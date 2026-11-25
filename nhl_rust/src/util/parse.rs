@@ -58,14 +58,13 @@ pub fn str_value(v: Option<&Value>) -> String {
 }
 
 /// Case-insensitive key lookup on a JSON object (Supabase columns may vary in
-/// casing across tables/backfills).
+/// casing across tables/backfills). Uses zero-allocation ASCII comparison.
 pub fn ci_get<'a>(obj: &'a Map<String, Value>, key: &str) -> Option<&'a Value> {
     if let Some(v) = obj.get(key) {
         return Some(v);
     }
-    let lower = key.to_lowercase();
     obj.iter()
-        .find(|(k, _)| k.to_lowercase() == lower)
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
         .map(|(_, v)| v)
 }
 

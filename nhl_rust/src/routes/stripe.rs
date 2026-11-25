@@ -533,17 +533,29 @@ async fn persist_account_updates(state: &AppState, auth_user_id: &str, updates: 
     let Some(sb) = state.sb.as_ref() else {
         return false;
     };
-    let Some(user) = sb.admin_get_user(auth_user_id).await else {
+    let (user_opt, existing_opt) = tokio::join!(
+        sb.admin_get_user(auth_user_id),
+        sb.get_user_account(auth_user_id),
+    );
+    let Some(user) = user_opt else {
         tracing::warn!(auth_user_id = %auth_user_id, "Stripe sync could not load the auth user");
         return false;
     };
-    let merged = crate::routes::auth::sync_user_account_from_supabase_user(state, &user, Some(updates)).await;
-    // The merge path falls back to the in-memory record, so confirm the row.
-    if sb.get_user_account(auth_user_id).await.is_none() {
-        tracing::warn!(auth_user_id = %auth_user_id, "Stripe sync could not read back the account row");
+    let mut base = crate::web::auth_state::auth_record_from_supabase_user(
+        &user,
+        existing_opt.as_ref(),
+        state.cfg.auth_trial_days,
+    );
+    if let (Value::Object(b), Value::Object(u)) = (&mut base, updates) {
+        for (k, v) in u {
+            b.insert(k.clone(), v.clone());
+        }
+    }
+    let payload = crate::web::auth_state::build_account_payload(&base, Some(updates));
+    if sb.upsert_user_account(payload).await.is_none() {
+        tracing::warn!(auth_user_id = %auth_user_id, "Stripe sync could not persist the account row");
         return false;
     }
-    let _ = merged;
     true
 }
 
@@ -566,20 +578,12 @@ pub async fn sync_subscription(
         let cust = customer_id
             .map(|c| c.to_string())
             .or_else(|| subscription.get("customer").and_then(Value::as_str).map(|s| s.to_string()));
-        // scan user_accounts for matching subscription/customer id
-        if let Some(rows) = sb.list_user_accounts().await {
-            for row in rows {
-                let row_sub = as_str(row.get("stripe_subscription_id"));
-                let row_cust = as_str(row.get("stripe_customer_id"));
-                let cust_matches = cust
-                    .as_deref()
-                    .map(|c| !c.is_empty() && row_cust == c)
-                    .unwrap_or(false);
-                if (!sub_id.is_empty() && row_sub == sub_id) || cust_matches {
-                    resolved = Some(as_str(row.get("auth_user_id")));
-                    break;
-                }
-            }
+        // Targeted OR-filter lookup on indexed Stripe columns (replaces full-table scan).
+        if let Some(row) = sb
+            .find_user_account_by_stripe(&sub_id, cust.as_deref().unwrap_or(""))
+            .await
+        {
+            resolved = Some(as_str(row.get("auth_user_id")));
         }
     }
     let user_id = resolved.filter(|s| !s.is_empty())?;

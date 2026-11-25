@@ -30,6 +30,7 @@ pub struct SbClient {
     pub(crate) http: reqwest::Client,
     pub(crate) url: String,
     pub(crate) service_key: String,
+    pub(crate) auth_header: String,
 }
 
 impl SbClient {
@@ -43,10 +44,12 @@ impl SbClient {
     }
 
     pub fn new(http: reqwest::Client, url: String, service_key: String) -> Self {
+        let auth_header = format!("Bearer {service_key}");
         Self {
             http,
             url: url.trim_end_matches('/').to_string(),
             service_key,
+            auth_header,
         }
     }
 
@@ -80,23 +83,38 @@ impl SbClient {
         }
         let url = format!("{}/rest/v1/{table}", self.url);
 
-        let (page0, content_range) =
-            match fetch_page(&self.http, &url, &query, &self.service_key, 0, true).await {
-                Some(v) => v,
-                None => return None,
-            };
+        // When `limit` fits within a single page, request only `0..limit-1` and
+        // skip `Prefer: count=exact` so Postgres avoids an expensive COUNT(*) scan.
+        let page0_size = if limit > 0 { limit.min(PAGE_SIZE) } else { PAGE_SIZE };
+        let need_count = limit == 0 || limit > PAGE_SIZE;
+
+        let (page0, content_range) = match fetch_page(
+            &self.http,
+            &url,
+            &query,
+            &self.service_key,
+            &self.auth_header,
+            0,
+            page0_size,
+            need_count,
+        )
+        .await
+        {
+            Some(v) => v,
+            None => return None,
+        };
         let page0_count = page0.len();
-        if page0_count < PAGE_SIZE {
-            // Single page: nothing to parallelize.
+        if page0_count < page0_size || (limit > 0 && page0_count >= limit) {
             return Some(finish_rows(page0, col_map, limit));
         }
         let Some(total) = content_range
-            .and_then(|cr| cr.rsplit('/').next().map(|s| s.parse::<usize>().ok()).flatten())
+            .and_then(|cr| cr.rsplit('/').next().and_then(|s| s.parse::<usize>().ok()))
         else {
             // No exact count available; use the sequential path.
             return read_sequential(self, &url, &query, col_map, limit, page0).await;
         };
-        let pages = total.div_ceil(PAGE_SIZE);
+        let effective_total = if limit > 0 { total.min(limit) } else { total };
+        let pages = effective_total.div_ceil(PAGE_SIZE);
         let mut page_rows: Vec<Vec<Value>> = Vec::with_capacity(pages);
         page_rows.push(page0);
         const CHUNK: usize = 16;
@@ -104,12 +122,25 @@ impl SbClient {
             let chunk_end = (chunk_start + CHUNK).min(pages);
             let mut handles = Vec::with_capacity(chunk_end - chunk_start);
             for page in chunk_start..chunk_end {
+                let offset = page * PAGE_SIZE;
+                let page_size = (effective_total - offset).min(PAGE_SIZE);
                 let http = self.http.clone();
                 let url = url.clone();
                 let query = query.clone();
                 let service_key = self.service_key.clone();
+                let auth_header = self.auth_header.clone();
                 handles.push(tokio::spawn(async move {
-                    fetch_page(&http, &url, &query, &service_key, page * PAGE_SIZE, false).await
+                    fetch_page(
+                        &http,
+                        &url,
+                        &query,
+                        &service_key,
+                        &auth_header,
+                        offset,
+                        page_size,
+                        false,
+                    )
+                    .await
                 }));
             }
             for h in handles {
@@ -119,11 +150,10 @@ impl SbClient {
                 }
             }
         }
-        let mut all: Vec<Value> = Vec::new();
+        let total_rows: usize = page_rows.iter().map(Vec::len).sum();
+        let mut all: Vec<Value> = Vec::with_capacity(total_rows);
         for rows in page_rows {
-            for row in rows {
-                all.push(row);
-            }
+            all.extend(rows);
         }
         Some(finish_rows(all, col_map, limit))
     }
@@ -131,20 +161,24 @@ impl SbClient {
 
 /// Fetches one page of rows; `prefer_count` adds `Prefer: count=exact` so the
 /// caller can learn the total from the `Content-Range` header.
+#[allow(clippy::too_many_arguments)]
 async fn fetch_page(
     http: &reqwest::Client,
     url: &str,
     query: &[(String, String)],
     service_key: &str,
+    auth_header: &str,
     offset: usize,
+    page_size: usize,
     prefer_count: bool,
 ) -> Option<(Vec<Value>, Option<String>)> {
+    let end = offset + page_size.max(1) - 1;
     let mut req = http
         .get(url)
         .query(query)
         .header("apikey", service_key)
-        .header("Authorization", format!("Bearer {}", service_key))
-        .header("Range", format!("{}-{}", offset, offset + PAGE_SIZE - 1));
+        .header("Authorization", auth_header)
+        .header("Range", format!("{offset}-{end}"));
     if prefer_count {
         req = req.header("Prefer", "count=exact");
     }
@@ -162,7 +196,7 @@ async fn fetch_page(
 }
 
 /// Sequential fallback (used when the exact count is unavailable); keeps the
-/// original `_sb_read` loop semantics.
+/// original `_sb_read` loop semantics while honoring `limit`.
 async fn read_sequential(
     sb: &SbClient,
     url: &str,
@@ -173,13 +207,21 @@ async fn read_sequential(
 ) -> Option<Vec<Value>> {
     let mut offset: usize = all.len();
     loop {
+        if limit > 0 && all.len() >= limit {
+            break;
+        }
+        let page_size = if limit > 0 {
+            (limit - all.len()).min(PAGE_SIZE)
+        } else {
+            PAGE_SIZE
+        };
         let resp = sb
             .http
             .get(url)
             .query(query)
             .header("apikey", &sb.service_key)
-            .header("Authorization", format!("Bearer {}", sb.service_key))
-            .header("Range", format!("{offset}-{}", offset + PAGE_SIZE - 1))
+            .header("Authorization", &sb.auth_header)
+            .header("Range", format!("{offset}-{}", offset + page_size - 1))
             .send()
             .await
             .ok()?;
@@ -188,11 +230,9 @@ async fn read_sequential(
         }
         let rows: Vec<Value> = resp.json().await.ok()?;
         let count = rows.len();
-        for row in rows {
-            all.push(row);
-        }
+        all.extend(rows);
         offset += count;
-        if count < PAGE_SIZE {
+        if count < page_size {
             break;
         }
     }
@@ -208,13 +248,18 @@ fn finish_rows(rows: Vec<Value>, col_map: Option<&HashMap<String, String>>, limi
     all
 }
 
-/// Applies the snake_case → original column rename to a row object.
+/// Applies the snake_case → original column rename to a row object without
+/// cloning values (moves values out of the original map).
 pub fn rename_keys(mut row: Value, col_map: &HashMap<String, String>) -> Value {
     if let Value::Object(map) = &mut row {
-        let mut out = serde_json::Map::new();
-        for (k, v) in map.iter() {
-            let key = col_map.get(k).cloned().unwrap_or_else(|| k.clone());
-            out.insert(key, v.clone());
+        let old = std::mem::take(map);
+        let mut out = serde_json::Map::with_capacity(old.len());
+        for (k, v) in old {
+            let key = match col_map.get(&k) {
+                Some(renamed) => renamed.clone(),
+                None => k,
+            };
+            out.insert(key, v);
         }
         *map = out;
     }
@@ -232,16 +277,10 @@ pub fn filters(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 /// Applies the column rename map to an entire page of rows.
 fn map_rows(rows: Vec<Value>, col_map: Option<&HashMap<String, String>>) -> Vec<Value> {
-    let mut all: Vec<Value> = Vec::with_capacity(rows.len());
-    for row in rows {
-        let row = if let Some(col_map) = col_map {
-            rename_keys(row, col_map)
-        } else {
-            row
-        };
-        all.push(row);
+    match col_map {
+        Some(cm) => rows.into_iter().map(|row| rename_keys(row, cm)).collect(),
+        None => rows,
     }
-    all
 }
 
 /// Memory-bounded read: like [`SbClient::read`], but pages are handed to
@@ -277,16 +316,29 @@ pub async fn read_each(
     }
     let url = format!("{}/rest/v1/{table}", sb.url);
 
-    let (page0, content_range) =
-        match fetch_page(&sb.http, &url, &query, &sb.service_key, 0, true).await {
-            Some(v) => v,
-            None => return None,
-        };
+    let page0_size = if limit > 0 { limit.min(PAGE_SIZE) } else { PAGE_SIZE };
+    let need_count = limit == 0 || limit > PAGE_SIZE;
+
+    let (page0, content_range) = match fetch_page(
+        &sb.http,
+        &url,
+        &query,
+        &sb.service_key,
+        &sb.auth_header,
+        0,
+        page0_size,
+        need_count,
+    )
+    .await
+    {
+        Some(v) => v,
+        None => return None,
+    };
     let mut remaining = if limit > 0 { limit } else { usize::MAX };
     let page0_count = page0.len();
 
     // Single page (short table) or a limit that fits in the first page.
-    if page0_count < PAGE_SIZE || remaining <= page0_count {
+    if page0_count < page0_size || remaining <= page0_count {
         let rows = map_rows(page0, col_map);
         let n = rows.len().min(remaining);
         if n > 0 {
@@ -299,13 +351,14 @@ pub async fn read_each(
     remaining -= page0_count;
 
     let Some(total) = content_range
-        .and_then(|cr| cr.rsplit('/').next().map(|s| s.parse::<usize>().ok()).flatten())
+        .and_then(|cr| cr.rsplit('/').next().and_then(|s| s.parse::<usize>().ok()))
     else {
         // No exact count available; use the sequential path.
-        return read_sequential_each(sb, &url, &query, col_map, remaining, PAGE_SIZE, on_page)
+        return read_sequential_each(sb, &url, &query, col_map, remaining, page0_count, on_page)
             .await;
     };
-    let pages = total.div_ceil(PAGE_SIZE);
+    let effective_total = if limit > 0 { total.min(limit) } else { total };
+    let pages = effective_total.div_ceil(PAGE_SIZE);
 
     // Bounded in-flight window: keeps peak transient memory to ~CONCURRENCY
     // pages instead of the whole table.
@@ -314,12 +367,25 @@ pub async fn read_each(
     let mut handles: std::collections::VecDeque<(usize, PageHandle)> = std::collections::VecDeque::new();
     let mut next_page: usize = 1;
     let spawn_page = |handles: &mut std::collections::VecDeque<(usize, PageHandle)>, page: usize| {
+        let offset = page * PAGE_SIZE;
+        let page_size = (effective_total - offset).min(PAGE_SIZE);
         let http = sb.http.clone();
         let url = url.clone();
         let query = query.clone();
         let service_key = sb.service_key.clone();
+        let auth_header = sb.auth_header.clone();
         handles.push_back((page, tokio::spawn(async move {
-            fetch_page(&http, &url, &query, &service_key, page * PAGE_SIZE, false).await
+            fetch_page(
+                &http,
+                &url,
+                &query,
+                &service_key,
+                &auth_header,
+                offset,
+                page_size,
+                false,
+            )
+            .await
         })));
     };
     while next_page < pages && handles.len() < CONCURRENCY {
@@ -368,13 +434,17 @@ async fn read_sequential_each(
     mut on_page: impl FnMut(Vec<Value>),
 ) -> Option<()> {
     loop {
+        if remaining == 0 {
+            break;
+        }
+        let page_size = remaining.min(PAGE_SIZE);
         let resp = sb
             .http
             .get(url)
             .query(query)
             .header("apikey", &sb.service_key)
-            .header("Authorization", format!("Bearer {}", sb.service_key))
-            .header("Range", format!("{offset}-{}", offset + PAGE_SIZE - 1))
+            .header("Authorization", &sb.auth_header)
+            .header("Range", format!("{offset}-{}", offset + page_size - 1))
             .send()
             .await
             .ok()?;
@@ -393,7 +463,7 @@ async fn read_sequential_each(
         on_page(rows);
         remaining -= count;
         offset += count;
-        if count < PAGE_SIZE {
+        if count < page_size {
             break;
         }
     }
@@ -497,5 +567,26 @@ mod tests {
             .await;
         let sb = SbClient::new(client(), server.uri(), "svc".to_string());
         assert_eq!(sb.read("teams", "*", None, None, None, 0).await, Some(vec![]));
+    }
+
+    #[tokio::test]
+    async fn read_respects_small_limit_without_extra_pages() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/manager_games"))
+            .and(header("range", "0-49"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json((0..50).map(|i| json!({"id": i})).collect::<Vec<_>>()),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let sb = SbClient::new(client(), server.uri(), "svc".to_string());
+        let rows = sb
+            .read("manager_games", "id", None, None, None, 50)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 50);
     }
 }

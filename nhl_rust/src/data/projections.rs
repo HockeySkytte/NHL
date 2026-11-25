@@ -122,24 +122,30 @@ pub fn v2_win_probability(home_proj: f64, away_proj: f64, home_b2b: bool, away_b
 
 const MAX_K: usize = 30;
 
-fn log_fact() -> Vec<f64> {
-    let mut lf = vec![0.0; MAX_K + 1];
-    for k in 1..=MAX_K {
-        lf[k] = lf[k - 1] + (k as f64).ln();
-    }
-    lf
+fn log_fact() -> &'static [f64; MAX_K + 1] {
+    static LF: std::sync::OnceLock<[f64; MAX_K + 1]> = std::sync::OnceLock::new();
+    LF.get_or_init(|| {
+        let mut lf = [0.0f64; MAX_K + 1];
+        for k in 1..=MAX_K {
+            lf[k] = lf[k - 1] + (k as f64).ln();
+        }
+        lf
+    })
 }
 
 /// `_v2_expected_points_exact`: exact Poisson + OT expected points.
 pub fn v2_expected_points_exact(gf_home: f64, gf_away: f64, p_home_norm: f64) -> (f64, f64) {
     let h_lam = gf_home.max(0.01);
     let a_lam = gf_away.max(0.01);
+    let h_ln = h_lam.ln();
+    let a_ln = a_lam.ln();
     let lf = log_fact();
     let mut h_pmf = [0.0f64; MAX_K + 1];
     let mut a_pmf = [0.0f64; MAX_K + 1];
     for k in 0..=MAX_K {
-        h_pmf[k] = ((k as f64) * h_lam.ln() - h_lam - lf[k]).exp();
-        a_pmf[k] = ((k as f64) * a_lam.ln() - a_lam - lf[k]).exp();
+        let kf = k as f64;
+        h_pmf[k] = (kf * h_ln - h_lam - lf[k]).exp();
+        a_pmf[k] = (kf * a_ln - a_lam - lf[k]).exp();
     }
     let mut e_home = 0.0;
     let mut e_away = 0.0;
@@ -289,85 +295,100 @@ pub async fn build_v2_player_projections(
 
     let mut players: BTreeMap<i64, Acc> = BTreeMap::new();
     let mut seen_any = false;
-    // Stream pages (bounded in-flight) instead of accumulating the whole
-    // table, so a large `nhl_current_playerprojections` scan stays bounded.
-    let streamed = read_each(
-        sb,
-        "nhl_current_playerprojections",
-        "*",
-        if fmap.is_empty() { None } else { Some(&fmap) },
-        None,
-        Some("playerid,strengthstate"),
-        0,
-        |page| {
-            for r in &page {
-                seen_any = true;
-                let pid = safe_int(r.get("nhl_api_player_id"))
-                    .or_else(|| safe_int(r.get("playerid")))
-                    .unwrap_or(0);
-                if pid <= 0 {
-                    continue;
-                }
-                let ss = str_value(r.get("strengthstate"));
-                let acc = players.entry(pid).or_insert_with(|| Acc {
-                    player_id: pid,
-                    name: str_value(r.get("nhl_player_name")),
-                    position: str_value(r.get("position")),
-                    team: str_value(r.get("team")),
-                    gp: safe_int(r.get("gp")).unwrap_or(0),
-                    ..Default::default()
-                });
-                if !ss.is_empty() {
-                    acc.proj_by_ss.insert(ss.clone(), compute_projection_value(r));
-                }
-                acc.ig += parse_locale_float(r.get("ig")).unwrap_or(0.0);
-                acc.a1 += parse_locale_float(r.get("a1")).unwrap_or(0.0);
-                acc.a2 += parse_locale_float(r.get("a2")).unwrap_or(0.0);
-                let f = parse_locale_float(r.get("faceoffs")).unwrap_or(0.0);
-                let pa = parse_locale_float(r.get("passes")).unwrap_or(0.0);
-                let ca = parse_locale_float(r.get("carries")).unwrap_or(0.0);
-                let de = parse_locale_float(r.get("defensive")).unwrap_or(0.0);
-                let di = parse_locale_float(r.get("dump_ins_outs")).unwrap_or(0.0);
-                let ot = parse_locale_float(r.get("off_the_puck")).unwrap_or(0.0);
-                let xg = parse_locale_float(r.get("xga")).unwrap_or(0.0);
-                let xf = parse_locale_float(r.get("xgf")).unwrap_or(0.0);
-                let ga = parse_locale_float(r.get("gax")).unwrap_or(0.0);
-                let gs = parse_locale_float(r.get("gsax")).unwrap_or(0.0);
-                if EV_SS.contains(&ss.as_str()) {
-                    acc.evo += (f + pa + ca) * coef("poss_value_ev");
-                    acc.evd += (de + di) * coef("poss_value_ev") + xg * coef("xga_ev");
-                }
-                if PP_SS.contains(&ss.as_str()) {
-                    acc.pp_raw += f * coef("poss_value_st") + xf * coef("xgf_pp");
-                }
-                if SH_SS.contains(&ss.as_str()) {
-                    acc.sh_raw += (f + de + di) * coef("poss_value_st") + ot * coef("off_the_puck_sh") + xg * coef("xga_sh");
-                }
-                acc.gax += ga * coef("gax");
-                acc.gsax += gs * coef("gsax");
-                if ss == "5v5" {
+    const V2_COLS: &str = "nhl_api_player_id,playerid,nhl_player_name,position,team,gp,strengthstate,ig,a1,a2,faceoffs,passes,carries,defensive,dump_ins_outs,off_the_puck,xga,xgf,gax,gsax,rookie";
+    let season_filter = season.unwrap_or_else(|| current_season_id(None));
+    // Stream projections + load context concurrently; omit DB sort since `players`
+    // is already a BTreeMap keyed by player_id.
+    let (streamed, ctx_rows) = tokio::join!(
+        read_each(
+            sb,
+            "nhl_current_playerprojections",
+            V2_COLS,
+            if fmap.is_empty() { None } else { Some(&fmap) },
+            None,
+            None,
+            0,
+            |page| {
+                for r in &page {
+                    seen_any = true;
+                    let pid = safe_int(r.get("nhl_api_player_id"))
+                        .or_else(|| safe_int(r.get("playerid")))
+                        .unwrap_or(0);
+                    if pid <= 0 {
+                        continue;
+                    }
+                    let ss = str_value(r.get("strengthstate"));
                     let pos = str_value(r.get("position"));
-                    let rv = parse_locale_float(r.get("rookie")).unwrap_or(0.0);
-                    if rv > 0.0 {
-                        acc.rookie += rv * match pos.as_str() {
-                            "D" => coef("rookie_d"),
-                            "G" => coef("rookie_g"),
-                            _ => coef("rookie_f"),
-                        };
+                    let acc = players.entry(pid).or_insert_with(|| Acc {
+                        player_id: pid,
+                        name: str_value(r.get("nhl_player_name")),
+                        position: pos.clone(),
+                        team: str_value(r.get("team")),
+                        gp: safe_int(r.get("gp")).unwrap_or(0),
+                        ..Default::default()
+                    });
+                    acc.ig += parse_locale_float(r.get("ig")).unwrap_or(0.0);
+                    acc.a1 += parse_locale_float(r.get("a1")).unwrap_or(0.0);
+                    acc.a2 += parse_locale_float(r.get("a2")).unwrap_or(0.0);
+                    let f = parse_locale_float(r.get("faceoffs")).unwrap_or(0.0);
+                    let pa = parse_locale_float(r.get("passes")).unwrap_or(0.0);
+                    let ca = parse_locale_float(r.get("carries")).unwrap_or(0.0);
+                    let de = parse_locale_float(r.get("defensive")).unwrap_or(0.0);
+                    let di = parse_locale_float(r.get("dump_ins_outs")).unwrap_or(0.0);
+                    let ot = parse_locale_float(r.get("off_the_puck")).unwrap_or(0.0);
+                    let xg = parse_locale_float(r.get("xga")).unwrap_or(0.0);
+                    let xf = parse_locale_float(r.get("xgf")).unwrap_or(0.0);
+                    let ga = parse_locale_float(r.get("gax")).unwrap_or(0.0);
+                    let gs = parse_locale_float(r.get("gsax")).unwrap_or(0.0);
+                    let in_ev = EV_SS.contains(&ss.as_str());
+                    let in_pp = PP_SS.contains(&ss.as_str());
+                    let in_sh = SH_SS.contains(&ss.as_str());
+
+                    let mut pv = ga * coef("gax") + gs * coef("gsax");
+                    if in_ev {
+                        let ev_poss = coef("poss_value_ev");
+                        let evo_add = (f + pa + ca) * ev_poss;
+                        let evd_add = (de + di) * ev_poss + xg * coef("xga_ev");
+                        acc.evo += evo_add;
+                        acc.evd += evd_add;
+                        pv += evo_add + evd_add;
+                    } else if in_pp {
+                        let pp_add = f * coef("poss_value_st") + xf * coef("xgf_pp");
+                        acc.pp_raw += pp_add;
+                        pv += pp_add;
+                    } else if in_sh {
+                        let sh_add = (f + de + di) * coef("poss_value_st")
+                            + ot * coef("off_the_puck_sh")
+                            + xg * coef("xga_sh");
+                        acc.sh_raw += sh_add;
+                        pv += sh_add;
+                    }
+                    acc.gax += ga * coef("gax");
+                    acc.gsax += gs * coef("gsax");
+                    if ss == "5v5" {
+                        let rv = parse_locale_float(r.get("rookie")).unwrap_or(0.0);
+                        if rv > 0.0 {
+                            let r_add = rv * match pos.as_str() {
+                                "D" => coef("rookie_d"),
+                                "G" => coef("rookie_g"),
+                                _ => coef("rookie_f"),
+                            };
+                            acc.rookie += r_add;
+                            pv += r_add;
+                        }
+                    }
+                    if !ss.is_empty() {
+                        acc.proj_by_ss.insert(ss, pv);
                     }
                 }
-            }
-        },
-    )
-    .await;
+            },
+        ),
+        crate::data::rapm::load_context_rows(&state.caches, state.sb.as_ref(), season_filter),
+    );
     if streamed.is_none() || !seen_any {
         return Vec::new();
     }
 
-    // Context data.
-    let season_filter = season.unwrap_or_else(|| current_season_id(None));
-    let ctx_rows =
-        crate::data::rapm::load_context_rows(&state.caches, state.sb.as_ref(), season_filter).await;
     let mut ctx_by_pid: HashMap<i64, (Option<f64>, Option<f64>, Option<f64>)> = HashMap::new();
     for row in ctx_rows.iter() {
         if safe_int(row.get("Season")).unwrap_or(0) != season_filter {
@@ -392,8 +413,8 @@ pub async fn build_v2_player_projections(
         );
     }
 
-    let mut result: Vec<Value> = Vec::new();
-    for (pid, mut p) in players {
+    let mut result: Vec<Value> = Vec::with_capacity(players.len());
+    for (pid, p) in players {
         let mut projections = serde_json::Map::new();
         for (group_name, ss_list) in &ss_groups {
             let mut sum = 0.0;
@@ -429,7 +450,6 @@ pub async fn build_v2_player_projections(
             "zs": fmt_ctx(ctx.2),
         }));
     }
-    result.sort_by_key(|p| safe_int(p.get("player_id")).unwrap_or(0));
     state.caches.v2_build.insert(cache_key, Value::Array(result.clone()));
     result
 }
@@ -440,10 +460,11 @@ fn max_season_from_rows(rows: &[Value]) -> Option<i64> {
 }
 
 /// Newest season present in `nhl_current_playerprojections`, or None.
-///
-/// Reads a small ordered sample rather than the whole table; `season` is a
-/// fixed-width text column, so DESC order is chronological.
+/// Cached and uses `limit = 1` (honored on the wire via `Range: 0-0`).
 async fn latest_v2_projection_season(state: &AppState) -> Option<i64> {
+    if let Some(s) = state.caches.latest_v2_season.get(&()) {
+        return Some(s);
+    }
     let sb = state.sb.as_ref()?;
     let rows = sb
         .read(
@@ -452,10 +473,12 @@ async fn latest_v2_projection_season(state: &AppState) -> Option<i64> {
             None,
             None,
             Some("season.desc"),
-            50,
+            1,
         )
         .await?;
-    max_season_from_rows(&rows)
+    let max_s = max_season_from_rows(&rows)?;
+    state.caches.latest_v2_season.insert((), max_s);
+    Some(max_s)
 }
 
 /// `_load_v2_player_projections_cached()`: keyed by nhl_api_player_id.
@@ -799,6 +822,25 @@ pub fn is_team_b2b_on_date(games: &[Value], date_iso: &str) -> bool {
     games.iter().any(|g| str_value(g.get("date")) == prev)
 }
 
+fn game_date_set(games: &[Value]) -> HashSet<chrono::NaiveDate> {
+    let mut set = HashSet::with_capacity(games.len());
+    for g in games {
+        if let Some(d_str) = g.get("date").and_then(Value::as_str) {
+            if let Ok(d) = chrono::NaiveDate::parse_from_str(&d_str[..d_str.len().min(10)], "%Y-%m-%d") {
+                set.insert(d);
+            }
+        }
+    }
+    set
+}
+
+fn is_b2b_in_set(dates: &HashSet<chrono::NaiveDate>, date_iso: &str) -> bool {
+    let Ok(d) = chrono::NaiveDate::parse_from_str(&date_iso[..date_iso.len().min(10)], "%Y-%m-%d") else {
+        return false;
+    };
+    dates.contains(&(d - chrono::Duration::days(1)))
+}
+
 /// `_projected_points_for_team(team, season, team_proj_map, ...)`.
 pub async fn projected_points_for_team(
     state: &AppState,
@@ -811,16 +853,48 @@ pub async fn projected_points_for_team(
 ) -> (f64, i64) {
     let team_games_all = fetch_club_schedule_games(state, team, season).await;
     let team_games: Vec<Value> = team_games_all
-        .iter()
+        .into_iter()
         .filter(|g| safe_int(g.get("gameType")).unwrap_or(0) == 2)
-        .cloned()
         .collect();
     if team_games.is_empty() {
         return (0.0, 0);
     }
 
+    let team_dates = game_date_set(&team_games);
+
+    // Fetch unique opponent schedules concurrently (bounded) and precompute date sets.
+    let mut unique_opps: Vec<String> = Vec::new();
+    let mut seen_opps: HashSet<String> = HashSet::new();
+    for g in &team_games {
+        let away = str_value(g.get("away")).to_uppercase();
+        let home = str_value(g.get("home")).to_uppercase();
+        if away == team && !home.is_empty() && seen_opps.insert(home.clone()) {
+            unique_opps.push(home);
+        } else if home == team && !away.is_empty() && seen_opps.insert(away.clone()) {
+            unique_opps.push(away);
+        }
+    }
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
+    let mut opp_handles = Vec::with_capacity(unique_opps.len());
+    for opp in unique_opps {
+        let state_c = state.clone();
+        let sem_c = sem.clone();
+        opp_handles.push(tokio::spawn(async move {
+            let _permit = sem_c.acquire_owned().await;
+            let games = fetch_club_schedule_games(&state_c, &opp, season).await;
+            (opp, game_date_set(&games))
+        }));
+    }
+    let mut opp_dates_map: HashMap<String, HashSet<chrono::NaiveDate>> = HashMap::with_capacity(opp_handles.len());
+    for h in opp_handles {
+        if let Ok((opp, dates)) = h.await {
+            opp_dates_map.insert(opp, dates);
+        }
+    }
+
     let mut projected_points = 0.0;
     let mut usable_games = 0i64;
+    let lg = v2_lg_avg(season);
 
     for g in &team_games {
         let away = str_value(g.get("away")).to_uppercase();
@@ -832,17 +906,18 @@ pub async fn projected_points_for_team(
         if away != team && home != team {
             continue;
         }
-        let opp = if away == team { home.clone() } else { away.clone() };
+        let opp = if away == team { &home } else { &away };
         let mut team_proj = team_proj_map.get(team).copied().unwrap_or(0.0);
-        let opp_proj = team_proj_map.get(&opp).copied().unwrap_or(0.0);
+        let opp_proj = team_proj_map.get(opp.as_str()).copied().unwrap_or(0.0);
 
         if let (Some(injuries), Some(lineup_entries), Some(proj_map)) = (injuries, lineup_entries, proj_map) {
             team_proj = team_proj_with_injuries(team_proj, lineup_entries, proj_map, injuries, &date_iso);
         }
 
-        let team_is_b2b = is_team_b2b_on_date(&team_games, &date_iso);
-        let opp_games = fetch_club_schedule_games(state, &opp, season).await;
-        let opp_is_b2b = is_team_b2b_on_date(&opp_games, &date_iso);
+        let team_is_b2b = is_b2b_in_set(&team_dates, &date_iso);
+        let opp_is_b2b = opp_dates_map
+            .get(opp.as_str())
+            .is_some_and(|dates| is_b2b_in_set(dates, &date_iso));
         let (home_b2b, away_b2b) = if away == team {
             (opp_is_b2b, team_is_b2b)
         } else {
@@ -853,7 +928,6 @@ pub async fn projected_points_for_team(
         let away_proj = if away == team { team_proj } else { opp_proj };
         let sit = v2_situation(home_b2b, away_b2b);
         let mu = V2_CONSERVATIVE_WEIGHT * (home_proj - away_proj + sit);
-        let lg = v2_lg_avg(season);
         let gf_home = (lg + mu / 2.0).max(0.5);
         let gf_away = (lg - mu / 2.0).max(0.5);
         let sigma = (gf_home + gf_away).sqrt();

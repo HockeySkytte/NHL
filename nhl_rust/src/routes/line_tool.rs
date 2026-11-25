@@ -3,7 +3,7 @@
 //! `_compute_line_tool_team_combos`, ...) from `app/routes.py`.
 
 use std::collections::{HashMap, HashSet};
-use std::env;
+use std::sync::Arc;
 
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -120,13 +120,11 @@ fn apply_lt_strength_filter(rows: Vec<Value>, strength: &str) -> Vec<Value> {
     rows
 }
 
-/// `_get_lt_shifts(team, season)` — cached (1800s, max 40).
-async fn get_lt_shifts(caches: &Caches, sb: &SbClient, team: &str, season: i64) -> Vec<Value> {
+/// `_get_lt_shifts(team, season)` — cached as `Arc<Vec<Value>>` with TTL.
+async fn get_lt_shifts(caches: &Caches, sb: &SbClient, team: &str, season: i64) -> Arc<Vec<Value>> {
     let key = format!("{team}|{season}");
     if let Some(v) = caches.lt_shifts.get(&key) {
-        if let Value::Array(r) = v {
-            return r;
-        }
+        return v;
     }
     let rows = sb
         .read(
@@ -142,13 +140,15 @@ async fn get_lt_shifts(caches: &Caches, sb: &SbClient, team: &str, season: i64) 
         )
         .await
         .unwrap_or_default();
-    if !rows.is_empty() {
-        caches.lt_shifts.insert(key, Value::Array(rows.clone()));
+    let arc = Arc::new(rows);
+    if !arc.is_empty() {
+        caches.lt_shifts.insert(key, arc.clone());
     }
-    rows
+    arc
 }
 
-/// `_get_lt_pbp(season, game_ids, xg_col, extra_cols)` — cached (1800s, max 10).
+/// `_get_lt_pbp(season, game_ids, xg_col, extra_cols)` — cached as `Arc<Vec<Value>>`
+/// with bounded-parallel chunk fetching.
 async fn get_lt_pbp(
     caches: &Caches,
     sb: &SbClient,
@@ -156,7 +156,7 @@ async fn get_lt_pbp(
     game_ids: &[i64],
     xg_col: &str,
     extra_cols: &str,
-) -> Vec<Value> {
+) -> Arc<Vec<Value>> {
     let mut sorted: Vec<i64> = game_ids.to_vec();
     sorted.sort_unstable();
     sorted.dedup();
@@ -167,9 +167,7 @@ async fn get_lt_pbp(
         .join(",");
     let key = format!("{season}|{gid_key}|{xg_col}|{extra_cols}");
     if let Some(v) = caches.lt_pbp.get(&key) {
-        if let Value::Array(r) = v {
-            return r;
-        }
+        return v;
     }
     let base_cols = if extra_cols.is_empty() {
         format!(
@@ -180,39 +178,72 @@ async fn get_lt_pbp(
             "game_id,shift_index,event_team,opponent,shot,goal,fenwick,corsi,{xg_col},strength_state,period,season_state,{extra_cols}"
         )
     };
-    let batch_size = env::var("LINE_TOOL_PBP_BATCH_SIZE")
-        .ok()
-        .and_then(|s| s.trim().parse::<usize>().ok())
-        .unwrap_or(50)
-        .clamp(10, 100);
+    const BATCH_SIZE: usize = 50;
+    let chunks: Vec<String> = sorted
+        .chunks(BATCH_SIZE)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .map(|g| g.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .collect();
     let mut all: Vec<Value> = Vec::new();
-    for chunk in sorted.chunks(batch_size) {
-        let gid_filter = chunk
-            .iter()
-            .map(|g| g.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        let rows = sb
-            .read(
-                "pbp",
-                &base_cols,
-                Some(&filters(&[
-                    ("season", &format!("eq.{season}")),
-                    ("game_id", &format!("in.({gid_filter})")),
-                    ("corsi", "eq.1"),
-                ])),
-                None,
-                None,
-                0,
-            )
-            .await
-            .unwrap_or_default();
-        all.extend(rows);
+    if chunks.len() <= 1 {
+        if let Some(gid_filter) = chunks.into_iter().next() {
+            all = sb
+                .read(
+                    "pbp",
+                    &base_cols,
+                    Some(&filters(&[
+                        ("season", &format!("eq.{season}")),
+                        ("game_id", &format!("in.({gid_filter})")),
+                        ("corsi", "eq.1"),
+                    ])),
+                    None,
+                    None,
+                    0,
+                )
+                .await
+                .unwrap_or_default();
+        }
+    } else {
+        let sem = Arc::new(tokio::sync::Semaphore::new(4));
+        let mut handles = Vec::with_capacity(chunks.len());
+        for gid_filter in chunks {
+            let sb_c = sb.clone();
+            let cols_c = base_cols.clone();
+            let sem_c = sem.clone();
+            handles.push(tokio::spawn(async move {
+                let _permit = sem_c.acquire_owned().await;
+                sb_c.read(
+                    "pbp",
+                    &cols_c,
+                    Some(&filters(&[
+                        ("season", &format!("eq.{season}")),
+                        ("game_id", &format!("in.({gid_filter})")),
+                        ("corsi", "eq.1"),
+                    ])),
+                    None,
+                    None,
+                    0,
+                )
+                .await
+                .unwrap_or_default()
+            }));
+        }
+        for h in handles {
+            if let Ok(rows) = h.await {
+                all.extend(rows);
+            }
+        }
     }
-    if !all.is_empty() {
-        caches.lt_pbp.insert(key, Value::Array(all.clone()));
+    let arc = Arc::new(all);
+    if !arc.is_empty() {
+        caches.lt_pbp.insert(key, arc.clone());
     }
-    all
+    arc
 }
 
 /// `_get_lt_shifts_parallel`: per-season cache check, single `in.(seasons)` fetch.
@@ -229,7 +260,7 @@ async fn get_lt_shifts_parallel(
         return Vec::new();
     }
     if sorted_sids.len() == 1 {
-        return get_lt_shifts(caches, sb, team, sorted_sids[0]).await;
+        return (*get_lt_shifts(caches, sb, team, sorted_sids[0]).await).clone();
     }
 
     let mut all_rows: Vec<Value> = Vec::new();
@@ -237,10 +268,8 @@ async fn get_lt_shifts_parallel(
     for sid in &sorted_sids {
         let key = format!("{team}|{sid}");
         if let Some(v) = caches.lt_shifts.get(&key) {
-            if let Value::Array(r) = v {
-                all_rows.extend(r);
-                continue;
-            }
+            all_rows.extend(v.iter().cloned());
+            continue;
         }
         missing.push(*sid);
     }
@@ -248,6 +277,7 @@ async fn get_lt_shifts_parallel(
         return all_rows;
     }
 
+    let missing_set: HashSet<i64> = missing.iter().copied().collect();
     let season_list = missing
         .iter()
         .map(|s| s.to_string())
@@ -269,25 +299,23 @@ async fn get_lt_shifts_parallel(
         .unwrap_or_default();
 
     let mut by_sid: HashMap<i64, Vec<Value>> = HashMap::new();
-    for r in &new_rows {
+    for mut r in new_rows {
         let sid_val = safe_int(r.get("season"));
         if let Some(sid) = sid_val {
-            if missing.contains(&sid) {
-                // Strip the season column before caching.
-                let mut stripped = r.clone();
-                if let Value::Object(m) = &mut stripped {
+            if missing_set.contains(&sid) {
+                if let Value::Object(m) = &mut r {
                     m.remove("season");
                 }
-                by_sid.entry(sid).or_default().push(stripped);
+                by_sid.entry(sid).or_default().push(r);
             }
         }
     }
 
     for sid in &missing {
-        let season_rows = by_sid.get(sid).cloned().unwrap_or_default();
-        if !season_rows.is_empty() {
+        let season_rows = by_sid.remove(sid).unwrap_or_default();
+        if !season_rows.is_empty() && missing.len() == 1 {
             let cache_key = format!("{team}|{sid}");
-            caches.lt_shifts.insert(cache_key, Value::Array(season_rows.clone()));
+            caches.lt_shifts.insert(cache_key, Arc::new(season_rows.clone()));
         }
         all_rows.extend(season_rows);
     }
@@ -318,7 +346,8 @@ async fn get_lt_pbp_parallel(
             })
             .collect();
         if !gids.is_empty() {
-            all.extend(get_lt_pbp(caches, sb, sid, &gids, xg_col, extra_cols).await);
+            let chunk = get_lt_pbp(caches, sb, sid, &gids, xg_col, extra_cols).await;
+            all.extend(chunk.iter().cloned());
         }
     }
     all
@@ -335,7 +364,7 @@ async fn get_lt_base_context(
     ss: &str,
     strength: &str,
     xg_col: &str,
-) -> Value {
+) -> Arc<Value> {
     let cache_key = json!({
         "base-context": "",
         "team": team,
@@ -350,11 +379,8 @@ async fn get_lt_base_context(
         return v;
     }
 
-    // Serialize the heavy line-tool loads (a full team-season of shifts + BBP
-    // is ~100MB+ working set each). A few concurrent `/api/line-tool/*`
-    // requests otherwise load many giant datasets simultaneously and blow
-    // past the memory limit. Re-check the cache after acquiring so a
-    // concurrent same-key load that finished first is reused.
+    // Serialize the heavy line-tool loads (a full team-season of shifts + PBP
+    // is ~100MB+ working set each).
     let _permit = caches
         .lt_gate
         .acquire()
@@ -366,7 +392,7 @@ async fn get_lt_base_context(
 
     let shift_rows = get_lt_shifts_parallel(caches, sb, team, season_ids).await;
     if shift_rows.is_empty() {
-        let result = json!({"shiftRows": [], "baseShifts": [], "allPbp": []});
+        let result = Arc::new(json!({"shiftRows": [], "baseShifts": [], "allPbp": []}));
         caches.lt_base.insert(cache_key, result.clone());
         return result;
     }
@@ -403,11 +429,11 @@ async fn get_lt_base_context(
         get_lt_pbp_parallel(caches, sb, season_ids, &game_list, xg_col, "x,y,box_id,highlight_url").await
     };
 
-    let result = json!({
+    let result = Arc::new(json!({
         "shiftRows": shift_rows,
         "baseShifts": base_shifts,
         "allPbp": all_pbp,
-    });
+    }));
     caches.lt_base.insert(cache_key, result.clone());
     result
 }
@@ -499,7 +525,7 @@ async fn compute_line_tool_team_combos(
         (["C", "L", "R"].iter().copied().collect(), 3)
     };
 
-    let mut t_rows = get_lt_shifts(caches, sb, team, season).await;
+    let mut t_rows = (*get_lt_shifts(caches, sb, team, season).await).clone();
     if t_rows.is_empty() {
         return Vec::new();
     }
@@ -562,7 +588,7 @@ async fn compute_line_tool_team_combos(
         }
     }
 
-    for e in &all_pbp {
+    for e in all_pbp.iter() {
         if i_of(e, "period") == 5 {
             continue;
         }
@@ -823,7 +849,7 @@ async fn api_line_tool_data(State(state): State<AppState>, Query(params): Query<
     })
     .to_string();
     if let Some(v) = state.caches.lt_data.get(&lt_data_cache_key) {
-        return json_no_store(v);
+        return json_no_store((*v).clone());
     }
 
     let base_ctx = get_lt_base_context(
@@ -838,15 +864,27 @@ async fn api_line_tool_data(State(state): State<AppState>, Query(params): Query<
     )
     .await;
 
-    let shift_rows = base_ctx.get("shiftRows").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let shift_rows: &[Value] = base_ctx
+        .get("shiftRows")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
     if shift_rows.is_empty() {
         return json_no_store(empty_line_tool_response());
     }
-    let mut common_shifts = base_ctx.get("baseShifts").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let mut common_shifts = base_ctx
+        .get("baseShifts")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     if common_shifts.is_empty() {
         return json_no_store(empty_line_tool_response());
     }
-    let all_pbp = base_ctx.get("allPbp").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let all_pbp: &[Value] = base_ctx
+        .get("allPbp")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
 
     // ── vs filter ──
     if let Some(vs_team) = &vs_team {
@@ -890,7 +928,7 @@ async fn api_line_tool_data(State(state): State<AppState>, Query(params): Query<
     // ── 4b. Team-level shift keys + TOI ──
     let mut team_shift_keys: HashSet<(i64, i64)> = HashSet::new();
     let mut team_toi_sec: i64 = 0;
-    for s in &shift_rows {
+    for s in shift_rows {
         let gid = i_of(s, "game_id");
         if !game_ids.contains(&gid) {
             continue;
@@ -908,7 +946,7 @@ async fn api_line_tool_data(State(state): State<AppState>, Query(params): Query<
     let mut team_dz_detail: HashMap<String, ZoneDetail> = HashMap::new();
     let mut league_zone_detail: HashMap<String, ZoneDetail> = HashMap::new();
 
-    for e in &all_pbp {
+    for e in all_pbp {
         if i_of(e, "period") == 5 {
             continue;
         }
@@ -1105,7 +1143,7 @@ async fn api_line_tool_data(State(state): State<AppState>, Query(params): Query<
         "leagueZoneDetail": league_zone_json,
         "goalHighlights": goal_highlights,
     });
-    state.caches.lt_data.insert(lt_data_cache_key, result.clone());
+    state.caches.lt_data.insert(lt_data_cache_key, Arc::new(result.clone()));
     json_no_store(result)
 }
 
@@ -1220,6 +1258,14 @@ async fn api_line_tool_wowy(State(state): State<AppState>, Query(params): Query<
     let Some(sb) = state.sb.as_ref() else {
         return json_no_store(json!({"combos": [], "players": []}));
     };
+
+    // Serialize heavy line-tool shift/PBP loads to prevent concurrent OOM.
+    let _permit = state
+        .caches
+        .lt_gate
+        .acquire()
+        .await
+        .unwrap_or_else(|_| unreachable!("lt_gate closed"));
 
     // ── 1. shifts ──
     let mut shift_rows = get_lt_shifts_parallel(&state.caches, sb, &team, &season_ids).await;
@@ -1549,7 +1595,7 @@ async fn api_line_tool_versus(State(state): State<AppState>, Query(params): Quer
     })
     .to_string();
     if let Some(v) = state.caches.lt_data.get(&versus_cache_key) {
-        return json_no_store(v);
+        return json_no_store((*v).clone());
     }
 
     let base_ctx = get_lt_base_context(
@@ -1564,15 +1610,27 @@ async fn api_line_tool_versus(State(state): State<AppState>, Query(params): Quer
     )
     .await;
 
-    let shift_rows = base_ctx.get("shiftRows").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let shift_rows: &[Value] = base_ctx
+        .get("shiftRows")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
     if shift_rows.is_empty() {
         return json_no_store(json!({"rows": [], "vsTeam": vs_team, "vsPlayers": []}));
     }
-    let base_shifts = base_ctx.get("baseShifts").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let base_shifts: &[Value] = base_ctx
+        .get("baseShifts")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
     if base_shifts.is_empty() {
         return json_no_store(json!({"rows": [], "vsTeam": vs_team, "vsPlayers": []}));
     }
-    let all_pbp = base_ctx.get("allPbp").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let all_pbp: &[Value] = base_ctx
+        .get("allPbp")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
 
     let mut opp_key_to_pids: HashMap<(i64, i64), HashSet<String>> = HashMap::new();
     let opponent_game_ids = lt_game_ids_for_opponent(&team, &vs_team, &all_pbp);
@@ -1604,7 +1662,7 @@ async fn api_line_tool_versus(State(state): State<AppState>, Query(params): Quer
         }
     }
 
-    for s in &base_shifts {
+    for s in base_shifts {
         let gid = i_of(s, "game_id");
         let si = i_of(s, "shift_index");
         let dur = i_of(s, "duration").max(0);
@@ -1642,7 +1700,7 @@ async fn api_line_tool_versus(State(state): State<AppState>, Query(params): Quer
         group_stats.insert(gkey.clone(), OnIce::default());
     }
 
-    for e in &all_pbp {
+    for e in all_pbp {
         if i_of(e, "period") == 5 {
             continue;
         }
@@ -1775,7 +1833,7 @@ async fn api_line_tool_versus(State(state): State<AppState>, Query(params): Quer
     });
 
     let result = json!({"rows": rows, "vsTeam": vs_team, "vsPlayers": vs_player_info});
-    state.caches.lt_data.insert(versus_cache_key, result.clone());
+    state.caches.lt_data.insert(versus_cache_key, Arc::new(result.clone()));
     json_no_store(result)
 }
 
@@ -1809,15 +1867,25 @@ async fn api_line_tool_lines(State(state): State<AppState>, Query(params): Query
     })
     .to_string();
     if let Some(v) = state.caches.lt_data.get(&lt_lines_cache_key) {
-        return json_no_store(v);
+        return json_no_store((*v).clone());
     }
 
     let Some(sb) = state.sb.as_ref() else {
         return json_no_store(json!({"combos": [], "players": {}}));
     };
 
+    let _permit = state
+        .caches
+        .lt_gate
+        .acquire()
+        .await
+        .unwrap_or_else(|_| unreachable!("lt_gate closed"));
+    if let Some(v) = state.caches.lt_data.get(&lt_lines_cache_key) {
+        return json_no_store((*v).clone());
+    }
+
     let result = compute_api_line_tool_lines(&state.caches, sb, &team, &season_ids, &ss, &strength, &xg_col, &line_type, &scope).await;
-    state.caches.lt_data.insert(lt_lines_cache_key, result.clone());
+    state.caches.lt_data.insert(lt_lines_cache_key, Arc::new(result.clone()));
     json_no_store(result)
 }
 
@@ -1872,12 +1940,13 @@ async fn compute_api_line_tool_lines(
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v))
                 .collect();
-            let rows = sb.read(tbl, "*", Some(&fmap), None, None, 0).await.unwrap_or_default();
-
-            let team_live_combos = compute_line_tool_team_combos(
-                caches, sb, team, *season_id, ss, strength, xg_col, line_type, &pid_info,
-            )
-            .await;
+            let (rows_opt, team_live_combos) = tokio::join!(
+                sb.read(tbl, "*", Some(&fmap), None, None, 0),
+                compute_line_tool_team_combos(
+                    caches, sb, team, *season_id, ss, strength, xg_col, line_type, &pid_info,
+                ),
+            );
+            let rows = rows_opt.unwrap_or_default();
             for combo in &team_live_combos {
                 let pids: Vec<String> = combo
                     .get("players")

@@ -150,6 +150,7 @@ async fn robots_txt(State(state): State<AppState>, headers: HeaderMap) -> Respon
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header(header::CACHE_CONTROL, "public, max-age=3600")
         .body(Body::from(content))
         .expect("static robots response")
 }
@@ -183,19 +184,27 @@ async fn sitemap_xml(State(state): State<AppState>, headers: HeaderMap) -> Respo
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/xml")
+        .header(header::CACHE_CONTROL, "public, max-age=3600")
         .body(Body::from(xml))
         .expect("static sitemap response")
 }
 
-/// `GET /favicon.png` — serves `static/Logo.png` (Flask `favicon_png`).
+/// `GET /favicon.png` — serves `static/Logo.png` (cached in memory after first read).
 async fn favicon_png(State(state): State<AppState>) -> Result<Response, ApiError> {
+    static FAVICON: tokio::sync::OnceCell<Vec<u8>> = tokio::sync::OnceCell::const_new();
     let path = state.cfg.static_dir.join("Logo.png");
-    let bytes = tokio::fs::read(&path).await.map_err(|e| {
-        ApiError::NotFound(format!("favicon missing at {}: {e}", path.display()))
-    })?;
+    let bytes = FAVICON
+        .get_or_try_init(|| async {
+            tokio::fs::read(&path).await.map_err(|e| {
+                ApiError::NotFound(format!("favicon missing at {}: {e}", path.display()))
+            })
+        })
+        .await?
+        .clone();
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "image/png")
+        .header(header::CACHE_CONTROL, "public, max-age=86400")
         .body(Body::from(bytes))
         .expect("static favicon response"))
 }

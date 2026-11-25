@@ -288,7 +288,7 @@ async fn api_league_schedule(
     let to = params.get("to").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
     match (from, to) {
         (Some(f), Some(t)) => {
-            filters.insert("date".to_string(), format!("and=(date.gte.{f},date.lte.{t})"));
+            filters.insert("and".to_string(), format!("(date.gte.{f},date.lte.{t})"));
         }
         (Some(f), None) => {
             filters.insert("date".to_string(), format!("gte.{f}"));

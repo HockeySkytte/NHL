@@ -748,7 +748,7 @@ async fn api_team_logo_svg(State(state): State<AppState>, Path(raw): Path<String
         return not_found();
     }
     if let Some(cached) = state.caches.team_logo.get(&a) {
-        return svg_response(cached);
+        return svg_response((*cached).clone());
     }
     let mut src = crate::nhl::images::team_logo_source_url(&state.teams, &a)
         .unwrap_or_else(|| format!("https://assets.nhle.com/logos/nhl/svg/{a}_light.svg"));
@@ -761,8 +761,9 @@ async fn api_team_logo_svg(State(state): State<AppState>, Path(raw): Path<String
                 Ok(txt) => crate::nhl::images::normalize_svg_dimensions(&txt).into_bytes(),
                 Err(bytes) => bytes.into_bytes(),
             };
-            state.caches.team_logo.insert(a, data.clone());
-            svg_response(data)
+            let arc = std::sync::Arc::new(data);
+            state.caches.team_logo.insert(a, arc.clone());
+            svg_response((*arc).clone())
         }
         Err(e) => {
             tracing::warn!("team logo fetch failed for {a}: {e}");
@@ -792,7 +793,7 @@ async fn api_player_headshot_png(
     let team_abbrev = params.get("team").map(|s| s.to_uppercase()).unwrap_or_default();
     let cache_key = format!("{pid}|{season}|{team_abbrev}");
     if let Some(cached) = state.caches.player_headshot.get(&cache_key) {
-        return png_response(cached);
+        return png_response((*cached).clone());
     }
     for src in crate::nhl::images::player_headshot_source_urls(pid, season, &team_abbrev) {
         if !is_allowed_assets_url(&src) {
@@ -803,8 +804,9 @@ async fn api_player_headshot_png(
                 if data.is_empty() {
                     continue;
                 }
-                state.caches.player_headshot.insert(cache_key.clone(), data.clone());
-                return png_response(data);
+                let arc = std::sync::Arc::new(data);
+                state.caches.player_headshot.insert(cache_key.clone(), arc.clone());
+                return png_response((*arc).clone());
             }
             Err(e) => {
                 tracing::warn!("headshot fetch failed for {src}: {e}");

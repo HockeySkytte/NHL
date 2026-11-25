@@ -28,19 +28,23 @@ const FALLBACK_VALUE_F: f64 = -0.0246;
 const FALLBACK_VALUE_D: f64 = -0.0318;
 const FALLBACK_VALUE_G: f64 = -0.12;
 
-/// In-process per-league pick locks: the pick transaction (verify turn →
-/// insert → advance → CPU autopick) must be serialized per league.
+/// In-process per-league pick locks using `Weak` references so idle/completed
+/// leagues are automatically pruned instead of leaking memory indefinitely.
 static LEAGUE_DRAFT_LOCKS: OnceLock<
-    tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    tokio::sync::Mutex<HashMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>>,
 > = OnceLock::new();
 
 async fn lock_for(league_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     let map =
         LEAGUE_DRAFT_LOCKS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()));
     let mut m = map.lock().await;
-    m.entry(league_id.to_string())
-        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-        .clone()
+    m.retain(|_, w| w.strong_count() > 0);
+    if let Some(existing) = m.get(league_id).and_then(|w| w.upgrade()) {
+        return existing;
+    }
+    let arc = Arc::new(tokio::sync::Mutex::new(()));
+    m.insert(league_id.to_string(), Arc::downgrade(&arc));
+    arc
 }
 
 /// Snake order for a round: draft-slot order ascending on odd rounds,
@@ -53,12 +57,18 @@ pub fn pick_order(slots_sorted: &[String], round: i64) -> Vec<String> {
     v
 }
 
-/// The team picking at position `pick` (1-based) of `round` in snake order.
+/// The team picking at position `pick` (1-based) of `round` in snake order (O(1)).
 pub fn current_picker(slots_sorted: &[String], round: i64, pick: i64) -> Option<String> {
-    if round < 1 || pick < 1 || pick as usize > slots_sorted.len() {
+    let n = slots_sorted.len();
+    if round < 1 || pick < 1 || pick as usize > n {
         return None;
     }
-    pick_order(slots_sorted, round).get(pick as usize - 1).cloned()
+    let idx = if round % 2 == 0 {
+        n - pick as usize
+    } else {
+        pick as usize - 1
+    };
+    slots_sorted.get(idx).cloned()
 }
 
 /// Whether adding one player of `pos` keeps the 12F/6D/2G minimum reachable:
@@ -96,7 +106,8 @@ pub fn cpu_pick_value(proj_row: Option<&Value>, pos: &str) -> f64 {
     }
 }
 
-/// Best available feasible player for a CPU team. Ties break on player id.
+/// Best available feasible player for a CPU team (O(N) single pass, zero allocations).
+/// Ties break on smaller player id.
 pub fn cpu_choose(
     pool: &HashMap<i64, Value>,
     proj: &HashMap<i64, Value>,
@@ -104,28 +115,38 @@ pub fn cpu_choose(
     counts: (i64, i64, i64),
     total_picked: i64,
 ) -> Option<i64> {
-    let mut best: Vec<(f64, i64)> = Vec::new();
+    let mut best: Option<(f64, i64)> = None;
     for (&pid, info) in pool {
         if taken.contains(&pid) {
             continue;
         }
-        let pos = str_value(info.get("position"))
-            .chars()
-            .next()
-            .map(|c| c.to_string())
-            .unwrap_or_default();
-        if !feasible_pick(counts, &pos, total_picked) {
+        let pos = match info
+            .get("position")
+            .and_then(Value::as_str)
+            .and_then(|s| s.trim().bytes().next())
+        {
+            Some(b'F' | b'f') => "F",
+            Some(b'D' | b'd') => "D",
+            Some(b'G' | b'g') => "G",
+            _ => continue,
+        };
+        if !feasible_pick(counts, pos, total_picked) {
             continue;
         }
-        let v = cpu_pick_value(proj.get(&pid), &pos);
-        best.push((v, pid));
+        let v = cpu_pick_value(proj.get(&pid), pos);
+        let better = match best {
+            None => true,
+            Some((bv, bpid)) => match v.partial_cmp(&bv) {
+                Some(std::cmp::Ordering::Greater) => true,
+                Some(std::cmp::Ordering::Less) => false,
+                _ => pid < bpid,
+            },
+        };
+        if better {
+            best = Some((v, pid));
+        }
     }
-    best.sort_by(|a, b| {
-        b.0.partial_cmp(&a.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then(a.1.cmp(&b.1))
-    });
-    best.first().map(|t| t.1)
+    best.map(|(_, pid)| pid)
 }
 
 /// Best available feasible pick for a specific team (used by the dry-run /
@@ -233,20 +254,22 @@ pub async fn draft_state(
     viewer_user_id: Option<&str>,
 ) -> Result<Value, ApiError> {
     let sb = league::sb_required(state)?;
-    let league_row = read_league_row(sb, league_id).await?;
+    let (league_res, teams_res, rosters_res, pool) = tokio::join!(
+        read_league_row(sb, league_id),
+        read_teams_sorted(sb, league_id),
+        read_rosters(sb, league_id),
+        draft_pool(state),
+    );
+    let league_row = league_res?;
     let mode = str_value(league_row.get("mode"));
     let status = str_value(league_row.get("status"));
     let draft_round = safe_int(league_row.get("draft_round")).unwrap_or(0);
     let draft_pick = safe_int(league_row.get("draft_pick")).unwrap_or(0);
-
-    let teams = read_teams_sorted(sb, league_id).await?;
-    let rosters = read_rosters(sb, league_id).await?;
-
-    let pool = draft_pool(state).await;
+    let teams = teams_res?;
+    let rosters = rosters_res?;
 
     let mut counts: BTreeMap<String, (i64, i64, i64)> = BTreeMap::new();
     let mut taken: BTreeMap<i64, String> = BTreeMap::new();
-    let mut recent: Vec<Value> = Vec::new();
     for r in &rosters {
         let team = str_value(r.get("team_abbrev"));
         let pid = safe_int(r.get("player_id")).unwrap_or(0);
@@ -259,22 +282,33 @@ pub async fn draft_state(
             _ => {}
         }
         if pid > 0 {
-            taken.insert(pid, team.clone());
-            if recent.len() < 16 {
-                let name = pool
-                    .get(&pid)
-                    .map(|i| str_value(i.get("name")))
-                    .unwrap_or_default();
-                recent.push(json!({
-                    "team_abbrev": team,
-                    "player_id": pid,
-                    "name": name,
-                    "position": pos,
-                }));
-            }
+            taken.insert(pid, team);
         }
     }
-    recent.reverse();
+    // Most recent 16 picks (rosters are ordered picked_at.asc).
+    let recent: Vec<Value> = rosters
+        .iter()
+        .rev()
+        .filter_map(|r| {
+            let pid = safe_int(r.get("player_id")).unwrap_or(0);
+            if pid <= 0 {
+                return None;
+            }
+            let team = str_value(r.get("team_abbrev"));
+            let pos = str_value(r.get("position"));
+            let name = pool
+                .get(&pid)
+                .map(|i| str_value(i.get("name")))
+                .unwrap_or_default();
+            Some(json!({
+                "team_abbrev": team,
+                "player_id": pid,
+                "name": name,
+                "position": pos,
+            }))
+        })
+        .take(16)
+        .collect();
 
     let slots: Vec<String> = teams
         .iter()
@@ -342,87 +376,115 @@ fn advance(round: i64, pick: i64, n_teams: usize) -> (i64, i64) {
     (r, p)
 }
 
-/// CPU autopick: keep picking for CPU teams until the next human's turn or
-/// draft completion. Callers must hold the league lock.
+/// CPU autopick: compute consecutive CPU picks in memory and flush them to
+/// Supabase in ONE batch upsert + ONE league update (instead of 5 HTTP calls
+/// per pick). Callers must hold the league lock.
 async fn cpu_autopick_loop(state: &AppState, sb: &SbClient, league_id: &str) -> Result<(), ApiError> {
-    let pool = draft_pool(state).await;
-    let proj = projections::load_gm_mode_projections_cached(state).await;
+    let (league_res, teams_res, rosters_res, pool, proj) = tokio::join!(
+        read_league_row(sb, league_id),
+        read_teams_sorted(sb, league_id),
+        read_rosters(sb, league_id),
+        draft_pool(state),
+        projections::load_gm_mode_projections_cached(state),
+    );
+    let league_row = league_res?;
+    if str_value(league_row.get("status")) != manager::STATUS_DRAFTING {
+        return Ok(());
+    }
+    let mut round = safe_int(league_row.get("draft_round")).unwrap_or(0);
+    let mut pick = safe_int(league_row.get("draft_pick")).unwrap_or(0);
+    if round < 1 || round > DRAFT_ROUNDS {
+        return Ok(());
+    }
+    let teams = teams_res?;
+    let rosters = rosters_res?;
 
-    loop {
-        let league_row = read_league_row(sb, league_id).await?;
-        if str_value(league_row.get("status")) != manager::STATUS_DRAFTING {
-            return Ok(());
+    let slots: Vec<String> = teams
+        .iter()
+        .map(|t| str_value(t.get("team_abbrev")))
+        .collect();
+    let cpu_teams: HashSet<String> = teams
+        .iter()
+        .filter(|t| t.get("user_id").map(|v| v.is_null()).unwrap_or(true))
+        .map(|t| str_value(t.get("team_abbrev")))
+        .collect();
+
+    let mut taken: HashSet<i64> = rosters
+        .iter()
+        .filter_map(|r| safe_int(r.get("player_id")))
+        .collect();
+    let mut team_counts: HashMap<String, (i64, i64, i64)> = HashMap::new();
+    for r in &rosters {
+        let team = str_value(r.get("team_abbrev"));
+        let e = team_counts.entry(team).or_insert((0, 0, 0));
+        match str_value(r.get("position")).as_str() {
+            "F" => e.0 += 1,
+            "D" => e.1 += 1,
+            "G" => e.2 += 1,
+            _ => {}
         }
-        let round = safe_int(league_row.get("draft_round")).unwrap_or(0);
-        let pick = safe_int(league_row.get("draft_pick")).unwrap_or(0);
-        if round < 1 || round > DRAFT_ROUNDS {
-            return Ok(());
-        }
-        let teams = read_teams_sorted(sb, league_id).await?;
-        let slots: Vec<String> = teams
-            .iter()
-            .map(|t| str_value(t.get("team_abbrev")))
-            .collect();
+    }
+
+    let mut pending_rows: Vec<Value> = Vec::new();
+    let base_time = chrono::Utc::now();
+    let mut pick_seq: i64 = 0;
+
+    while round >= 1 && round <= DRAFT_ROUNDS {
         let Some(picker) = current_picker(&slots, round, pick) else {
-            return Ok(());
+            break;
         };
-        let picker_row = teams
-            .iter()
-            .find(|t| str_value(t.get("team_abbrev")) == picker);
-        let is_cpu = picker_row
-            .and_then(|t| t.get("user_id"))
-            .map(|v| v.is_null())
-            .unwrap_or(true);
-        if !is_cpu {
-            return Ok(()); // human's turn — stop here
+        if !cpu_teams.contains(&picker) {
+            break; // human's turn — stop here
         }
-
-        let rosters = read_rosters(sb, league_id).await?;
-        let taken: HashSet<i64> = rosters
-            .iter()
-            .filter_map(|r| safe_int(r.get("player_id")))
-            .collect();
-        let mut counts = (0i64, 0i64, 0i64);
-        for r in &rosters {
-            if str_value(r.get("team_abbrev")) == picker {
-                match str_value(r.get("position")).as_str() {
-                    "F" => counts.0 += 1,
-                    "D" => counts.1 += 1,
-                    "G" => counts.2 += 1,
-                    _ => {}
-                }
-            }
-        }
+        let counts = team_counts.get(&picker).copied().unwrap_or((0, 0, 0));
         let total_picked = counts.0 + counts.1 + counts.2;
         let Some(pid) = cpu_choose(&pool, &proj, &taken, counts, total_picked) else {
-            return Ok(());
+            break;
         };
         let pos = pos_of(pool.get(&pid).unwrap_or(&Value::Null));
 
-        let row = json!({
+        taken.insert(pid);
+        let e = team_counts.entry(picker.clone()).or_insert((0, 0, 0));
+        match pos.as_str() {
+            "F" => e.0 += 1,
+            "D" => e.1 += 1,
+            "G" => e.2 += 1,
+            _ => {}
+        }
+        // Preserve deterministic ascending `picked_at` order across the batch.
+        let picked_at = base_time + chrono::Duration::milliseconds(pick_seq);
+        pick_seq += 1;
+        pending_rows.push(json!({
             "league_id": league_id,
             "team_abbrev": picker,
             "player_id": pid,
             "position": pos,
             "acquired_via": "draft",
-        });
-        if write::upsert_rows(sb, "manager_rosters", std::slice::from_ref(&row), "league_id,team_abbrev,player_id")
-            .await
-            .is_none()
+            "picked_at": picked_at.to_rfc3339(),
+        }));
+
+        let (nr, np) = advance(round, pick, slots.len());
+        round = nr;
+        pick = if nr > DRAFT_ROUNDS { 0 } else { np };
+    }
+
+    if !pending_rows.is_empty() {
+        if !write::upsert_rows_minimal(
+            sb,
+            "manager_rosters",
+            &pending_rows,
+            "league_id,team_abbrev,player_id",
+        )
+        .await
         {
             return Err(ApiError::Internal("draft insert failed".into()));
         }
-
-        let (nr, np) = advance(round, pick, slots.len());
-        let patch = if nr > DRAFT_ROUNDS {
-            json!({"draft_round": nr, "draft_pick": 0})
-        } else {
-            json!({"draft_round": nr, "draft_pick": np})
-        };
+        let patch = json!({"draft_round": round, "draft_pick": pick});
         if !write::update_rows(sb, "manager_leagues", &[("id", league_id)], &patch).await {
             return Err(ApiError::Internal("draft advance failed".into()));
         }
     }
+    Ok(())
 }
 
 /// Commissioner starts the draft (mode=draft, status=setup): clears any

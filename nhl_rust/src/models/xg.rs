@@ -5,8 +5,9 @@
 //! a calibrated `base_score`. The tree walk below is structurally identical to
 //! XGBoost's predictor (verified against `predict_proba`, |Δ| < 2e-7).
 
-use std::path::Path;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -65,11 +66,30 @@ pub struct XgModel {
     pub features: Vec<String>,
     pub base_score: f64,
     #[serde(default)]
+    #[allow(dead_code)]
     pub objective: String,
     pub trees: Vec<Tree>,
+    /// Pre-indexed map: `(base_col, { suffix -> feature_idx })` built once at
+    /// load time so `vectorize_row` does ~7 lookups instead of O(F) allocations.
+    #[serde(skip)]
+    base_index: Vec<(String, HashMap<String, usize>)>,
 }
 
 impl XgModel {
+    fn build_index(&mut self) {
+        let mut grouped: HashMap<String, HashMap<String, usize>> = HashMap::new();
+        for (i, cname) in self.features.iter().enumerate() {
+            let Some((base, suffix)) = cname.split_once('_') else {
+                continue;
+            };
+            grouped
+                .entry(base.to_string())
+                .or_default()
+                .insert(suffix.to_string(), i);
+        }
+        self.base_index = grouped.into_iter().collect();
+    }
+
     /// Raw margin: base_score + sum of tree leaves.
     pub fn score_row(&self, row: &[f64]) -> f64 {
         let mut margin = self.base_score;
@@ -88,18 +108,21 @@ impl XgModel {
 
 /// `load_model_file(fname)`: bounded-cache loader for `Model/rust/{fname}.json`.
 pub fn load_model_file(caches: &Caches, fname: &str, model_dir: &Path) -> Option<Arc<XgModel>> {
-    if let Some(m) = caches.model.get(&fname.to_string()) {
+    let key = fname.to_string();
+    if let Some(m) = caches.model.get(&key) {
         return Some(m);
     }
     let path = model_dir.join(format!("{fname}.json"));
     let data = std::fs::read(&path).ok()?;
-    let model: XgModel = serde_json::from_slice(&data).ok()?;
+    let mut model: XgModel = serde_json::from_slice(&data).ok()?;
+    model.build_index();
     let arc = Arc::new(model);
-    caches.model.insert(fname.to_string(), arc.clone());
+    caches.model.insert(key, arc.clone());
     Some(arc)
 }
 
 /// The 7 base one-hot columns (`base_feature_cols` in Flask).
+#[allow(dead_code)]
 pub const BASE_FEATURE_COLS: [&str; 7] = [
     "Venue",
     "shotType2",
@@ -111,26 +134,42 @@ pub const BASE_FEATURE_COLS: [&str; 7] = [
 ];
 
 /// `_vectorize_row_for_model`: build the one-hot vector aligned to `features`.
-/// Values come from `row_obj`; `None` -> "missing".
+/// Uses the precomputed `base_index` for ~7 lookups (zero String allocations
+/// for string feature values) instead of scanning all O(F) columns.
 pub fn vectorize_row(model: &XgModel, row_obj: &serde_json::Map<String, Value>) -> Vec<f64> {
     let mut vec = vec![0.0; model.features.len()];
+    if !model.base_index.is_empty() {
+        for (base, suffix_map) in &model.base_index {
+            let idx = match row_obj.get(base.as_str()) {
+                None => suffix_map.get("missing").copied(),
+                Some(Value::Null) => suffix_map.get("missing").copied(),
+                Some(Value::String(s)) => suffix_map.get(s.as_str()).copied(),
+                Some(v) => {
+                    let s = parse_locale_float(Some(v))
+                        .map(|f| format!("{f}"))
+                        .unwrap_or_else(|| v.to_string());
+                    suffix_map.get(s.as_str()).copied()
+                }
+            };
+            if let Some(i) = idx {
+                vec[i] = 1.0;
+            }
+        }
+        return vec;
+    }
     for (i, cname) in model.features.iter().enumerate() {
         let Some((base, suffix)) = cname.split_once('_') else { continue };
-        let rv = match row_obj.get(base) {
-            None => "missing".to_string(),
+        let matched = match row_obj.get(base) {
+            None | Some(Value::Null) => suffix == "missing",
+            Some(Value::String(s)) => s == suffix,
             Some(v) => {
-                if v.is_null() {
-                    "missing".to_string()
-                } else if let Some(s) = v.as_str() {
-                    s.to_string()
-                } else {
-                    parse_locale_float(Some(v))
-                        .map(|f| format!("{f}"))
-                        .unwrap_or_else(|| v.to_string())
-                }
+                let s = parse_locale_float(Some(v))
+                    .map(|f| format!("{f}"))
+                    .unwrap_or_else(|| v.to_string());
+                s == suffix
             }
         };
-        if rv == suffix {
+        if matched {
             vec[i] = 1.0;
         }
     }
@@ -150,35 +189,52 @@ fn season_next(s: i64) -> i64 {
 }
 
 pub fn num_windows() -> usize {
-    std::env::var("XG_WINDOWS")
-        .ok()
-        .and_then(|s| s.trim().parse::<usize>().ok())
-        .map(|w| w.clamp(1, 3))
-        .unwrap_or(1)
+    static WINDOWS: OnceLock<usize> = OnceLock::new();
+    *WINDOWS.get_or_init(|| {
+        std::env::var("XG_WINDOWS")
+            .ok()
+            .and_then(|s| s.trim().parse::<usize>().ok())
+            .map(|w| w.clamp(1, 3))
+            .unwrap_or(1)
+    })
 }
 
 /// Newest trained `{prefix}_<start>_<end>.pkl` in `model_dir`, by window end year.
-///
-/// `model_dir` holds the exported `*.pkl.json` files, so the returned name keeps
-/// the `.pkl` stem that [`load_model_file`] expects.
+/// Cached per `(prefix, model_dir)` so `std::fs::read_dir` is not repeated per game/shot.
 fn latest_model_file(prefix: &str, model_dir: &Path) -> Option<String> {
-    let mut best: Option<(i64, String)> = None;
-    for entry in std::fs::read_dir(model_dir).ok()?.flatten() {
-        let fname = entry.file_name().to_string_lossy().to_string();
-        let Some(stem) = fname.strip_suffix(".json") else { continue };
-        let Some(rest) = stem.strip_prefix(prefix) else { continue };
-        let Some(rest) = rest.strip_prefix('_') else { continue };
-        let Some(rest) = rest.strip_suffix(".pkl") else { continue };
-        let mut parts = rest.split('_');
-        let (Some(_start), Some(end), None) = (parts.next(), parts.next(), parts.next()) else {
-            continue;
-        };
-        let Ok(end_year) = end.parse::<i64>() else { continue };
-        if best.as_ref().map(|(y, _)| end_year > *y).unwrap_or(true) {
-            best = Some((end_year, stem.to_string()));
+    static CACHE: OnceLock<Mutex<HashMap<(String, PathBuf), Option<String>>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = (prefix.to_string(), model_dir.to_path_buf());
+    if let Ok(guard) = cache.lock() {
+        if let Some(hit) = guard.get(&key) {
+            return hit.clone();
         }
     }
-    best.map(|(_, name)| name)
+    let mut best: Option<(i64, String)> = None;
+    if let Ok(rd) = std::fs::read_dir(model_dir) {
+        for entry in rd.flatten() {
+            let fname = entry.file_name().to_string_lossy().to_string();
+            let Some(stem) = fname.strip_suffix(".json") else { continue };
+            let Some(rest) = stem.strip_prefix(prefix) else { continue };
+            let Some(rest) = rest.strip_prefix('_') else { continue };
+            let Some(rest) = rest.strip_suffix(".pkl") else { continue };
+            let mut parts = rest.split('_');
+            let (Some(_start), Some(end), None) = (parts.next(), parts.next(), parts.next()) else {
+                continue;
+            };
+            let Ok(end_year) = end.parse::<i64>() else { continue };
+            if best.as_ref().map(|(y, _)| end_year > *y).unwrap_or(true) {
+                best = Some((end_year, stem.to_string()));
+            }
+        }
+    }
+    let out = best.map(|(_, name)| name);
+    if out.is_some() {
+        if let Ok(mut guard) = cache.lock() {
+            guard.insert(key, out.clone());
+        }
+    }
+    out
 }
 
 /// `window_filenames_for_season` / the `predict_avg_for_row` name selection.

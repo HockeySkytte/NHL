@@ -6,12 +6,9 @@
 //! observable semantics ("stale entries are never served").
 
 use std::hash::Hash;
-use std::io::Write;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use moka::sync::Cache;
-use serde::ser::{SerializeSeq, Serializer};
-use serde::Serialize;
 
 /// Reads a `*_CACHE_TTL_SECONDS` env var with a default, clamped >= 1.
 /// Mirrors the Flask env conventions.
@@ -85,65 +82,69 @@ where
     }
 }
 
-/// Serialized byte length of a serde_json value — a cheap memory proxy. Used
-/// as the weigher for the large `Value` caches (Value working-set memory is a
-/// small multiple of the serialized length, so capping weight bounds RAM).
+/// Fast approximate byte length of a `serde_json::Value` without running a
+/// full JSON serializer (avoids float-to-decimal formatting on huge trees).
+/// Used as the weigher for the large `Value` caches.
 pub fn json_value_weight(v: &serde_json::Value) -> u32 {
-    let mut n = 0usize;
-    let mut sink = CountingSink { n: &mut n };
-    let _ = serde_json::to_writer(&mut sink, v);
-    n.clamp(1, u32::MAX as usize) as u32
+    approx_json_weight(v).clamp(1, u32::MAX as usize) as u32
 }
 
-/// Serialized byte length of a `&[Value]` row array (without allocating the
-/// wrapping array Value). Used as the weigher for `Arc<Vec<Value>>` caches.
+/// Fast approximate byte length of a `&[Value]` row array.
 pub fn json_rows_weight(rows: &[serde_json::Value]) -> u32 {
-    let mut n = 0usize;
-    let mut sink = CountingSink { n: &mut n };
-    let _ = serde_json::to_writer(&mut sink, &JsonArrayRef(rows));
+    let mut n = 2usize;
+    for r in rows {
+        n = n.saturating_add(approx_json_weight(r)).saturating_add(1);
+    }
     n.clamp(1, u32::MAX as usize) as u32
 }
 
-/// Borrows a slice of Values as a JSON array for length counting.
-struct JsonArrayRef<'a>(&'a [serde_json::Value]);
-
-impl Serialize for JsonArrayRef<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-        for v in self.0 {
-            seq.serialize_element(v)?;
+fn approx_json_weight(v: &serde_json::Value) -> usize {
+    match v {
+        serde_json::Value::Null => 4,
+        serde_json::Value::Bool(_) => 5,
+        serde_json::Value::Number(_) => 10,
+        serde_json::Value::String(s) => s.len().saturating_add(2),
+        serde_json::Value::Array(arr) => {
+            let mut n = 2usize;
+            for item in arr {
+                n = n.saturating_add(approx_json_weight(item)).saturating_add(1);
+            }
+            n
         }
-        seq.end()
-    }
-}
-
-struct CountingSink<'a> {
-    n: &'a mut usize,
-}
-
-impl Write for CountingSink<'_> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        *self.n += buf.len();
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        serde_json::Value::Object(map) => {
+            let mut n = 2usize;
+            for (k, val) in map {
+                n = n
+                    .saturating_add(k.len())
+                    .saturating_add(4)
+                    .saturating_add(approx_json_weight(val));
+            }
+            n
+        }
     }
 }
 
 /// Deterministic single-slot cache: keeps at most ONE entry and replaces it
-/// synchronously on every insert. Used for the huge line-tool datasets where a
-/// second retained team would blow the memory budget — moka's capacity eviction
-/// is lazy/asynchronous, which lets multiple giant entries coexist temporarily,
-/// so it cannot be relied on here.
+/// synchronously on every insert, with an optional TTL so stale entries expire.
+/// Used with `Arc<V>` for the huge line-tool datasets so hits are an O(1)
+/// ref-count bump instead of a deep clone under a mutex.
 pub struct SingleSlot<K, V> {
-    inner: std::sync::Mutex<Option<(K, V)>>,
+    ttl: Option<Duration>,
+    inner: std::sync::Mutex<Option<(K, V, Instant)>>,
 }
 
 impl<K, V> SingleSlot<K, V> {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
+            ttl: None,
+            inner: std::sync::Mutex::new(None),
+        }
+    }
+
+    pub fn new_with_ttl(ttl: Duration) -> Self {
+        Self {
+            ttl: Some(ttl),
             inner: std::sync::Mutex::new(None),
         }
     }
@@ -161,19 +162,25 @@ where
     V: Clone,
 {
     pub fn get(&self, key: &K) -> Option<V> {
-        let guard = self.inner.lock().ok()?;
-        match &*guard {
-            Some((k, v)) if k == key => Some(v.clone()),
-            _ => None,
+        let mut guard = self.inner.lock().ok()?;
+        let expired = match &*guard {
+            Some((k, _, ts)) if k == key => self.ttl.is_some_and(|ttl| ts.elapsed() >= ttl),
+            _ => return None,
+        };
+        if expired {
+            *guard = None;
+            return None;
         }
+        guard.as_ref().map(|(_, v, _)| v.clone())
     }
 
     pub fn insert(&self, key: K, value: V) {
         if let Ok(mut guard) = self.inner.lock() {
-            *guard = Some((key, value));
+            *guard = Some((key, value, Instant::now()));
         }
     }
 
+    #[allow(dead_code)]
     pub fn invalidate(&self, _key: &K) {
         if let Ok(mut guard) = self.inner.lock() {
             *guard = None;
@@ -266,15 +273,29 @@ impl InFlight {
                 continue;
             }
             // We own this key: run the load while holding the lock so other
-            // tasks on the same key queue behind us.
+            // tasks on the same key queue behind us. An RAII guard ensures the
+            // map entry is removed even if this future is cancelled or panics
+            // (preventing a waiter livelock).
             let mutex = slot.0;
             let _guard = mutex.lock().await;
-            let out = f().await;
-            if let Ok(mut map) = self.map.lock() {
-                map.remove(key);
-            }
-            drop(_guard);
-            return out;
+            let _cleanup = InFlightCleanup {
+                map: &self.map,
+                key,
+            };
+            return f().await;
+        }
+    }
+}
+
+struct InFlightCleanup<'a> {
+    map: &'a std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    key: &'a str,
+}
+
+impl Drop for InFlightCleanup<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.map.lock() {
+            map.remove(self.key);
         }
     }
 }
@@ -316,5 +337,39 @@ mod tests {
         c.insert("k", 1usize);
         c.invalidate(&"k");
         assert!(c.get(&"k").is_none());
+    }
+
+    #[test]
+    fn single_slot_ttl_expires() {
+        let s = SingleSlot::new_with_ttl(Duration::from_millis(15));
+        s.insert("k".to_string(), 42usize);
+        assert_eq!(s.get(&"k".to_string()), Some(42));
+        std::thread::sleep(Duration::from_millis(30));
+        assert_eq!(s.get(&"k".to_string()), None);
+    }
+
+    #[tokio::test]
+    async fn inflight_recovers_after_owner_cancellation() {
+        let inflight = std::sync::Arc::new(InFlight::new());
+        let inf1 = inflight.clone();
+        let handle = tokio::spawn(async move {
+            inf1.run("k", || async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                1usize
+            })
+            .await
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        handle.abort();
+        let _ = handle.await;
+
+        // Next caller must complete cleanly instead of livelocking.
+        let res = tokio::time::timeout(
+            Duration::from_secs(2),
+            inflight.run("k", || async { 99usize }),
+        )
+        .await
+        .expect("inflight must not livelock after cancellation");
+        assert_eq!(res, 99);
     }
 }

@@ -71,24 +71,25 @@ fn parse_utc(iso: &str) -> Option<chrono::DateTime<Utc>> {
 
 async fn append_row(state: &AppState, row: &Value) {
     let path = prestart_csv_path(&state.cfg);
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let exists = path.exists();
     let line = build_csv_line(row);
-    let mut out = String::new();
-    if !exists {
-        out.push_str(&CSV_FIELDS.join(","));
+    let _ = tokio::task::spawn_blocking(move || {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let exists = path.exists();
+        let mut out = String::new();
+        if !exists {
+            out.push_str(&CSV_FIELDS.join(","));
+            out.push('\n');
+        }
+        out.push_str(&line);
         out.push('\n');
-    }
-    out.push_str(&line);
-    out.push('\n');
-    use std::io::Write;
-    let mut f = match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        Ok(f) => f,
-        Err(_) => return,
-    };
-    let _ = f.write_all(out.as_bytes());
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = f.write_all(out.as_bytes());
+        }
+    })
+    .await;
 }
 
 fn build_csv_line(row: &Value) -> String {

@@ -287,8 +287,10 @@ async fn api_rapm_scale(
     let player_id = param_i64(&params, &["playerId"]);
     let player_id = if player_id == 0 { None } else { Some(player_id) };
 
-    let rapm_all = rapm::load_rapm_data(&state.caches, state.sb.as_ref(), primary).await;
-    let ctx_all = rapm::load_context_rows(&state.caches, state.sb.as_ref(), primary).await;
+    let (rapm_all, ctx_all) = tokio::join!(
+        rapm::load_rapm_data(&state.caches, state.sb.as_ref(), primary),
+        rapm::load_context_rows(&state.caches, state.sb.as_ref(), primary),
+    );
     let (col5_off, col5_def, col_pp, col_sh, _, _) = metric_cols(&metric);
     let minutes = minutes_map(&ctx_all);
 
@@ -404,13 +406,13 @@ async fn api_rapm_career(
     let metric = q(&params, "metric", "corsi");
     let strength = q(&params, "strength", "All");
 
-    // Team per season for the career-chart logo markers (multi-team seasons
-    // come back as the "NHL" sentinel).
-    let team_map = skater_team_by_season(&state, pid).await;
-
+    // Fetch team-by-season, RAPM seasons, and context seasons concurrently.
     let season_list: Vec<i64> = state.last_dates.keys().copied().collect();
-    let rapm_all = rapm::load_rapm_seasons(&state.caches, state.sb.as_ref(), &season_list).await;
-    let ctx_arcs = rapm::load_context_seasons(&state.caches, state.sb.as_ref(), &season_list).await;
+    let (team_map, rapm_all, ctx_arcs) = tokio::join!(
+        skater_team_by_season(&state, pid),
+        rapm::load_rapm_seasons(&state.caches, state.sb.as_ref(), &season_list),
+        rapm::load_context_seasons(&state.caches, state.sb.as_ref(), &season_list),
+    );
     let mut rows: Vec<&Value> = Vec::new();
     for d in &rapm_all {
         let slice: &[Value] = if rates == "Totals" { &d.totals } else { &d.rates };
@@ -456,14 +458,10 @@ async fn api_rapm_career(
                 _ => {}
             }
         }
-        let dist_off5: Vec<f64> = off5.values().copied().filter(|v| v.is_finite()).collect();
-        let dist_def5: Vec<f64> = def5.values().map(|v| -v).filter(|v| v.is_finite()).collect();
-        let dist_pp: Vec<f64> = pp_off.values().copied().filter(|v| v.is_finite()).collect();
-        let dist_sh: Vec<f64> = sh_def.values().map(|v| -v).filter(|v| v.is_finite()).collect();
-        let mut so5 = dist_off5.clone();
-        let mut sd5 = dist_def5.clone();
-        let mut spp = dist_pp.clone();
-        let mut ssh = dist_sh.clone();
+        let mut so5: Vec<f64> = off5.values().copied().filter(|v| v.is_finite()).collect();
+        let mut sd5: Vec<f64> = def5.values().map(|v| -v).filter(|v| v.is_finite()).collect();
+        let mut spp: Vec<f64> = pp_off.values().copied().filter(|v| v.is_finite()).collect();
+        let mut ssh: Vec<f64> = sh_def.values().map(|v| -v).filter(|v| v.is_finite()).collect();
         so5.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         sd5.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         spp.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -505,18 +503,23 @@ async fn api_rapm_career(
         }
 
         let pct = |dist: &[f64], v: Option<f64>| v.and_then(|x| percentile_sorted_asc(dist, x));
-        let z = |dist: &[f64], v: Option<f64>| -> Option<f64> {
+        let mean_std = |dist: &[f64]| -> Option<(f64, f64)> {
             if dist.is_empty() {
                 return None;
             }
             let mean = dist.iter().sum::<f64>() / dist.len() as f64;
             let var = dist.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / dist.len() as f64;
             let std = var.sqrt();
-            if std <= 0.0 {
-                return None;
-            }
+            if std <= 0.0 { None } else { Some((mean, std)) }
+        };
+        let z_with = |ms: Option<(f64, f64)>, v: Option<f64>| -> Option<f64> {
+            let (mean, std) = ms?;
             v.map(|x| (x - mean) / std)
         };
+        let ms_o5 = mean_std(&so5);
+        let ms_d5 = mean_std(&sd5);
+        let ms_pp = mean_std(&spp);
+        let ms_sh = mean_std(&ssh);
 
         for v in [o5, d5.map(|x| -x), pp, sh.map(|x| -x)] {
             if let Some(x) = v {
@@ -530,13 +533,13 @@ async fn api_rapm_career(
             "team": team_map.get(&s.to_string()).cloned().unwrap_or_default(),
             "minutes": json!({"fivev5": min_5, "pp": min_pp, "sh": min_sh}),
             "eligible": el5 || el_pp || el_sh,
-            "5v5_off": o5, "5v5_off_z": z(&so5, o5), "5v5_off_pct": pct(&so5, o5),
-            "5v5_def": d5, "5v5_def_z": z(&sd5, d5.map(|v| -v)), "5v5_def_pct": pct(&sd5, d5.map(|v| -v)),
-            "5v5_diff": diff, "5v5_diff_z": z(&so5, diff), "5v5_diff_pct": pct(&so5, diff),
-            "5v5_total": total, "5v5_total_z": z(&so5, total), "5v5_total_pct": pct(&so5, total),
-            "pp_off": pp, "pp_off_z": z(&spp, pp), "pp_off_pct": pct(&spp, pp),
-            "sh_def": sh, "sh_def_z": z(&ssh, sh.map(|v| -v)), "sh_def_pct": pct(&ssh, sh.map(|v| -v)),
-            "all_total": total, "all_total_z": z(&so5, total), "all_total_pct": pct(&so5, total),
+            "5v5_off": o5, "5v5_off_z": z_with(ms_o5, o5), "5v5_off_pct": pct(&so5, o5),
+            "5v5_def": d5, "5v5_def_z": z_with(ms_d5, d5.map(|v| -v)), "5v5_def_pct": pct(&sd5, d5.map(|v| -v)),
+            "5v5_diff": diff, "5v5_diff_z": z_with(ms_o5, diff), "5v5_diff_pct": pct(&so5, diff),
+            "5v5_total": total, "5v5_total_z": z_with(ms_o5, total), "5v5_total_pct": pct(&so5, total),
+            "pp_off": pp, "pp_off_z": z_with(ms_pp, pp), "pp_off_pct": pct(&spp, pp),
+            "sh_def": sh, "sh_def_z": z_with(ms_sh, sh.map(|v| -v)), "sh_def_pct": pct(&ssh, sh.map(|v| -v)),
+            "all_total": total, "all_total_z": z_with(ms_o5, total), "all_total_pct": pct(&so5, total),
         });
         points.push(point);
     }

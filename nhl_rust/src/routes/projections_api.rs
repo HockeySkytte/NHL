@@ -141,6 +141,10 @@ async fn api_player_current_projections_public(
 ) -> Response {
     let season = season_param(&params, "season", current_season_id(None));
     let model_key = q(&params, "model_key", "preseason_updating");
+    let cache_key = format!("{season}|{model_key}");
+    if let Some(cached) = state.caches.player_current_proj_public.get(&cache_key) {
+        return json_no_store((*cached).clone());
+    }
     let Some(sb) = state.sb.as_ref() else {
         return json_no_store(json!({"rows": []}));
     };
@@ -149,7 +153,7 @@ async fn api_player_current_projections_public(
         db_filters.push(("season", format!("eq.{season}")));
     }
     let fmap: BTreeMap<String, String> = db_filters.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-    let rows = sb
+    let fetched = sb
         .read(
             "player_current_projections",
             "player_id,player,raw_projected_value,projected_value,generated_at",
@@ -158,9 +162,10 @@ async fn api_player_current_projections_public(
             None,
             0,
         )
-        .await
-        .unwrap_or_default();
-    let mut out: Vec<Value> = Vec::new();
+        .await;
+    let ok = fetched.is_some();
+    let rows = fetched.unwrap_or_default();
+    let mut out: Vec<Value> = Vec::with_capacity(rows.len());
     for r in &rows {
         let pid = safe_int(r.get("player_id")).unwrap_or(0);
         if pid <= 0 {
@@ -179,7 +184,14 @@ async fn api_player_current_projections_public(
         let bv = parse_locale_float(b.get("projected_value")).unwrap_or(0.0);
         bv.partial_cmp(&av).unwrap_or(std::cmp::Ordering::Equal)
     });
-    json_no_store(json!({"rows": out}))
+    let payload = json!({"rows": out});
+    if ok {
+        state
+            .caches
+            .player_current_proj_public
+            .insert(cache_key, std::sync::Arc::new(payload.clone()));
+    }
+    json_no_store(payload)
 }
 
 // ── /api/skaters/current-projections ──
@@ -1080,8 +1092,10 @@ async fn api_projections_simulate_season_batch(
         custom_lineups.insert(team_ab.clone(), p::normalize_custom_lineup_entries(Some(&lineup_raw)));
     }
 
-    let lineups_all = lineups::load_all(&state.caches, state.sb.as_ref(), &state.cfg.static_dir).await;
-    let proj_map = p::load_v2_player_projections_cached(&state, Some(season)).await;
+    let (lineups_all, proj_map) = tokio::join!(
+        lineups::load_all(&state.caches, state.sb.as_ref(), &state.cfg.static_dir),
+        p::load_v2_player_projections_cached(&state, Some(season)),
+    );
     let team_proj_map = p::team_proj_map_for_season(&lineups_all, &proj_map, &custom_lineups, &state);
 
     let teams = p::active_team_abbrevs(&state);
@@ -1124,77 +1138,88 @@ async fn api_projections_simulate_season_batch(
         )
         .await;
 
-        for row in sim.get("standings").and_then(|s| s.as_array()).cloned().unwrap_or_default() {
-            let t = str_value(row.get("team"));
-            let Some(a) = team_agg.get_mut(&t) else { continue };
-            a[0] += safe_int(row.get("gp")).unwrap_or(0) as f64;
-            a[1] += safe_int(row.get("wins")).unwrap_or(0) as f64;
-            a[2] += safe_int(row.get("losses")).unwrap_or(0) as f64;
-            a[3] += safe_int(row.get("otLosses")).unwrap_or(0) as f64;
-            a[4] += safe_int(row.get("points")).unwrap_or(0) as f64;
-            a[5] += safe_int(row.get("goalsFor")).unwrap_or(0) as f64;
-            a[6] += safe_int(row.get("goalsAgainst")).unwrap_or(0) as f64;
-            a[7] += safe_int(row.get("goalDifferential")).unwrap_or(0) as f64;
+        if let Some(standings) = sim.get("standings").and_then(Value::as_array) {
+            for row in standings {
+                let t = row.get("team").and_then(Value::as_str).unwrap_or("");
+                let Some(a) = team_agg.get_mut(t) else { continue };
+                a[0] += safe_int(row.get("gp")).unwrap_or(0) as f64;
+                a[1] += safe_int(row.get("wins")).unwrap_or(0) as f64;
+                a[2] += safe_int(row.get("losses")).unwrap_or(0) as f64;
+                a[3] += safe_int(row.get("otLosses")).unwrap_or(0) as f64;
+                a[4] += safe_int(row.get("points")).unwrap_or(0) as f64;
+                a[5] += safe_int(row.get("goalsFor")).unwrap_or(0) as f64;
+                a[6] += safe_int(row.get("goalsAgainst")).unwrap_or(0) as f64;
+                a[7] += safe_int(row.get("goalDifferential")).unwrap_or(0) as f64;
+            }
         }
 
-        let po = sim.get("playoffs").cloned().unwrap_or(Value::Null);
-        for t in &teams {
-            let mut made = false;
-            let mut r2 = false;
-            let mut r3 = false;
-            let mut final_ = false;
-            let mut champion = false;
-            for conf in ["East", "West"] {
-                for s in po.get("round1").and_then(|r| r.get(conf)).and_then(|v| v.as_array()).cloned().unwrap_or_default() {
-                    if str_value(s.get("winner")) == *t || str_value(s.get("loser")) == *t {
-                        made = true;
+        if let Some(po) = sim.get("playoffs") {
+            let match_team = |s: &Value, t: &str| {
+                s.get("winner").and_then(Value::as_str) == Some(t)
+                    || s.get("loser").and_then(Value::as_str) == Some(t)
+            };
+            for t in &teams {
+                let mut made = false;
+                let mut r2 = false;
+                let mut r3 = false;
+                let mut final_ = false;
+                let mut champion = false;
+                for conf in ["East", "West"] {
+                    if let Some(arr) = po.get("round1").and_then(|r| r.get(conf)).and_then(Value::as_array) {
+                        if arr.iter().any(|s| match_team(s, t)) {
+                            made = true;
+                        }
+                    }
+                    if let Some(arr) = po.get("round2").and_then(|r| r.get(conf)).and_then(Value::as_array) {
+                        if arr.iter().any(|s| match_team(s, t)) {
+                            r2 = true;
+                        }
+                    }
+                    if let Some(s) = po.get("conferenceFinals").and_then(|r| r.get(conf)) {
+                        if match_team(s, t) {
+                            r3 = true;
+                        }
                     }
                 }
-                for s in po.get("round2").and_then(|r| r.get(conf)).and_then(|v| v.as_array()).cloned().unwrap_or_default() {
-                    if str_value(s.get("winner")) == *t || str_value(s.get("loser")) == *t {
-                        r2 = true;
+                if let Some(sf) = po.get("stanleyFinal") {
+                    if match_team(sf, t) {
+                        final_ = true;
+                        if sf.get("winner").and_then(Value::as_str) == Some(t.as_str()) {
+                            champion = true;
+                        }
                     }
                 }
-                let s = po.get("conferenceFinals").and_then(|r| r.get(conf)).cloned();
-                if let Some(s) = s {
-                    if str_value(s.get("winner")) == *t || str_value(s.get("loser")) == *t {
-                        r3 = true;
-                    }
-                }
+                let a = team_agg.get_mut(t).unwrap();
+                if made { a[8] += 1.0; }
+                if r2 { a[9] += 1.0; }
+                if r3 { a[10] += 1.0; }
+                if final_ { a[11] += 1.0; }
+                if champion { a[12] += 1.0; }
             }
-            let sf = po.get("stanleyFinal").cloned();
-            if let Some(sf) = sf {
-                if str_value(sf.get("winner")) == *t || str_value(sf.get("loser")) == *t {
-                    final_ = true;
-                    if str_value(sf.get("winner")) == *t {
-                        champion = true;
-                    }
-                }
-            }
-            let a = team_agg.get_mut(t).unwrap();
-            if made { a[8] += 1.0; }
-            if r2 { a[9] += 1.0; }
-            if r3 { a[10] += 1.0; }
-            if final_ { a[11] += 1.0; }
-            if champion { a[12] += 1.0; }
         }
 
-        for pstat in sim.get("playerStats").and_then(|s| s.as_array()).cloned().unwrap_or_default() {
-            let pid = safe_int(pstat.get("pid")).unwrap_or(0);
-            if pid <= 0 {
-                continue;
+        if let Some(pstats) = sim.get("playerStats").and_then(Value::as_array) {
+            for pstat in pstats {
+                let pid = safe_int(pstat.get("pid")).unwrap_or(0);
+                if pid <= 0 {
+                    continue;
+                }
+                let entry = player_agg.entry(pid).or_insert_with(|| (
+                    str_value(pstat.get("name")),
+                    str_value(pstat.get("team")),
+                    str_value(pstat.get("position")),
+                    safe_int(pstat.get("gp")).unwrap_or(82),
+                    0.0, 0.0, 0.0, 0.0,
+                ));
+                entry.4 += safe_int(pstat.get("goals")).unwrap_or(0) as f64;
+                entry.5 += safe_int(pstat.get("a1")).unwrap_or(0) as f64;
+                entry.6 += safe_int(pstat.get("a2")).unwrap_or(0) as f64;
+                entry.7 += safe_int(pstat.get("points")).unwrap_or(0) as f64;
             }
-            let entry = player_agg.entry(pid).or_insert_with(|| (
-                str_value(pstat.get("name")),
-                str_value(pstat.get("team")),
-                str_value(pstat.get("position")),
-                safe_int(pstat.get("gp")).unwrap_or(82),
-                0.0, 0.0, 0.0, 0.0,
-            ));
-            entry.4 += safe_int(pstat.get("goals")).unwrap_or(0) as f64;
-            entry.5 += safe_int(pstat.get("a1")).unwrap_or(0) as f64;
-            entry.6 += safe_int(pstat.get("a2")).unwrap_or(0) as f64;
-            entry.7 += safe_int(pstat.get("points")).unwrap_or(0) as f64;
+        }
+        // Yield periodically during long batches so other Tokio tasks aren't starved.
+        if i % 16 == 15 {
+            tokio::task::yield_now().await;
         }
     }
 

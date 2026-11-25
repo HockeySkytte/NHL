@@ -80,30 +80,29 @@ pub fn context_col_map() -> HashMap<String, String> {
 /// outdated and intentionally never used). Per-season reads keep the payload
 /// at ~1.4k rows instead of the full ~21k-row table.
 async fn read_rapm_supabase(sb: &SbClient, season: i64) -> Option<Vec<Value>> {
-    // Targeted columns (no `*`) keep the pagination fast; the JSONB columns
-    // carry the z-scores/standard deviations unpacked below.
-    const COLS: &str = "player_id,season,strength_state,rates_totals,cf,ca,gf,ga,xgf,xga,pen_taken,pen_drawn,c_plusminus,g_plusminus,xg_plusminus,pen_plusminus,stddev,zscore,pp_sh";
+    // Targeted columns (no `*` and no unused `stddev` JSONB, saving ~30% egress).
+    const COLS: &str = "player_id,season,strength_state,rates_totals,cf,ca,gf,ga,xgf,xga,pen_taken,pen_drawn,c_plusminus,g_plusminus,xg_plusminus,pen_plusminus,zscore,pp_sh";
     let mut f = std::collections::BTreeMap::new();
     f.insert("season".to_string(), format!("eq.{season}"));
     let raw = sb.read("rapm", COLS, Some(&f), None, None, 0).await?;
     let cm = rapm_col_map();
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(raw.len());
     for row in raw {
-        let Some(obj) = row.as_object() else { continue };
-        let mut r = serde_json::Map::new();
+        let Value::Object(obj) = row else { continue };
+        let mut r = serde_json::Map::with_capacity(obj.len() + 16);
         for (k, v) in obj {
             if k == "zscore" || k == "pp_sh" {
-                if let Some(inner) = v.as_object() {
+                if let Value::Object(inner) = v {
                     for (ik, iv) in inner {
-                        r.insert(ik.clone(), iv.clone());
+                        r.insert(ik, iv);
                     }
                 }
-            } else if k == "stddev" {
-                // dropped: never read by any consumer
-                continue;
             } else {
-                let key = cm.get(k).cloned().unwrap_or_else(|| k.clone());
-                r.insert(key, v.clone());
+                let key = match cm.get(&k) {
+                    Some(renamed) => renamed.clone(),
+                    None => k,
+                };
+                r.insert(key, v);
             }
         }
         out.push(Value::Object(r));
@@ -119,6 +118,10 @@ pub async fn load_context_rows(
     sb: Option<&SbClient>,
     season: i64,
 ) -> Arc<Vec<Value>> {
+    // Fast path: avoid acquiring the global InFlight mutex on warm cache hits.
+    if let Some(v) = caches.context_static.get(&season) {
+        return v;
+    }
     let inflight_key = format!("ctx_static:{season}");
     caches
         .inflight
@@ -127,17 +130,19 @@ pub async fn load_context_rows(
                 return v;
             }
             const COLS: &str = "player_id,season,strength_state,minutes,qot_blend_xg67_g33,qoc_blend_xg67_g33,zs_difficulty";
-            let rows: Vec<Value> = if let Some(sb) = sb {
+            let fetched = if let Some(sb) = sb {
                 let mut f = std::collections::BTreeMap::new();
                 f.insert("season".to_string(), format!("eq.{season}"));
                 sb.read("rapm_context", COLS, Some(&f), Some(&context_col_map()), None, 0)
                     .await
-                    .unwrap_or_default()
             } else {
-                Vec::new()
+                None
             };
-            let arc = Arc::new(rows);
-            caches.context_static.insert(season, arc.clone());
+            let ok = fetched.is_some();
+            let arc = Arc::new(fetched.unwrap_or_default());
+            if ok {
+                caches.context_static.insert(season, arc.clone());
+            }
             arc
         })
         .await
@@ -154,6 +159,9 @@ pub async fn load_rapm_data(
     sb: Option<&SbClient>,
     season: i64,
 ) -> Arc<RapmRows> {
+    if let Some(v) = caches.rapm_static.get(&season) {
+        return v;
+    }
     let inflight_key = format!("rapm_static:{season}");
     caches
         .inflight
@@ -161,23 +169,29 @@ pub async fn load_rapm_data(
             if let Some(v) = caches.rapm_static.get(&season) {
                 return v;
             }
-            let raw: Vec<Value> = match sb {
-                Some(sb) => read_rapm_supabase(sb, season).await.unwrap_or_default(),
-                None => Vec::new(),
+            let (raw_opt, ctx_rows) = tokio::join!(
+                async {
+                    match sb {
+                        Some(sb) => read_rapm_supabase(sb, season).await,
+                        None => None,
+                    }
+                },
+                load_context_rows(caches, sb, season),
+            );
+            let ok = raw_opt.is_some();
+            let totals = Arc::new(raw_opt.unwrap_or_default());
+            let rates = if !totals.is_empty() && !ctx_rows.is_empty() {
+                synthesize_rates_rows(&totals, &ctx_rows)
+            } else {
+                Vec::new()
             };
-            let totals = Arc::new(raw);
-            let mut rates: Vec<Value> = Vec::new();
-            if !totals.is_empty() {
-                let ctx_rows = load_context_rows(caches, sb, season).await;
-                if !ctx_rows.is_empty() {
-                    rates = synthesize_rates_rows(&totals, &ctx_rows);
-                }
-            }
             let data = Arc::new(RapmRows {
                 totals,
                 rates: Arc::new(rates),
             });
-            caches.rapm_static.insert(season, data.clone());
+            if ok {
+                caches.rapm_static.insert(season, data.clone());
+            }
             data
         })
         .await

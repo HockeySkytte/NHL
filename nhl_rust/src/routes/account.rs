@@ -90,30 +90,39 @@ pub async fn persist_auth_user_updates(
     auth_metadata: Option<&Value>,
     auth_password: Option<&str>,
 ) -> Value {
+    let has_account_updates = !updates.is_null();
     let payload = auth_state::build_account_payload(auth_user, Some(updates));
-    let saved = if let Some(sb) = state.sb.as_ref() {
-        sb.upsert_user_account(payload.clone()).await
-    } else {
-        None
-    };
     let user_id = auth_state::as_str_of(auth_user.get("user_id"));
-    if !user_id.is_empty() {
-        if let Some(sb) = state.sb.as_ref() {
-            let mut attrs = serde_json::Map::new();
-            if let Some(meta) = auth_metadata {
-                attrs.insert("user_metadata".to_string(), meta.clone());
-            }
-            if let Some(pw) = auth_password {
-                attrs.insert("password".to_string(), Value::String(pw.to_string()));
-            }
-            if !attrs.is_empty() {
-                let _ = sb.admin_update_user(&user_id, &Value::Object(attrs)).await;
-            }
-        }
+
+    let mut attrs = serde_json::Map::new();
+    if let Some(meta) = auth_metadata {
+        attrs.insert("user_metadata".to_string(), meta.clone());
     }
+    if let Some(pw) = auth_password {
+        attrs.insert("password".to_string(), Value::String(pw.to_string()));
+    }
+    let has_auth_updates = !user_id.is_empty() && !attrs.is_empty();
+
+    let (saved, _) = tokio::join!(
+        async {
+            if has_account_updates {
+                if let Some(sb) = state.sb.as_ref() {
+                    return sb.upsert_user_account(payload.clone()).await;
+                }
+            }
+            None
+        },
+        async {
+            if has_auth_updates {
+                if let Some(sb) = state.sb.as_ref() {
+                    let _ = sb.admin_update_user(&user_id, &Value::Object(attrs)).await;
+                }
+            }
+        },
+    );
     let record = auth_state::merge_auth_user_account(
         auth_user,
-        saved.as_ref().or(Some(&payload)),
+        saved.as_ref().or(if has_account_updates { Some(&payload) } else { None }),
     );
     let full = auth_state::auth_state_from_record(&record, state.cfg.auth_trial_days);
     session.auth_user = Some(auth_state::auth_session_payload(&full));
@@ -392,13 +401,13 @@ async fn account_profile_update(
     if !auth_state::valid_username(&username) {
         return Ok(redirect_to_account(&state, &session, ("error", "Username must be 3-32 characters and use letters, numbers, dots, dashes, or underscores.")));
     }
+    let current_username = auth_state::as_str_of(full.get("username"));
+    if current_username == username {
+        return Ok(redirect_to_account(&state, &session, ("info", "Username unchanged.")));
+    }
     let user_id = auth_state::as_str_of(full.get("user_id"));
     if let Some(sb) = state.sb.as_ref() {
-        if let Some(rows) = sb.list_user_accounts().await {
-            let current_username = auth_state::as_str_of(full.get("username"));
-            if current_username == username {
-                return Ok(redirect_to_account(&state, &session, ("info", "Username unchanged.")));
-            }
+        if let Some(rows) = sb.find_user_accounts_by_username(&username).await {
             let taken = rows.iter().any(|r| {
                 let uid = auth_state::as_str_of(r.get("auth_user_id"));
                 if !user_id.is_empty() && uid == user_id {

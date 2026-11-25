@@ -4,6 +4,7 @@
 //! and `regex` for the final fallback.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 use regex::Regex;
 use scraper::{ElementRef, Html, Node, Selector};
@@ -11,6 +12,58 @@ use serde_json::{json, Value};
 
 use crate::util::parse::safe_int;
 use crate::util::parse::str_value;
+
+fn sel_tr() -> &'static Selector {
+    static S: OnceLock<Selector> = OnceLock::new();
+    S.get_or_init(|| Selector::parse("tr").unwrap())
+}
+
+fn sel_td() -> &'static Selector {
+    static S: OnceLock<Selector> = OnceLock::new();
+    S.get_or_init(|| Selector::parse("td").unwrap())
+}
+
+fn sel_th() -> &'static Selector {
+    static S: OnceLock<Selector> = OnceLock::new();
+    S.get_or_init(|| Selector::parse("th").unwrap())
+}
+
+fn sel_table() -> &'static Selector {
+    static S: OnceLock<Selector> = OnceLock::new();
+    S.get_or_init(|| Selector::parse("table").unwrap())
+}
+
+fn re_content_name1() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(r"^(\d{1,2})\s+([A-Z\x{c0}-\x{d6}\x{d8}-\x{de} .'-]+),\s*([A-Z\x{c0}-\x{d6}\x{d8}-\x{de} .'-]+)$")
+            .unwrap()
+    })
+}
+
+fn re_content_name2() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(r"^(\d{1,2})\s+([A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff} .'-]+)$")
+            .unwrap()
+    })
+}
+
+fn re_header_name1() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(r"^(\d{1,2})\s+([A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff} .'-]+),\s*([A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff} .'-]+)$")
+            .unwrap()
+    })
+}
+
+fn re_header_name2() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(r"^(\d{1,2})\s+([A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff}][A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff} .'-]+)$")
+            .unwrap()
+    })
+}
 
 /// `_normalize_jersey`: keep only digits, drop leading zeros.
 fn normalize_jersey(s: &str) -> String {
@@ -35,22 +88,16 @@ fn is_combining_mark_char(c: char) -> bool {
 
 /// `_strip_parentheticals_local`: remove ` (anything)`.
 fn strip_parentheticals(s: &str) -> String {
-    lazy_re_sub(r"\s*\([^)]*\)", "", s).trim().to_string()
+    static RE: OnceLock<Regex> = OnceLock::new();
+    if !s.contains('(') {
+        return s.trim().to_string();
+    }
+    let re = RE.get_or_init(|| Regex::new(r"\s*\([^)]*\)").unwrap());
+    re.replace_all(s, "").trim().to_string()
 }
 
 fn collapse_ws(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn lazy_re_sub(pattern: &str, replacement: &str, text: &str) -> String {
-    match Regex::new(pattern) {
-        Ok(re) => re.replace_all(text, replacement).into_owned(),
-        Err(_) => text.to_string(),
-    }
-}
-
-fn lazy_re_match<'t>(pattern: &str, text: &'t str) -> Option<regex::Captures<'t>> {
-    Regex::new(pattern).ok()?.captures(text)
 }
 
 /// `norm_name`.
@@ -138,17 +185,23 @@ fn title_case(s: &str) -> String {
     }
 }
 
-/// `to_seconds`: `MM:SS` (optionally `MM:SS/OVERTIME`).
+/// `to_seconds`: `MM:SS` (optionally `MM:SS/OVERTIME`) without per-call Regex compilation.
 fn to_seconds(ts: &str) -> Option<i64> {
     let ts = ts.trim();
     if ts.is_empty() {
         return None;
     }
     let ts = ts.split('/').next().unwrap_or(ts).trim();
-    let re = Regex::new(r"^(\d{1,2}):(\d{2})$").ok()?;
-    let caps = re.captures(ts)?;
-    let mm: i64 = caps.get(1)?.as_str().parse().ok()?;
-    let ss: i64 = caps.get(2)?.as_str().parse().ok()?;
+    let (m_str, s_str) = ts.split_once(':')?;
+    if !(1..=2).contains(&m_str.len())
+        || s_str.len() != 2
+        || !m_str.bytes().all(|b| b.is_ascii_digit())
+        || !s_str.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    let mm: i64 = m_str.parse().ok()?;
+    let ss: i64 = s_str.parse().ok()?;
     Some(mm * 60 + ss)
 }
 
@@ -359,39 +412,35 @@ fn content_table_strategy(
     name_by_id: &HashMap<i64, String>,
     team_abbrev: &str,
 ) -> Vec<ShiftRow> {
-    let tr_sel = Selector::parse("tr").unwrap();
-    let td_sel = Selector::parse("td").unwrap();
-    let table_sel = Selector::parse("table").unwrap();
+    let tr_sel = sel_tr();
+    let td_sel = sel_td();
+    let table_sel = sel_table();
 
-    let all_tr: Vec<ElementRef> = html.select(&tr_sel).collect();
-    let content_tbl: Option<ElementRef> = if all_tr.len() >= 4 {
-        let tr3 = &all_tr[3];
-        let tds: Vec<ElementRef> = tr3.select(&td_sel).collect();
-        tds.first()
-            .and_then(|td| td.select(&table_sel).next())
-            .or_else(|| find_content_table_heuristic(html))
-    } else {
-        find_content_table_heuristic(html)
-    };
+    let content_tbl: Option<ElementRef<'_>> = html
+        .select(tr_sel)
+        .nth(3)
+        .and_then(|tr3| tr3.select(td_sel).next())
+        .and_then(|td| td.select(table_sel).next())
+        .or_else(|| find_content_table_heuristic(html));
 
     let Some(tbl) = content_tbl else { return Vec::new() };
 
+    let re1 = re_content_name1();
+    let re2 = re_content_name2();
     let mut out: Vec<ShiftRow> = Vec::new();
     let mut current_name: Option<String> = None;
     let mut current_jersey = String::new();
     let mut current_pid: Option<i64> = None;
     let mut current_pos = String::new();
 
-    for tr in tbl.select(&tr_sel) {
-        let tds_all: Vec<ElementRef> = tr.select(&td_sel).collect();
+    for tr in tbl.select(tr_sel) {
+        let tds_all: Vec<ElementRef> = tr.select(td_sel).collect();
         if tds_all.is_empty() {
             continue;
         }
         if tds_all.len() == 1 && tds_all[0].value().attr("colspan").is_some() {
             let txt = text_of(&tds_all[0]);
             let txt2 = strip_parentheticals(&txt);
-            let Ok(re1) = Regex::new(r"^(\d{1,2})\s+([A-Z\x{c0}-\x{d6}\x{d8}-\x{de} .'-]+),\s*([A-Z\x{c0}-\x{d6}\x{d8}-\x{de} .'-]+)$") else { return Vec::new() };
-            let Ok(re2) = Regex::new(r"^(\d{1,2})\s+([A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff} .'-]+)$") else { return Vec::new() };
             if let Some(caps) = re1.captures(&txt2) {
                 current_jersey = caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
                 let last_u = caps.get(2).map(|m| m.as_str().to_string()).unwrap_or_default();
@@ -459,16 +508,16 @@ fn content_table_strategy(
     out
 }
 
-fn find_content_table_heuristic(html: &Html) -> Option<ElementRef> {
-    let table_sel = Selector::parse("table").unwrap();
-    let tr_sel = Selector::parse("tr").unwrap();
-    let td_sel = Selector::parse("td").unwrap();
-    let th_sel = Selector::parse("th").unwrap();
-    for tbl in html.select(&table_sel) {
-        let rows: Vec<ElementRef> = tbl.select(&tr_sel).take(15).collect();
+fn find_content_table_heuristic(html: &Html) -> Option<ElementRef<'_>> {
+    let table_sel = sel_table();
+    let tr_sel = sel_tr();
+    let td_sel = sel_td();
+    let th_sel = sel_th();
+    for tbl in html.select(table_sel) {
+        let rows: Vec<ElementRef> = tbl.select(tr_sel).take(15).collect();
         for tr in &rows {
             let mut texts: Vec<String> = Vec::new();
-            for c in tr.select(&td_sel).chain(tr.select(&th_sel)) {
+            for c in tr.select(td_sel).chain(tr.select(th_sel)) {
                 texts.push(text_of(&c).to_lowercase());
             }
             if texts.is_empty() {
@@ -483,13 +532,13 @@ fn find_content_table_heuristic(html: &Html) -> Option<ElementRef> {
             }
         }
         let has_colspan = tbl
-            .select(&td_sel)
+            .select(td_sel)
             .any(|td| td.value().attr("colspan").is_some());
         if has_colspan {
             let mut dense = false;
             for tr in &rows {
                 let tds: Vec<ElementRef> = tr
-                    .select(&td_sel)
+                    .select(td_sel)
                     .filter(|td| td.value().attr("colspan").is_none() && td.value().attr("rowspan").is_none())
                     .collect();
                 if tds.len() >= 6 {
@@ -512,11 +561,11 @@ fn header_scan_strategy(
     name_by_id: &HashMap<i64, String>,
     team_abbrev: &str,
 ) -> Vec<ShiftRow> {
-    let tr_sel = Selector::parse("tr").unwrap();
-    let td_sel = Selector::parse("td").unwrap();
-    let th_sel = Selector::parse("th").unwrap();
-    let Ok(re1) = Regex::new(r"^(\d{1,2})\s+([A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff} .'-]+),\s*([A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff} .'-]+)$") else { return Vec::new() };
-    let Ok(re2) = Regex::new(r"^(\d{1,2})\s+([A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff}][A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff} .'-]+)$") else { return Vec::new() };
+    let tr_sel = sel_tr();
+    let td_sel = sel_td();
+    let th_sel = sel_th();
+    let re1 = re_header_name1();
+    let re2 = re_header_name2();
 
     let mut results: Vec<ShiftRow> = Vec::new();
     // Find matching text nodes and their parent elements.
@@ -568,7 +617,7 @@ fn header_scan_strategy(
         };
 
         let Some(tbl) = find_next_table(node) else { continue };
-        let trs: Vec<ElementRef> = tbl.select(&tr_sel).collect();
+        let trs: Vec<ElementRef> = tbl.select(tr_sel).collect();
         if trs.is_empty() {
             continue;
         }
@@ -580,8 +629,8 @@ fn header_scan_strategy(
 
         for (ridx, tr) in trs.iter().take(6).enumerate() {
             let cells: Vec<String> = tr
-                .select(&td_sel)
-                .chain(tr.select(&th_sel))
+                .select(td_sel)
+                .chain(tr.select(th_sel))
                 .map(|c| text_of(&c).to_lowercase())
                 .collect();
             if cells.is_empty() {
@@ -635,7 +684,7 @@ fn header_scan_strategy(
         }
 
         for tr in trs.iter().skip(hri + 1) {
-            let tds: Vec<String> = tr.select(&td_sel).map(|td| text_of(&td)).collect();
+            let tds: Vec<String> = tr.select(td_sel).map(|td| text_of(&td)).collect();
             if tds.len() <= (i_shift.max(i_per).max(i_start).max(i_end)) as usize {
                 continue;
             }
@@ -676,16 +725,25 @@ fn regex_strategy(
     team_abbrev: &str,
 ) -> Vec<ShiftRow> {
     fn strip_tags(s: &str) -> String {
-        let s = lazy_re_sub(r"<[^>]+>", " ", s);
-        collapse_ws(&s)
+        static RE_TAGS: OnceLock<Regex> = OnceLock::new();
+        let re = RE_TAGS.get_or_init(|| Regex::new(r"<[^>]+>").unwrap());
+        let cleaned = re.replace_all(s, " ");
+        collapse_ws(&cleaned)
     }
 
-    let re_colspan = Regex::new(r#"<td[^>]*colspan="?\d+"?[^>]*>\s*(.*?)\s*</td>"#).unwrap();
-    let re_row = Regex::new(r"(?is)<tr[^>]*>\s*(.*?)\s*</tr>").unwrap();
-    let re_cell = Regex::new(r"(?is)<t[dh][^>]*>\s*(.*?)\s*</t[dh]>").unwrap();
-    let re_colspan_in_row = Regex::new(r"(?i)<td[^>]*colspan=").unwrap();
-    let Ok(re1) = Regex::new(r"^(\d{1,2})\s+([A-Z\x{c0}-\x{d6}\x{d8}-\x{de} .'-]+),\s*([A-Z\x{c0}-\x{d6}\x{d8}-\x{de} .'-]+)$") else { return Vec::new() };
-    let Ok(re2) = Regex::new(r"^(\d{1,2})\s+([A-Za-z\x{c0}-\x{d6}\x{d8}-\x{f6}\x{f8}-\x{ff} .'-]+)$") else { return Vec::new() };
+    static RE_COLSPAN: OnceLock<Regex> = OnceLock::new();
+    static RE_ROW: OnceLock<Regex> = OnceLock::new();
+    static RE_CELL: OnceLock<Regex> = OnceLock::new();
+    static RE_COLSPAN_IN_ROW: OnceLock<Regex> = OnceLock::new();
+
+    let re_colspan = RE_COLSPAN.get_or_init(|| {
+        Regex::new(r#"<td[^>]*colspan="?\d+"?[^>]*>\s*(.*?)\s*</td>"#).unwrap()
+    });
+    let re_row = RE_ROW.get_or_init(|| Regex::new(r"(?is)<tr[^>]*>\s*(.*?)\s*</tr>").unwrap());
+    let re_cell = RE_CELL.get_or_init(|| Regex::new(r"(?is)<t[dh][^>]*>\s*(.*?)\s*</t[dh]>").unwrap());
+    let re_colspan_in_row = RE_COLSPAN_IN_ROW.get_or_init(|| Regex::new(r"(?i)<td[^>]*colspan=").unwrap());
+    let re1 = re_content_name1();
+    let re2 = re_content_name2();
 
     let mut positions: Vec<(usize, usize, String)> = Vec::new();
     for m in re_colspan.captures_iter(html) {

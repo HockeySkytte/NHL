@@ -4,10 +4,11 @@
 //! roster seeding. Runs on an interval (env `MANAGER_SWEEP_INTERVAL_SECONDS`,
 //! default 300); toggle `MANAGER_SWEEPER=1`.
 
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::state::AppState;
 use crate::supabase::write;
@@ -45,10 +46,17 @@ async fn run_once(state: &AppState) {
     let Some(sb) = state.sb.as_ref() else {
         return;
     };
+    let active_filter = BTreeMap::from([(
+        "status".to_string(),
+        "in.(setup,drafting,running)".to_string(),
+    )]);
     let leagues = sb
-        .read("manager_leagues", "id,mode,status", None, None, None, 0)
+        .read("manager_leagues", "id,mode,status", Some(&active_filter), None, None, 0)
         .await
         .unwrap_or_default();
+    // Deduplicate `record_game_stats` across running leagues in this tick:
+    // maps `nhl_game_id -> is_final`.
+    let mut recorded_games: HashMap<i64, bool> = HashMap::new();
     for league_row in leagues {
         let id = str_value(league_row.get("id"));
         let mode = str_value(league_row.get("mode"));
@@ -74,7 +82,7 @@ async fn run_once(state: &AppState) {
                 }
             }
             crate::manager::STATUS_RUNNING => {
-                finalize_recent_games(state, sb, &id).await;
+                finalize_recent_games(state, sb, &id, &mut recorded_games).await;
             }
             _ => {}
         }
@@ -100,15 +108,27 @@ async fn season_started(sb: &crate::supabase::read::SbClient, league_id: &str) -
         .unwrap_or(false)
 }
 
-/// Try to record + finalize recently-played games. Bounded per sweep.
-async fn finalize_recent_games(state: &AppState, sb: &crate::supabase::read::SbClient, league_id: &str) {
+/// Try to record + finalize recently-played games. Filters `status != final`
+/// and `date <= today` in SQL so finalized games are never re-scanned and
+/// games past the first `batch` are always reached.
+async fn finalize_recent_games(
+    state: &AppState,
+    sb: &crate::supabase::read::SbClient,
+    league_id: &str,
+    recorded_games: &mut HashMap<i64, bool>,
+) {
     let today = Utc::now().date_naive().to_string();
     let batch = env_i64("MANAGER_SWEEP_BATCH", 50).max(1) as usize;
+    let filters = BTreeMap::from([
+        ("league_id".to_string(), format!("eq.{league_id}")),
+        ("status".to_string(), "neq.final".to_string()),
+        ("date".to_string(), format!("lte.{today}")),
+    ]);
     let rows = sb
         .read(
             "manager_games",
             "nhl_game_id,status,date",
-            Some(&crate::manager::league::eq_filter("league_id", league_id)),
+            Some(&filters),
             None,
             Some("date.asc,nhl_game_id.asc"),
             batch,
@@ -116,27 +136,28 @@ async fn finalize_recent_games(state: &AppState, sb: &crate::supabase::read::SbC
         .await
         .unwrap_or_default();
     for g in rows {
-        if str_value(g.get("status")) == "final" {
-            continue;
-        }
-        if str_value(g.get("date")) > today {
-            continue;
-        }
         let Some(nhl_game_id) = safe_int(g.get("nhl_game_id")) else {
             continue;
         };
-        // Record stat lines; only finalize once the NHL game is FINAL.
-        let recorded = crate::manager::games::record_game_stats(state, nhl_game_id).await;
-        match recorded {
-            Ok((game_state, _)) => {
-                let gs = game_state.to_uppercase();
-                if gs.contains("FINAL") || gs == "OFF" {
-                    let _ = crate::manager::games::finalize_game(state, league_id, nhl_game_id).await;
+        let is_final = if let Some(&cached_final) = recorded_games.get(&nhl_game_id) {
+            cached_final
+        } else {
+            match crate::manager::games::record_game_stats(state, nhl_game_id).await {
+                Ok((game_state, _)) => {
+                    let gs = game_state.to_uppercase();
+                    let done = gs.contains("FINAL") || gs == "OFF";
+                    recorded_games.insert(nhl_game_id, done);
+                    done
+                }
+                Err(_) => {
+                    // NHL feed unreachable / not ready — retry next sweep.
+                    recorded_games.insert(nhl_game_id, false);
+                    false
                 }
             }
-            Err(_) => {
-                // NHL feed unreachable / not ready — retry next sweep.
-            }
+        };
+        if is_final {
+            let _ = crate::manager::games::finalize_game(state, league_id, nhl_game_id).await;
         }
     }
 }
