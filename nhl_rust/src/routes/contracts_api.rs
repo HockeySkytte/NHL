@@ -32,6 +32,19 @@ const DEFAULT_RATE_LIMIT_PER_MIN: u32 = 60;
 const RATE_WINDOW_SECS: u64 = 60;
 const DEFAULT_LIMIT: usize = 50;
 const MAX_LIMIT: usize = 200;
+const DEFAULT_PUBLIC_API_BASE_URL: &str = "https://nhl.hockey-statistics.com";
+
+pub fn public_api_base_url() -> &'static str {
+    static BASE: OnceLock<String> = OnceLock::new();
+    BASE.get_or_init(|| {
+        std::env::var("PUBLIC_API_BASE_URL")
+            .ok()
+            .map(|v| v.trim().trim_end_matches('/').to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| DEFAULT_PUBLIC_API_BASE_URL.to_string())
+    })
+    .as_str()
+}
 
 const CONTRACTS_PUBLIC_COLS: &str = "contract_id,player_id,player_name,position,birth_date,draft_year,signing_team,teams,start_year,end_year,start_season,end_season,term_years,signed_date,contract_status,contract_status_note,expiry_status,expiry_status_note,aav_usd,total_value_usd,two_way,is_active_2026_27,is_future_extension,source_url,nhlpa_url,updated_at";
 
@@ -543,17 +556,14 @@ fn require_sb<'a>(state: &'a AppState, decision: RateDecision) -> Result<&'a SbC
 
 /// `GET /api/v1/contracts` — API discovery & metadata.
 async fn api_contracts_index(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
     let decision = match check_rate_limit(&headers) {
         Ok(d) => d,
         Err(resp) => return resp,
     };
-    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
-    let base = crate::web::templates::url_root(&state.cfg, host)
-        .trim_end_matches('/')
-        .to_string();
+    let base = public_api_base_url();
     let current = current_season_id(None);
 
     public_json(

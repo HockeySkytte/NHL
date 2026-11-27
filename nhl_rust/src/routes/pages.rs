@@ -101,9 +101,7 @@ async fn about_page_slug(
     let segments = about::text_segments(&text, &state.cfg.static_dir);
     let is_glossary = state.about.is_glossary_slug(&slug);
     let is_contracts_api = state.about.is_contracts_api_slug(&slug);
-    let api_base_url = templates::url_root(&state.cfg, host_str(&headers))
-        .trim_end_matches('/')
-        .to_string();
+    let api_base_url = crate::routes::contracts_api::public_api_base_url();
 
     let mut extra: BTreeMap<&'static str, serde_json::Value> = BTreeMap::new();
     extra.insert("active_tab", json!("About"));
