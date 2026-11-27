@@ -1,6 +1,7 @@
 pub mod about;
 pub mod boxids;
 pub mod card_defs;
+pub mod contracts;
 pub mod last_dates;
 pub mod lineups;
 pub mod odds;

@@ -3,6 +3,7 @@ pub mod admin;
 pub mod analytics;
 pub mod auth;
 pub mod community;
+pub mod contracts_api;
 pub mod line_tool;
 pub mod manager;
 pub mod misc_api;
@@ -38,6 +39,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(admin::router())
         .merge(stripe::router())
         .merge(community::router())
+        .merge(contracts_api::router())
         .merge(misc_api::router())
         .merge(analytics::router())
         .merge(rapm_api::router())

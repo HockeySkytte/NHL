@@ -47,6 +47,10 @@ impl AboutData {
         slug == slug_from_title("Glossary")
     }
 
+    pub fn is_contracts_api_slug(&self, slug: &str) -> bool {
+        slug == slug_from_title("Contracts API")
+    }
+
     pub fn section_title(&self, slug: &str) -> Option<&str> {
         self.headlines
             .iter()

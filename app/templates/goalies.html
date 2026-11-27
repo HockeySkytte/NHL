@@ -1978,13 +1978,87 @@ function setHeadshot(team, season, playerId){
   skaterImg.src = primary;
 }
 
+function __formatCompactUsd(val){
+  const n = Number(val);
+  if(!Number.isFinite(n)) return '';
+  const sign = n < 0 ? '-' : '';
+  const abs = Math.abs(n);
+  if(abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}M`;
+  if(abs >= 1e3) return `${sign}$${Math.round(abs / 1e3)}K`;
+  return `${sign}$${Math.round(abs).toLocaleString('en-US')}`;
+}
+function __formatFullUsd(val){
+  const n = Number(val);
+  if(!Number.isFinite(n)) return '';
+  const sign = n < 0 ? '-' : '';
+  return `${sign}$${Math.round(Math.abs(n)).toLocaleString('en-US')}`;
+}
+function __escAttr(s){
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function __buildContractHeaderParts(contract){
+  if(!contract || typeof contract !== 'object') return [];
+  const out = [];
+  const mode = String(contract.mode || 'single');
+  if(mode === 'average'){
+    const matched = Number(contract.seasonsMatched || 0);
+    const tipLines = [];
+    if(contract.aavUsd != null) tipLines.push(`Avg Cap Hit: ${__formatFullUsd(contract.aavUsd)}`);
+    if(contract.totalSalaryUsd != null) tipLines.push(`Avg Salary: ${__formatFullUsd(contract.totalSalaryUsd)}`);
+    if(Array.isArray(contract.seasons) && contract.seasons.length){
+      const byYr = contract.seasons
+        .map(s => `${s.season || s.seasonId || ''}: ${s.aavUsd != null ? __formatCompactUsd(s.aavUsd) : '—'}`)
+        .join(', ');
+      if(byYr) tipLines.push(byYr);
+    }
+    const tip = tipLines.join(' • ');
+    if(contract.aavUsd != null){
+      const yrTag = matched > 0 ? ` • ${matched} ${matched === 1 ? 'yr' : 'yrs'}` : '';
+      out.push({ k: 'Avg Cap Hit', v: `${__formatCompactUsd(contract.aavUsd)}${yrTag}`, title: tip });
+    }
+    if(contract.totalSalaryUsd != null){
+      out.push({ k: 'Avg Salary', v: __formatCompactUsd(contract.totalSalaryUsd), title: tip });
+    }
+    return out;
+  }
+
+  const tipParts = [];
+  if(contract.aavUsd != null) tipParts.push(`Cap Hit: ${__formatFullUsd(contract.aavUsd)}`);
+  if(contract.totalSalaryUsd != null) tipParts.push(`Salary: ${__formatFullUsd(contract.totalSalaryUsd)}`);
+  if(contract.baseSalaryUsd != null) tipParts.push(`Base: ${__formatFullUsd(contract.baseSalaryUsd)}`);
+  if(contract.signingBonusUsd != null && Number(contract.signingBonusUsd) > 0) tipParts.push(`Bonus: ${__formatFullUsd(contract.signingBonusUsd)}`);
+  if(contract.startSeason && contract.endSeason) tipParts.push(`${contract.startSeason} to ${contract.endSeason}`);
+  if(contract.twoWay) tipParts.push('Two-Way');
+  const tip = tipParts.join(' • ');
+
+  if(contract.aavUsd != null){
+    out.push({ k: 'Cap Hit', v: __formatCompactUsd(contract.aavUsd), title: tip });
+  }
+  const metaParts = [];
+  const term = Number(contract.termYears || 0);
+  const status = String(contract.contractStatus || '').trim();
+  if(term > 0 && status === 'ELC') metaParts.push(`${term} yr ELC`);
+  else if(term > 0) metaParts.push(`${term} yr`);
+  else if(status === 'ELC') metaParts.push('ELC');
+  const expStatus = String(contract.expiryStatus || '').trim();
+  const expYear = Number(contract.expiryYear || 0);
+  if(expStatus && expYear > 0) metaParts.push(`${expStatus} ${expYear}`);
+  else if(expYear > 0) metaParts.push(`Exp ${expYear}`);
+  if(contract.twoWay) metaParts.push('2-Way');
+  if(metaParts.length){
+    out.push({ k: 'Contract', v: metaParts.join(' • '), title: tip });
+  }
+  return out;
+}
+
 function renderPlayerLanding(landing){
   const first = landing?.firstName?.default || '';
   const last = landing?.lastName?.default || '';
   const full = (first + ' ' + last).trim() || 'Unknown player';
   skaterName.textContent = full;
 
-  const season = seasonSelect?.value;
+  const season = (typeof window.getPrimarySeasonValue === 'function' ? window.getPrimarySeasonValue() : '') || seasonSelect?.value;
   const age = calcAgeOnOct1(landing?.birthDate, season);
 
   const height = inchesToFeetIn(landing?.heightInInches);
@@ -2001,8 +2075,12 @@ function renderPlayerLanding(landing){
   if(weightLb || weightKg) parts.push({k:'Weight', v: [weightLb?`${weightLb} lb`:null, weightKg?`${weightKg} kg`:null].filter(Boolean).join(' • ')});
   if(age != null) parts.push({k:'Age', v: `${age}`});
   if(draftYear) parts.push({k:'Draft', v: overallPick?`${draftYear} • #${overallPick}`:`${draftYear}`});
+  parts.push(...__buildContractHeaderParts(landing?.contract));
 
-  skaterInfo.innerHTML = parts.map(p=>`<div class="kv"><span class="k">${p.k}</span><span class="v">${p.v}</span></div>`).join('');
+  skaterInfo.innerHTML = parts.map(p=>{
+    const titleAttr = p.title ? ` title="${__escAttr(p.title)}"` : '';
+    return `<div class="kv"${titleAttr}><span class="k">${__escAttr(p.k)}</span><span class="v">${__escAttr(p.v)}</span></div>`;
+  }).join('');
 }
 
 function setActiveTab(which){
@@ -6119,7 +6197,8 @@ async function loadPlayers(){
 async function loadPlayerCard(){
   if(!teamSelect || !seasonSelect || !playerSelect) return;
   const team = teamSelect.value;
-  const season = seasonSelect.value;
+  const primarySeason = (typeof window.getPrimarySeasonValue === 'function' ? window.getPrimarySeasonValue() : '') || seasonSelect.value;
+  const seasonQuery = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : '') || primarySeason;
   const playerId = playerSelect.value;
   const selectedPlayerName = String(playerSelect?.selectedOptions?.[0]?.textContent || '').trim();
   if(!playerId){
@@ -6135,13 +6214,13 @@ async function loadPlayerCard(){
   const reqVer = (loadPlayerCard.__reqVer = (Number(loadPlayerCard.__reqVer || 0) + 1));
   const selectedPlayerId = String(playerId);
   localStorage.setItem(`goalies_player_${team}`, String(playerId));
-  setHeadshot(team, season, playerId);
+  setHeadshot(team, primarySeason, playerId);
   skaterName.textContent = selectedPlayerName || 'Unknown player';
   skaterInfo.innerHTML = '';
   setMsg('Loading player info...');
   loadActiveGoaliePanel();
   try{
-    const r = await fetch(`/api/player/${encodeURIComponent(playerId)}/landing?season=${encodeURIComponent(season)}&team=${encodeURIComponent(team)}`, { cache: 'no-store' });
+    const r = await fetch(`/api/player/${encodeURIComponent(playerId)}/landing?season=${encodeURIComponent(seasonQuery)}&team=${encodeURIComponent(team)}`, { cache: 'no-store' });
     let data = null;
     try{
       data = await r.json();

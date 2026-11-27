@@ -11,7 +11,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::{json, Map, Value};
 
-use crate::data::{card_defs, projections, rapm, seasonstats};
+use crate::data::{card_defs, contracts, projections, rapm, seasonstats};
 use crate::nhl::client::API_WEB;
 use crate::state::AppState;
 use crate::util::parse::{parse_locale_float, parse_season_ids, primary_season_id, safe_int, str_value};
@@ -25,6 +25,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/skaters/card", get(api_skaters_card))
         .route("/api/goalies/card", get(api_goalies_card))
         .route("/api/teams/card", get(api_teams_card))
+        .route("/api/teams/contracts", get(api_teams_contracts))
         .route("/api/skaters/table", get(api_skaters_table_get).post(api_skaters_table_post))
         .route("/api/goalies/table", get(api_goalies_table_get).post(api_goalies_table_post))
         .route("/api/teams/table", get(api_teams_table_get).post(api_teams_table_post))
@@ -157,6 +158,27 @@ async fn api_goalies_card_defs(State(state): State<AppState>) -> Response {
 async fn api_teams_card_defs(State(state): State<AppState>) -> Response {
     let defs = card_defs::load_defs(&state.caches, &state.cfg, "teams").await;
     json_no_store(defs)
+}
+
+/// `GET /api/teams/contracts?team=ANA&season=20252026` — team cap summary,
+/// roster contract breakdown, and multi-year cap outlook.
+async fn api_teams_contracts(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let team = q(&params, "team", "").to_uppercase();
+    let season_ids = parse_season_ids(
+        params.get("season").map(String::as_str),
+        current_season_fallback(),
+    );
+    let data = contracts::load_team_contracts(
+        &state.caches,
+        state.sb.as_ref(),
+        &team,
+        &season_ids,
+    )
+    .await;
+    json_no_store((*data).clone())
 }
 
 // ── Skater metric engine (shared by card/table/scatter) ──────────

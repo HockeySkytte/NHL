@@ -98,6 +98,212 @@
   background: rgba(255, 255, 255, 0.05);
   font-weight: 700;
 }
+
+/* ── Contracts API Docs ── */
+.api-docs-wrap {
+  display: grid;
+  gap: 20px;
+}
+.api-lead {
+  font-size: 17px;
+  line-height: 1.7;
+  color: #dbe6f5;
+  margin: 0;
+}
+.api-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 980px) {
+  .api-meta-grid { grid-template-columns: 1fr; }
+}
+.api-info-card {
+  border: 1px solid #2b364b;
+  border-radius: 12px;
+  padding: 15px 16px;
+  background: rgba(10, 16, 28, 0.65);
+}
+.api-info-card h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: #8cc4ff;
+  font-weight: 850;
+}
+.api-info-card p, .api-info-card li {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #d6e2f2;
+  margin: 0;
+}
+.api-info-card ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+}
+.api-section-title {
+  margin: 10px 0 2px;
+  font-size: 22px;
+  color: #f4f8ff;
+  letter-spacing: 0.2px;
+  border-bottom: 1px solid #263248;
+  padding-bottom: 8px;
+}
+.api-endpoint {
+  border: 1px solid #2a364d;
+  border-radius: 12px;
+  background: rgba(11, 17, 30, 0.72);
+  overflow: hidden;
+}
+.api-endpoint-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: rgba(77, 163, 255, 0.09);
+  border-bottom: 1px solid #263248;
+}
+.api-endpoint-route {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.api-method {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: rgba(77, 163, 255, 0.22);
+  border: 1px solid rgba(77, 163, 255, 0.55);
+  color: #cbe5ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.6px;
+}
+.api-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 15px;
+  font-weight: 750;
+  color: #f4f8ff;
+  word-break: break-all;
+}
+.api-try-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(77, 163, 255, 0.45);
+  background: rgba(77, 163, 255, 0.14);
+  color: #e6f2ff;
+  font-size: 12px;
+  font-weight: 750;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.api-try-link:hover {
+  background: rgba(77, 163, 255, 0.26);
+  border-color: rgba(77, 163, 255, 0.75);
+}
+.api-endpoint-bd {
+  padding: 14px 16px 16px;
+  display: grid;
+  gap: 12px;
+}
+.api-endpoint-desc {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #dbe6f5;
+}
+.api-param-wrap {
+  overflow-x: auto;
+}
+.api-param-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.api-param-table th, .api-param-table td {
+  border: 1px solid #243046;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.api-param-table th {
+  background: rgba(255, 255, 255, 0.04);
+  color: #a8bbd6;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+.api-param-table td {
+  color: #e2ebf7;
+  line-height: 1.5;
+}
+.api-code-block {
+  position: relative;
+  margin: 0;
+  padding: 13px 15px;
+  border-radius: 10px;
+  border: 1px solid #243046;
+  background: #090e19;
+  color: #d9e9ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre;
+}
+.api-code-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #9bb1cf;
+  font-weight: 800;
+}
+.api-copy-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #2e3d57;
+  background: rgba(255, 255, 255, 0.05);
+  color: #dbe8f8;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.api-copy-btn:hover {
+  background: rgba(77, 163, 255, 0.2);
+  border-color: rgba(77, 163, 255, 0.55);
+}
+.api-inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(77, 163, 255, 0.13);
+  color: #d7ebff;
+}
+.api-examples-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 980px) {
+  .api-examples-grid { grid-template-columns: 1fr; }
+}
 @media (max-width: 980px) {
   .about-content {
     margin: 0 10px;
@@ -148,6 +354,338 @@
     </tbody>
   </table>
 </section>
+{% elif about_is_contracts_api %}
+<section class="about-page">
+  <h1 class="about-title">NHL Contracts API (v1)</h1>
+  <div class="about-content api-docs-wrap">
+    <p class="api-lead">
+      The Hockey-Statistics Contracts API is a free, public JSON REST API covering NHL player contracts, year-by-year salary breakdowns, team salary cap summaries, expiring free agents, and dead cap penalties from <strong>2010–11</strong> through <strong>2034–35</strong> (including projected future contract years). No API key or authentication is required, and CORS (<code class="api-inline-code">Access-Control-Allow-Origin: *</code>) is enabled for browser applications.
+    </p>
+
+    <div class="api-meta-grid">
+      <div class="api-info-card">
+        <h3>Base URL &amp; Format</h3>
+        <p><code class="api-inline-code">{{ api_base_url }}/api/v1/contracts</code></p>
+        <ul>
+          <li>All responses are UTF-8 JSON with <code class="api-inline-code">camelCase</code> field names and dollar amounts in USD.</li>
+          <li>Season parameters accept <code class="api-inline-code">20252026</code>, <code class="api-inline-code">2025-26</code>, <code class="api-inline-code">2025/26</code>, or <code class="api-inline-code">2025</code> (and comma-separated lists like <code class="api-inline-code">2024-25,2025-26</code>).</li>
+          <li>No silent fallbacks: if a player or team has no contract data for a requested season, <code class="api-inline-code">null</code> or an empty array is returned.</li>
+        </ul>
+      </div>
+
+      <div class="api-info-card">
+        <h3>Data Sources</h3>
+        <ul>
+          <li><strong>Primary source — NHLPA:</strong> Historical and active player compensation (AAV, total salary, base salary, signing bonuses, minor-league salary, and 1-way/2-way status) sourced primarily from <a href="https://www.nhlpa.com/compensation-by-team" target="_blank" rel="noopener" style="color:#8cc4ff;">NHLPA Compensation</a>.</li>
+          <li><strong>Supplemental sources:</strong> Official NHL.com &amp; club announcements (signing dates, terms, future extensions) plus public hockey reporting (ProHockeyRumors, Sportsnet, TSN, Daily Faceoff) for buyouts, retained salary, bonus overages, and recent signings.</li>
+          <li><strong>Derived fields:</strong> Standard CBA ELC/RFA/UFA status notes, projected future contract years, and team cap space (<code class="api-inline-code">capCeilingUsd − combinedOneWayPlusPenaltiesUsd</code>).</li>
+        </ul>
+      </div>
+
+      <div class="api-info-card">
+        <h3>Usage Limits &amp; Caching</h3>
+        <ul>
+          <li><strong>Rate limit:</strong> <strong>{{ contracts_api_rate_limit }} requests per minute</strong> per IP address (fixed 60-second window).</li>
+          <li>Every response returns <code class="api-inline-code">X-RateLimit-Limit</code>, <code class="api-inline-code">X-RateLimit-Remaining</code>, and <code class="api-inline-code">X-RateLimit-Reset</code> (Unix timestamp).</li>
+          <li>Exceeding the limit returns HTTP <code class="api-inline-code">429</code> with a <code class="api-inline-code">Retry-After</code> header.</li>
+          <li>Responses include <code class="api-inline-code">Cache-Control: public, max-age=300</code> — please cache locally when running batch scripts.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 class="api-section-title">Endpoints</h2>
+
+    <!-- 1. Index -->
+    <article class="api-endpoint">
+      <div class="api-endpoint-hd">
+        <div class="api-endpoint-route">
+          <span class="api-method">GET</span>
+          <span class="api-path">/api/v1/contracts</span>
+        </div>
+        <a class="api-try-link" href="/api/v1/contracts" target="_blank" rel="noopener">Try Live JSON ↗</a>
+      </div>
+      <div class="api-endpoint-bd">
+        <p class="api-endpoint-desc">Returns API metadata, current season ID, data coverage, rate-limit policy, data sources, and a directory of all endpoints.</p>
+      </div>
+    </article>
+
+    <!-- 2. Search / Filter Players -->
+    <article class="api-endpoint">
+      <div class="api-endpoint-hd">
+        <div class="api-endpoint-route">
+          <span class="api-method">GET</span>
+          <span class="api-path">/api/v1/contracts/players</span>
+        </div>
+        <a class="api-try-link" href="/api/v1/contracts/players?team=ANA&season=2025-26&limit=10" target="_blank" rel="noopener">Try Live JSON ↗</a>
+      </div>
+      <div class="api-endpoint-bd">
+        <p class="api-endpoint-desc">
+          Search and filter player contracts. When <code class="api-inline-code">season</code> is provided, returns season-level rows (with year-specific salary, base, and signing bonus) enriched with contract term/expiry metadata. When <code class="api-inline-code">season</code> is omitted, searches full contract records.
+        </p>
+        <div class="api-param-wrap">
+          <table class="api-param-table">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code class="api-inline-code">q</code> / <code class="api-inline-code">search</code></td><td>string</td><td>—</td><td>Case-insensitive player name search (e.g., <code class="api-inline-code">mcdavid</code>, <code class="api-inline-code">sennecke</code>).</td></tr>
+              <tr><td><code class="api-inline-code">team</code></td><td>string</td><td>—</td><td>3-letter NHL team code (e.g., <code class="api-inline-code">ANA</code>, <code class="api-inline-code">EDM</code>, <code class="api-inline-code">TOR</code>).</td></tr>
+              <tr><td><code class="api-inline-code">season</code></td><td>string</td><td>—</td><td>Single or comma-separated seasons (e.g., <code class="api-inline-code">2025-26</code> or <code class="api-inline-code">20242025,20252026</code>).</td></tr>
+              <tr><td><code class="api-inline-code">position</code></td><td>string</td><td>—</td><td><code class="api-inline-code">C</code>, <code class="api-inline-code">L</code>, <code class="api-inline-code">R</code>, <code class="api-inline-code">D</code>, <code class="api-inline-code">G</code>, or <code class="api-inline-code">F</code> (all forwards).</td></tr>
+              <tr><td><code class="api-inline-code">status</code></td><td>string</td><td>—</td><td>Contract signing status: <code class="api-inline-code">ELC</code>, <code class="api-inline-code">RFA</code>, or <code class="api-inline-code">UFA</code>.</td></tr>
+              <tr><td><code class="api-inline-code">expiry_status</code></td><td>string</td><td>—</td><td>Status upon expiry: <code class="api-inline-code">RFA</code> or <code class="api-inline-code">UFA</code>.</td></tr>
+              <tr><td><code class="api-inline-code">two_way</code></td><td>boolean</td><td>—</td><td><code class="api-inline-code">true</code> for two-way contracts, <code class="api-inline-code">false</code> for one-way contracts.</td></tr>
+              <tr><td><code class="api-inline-code">active</code></td><td>boolean</td><td>—</td><td><code class="api-inline-code">true</code> to restrict contract-level search to currently active deals.</td></tr>
+              <tr><td><code class="api-inline-code">min_aav</code> / <code class="api-inline-code">max_aav</code></td><td>number</td><td>—</td><td>Minimum / maximum AAV in USD (e.g., <code class="api-inline-code">min_aav=8000000</code>).</td></tr>
+              <tr><td><code class="api-inline-code">sort</code></td><td>string</td><td><code class="api-inline-code">aav_desc</code></td><td><code class="api-inline-code">aav_desc</code>, <code class="api-inline-code">aav_asc</code>, <code class="api-inline-code">name_asc</code>, <code class="api-inline-code">end_year_asc</code>, <code class="api-inline-code">end_year_desc</code>.</td></tr>
+              <tr><td><code class="api-inline-code">limit</code> / <code class="api-inline-code">offset</code></td><td>integer</td><td><code class="api-inline-code">50</code> / <code class="api-inline-code">0</code></td><td>Pagination controls (max <code class="api-inline-code">limit=200</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div class="api-code-hd"><span>Example Request</span><button class="api-copy-btn" type="button" data-copy-target="exPlayersReq">Copy</button></div>
+          <pre id="exPlayersReq" class="api-code-block">curl "{{ api_base_url }}/api/v1/contracts/players?team=ANA&amp;season=2025-26&amp;two_way=false&amp;limit=10"</pre>
+        </div>
+      </div>
+    </article>
+
+    <!-- 3. Single Player Detail -->
+    <article class="api-endpoint">
+      <div class="api-endpoint-hd">
+        <div class="api-endpoint-route">
+          <span class="api-method">GET</span>
+          <span class="api-path">/api/v1/contracts/players/{player_id}</span>
+        </div>
+        <a class="api-try-link" href="/api/v1/contracts/players/8484762?season=2025-26" target="_blank" rel="noopener">Try Live JSON ↗</a>
+      </div>
+      <div class="api-endpoint-bd">
+        <p class="api-endpoint-desc">
+          Returns full career contract history and year-by-year compensation for a player using their official NHL player ID. Pass <code class="api-inline-code">?season=2025-26</code> for a single-season summary, or comma-separated seasons (e.g., <code class="api-inline-code">?season=2022-23,2023-24</code>) to get an averaged multi-season summary alongside the matched rows.
+        </p>
+        <div class="api-param-wrap">
+          <table class="api-param-table">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code class="api-inline-code">player_id</code> (path)</td><td>integer</td><td>required</td><td>Official 7-digit NHL player ID (e.g., <code class="api-inline-code">8478402</code> for Connor McDavid, <code class="api-inline-code">8484762</code> for Beckett Sennecke).</td></tr>
+              <tr><td><code class="api-inline-code">season</code> (query)</td><td>string</td><td>all seasons</td><td>Optional single season or comma-separated seasons; adds a <code class="api-inline-code">summary</code> object (<code class="api-inline-code">mode: "single"</code> or <code class="api-inline-code">"average"</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div class="api-code-hd"><span>Example Response (Single Season)</span></div>
+          <pre class="api-code-block">{
+  "playerId": 8484762,
+  "playerName": "Beckett Sennecke",
+  "position": "R",
+  "seasonsRequested": [20252026],
+  "summary": {
+    "mode": "single",
+    "season": "2025-26",
+    "team": "ANA",
+    "aavUsd": 956250,
+    "totalSalaryUsd": 975000,
+    "baseSalaryUsd": 877500,
+    "signingBonusUsd": 97500,
+    "twoWay": true,
+    "termYears": 3,
+    "startSeason": "2024-25",
+    "endSeason": "2026-27",
+    "expiryYear": 2027,
+    "contractStatus": "ELC",
+    "expiryStatus": "RFA"
+  },
+  "contracts": [ ... ],
+  "years": [ ... ]
+}</pre>
+        </div>
+      </div>
+    </article>
+
+    <!-- 4. All Teams Cap Overview -->
+    <article class="api-endpoint">
+      <div class="api-endpoint-hd">
+        <div class="api-endpoint-route">
+          <span class="api-method">GET</span>
+          <span class="api-path">/api/v1/contracts/teams</span>
+        </div>
+        <a class="api-try-link" href="/api/v1/contracts/teams?season=2025-26" target="_blank" rel="noopener">Try Live JSON ↗</a>
+      </div>
+      <div class="api-endpoint-bd">
+        <p class="api-endpoint-desc">
+          Returns the league-wide team salary cap table for a season — including cap ceiling, cap floor, 1-way AAV, total AAV, cap penalties, projected cap space, and contract counts (1-way / 2-way) for every NHL team.
+        </p>
+        <div class="api-param-wrap">
+          <table class="api-param-table">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code class="api-inline-code">season</code></td><td>string</td><td>current season</td><td>Season in any format (e.g., <code class="api-inline-code">2025-26</code>, <code class="api-inline-code">2026-27</code>, <code class="api-inline-code">20252026</code>).</td></tr>
+              <tr><td><code class="api-inline-code">sort</code></td><td>string</td><td><code class="api-inline-code">cap_space_desc</code></td><td><code class="api-inline-code">cap_space_desc</code>, <code class="api-inline-code">cap_space_asc</code>, <code class="api-inline-code">cap_hit_desc</code>, <code class="api-inline-code">cap_hit_asc</code>, <code class="api-inline-code">total_aav_desc</code>, <code class="api-inline-code">team_asc</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </article>
+
+    <!-- 5. Single Team Cap & Roster -->
+    <article class="api-endpoint">
+      <div class="api-endpoint-hd">
+        <div class="api-endpoint-route">
+          <span class="api-method">GET</span>
+          <span class="api-path">/api/v1/contracts/teams/{team}</span>
+        </div>
+        <a class="api-try-link" href="/api/v1/contracts/teams/ANA?season=2025-26" target="_blank" rel="noopener">Try Live JSON ↗</a>
+      </div>
+      <div class="api-endpoint-bd">
+        <p class="api-endpoint-desc">
+          Returns a single team's cap <code class="api-inline-code">summary</code> (including any <code class="api-inline-code">penaltiesDetail</code>), full player <code class="api-inline-code">roster</code> sorted by AAV, and multi-year future cap <code class="api-inline-code">outlook</code>. Passing multiple comma-separated seasons returns averaged cap and player values across the matched seasons.
+        </p>
+        <div class="api-param-wrap">
+          <table class="api-param-table">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code class="api-inline-code">team</code> (path)</td><td>string</td><td>required</td><td>3-letter NHL team abbreviation (e.g., <code class="api-inline-code">ANA</code>, <code class="api-inline-code">BUF</code>, <code class="api-inline-code">TOR</code>, <code class="api-inline-code">UTA</code>).</td></tr>
+              <tr><td><code class="api-inline-code">season</code> (query)</td><td>string</td><td>current season</td><td>Single season or comma-separated seasons (e.g., <code class="api-inline-code">2024-25,2025-26</code>).</td></tr>
+              <tr><td><code class="api-inline-code">position</code> (query)</td><td>string</td><td>all</td><td>Filter <code class="api-inline-code">roster</code> by <code class="api-inline-code">F</code>, <code class="api-inline-code">D</code>, <code class="api-inline-code">G</code>, <code class="api-inline-code">C</code>, <code class="api-inline-code">L</code>, or <code class="api-inline-code">R</code>.</td></tr>
+              <tr><td><code class="api-inline-code">two_way</code> (query)</td><td>boolean</td><td>all</td><td>Filter <code class="api-inline-code">roster</code> to <code class="api-inline-code">true</code> (2-way) or <code class="api-inline-code">false</code> (1-way).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </article>
+
+    <!-- 6. Expiring Contracts -->
+    <article class="api-endpoint">
+      <div class="api-endpoint-hd">
+        <div class="api-endpoint-route">
+          <span class="api-method">GET</span>
+          <span class="api-path">/api/v1/contracts/expiring</span>
+        </div>
+        <a class="api-try-link" href="/api/v1/contracts/expiring?year=2026&expiry_status=UFA&limit=20" target="_blank" rel="noopener">Try Live JSON ↗</a>
+      </div>
+      <div class="api-endpoint-bd">
+        <p class="api-endpoint-desc">
+          Lists contracts expiring in a given offseason calendar year (sorted by AAV descending) — ideal for tracking upcoming UFA and RFA classes.
+        </p>
+        <div class="api-param-wrap">
+          <table class="api-param-table">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code class="api-inline-code">year</code></td><td>integer</td><td>current offseason</td><td>4-digit calendar expiry year (e.g., <code class="api-inline-code">2026</code> = contracts ending after 2025–26; <code class="api-inline-code">2027</code> = after 2026–27).</td></tr>
+              <tr><td><code class="api-inline-code">expiry_status</code></td><td>string</td><td>all</td><td><code class="api-inline-code">UFA</code> or <code class="api-inline-code">RFA</code>.</td></tr>
+              <tr><td><code class="api-inline-code">team</code></td><td>string</td><td>all</td><td>Filter by signing team abbreviation.</td></tr>
+              <tr><td><code class="api-inline-code">position</code></td><td>string</td><td>all</td><td><code class="api-inline-code">F</code>, <code class="api-inline-code">D</code>, <code class="api-inline-code">G</code>, <code class="api-inline-code">C</code>, <code class="api-inline-code">L</code>, or <code class="api-inline-code">R</code>.</td></tr>
+              <tr><td><code class="api-inline-code">min_aav</code></td><td>number</td><td>—</td><td>Minimum AAV in USD.</td></tr>
+              <tr><td><code class="api-inline-code">limit</code> / <code class="api-inline-code">offset</code></td><td>integer</td><td><code class="api-inline-code">50</code> / <code class="api-inline-code">0</code></td><td>Pagination controls (max <code class="api-inline-code">limit=200</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </article>
+
+    <!-- 7. Cap Penalties -->
+    <article class="api-endpoint">
+      <div class="api-endpoint-hd">
+        <div class="api-endpoint-route">
+          <span class="api-method">GET</span>
+          <span class="api-path">/api/v1/contracts/penalties</span>
+        </div>
+        <a class="api-try-link" href="/api/v1/contracts/penalties?season=2026-27" target="_blank" rel="noopener">Try Live JSON ↗</a>
+      </div>
+      <div class="api-endpoint-bd">
+        <p class="api-endpoint-desc">
+          Returns teams carrying dead cap charges (buyouts, retained salary, or performance bonus overages) for a given season, including itemized <code class="api-inline-code">penaltiesDetail</code> records.
+        </p>
+        <div class="api-param-wrap">
+          <table class="api-param-table">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code class="api-inline-code">season</code></td><td>string</td><td>current season</td><td>Season in any format (e.g., <code class="api-inline-code">2026-27</code>).</td></tr>
+              <tr><td><code class="api-inline-code">team</code></td><td>string</td><td>all teams</td><td>Optional 3-letter team code (e.g., <code class="api-inline-code">BUF</code>, <code class="api-inline-code">BOS</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </article>
+
+    <h2 class="api-section-title">Usage Examples</h2>
+    <div class="api-examples-grid">
+      <div>
+        <div class="api-code-hd"><span>Python (requests)</span><button class="api-copy-btn" type="button" data-copy-target="exPython">Copy</button></div>
+        <pre id="exPython" class="api-code-block">import requests
+
+BASE = "{{ api_base_url }}/api/v1/contracts"
+
+# 1. Look up a player's multi-season average cap hit
+r = requests.get(f"{BASE}/players/8477492", params={"season": "2022-23,2023-24"})
+print(r.json()["summary"])
+
+# 2. Fetch a team's cap summary &amp; 1-way roster
+team = requests.get(f"{BASE}/teams/ANA", params={"season": "2025-26", "two_way": "false"}).json()
+print("Cap Space:", team["summary"]["projectedCapSpaceUsd"])
+for p in team["roster"][:5]:
+    print(f"{p['playerName']}: ${p['aavUsd']:,.0f}")</pre>
+      </div>
+
+      <div>
+        <div class="api-code-hd"><span>JavaScript (fetch)</span><button class="api-copy-btn" type="button" data-copy-target="exJs">Copy</button></div>
+        <pre id="exJs" class="api-code-block">const BASE = "{{ api_base_url }}/api/v1/contracts";
+
+// League-wide cap space leaderboard for 2025-26
+const res = await fetch(`${BASE}/teams?season=2025-26&amp;sort=cap_space_desc`);
+const { data } = await res.json();
+console.table(data.slice(0, 5).map(t =&gt; ({
+  team: t.team,
+  capHit: t.combinedOneWayPlusPenaltiesUsd,
+  capSpace: t.projectedCapSpaceUsd,
+})));</pre>
+      </div>
+
+      <div>
+        <div class="api-code-hd"><span>curl</span><button class="api-copy-btn" type="button" data-copy-target="exCurl">Copy</button></div>
+        <pre id="exCurl" class="api-code-block"># Top 10 pending 2026 UFAs by AAV
+curl -s "{{ api_base_url }}/api/v1/contracts/expiring?year=2026&amp;expiry_status=UFA&amp;limit=10" | jq '.data[] | {playerName, signingTeam, aavUsd}'
+
+# Search players by name
+curl -s "{{ api_base_url }}/api/v1/contracts/players?q=sennecke&amp;season=2025-26" | jq .</pre>
+      </div>
+
+      <div>
+        <div class="api-code-hd"><span>R (jsonlite)</span><button class="api-copy-btn" type="button" data-copy-target="exR">Copy</button></div>
+        <pre id="exR" class="api-code-block">library(jsonlite)
+
+url &lt;- "{{ api_base_url }}/api/v1/contracts/teams?season=2025-26"
+cap_tbl &lt;- fromJSON(url)$data
+head(cap_tbl[, c("team", "combinedOneWayPlusPenaltiesUsd", "projectedCapSpaceUsd")])</pre>
+      </div>
+    </div>
+
+    <h2 class="api-section-title">Error Responses</h2>
+    <div class="api-param-wrap">
+      <table class="api-param-table">
+        <thead><tr><th>HTTP Status</th><th>Error Code</th><th>When It Occurs</th></tr></thead>
+        <tbody>
+          <tr><td><code class="api-inline-code">400</code></td><td><code class="api-inline-code">invalid_season</code> / <code class="api-inline-code">invalid_team</code> / <code class="api-inline-code">invalid_player_id</code> / <code class="api-inline-code">invalid_year</code></td><td>Malformed query or path parameter.</td></tr>
+          <tr><td><code class="api-inline-code">404</code></td><td><code class="api-inline-code">not_found</code></td><td>No contract records exist for the requested <code class="api-inline-code">player_id</code>.</td></tr>
+          <tr><td><code class="api-inline-code">429</code></td><td><code class="api-inline-code">rate_limit_exceeded</code></td><td>Exceeded {{ contracts_api_rate_limit }} requests/minute per IP; check <code class="api-inline-code">Retry-After</code>.</td></tr>
+          <tr><td><code class="api-inline-code">503</code></td><td><code class="api-inline-code">service_unavailable</code></td><td>Upstream database temporarily unavailable.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+<script>
+document.querySelectorAll('.api-copy-btn[data-copy-target]').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const id = btn.getAttribute('data-copy-target');
+    const el = id ? document.getElementById(id) : null;
+    if (!el) return;
+    try {
+      await navigator.clipboard.writeText(el.textContent || '');
+      const prev = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = prev; }, 1400);
+    } catch (_) { /* ignore */ }
+  });
+});
+</script>
 {% else %}
 <section class="about-page">
   <h1 class="about-title">{{ about_section_title }}</h1>
@@ -159,7 +697,7 @@
         <div class="about-image-wrap">
           {% if segment.exists %}
             <img class="about-image" src="{{ segment.url }}" alt="{{ segment.token }}" loading="lazy">
-          {% else %}
+          {% else %}
             <div class="about-image-missing">Missing image for {{ segment.token }}. Add {{ segment.filename }} to app/static/about.</div>
           {% endif %}
         </div>

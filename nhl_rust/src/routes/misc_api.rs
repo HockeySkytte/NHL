@@ -10,7 +10,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
-use crate::data::{lineups, odds, player_projections, rosters, teamseasonstats};
+use crate::data::{contracts, lineups, odds, player_projections, rosters, teamseasonstats};
 use crate::nhl::client::{get_bytes, get_json, API_STATS, API_WEB};
 use crate::nhl::stats_rest::summary_rows;
 use crate::state::AppState;
@@ -459,7 +459,15 @@ async fn build_bios_fallback_payload(
     Some(payload)
 }
 
-/// `GET /api/player/<player_id>/landing` — port of `api_player_landing`.
+fn attach_contract(mut payload: Value, contract: Option<Value>) -> Value {
+    if let (Some(obj), Some(c)) = (payload.as_object_mut(), contract) {
+        obj.insert("contract".into(), c);
+    }
+    payload
+}
+
+/// `GET /api/player/<player_id>/landing` — port of `api_player_landing`,
+/// enriched with season-specific (or multi-season averaged) contract info.
 async fn api_player_landing(
     State(state): State<AppState>,
     Path(player_id): Path<i64>,
@@ -469,16 +477,27 @@ async fn api_player_landing(
     if pid <= 0 {
         return json_err(StatusCode::BAD_REQUEST, json!({ "error": "invalid_player_id" }));
     }
-    let season_q = params.get("season").map(String::as_str).unwrap_or("");
+    let season_raw = params.get("season").map(String::as_str);
+    let season_ids = parse_season_ids(season_raw, current_season_id(None));
+    let primary_season = primary_season_id(&season_ids, current_season_id(None)).to_string();
     let team_q = params.get("team").map(String::as_str).unwrap_or("").to_uppercase();
 
-    // Serve fresh cache.
+    // Serve fresh NHL landing cache, still enriching with season-scoped contract.
     if let Some(cached) = state.caches.player_landing.get(&pid) {
-        return json_no_store(cached);
+        let contract =
+            contracts::load_player_contract_summary(&state.caches, state.sb.as_ref(), pid, &season_ids)
+                .await;
+        return json_no_store(attach_contract(cached, contract));
     }
 
     // Stale-cache / bios fallbacks.
-    async fn fallback(state: &AppState, pid: i64, season_q: &str, team_q: &str) -> Option<Response> {
+    async fn fallback(
+        state: &AppState,
+        pid: i64,
+        primary_season: &str,
+        team_q: &str,
+        contract: Option<Value>,
+    ) -> Option<Response> {
         if let Some(stale) = state.caches.player_landing.get(&pid) {
             let mut payload = stale.clone();
             if let Some(obj) = payload.as_object_mut() {
@@ -487,34 +506,38 @@ async fn api_player_landing(
                     obj.insert("fallbackSource".into(), json!("stale-cache"));
                 }
             }
-            return Some(json_no_store(payload));
+            return Some(json_no_store(attach_contract(payload, contract)));
         }
         let bios_payload =
-            build_bios_fallback_payload(state, pid, Some(season_q), Some(team_q)).await;
-        if bios_payload.is_some() {
-            return Some(json_no_store(bios_payload.unwrap()));
+            build_bios_fallback_payload(state, pid, Some(primary_season), Some(team_q)).await;
+        if let Some(bp) = bios_payload {
+            return Some(json_no_store(attach_contract(bp, contract)));
         }
         None
     }
 
     let url = format!("{API_WEB}/v1/player/{pid}/landing");
-    let data = match get_json(&state.http, &url, 8).await {
+    let (landing_res, contract) = tokio::join!(
+        get_json(&state.http, &url, 8),
+        contracts::load_player_contract_summary(&state.caches, state.sb.as_ref(), pid, &season_ids),
+    );
+    let data = match landing_res {
         Ok(data) => data,
         Err(e) => {
-            if let Some(fb) = fallback(&state, pid, season_q, &team_q).await {
+            if let Some(fb) = fallback(&state, pid, &primary_season, &team_q, contract).await {
                 return fb;
             }
             return json_err(StatusCode::BAD_GATEWAY, json!({ "error": upstream_error_code(&e) }));
         }
     };
     if !data.is_object() {
-        if let Some(fb) = fallback(&state, pid, season_q, &team_q).await {
+        if let Some(fb) = fallback(&state, pid, &primary_season, &team_q, contract).await {
             return fb;
         }
         return json_err(StatusCode::BAD_GATEWAY, json!({ "error": "invalid_upstream" }));
     }
     state.caches.player_landing.insert(pid, data.clone());
-    json_no_store(data)
+    json_no_store(attach_contract(data, contract))
 }
 
 fn upstream_error_code(e: &str) -> String {

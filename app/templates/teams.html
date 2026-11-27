@@ -349,6 +349,34 @@
     .proj-table th{ font-size:10px; padding:8px 6px; }
     .proj-table td{ font-size:11px; padding:6px 6px; }
   }
+
+  /* ── Contracts Tab ── */
+  .contracts-kpi-grid{ display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:12px; margin-bottom:16px; }
+  @media (max-width: 1200px){ .contracts-kpi-grid{ grid-template-columns:repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 640px){ .contracts-kpi-grid{ grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+  .contracts-kpi{ background:linear-gradient(180deg, rgba(20,27,42,0.88), rgba(11,16,26,0.94)); border:1px solid #232a3a; border-radius:14px; padding:12px 14px; box-shadow:0 10px 24px rgba(0,0,0,0.22); min-width:0; }
+  .contracts-kpi-lbl{ font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--text-dim); font-weight:850; }
+  .contracts-kpi-val{ margin-top:6px; font-size:24px; font-weight:900; color:rgba(255,255,255,0.96); font-variant-numeric:tabular-nums; line-height:1.1; }
+  .contracts-kpi-val.pos{ color:#5eead4; }
+  .contracts-kpi-val.neg{ color:#ff8080; }
+  .contracts-kpi-sub{ margin-top:5px; font-size:11px; color:var(--text-dim); font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .contracts-section-hd{ margin:18px 0 10px; font-size:15px; letter-spacing:.8px; text-transform:uppercase; color:rgba(255,255,255,0.94); font-weight:850; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .contracts-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .contracts-filter-group{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .contracts-search{ min-width:200px; max-width:280px; padding:8px 12px; border-radius:10px; border:1px solid #2a3142; background:#0f1522; color:var(--text); font-size:13px; font-weight:600; }
+  .contract-pill{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.9); }
+  .contract-pill.elc{ background:rgba(77,163,255,0.18); border-color:rgba(77,163,255,0.45); color:#b8dcff; }
+  .contract-pill.rfa{ background:rgba(250,204,21,0.15); border-color:rgba(250,204,21,0.4); color:#fde68a; }
+  .contract-pill.ufa{ background:rgba(148,163,184,0.16); border-color:rgba(148,163,184,0.35); color:#dbe4f0; }
+  .contract-pill.two-way{ background:rgba(167,139,250,0.15); border-color:rgba(167,139,250,0.38); color:#ddd6fe; }
+  .contract-pill.proj{ background:rgba(94,234,212,0.12); border-color:rgba(94,234,212,0.35); color:#99f6e4; }
+  .contract-player-link{ display:inline-flex; align-items:center; gap:9px; color:var(--text); text-decoration:none; font-weight:700; }
+  .contract-player-link:hover{ color:var(--accent); text-decoration:underline; }
+  .contract-mug{ width:26px; height:26px; border-radius:50%; object-fit:cover; object-position:center top; background:linear-gradient(180deg, #232f45, #141d2e); border:1px solid rgba(255,255,255,0.14); flex:0 0 auto; }
+  .contracts-table-wrap{ max-height:66vh; }
+  .contracts-num-pos{ color:#5eead4; font-weight:750; }
+  .contracts-num-neg{ color:#ff8080; font-weight:750; }
+  .contracts-totals-row td{ background:rgba(255,255,255,0.05) !important; font-weight:850; border-top:1px solid #2b3648; }
 </style>
 {% endblock %}
 
@@ -373,6 +401,7 @@
       <button id="tabEdge" class="subtab-btn" type="button" role="tab" aria-selected="false">Edge</button>
       <button id="tabProjections" class="subtab-btn" type="button" role="tab" aria-selected="false">Projections</button>
       <button id="tabTable" class="subtab-btn" type="button" role="tab" aria-selected="false">Table View</button>
+      <button id="tabContracts" class="subtab-btn" type="button" role="tab" aria-selected="false">Contracts</button>
     </div>
 
     <div id="tabPanelCard" class="panel" role="tabpanel">
@@ -499,6 +528,17 @@
         </div>
       </div>
     </div>
+
+    <div id="tabPanelContracts" class="panel" role="tabpanel" style="display:none;">
+      <div class="card-panel-hd" style="padding-bottom: 8px;">
+        <div id="contractsSlicerSummary" class="card-panel-meta"></div>
+        <div class="panel-actions">
+          <button id="btnReloadContracts" class="config-btn" type="button">Reload</button>
+          <button id="btnExportContractsCsv" class="config-btn" type="button">Export CSV</button>
+        </div>
+      </div>
+      <div id="contractsPanelInner" class="team-empty"></div>
+    </div>
     <div id="teamMsg" class="team-empty" style="margin-top:10px; display:none;"></div>
   </div>
 </div>
@@ -563,13 +603,16 @@ const tabCharts = document.getElementById('tabCharts');
 const tabEdge = document.getElementById('tabEdge');
 const tabProjections = document.getElementById('tabProjections');
 const tabTable = document.getElementById('tabTable');
+const tabContracts = document.getElementById('tabContracts');
 const tabPanelCard = document.getElementById('tabPanelCard');
 const tabPanelCharts = document.getElementById('tabPanelCharts');
 const tabPanelEdge = document.getElementById('tabPanelEdge');
 const tabPanelProjections = document.getElementById('tabPanelProjections');
 const tabPanelTable = document.getElementById('tabPanelTable');
+const tabPanelContracts = document.getElementById('tabPanelContracts');
 
 const edgePanelInner = document.getElementById('edgePanelInner');
+const contractsPanelInner = document.getElementById('contractsPanelInner');
 
 const cardPanelInner = document.getElementById('cardPanelInner');
 const cardSlicerSummary = document.getElementById('cardSlicerSummary');
@@ -577,6 +620,9 @@ const chartsSlicerSummary = document.getElementById('chartsSlicerSummary');
 const edgeSlicerSummary = document.getElementById('edgeSlicerSummary');
 const projSlicerSummary = document.getElementById('projSlicerSummary');
 const tableSlicerSummary = document.getElementById('tableSlicerSummary');
+const contractsSlicerSummary = document.getElementById('contractsSlicerSummary');
+const btnReloadContracts = document.getElementById('btnReloadContracts');
+const btnExportContractsCsv = document.getElementById('btnExportContractsCsv');
 
 const cardScope = document.getElementById('cardScope');
 const cardScopeButtons = document.getElementById('cardScopeButtons');
@@ -1598,6 +1644,31 @@ try{
   btns.forEach(b=> b.addEventListener('click', ()=>{ setCardScope(b.getAttribute('data-scope')); reloadAll(); }));
 }catch(_){/*noop*/}
 
+let __teamContractsData = null;
+let __teamContractsKey = '';
+let __teamContractsReqVer = 0;
+const __teamContractsCache = new Map();
+const __contractsUiState = { pos: 'all', way: 'all', search: '', sortKey: 'aavUsd', sortDir: 'desc' };
+
+function __fmtUsdCompact(val){
+  const n = Number(val);
+  if(!Number.isFinite(n)) return '—';
+  const sign = n < 0 ? '-' : '';
+  const abs = Math.abs(n);
+  if(abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}M`;
+  if(abs >= 1e3) return `${sign}$${Math.round(abs / 1e3)}K`;
+  return `${sign}$${Math.round(abs).toLocaleString('en-US')}`;
+}
+function __fmtUsdFull(val){
+  const n = Number(val);
+  if(!Number.isFinite(n)) return '—';
+  const sign = n < 0 ? '-' : '';
+  return `${sign}$${Math.round(Math.abs(n)).toLocaleString('en-US')}`;
+}
+function __escHtml(s){
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function updateHeader(){
   __teamsApplyAccent();
   const ab = String(teamSelect?.value||'').toUpperCase();
@@ -1605,18 +1676,50 @@ function updateHeader(){
   if(teamName) teamName.textContent = nm;
   if(teamImg) teamImg.src = teamLogoUrl(ab) || '';
 
-  const season = String(seasonSelect?.value||'').trim();
+  const seasonLabel = (typeof window.formatSeasonSelectionLabel === 'function')
+    ? window.formatSeasonSelectionLabel()
+    : String(seasonSelect?.value||'').trim();
   const scope = String(cardScope?.value||'season');
   const seasonState = String(cardSeasonState?.value||'regular');
   const rates = String(cardRates?.value||'Totals');
   const parts = [
-    ['Team', ab],
-    ['Season', season || '—'],
-    ['Scope', scope],
-    ['State', seasonState],
-    ['Rates', rates],
+    ['Team', ab, ''],
+    ['Season', seasonLabel || '—', ''],
+    ['Scope', scope, ''],
+    ['State', seasonState, ''],
+    ['Rates', rates, ''],
   ];
-  if(teamInfo) teamInfo.innerHTML = parts.map(([k,v])=>`<div class="kv"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+
+  // Append team contract summary to the header when loaded for the current team/season.
+  const seasonQuery = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : '') || String(seasonSelect?.value||'').trim();
+  const expectedKey = `${ab}|${seasonQuery}`;
+  const cData = (__teamContractsKey === expectedKey) ? __teamContractsData : __teamContractsCache.get(expectedKey);
+  const sum = cData?.summary;
+  if(sum && typeof sum === 'object'){
+    const isAvg = cData?.mode === 'average';
+    const pfx = isAvg ? 'Avg ' : '';
+    const capHit = sum.combinedOneWayPlusPenaltiesUsd ?? sum.oneWayAavUsd ?? sum.totalAavUsd;
+    if(capHit != null){
+      const tip = `1-Way AAV: ${__fmtUsdFull(sum.oneWayAavUsd)} • Penalties: ${__fmtUsdFull(sum.totalCapPenaltiesUsd)} • Total AAV (All): ${__fmtUsdFull(sum.totalAavUsd)}`;
+      parts.push([`${pfx}Cap Hit`, __fmtUsdCompact(capHit), tip]);
+    }
+    if(sum.projectedCapSpaceUsd != null){
+      const tip = `Cap Ceiling: ${__fmtUsdFull(sum.capCeilingUsd)} • Cap Space: ${__fmtUsdFull(sum.projectedCapSpaceUsd)}`;
+      parts.push([`${pfx}Cap Space`, __fmtUsdCompact(sum.projectedCapSpaceUsd), tip]);
+    }
+    if(sum.contractsCount != null){
+      const cnt = Math.round(Number(sum.contractsCount));
+      const oneW = sum.oneWayContractsCount != null ? Math.round(Number(sum.oneWayContractsCount)) : null;
+      const twoW = sum.twoWayContractsCount != null ? Math.round(Number(sum.twoWayContractsCount)) : null;
+      const val = (oneW != null && twoW != null) ? `${cnt} (${oneW} 1W / ${twoW} 2W)` : `${cnt}`;
+      parts.push([`${pfx}Contracts`, val, `Total: ${cnt} • 1-Way: ${oneW ?? '—'} • 2-Way: ${twoW ?? '—'}`]);
+    }
+  }
+
+  if(teamInfo) teamInfo.innerHTML = parts.map(([k,v,tip])=>{
+    const titleAttr = tip ? ` title="${__escHtml(tip)}"` : '';
+    return `<div class="kv"${titleAttr}><div class="k">${__escHtml(k)}</div><div class="v">${__escHtml(v)}</div></div>`;
+  }).join('');
 }
 
 function updateSlicerSummaries(){
@@ -1634,6 +1737,11 @@ function updateSlicerSummaries(){
   if(edgeSlicerSummary) edgeSlicerSummary.textContent = text;
   if(projSlicerSummary) projSlicerSummary.textContent = text;
   if(tableSlicerSummary) tableSlicerSummary.textContent = text;
+  if(contractsSlicerSummary){
+    const ab = String(teamSelect?.value||'').toUpperCase();
+    const nm = teamNameByAbbrev[ab] || ab || '';
+    contractsSlicerSummary.textContent = [nm, season || '—', 'Contracts & Salary Cap'].filter(Boolean).join(' - ');
+  }
   updateHeader();
 }
 
@@ -1642,7 +1750,7 @@ function saveTeamsState(){
     const state = {
       team: String(teamSelect?.value||''),
       season: String(seasonSelect?.value||''),
-      activeTab: (tabCard?.classList.contains('active') ? 'card' : (tabCharts?.classList.contains('active') ? 'charts' : (tabEdge?.classList.contains('active') ? 'edge' : (tabProjections?.classList.contains('active') ? 'projections' : 'table')))),
+      activeTab: (tabCard?.classList.contains('active') ? 'card' : (tabCharts?.classList.contains('active') ? 'charts' : (tabEdge?.classList.contains('active') ? 'edge' : (tabProjections?.classList.contains('active') ? 'projections' : (tabContracts?.classList.contains('active') ? 'contracts' : 'table'))))),
       scope: String(cardScope?.value||'season'),
       seasonState: String(cardSeasonState?.value||'regular'),
       strengthState: String(cardStrengthState?.value||'5v5'),
@@ -1699,30 +1807,35 @@ function setActiveTab(which){
   const isEdge = t === 'edge';
   const isProj = t === 'projections';
   const isTable = t === 'table';
+  const isContracts = t === 'contracts';
 
   tabCard?.classList.toggle('active', isCard);
   tabCharts?.classList.toggle('active', isCharts);
   tabEdge?.classList.toggle('active', isEdge);
   tabProjections?.classList.toggle('active', isProj);
   tabTable?.classList.toggle('active', isTable);
+  tabContracts?.classList.toggle('active', isContracts);
 
   tabCard?.setAttribute('aria-selected', isCard ? 'true':'false');
   tabCharts?.setAttribute('aria-selected', isCharts ? 'true':'false');
   tabEdge?.setAttribute('aria-selected', isEdge ? 'true':'false');
   tabProjections?.setAttribute('aria-selected', isProj ? 'true':'false');
   tabTable?.setAttribute('aria-selected', isTable ? 'true':'false');
+  tabContracts?.setAttribute('aria-selected', isContracts ? 'true':'false');
 
   if(tabPanelCard) tabPanelCard.style.display = isCard ? '' : 'none';
   if(tabPanelCharts) tabPanelCharts.style.display = isCharts ? '' : 'none';
   if(tabPanelEdge) tabPanelEdge.style.display = isEdge ? '' : 'none';
   if(tabPanelProjections) tabPanelProjections.style.display = isProj ? '' : 'none';
   if(tabPanelTable) tabPanelTable.style.display = isTable ? '' : 'none';
+  if(tabPanelContracts) tabPanelContracts.style.display = isContracts ? '' : 'none';
 
   if(isCard) loadCardPanel();
   if(isCharts) renderCharts();
   if(isEdge) loadEdgePanel();
   if(isProj) renderProjections();
   if(isTable) loadTablePanel();
+  if(isContracts) loadContractsPanel();
 
   // Re-evaluate KPI visibility on every tab switch so it hides outside Card.
   __renderTeamsProjectionKpi(__teamsProjectionEnabled, __teamsProjectionRank);
@@ -1736,7 +1849,331 @@ try{
   tabEdge?.addEventListener('click', ()=> setActiveTab('edge'));
   tabProjections?.addEventListener('click', ()=> setActiveTab('projections'));
   tabTable?.addEventListener('click', ()=> setActiveTab('table'));
+  tabContracts?.addEventListener('click', ()=> setActiveTab('contracts'));
 }catch(_){/*noop*/}
+
+async function fetchTeamContracts(force){
+  const team = String(teamSelect?.value||'').trim().toUpperCase();
+  const season = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : '') || String(seasonSelect?.value||'').trim();
+  if(!team || !season) return null;
+  const key = `${team}|${season}`;
+  if(!force && __teamContractsCache.has(key)){
+    __teamContractsKey = key;
+    __teamContractsData = __teamContractsCache.get(key);
+    updateHeader();
+    return __teamContractsData;
+  }
+  const reqVer = ++__teamContractsReqVer;
+  try{
+    const r = await fetch(`/api/teams/contracts?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}`, { cache: 'no-store' });
+    if(!r.ok) return null;
+    const data = await r.json();
+    if(reqVer !== __teamContractsReqVer) return null;
+    __teamContractsCache.set(key, data);
+    __teamContractsKey = key;
+    __teamContractsData = data;
+    updateHeader();
+    return data;
+  }catch(_){
+    return null;
+  }
+}
+
+function __filterAndSortContractsRoster(rows){
+  const pos = __contractsUiState.pos;
+  const way = __contractsUiState.way;
+  const q = String(__contractsUiState.search || '').trim().toLowerCase();
+  const filtered = (Array.isArray(rows) ? rows : []).filter(r => {
+    if(pos !== 'all' && String(r.posGroup || '') !== pos) return false;
+    if(way === '1w' && r.twoWay) return false;
+    if(way === '2w' && !r.twoWay) return false;
+    if(q && !String(r.playerName || '').toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const sk = __contractsUiState.sortKey;
+  const dir = __contractsUiState.sortDir === 'asc' ? 1 : -1;
+  filtered.sort((a, b) => {
+    if(sk === 'playerName' || sk === 'position' || sk === 'contractStatus' || sk === 'expiryStatus'){
+      return String(a[sk] || '').localeCompare(String(b[sk] || '')) * dir;
+    }
+    if(sk === 'twoWay'){
+      return ((a.twoWay ? 1 : 0) - (b.twoWay ? 1 : 0)) * dir;
+    }
+    const av = Number(a[sk] ?? -Infinity);
+    const bv = Number(b[sk] ?? -Infinity);
+    if(av === bv) return String(a.playerName || '').localeCompare(String(b.playerName || ''));
+    return (av - bv) * dir;
+  });
+  return filtered;
+}
+
+function renderContractsPanel(data){
+  if(!contractsPanelInner) return;
+  if(!data || (!data.summary && (!Array.isArray(data.roster) || !data.roster.length))){
+    contractsPanelInner.innerHTML = `<div class="team-empty" style="padding:18px 0;">No contract data available for the selected team and season(s).</div>`;
+    return;
+  }
+
+  const isAvg = data.mode === 'average';
+  const pfx = isAvg ? 'Avg ' : '';
+  const sum = data.summary;
+  const roster = Array.isArray(data.roster) ? data.roster : [];
+  const outlook = Array.isArray(data.outlook) ? data.outlook : [];
+  const team = String(data.team || teamSelect?.value || '').toUpperCase();
+  const seasonQuery = (typeof window.getSelectedSeasonQueryValue === 'function' ? window.getSelectedSeasonQueryValue() : '') || String(seasonSelect?.value||'').trim();
+
+  let html = '';
+
+  // 1) Cap summary KPI cards
+  if(sum && typeof sum === 'object'){
+    const capHit = sum.combinedOneWayPlusPenaltiesUsd ?? sum.oneWayAavUsd ?? sum.totalAavUsd;
+    const capSpace = sum.projectedCapSpaceUsd;
+    const capSpaceCls = capSpace != null ? (Number(capSpace) >= 0 ? 'pos' : 'neg') : '';
+    const cnt = sum.contractsCount != null ? Math.round(Number(sum.contractsCount)) : null;
+    const oneW = sum.oneWayContractsCount != null ? Math.round(Number(sum.oneWayContractsCount)) : null;
+    const twoW = sum.twoWayContractsCount != null ? Math.round(Number(sum.twoWayContractsCount)) : null;
+    const penalties = Number(sum.totalCapPenaltiesUsd || 0);
+    const penBits = [];
+    if(Number(sum.buyoutPenaltyUsd || 0) > 0) penBits.push(`Buyout ${__fmtUsdCompact(sum.buyoutPenaltyUsd)}`);
+    if(Number(sum.retainedSalaryPenaltyUsd || 0) > 0) penBits.push(`Retained ${__fmtUsdCompact(sum.retainedSalaryPenaltyUsd)}`);
+    if(Number(sum.bonusOveragePenaltyUsd || 0) > 0) penBits.push(`Overage ${__fmtUsdCompact(sum.bonusOveragePenaltyUsd)}`);
+
+    html += `<div class="contracts-kpi-grid">
+      <div class="contracts-kpi" title="1-Way AAV (${__fmtUsdFull(sum.oneWayAavUsd)}) + Penalties (${__fmtUsdFull(penalties)})">
+        <div class="contracts-kpi-lbl">${__escHtml(pfx)}Cap Hit</div>
+        <div class="contracts-kpi-val">${__escHtml(__fmtUsdCompact(capHit))}</div>
+        <div class="contracts-kpi-sub">1-Way: ${__escHtml(__fmtUsdCompact(sum.oneWayAavUsd))}</div>
+      </div>
+      <div class="contracts-kpi" title="Cap Ceiling: ${__fmtUsdFull(sum.capCeilingUsd)} • Cap Floor: ${__fmtUsdFull(sum.capFloorUsd)}">
+        <div class="contracts-kpi-lbl">${__escHtml(pfx)}Cap Ceiling</div>
+        <div class="contracts-kpi-val">${__escHtml(__fmtUsdCompact(sum.capCeilingUsd))}</div>
+        <div class="contracts-kpi-sub">Floor: ${__escHtml(__fmtUsdCompact(sum.capFloorUsd))}</div>
+      </div>
+      <div class="contracts-kpi" title="Projected Cap Space: ${__fmtUsdFull(capSpace)}">
+        <div class="contracts-kpi-lbl">${__escHtml(pfx)}Cap Space</div>
+        <div class="contracts-kpi-val ${capSpaceCls}">${__escHtml(__fmtUsdCompact(capSpace))}</div>
+        <div class="contracts-kpi-sub">${isAvg ? `Across ${Number(data.seasonsMatched||0)} seasons` : (sum.isProjected ? 'Projected' : 'Active cap')}</div>
+      </div>
+      <div class="contracts-kpi" title="Total AAV (All Contracts): ${__fmtUsdFull(sum.totalAavUsd)} • Total Salary: ${__fmtUsdFull(sum.totalSalaryUsd)}">
+        <div class="contracts-kpi-lbl">${__escHtml(pfx)}Total AAV</div>
+        <div class="contracts-kpi-val">${__escHtml(__fmtUsdCompact(sum.totalAavUsd))}</div>
+        <div class="contracts-kpi-sub">Salary: ${__escHtml(__fmtUsdCompact(sum.totalSalaryUsd))}</div>
+      </div>
+      <div class="contracts-kpi">
+        <div class="contracts-kpi-lbl">${__escHtml(pfx)}Contracts</div>
+        <div class="contracts-kpi-val">${cnt != null ? cnt : '—'}</div>
+        <div class="contracts-kpi-sub">${oneW != null && twoW != null ? `${oneW} 1-Way • ${twoW} 2-Way` : '—'}</div>
+      </div>
+      <div class="contracts-kpi" title="Total Dead Cap / Penalties: ${__fmtUsdFull(penalties)}">
+        <div class="contracts-kpi-lbl">${__escHtml(pfx)}Dead Cap</div>
+        <div class="contracts-kpi-val ${penalties > 0 ? 'neg' : ''}">${__escHtml(__fmtUsdCompact(penalties))}</div>
+        <div class="contracts-kpi-sub">${__escHtml(penBits.length ? penBits.join(' • ') : 'No cap penalties')}</div>
+      </div>
+    </div>`;
+
+    // Cap penalties detail table (single season when present)
+    if(Array.isArray(sum.penaltiesDetail) && sum.penaltiesDetail.length){
+      html += `<div class="contracts-section-hd"><span>Cap Penalties Breakdown</span></div>
+      <div class="proj-table-wrap" style="margin-bottom:16px;">
+        <table class="proj-table">
+          <thead><tr>
+            <th class="name">Player</th>
+            <th>Type</th>
+            <th>Cap Hit</th>
+            <th>Term</th>
+            <th class="name">Notes</th>
+          </tr></thead>
+          <tbody>${sum.penaltiesDetail.map(p => {
+            const ptype = String(p.penalty_type || '').replace(/_/g, ' ');
+            const term = [p.start_season, p.end_season].filter(Boolean).join(' – ') || '—';
+            return `<tr>
+              <td class="name">${__escHtml(p.player_name || '—')}</td>
+              <td><span class="contract-pill">${__escHtml(ptype || 'Penalty')}</span></td>
+              <td class="contracts-num-neg" title="${__escHtml(__fmtUsdFull(p.cap_hit_usd))}">${__escHtml(__fmtUsdCompact(p.cap_hit_usd))}</td>
+              <td>${__escHtml(term)}</td>
+              <td class="name" style="white-space:normal; max-width:440px; color:var(--text-dim);">${__escHtml(p.notes || '')}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`;
+    }
+  }
+
+  // 2) Roster contracts table with filters
+  const filtered = __filterAndSortContractsRoster(roster);
+  const sumAav = filtered.reduce((acc, r) => acc + (Number.isFinite(Number(r.aavUsd)) ? Number(r.aavUsd) : 0), 0);
+  const sumSal = filtered.reduce((acc, r) => acc + (Number.isFinite(Number(r.totalSalaryUsd)) ? Number(r.totalSalaryUsd) : 0), 0);
+  const sortArrow = (k) => __contractsUiState.sortKey === k ? `<span class="sort-ind">${__contractsUiState.sortDir === 'asc' ? '▲' : '▼'}</span>` : '';
+  const sortCls = (k) => __contractsUiState.sortKey === k ? 'sorted' : '';
+
+  html += `<div class="contracts-section-hd">
+    <span>Player Contracts (${filtered.length}${filtered.length !== roster.length ? ` of ${roster.length}` : ''})</span>
+  </div>
+  <div class="contracts-toolbar">
+    <div class="contracts-filter-group">
+      ${[['all','All Pos'],['F','Forwards'],['D','Defense'],['G','Goalies']].map(([v,lbl]) =>
+        `<button type="button" class="proj-subtab-btn ${__contractsUiState.pos===v?'active':''}" data-cpos="${v}">${lbl}</button>`
+      ).join('')}
+      ${[['all','All Types'],['1w','1-Way'],['2w','2-Way']].map(([v,lbl]) =>
+        `<button type="button" class="proj-subtab-btn ${__contractsUiState.way===v?'active':''}" data-cway="${v}">${lbl}</button>`
+      ).join('')}
+    </div>
+    <input id="contractsSearchInput" class="contracts-search" type="text" placeholder="Filter player name..." value="${__escHtml(__contractsUiState.search)}" />
+  </div>
+  <div class="proj-table-wrap contracts-table-wrap">
+    <table id="teamContractsTable" class="proj-table">
+      <thead><tr>
+        <th class="name ${sortCls('playerName')}" data-csort="playerName">Player${sortArrow('playerName')}</th>
+        <th class="${sortCls('position')}" data-csort="position">Pos${sortArrow('position')}</th>
+        <th class="${sortCls('twoWay')}" data-csort="twoWay">Type${sortArrow('twoWay')}</th>
+        <th class="${sortCls('contractStatus')}" data-csort="contractStatus">Status${sortArrow('contractStatus')}</th>
+        ${isAvg ? `<th class="${sortCls('yearsCount')}" data-csort="yearsCount">Yrs${sortArrow('yearsCount')}</th>` : ''}
+        <th class="${sortCls('aavUsd')}" data-csort="aavUsd">${isAvg ? 'Avg Cap Hit' : 'Cap Hit'}${sortArrow('aavUsd')}</th>
+        <th class="${sortCls('totalSalaryUsd')}" data-csort="totalSalaryUsd">${isAvg ? 'Avg Salary' : 'Salary'}${sortArrow('totalSalaryUsd')}</th>
+        <th class="${sortCls('baseSalaryUsd')}" data-csort="baseSalaryUsd">${isAvg ? 'Avg Base' : 'Base'}${sortArrow('baseSalaryUsd')}</th>
+        <th class="${sortCls('signingBonusUsd')}" data-csort="signingBonusUsd">${isAvg ? 'Avg Bonus' : 'Bonus'}${sortArrow('signingBonusUsd')}</th>
+        <th class="${sortCls('termYears')}" data-csort="termYears">Term${sortArrow('termYears')}</th>
+        <th class="${sortCls('expiryYear')}" data-csort="expiryYear">Expiry${sortArrow('expiryYear')}</th>
+      </tr></thead>
+      <tbody>${filtered.length ? filtered.map(r => {
+        const pid = r.playerId;
+        const isGoalie = String(r.posGroup || '') === 'G';
+        const href = `${isGoalie ? '/goalies' : '/skaters'}?team=${encodeURIComponent(team)}&season=${encodeURIComponent(seasonQuery)}`;
+        const status = String(r.contractStatus || '').trim();
+        const statusCls = status === 'ELC' ? 'elc' : status === 'RFA' ? 'rfa' : status === 'UFA' ? 'ufa' : '';
+        const expStatus = String(r.expiryStatus || '').trim();
+        const expCls = expStatus === 'RFA' ? 'rfa' : expStatus === 'UFA' ? 'ufa' : '';
+        const expYear = r.expiryYear ? String(r.expiryYear) : '';
+        const termTxt = r.termYears
+          ? `${r.termYears} yr${r.startSeason && r.endSeason ? ` (${r.startSeason}–${r.endSeason})` : ''}`
+          : (r.startSeason && r.endSeason ? `${r.startSeason}–${r.endSeason}` : '—');
+        const mugUrl = pid ? `/api/player-headshot/${encodeURIComponent(pid)}` : '';
+        return `<tr>
+          <td class="name">
+            <a class="contract-player-link" href="${href}" data-cpid="${pid || ''}" data-cgoalie="${isGoalie ? '1' : '0'}">
+              ${mugUrl ? `<img class="contract-mug" src="${mugUrl}" alt="" loading="lazy" onerror="this.style.visibility='hidden'" />` : ''}
+              <span>${__escHtml(r.playerName || '—')}</span>
+            </a>
+          </td>
+          <td>${__escHtml(r.position || '—')}</td>
+          <td><span class="contract-pill ${r.twoWay ? 'two-way' : ''}">${r.twoWay ? '2-Way' : '1-Way'}</span></td>
+          <td>${status ? `<span class="contract-pill ${statusCls}">${__escHtml(status)}</span>` : '—'}</td>
+          ${isAvg ? `<td>${r.yearsCount ?? '—'}</td>` : ''}
+          <td title="${__escHtml(__fmtUsdFull(r.aavUsd))}" style="font-weight:800;">${__escHtml(__fmtUsdCompact(r.aavUsd))}</td>
+          <td title="${__escHtml(__fmtUsdFull(r.totalSalaryUsd))}">${__escHtml(__fmtUsdCompact(r.totalSalaryUsd))}</td>
+          <td title="${__escHtml(__fmtUsdFull(r.baseSalaryUsd))}">${__escHtml(__fmtUsdCompact(r.baseSalaryUsd))}</td>
+          <td title="${__escHtml(__fmtUsdFull(r.signingBonusUsd))}">${r.signingBonusUsd != null && Number(r.signingBonusUsd) > 0 ? __escHtml(__fmtUsdCompact(r.signingBonusUsd)) : '—'}</td>
+          <td style="color:var(--text-dim);">${__escHtml(termTxt)}</td>
+          <td>${expYear || expStatus ? `${expYear ? `${__escHtml(expYear)} ` : ''}${expStatus ? `<span class="contract-pill ${expCls}">${__escHtml(expStatus)}</span>` : ''}` : '—'}</td>
+        </tr>`;
+      }).join('') + `<tr class="contracts-totals-row">
+        <td class="name">Filtered Total (${filtered.length} players)</td>
+        <td></td><td></td><td></td>${isAvg ? '<td></td>' : ''}
+        <td title="${__escHtml(__fmtUsdFull(sumAav))}">${__escHtml(__fmtUsdCompact(sumAav))}</td>
+        <td title="${__escHtml(__fmtUsdFull(sumSal))}">${__escHtml(__fmtUsdCompact(sumSal))}</td>
+        <td></td><td></td><td></td><td></td>
+      </tr>` : `<tr><td colspan="${isAvg ? 11 : 10}" style="padding:20px; color:var(--text-dim);">No matching contracts.</td></tr>`}</tbody>
+    </table>
+  </div>`;
+
+  // 3) Multi-year cap outlook table (or selected seasons breakdown in multi-season mode)
+  const capRows = (isAvg && Array.isArray(sum?.seasons) && sum.seasons.length > 1) ? sum.seasons : outlook;
+  const capTitle = (isAvg && Array.isArray(sum?.seasons) && sum.seasons.length > 1) ? 'Selected Seasons Cap Summary' : 'Multi-Year Cap Outlook';
+  if(Array.isArray(capRows) && capRows.length){
+    html += `<div class="contracts-section-hd"><span>${capTitle}</span></div>
+    <div class="proj-table-wrap">
+      <table class="proj-table">
+        <thead><tr>
+          <th class="name">Season</th>
+          <th>Contracts</th>
+          <th>1-Way AAV</th>
+          <th>Total AAV</th>
+          <th>Penalties</th>
+          <th>Cap Hit</th>
+          <th>Cap Ceiling</th>
+          <th>Cap Space</th>
+        </tr></thead>
+        <tbody>${capRows.map(y => {
+          const hit = y.combinedOneWayPlusPenaltiesUsd ?? y.oneWayAavUsd ?? y.totalAavUsd;
+          const sp = y.projectedCapSpaceUsd;
+          const spCls = sp != null ? (Number(sp) >= 0 ? 'contracts-num-pos' : 'contracts-num-neg') : '';
+          const cntTxt = y.contractsCount != null
+            ? `${y.contractsCount}${y.oneWayContractsCount != null ? ` (${y.oneWayContractsCount} / ${y.twoWayContractsCount ?? 0})` : ''}`
+            : '—';
+          return `<tr>
+            <td class="name">${__escHtml(y.season || y.seasonId || '—')}${y.isProjected ? ' <span class="contract-pill proj">Proj</span>' : ''}</td>
+            <td>${__escHtml(cntTxt)}</td>
+            <td title="${__escHtml(__fmtUsdFull(y.oneWayAavUsd))}">${__escHtml(__fmtUsdCompact(y.oneWayAavUsd))}</td>
+            <td title="${__escHtml(__fmtUsdFull(y.totalAavUsd))}">${__escHtml(__fmtUsdCompact(y.totalAavUsd))}</td>
+            <td class="${Number(y.totalCapPenaltiesUsd||0) > 0 ? 'contracts-num-neg' : ''}" title="${__escHtml(__fmtUsdFull(y.totalCapPenaltiesUsd))}">${Number(y.totalCapPenaltiesUsd||0) > 0 ? __escHtml(__fmtUsdCompact(y.totalCapPenaltiesUsd)) : '—'}</td>
+            <td style="font-weight:800;" title="${__escHtml(__fmtUsdFull(hit))}">${__escHtml(__fmtUsdCompact(hit))}</td>
+            <td title="${__escHtml(__fmtUsdFull(y.capCeilingUsd))}">${__escHtml(__fmtUsdCompact(y.capCeilingUsd))}</td>
+            <td class="${spCls}" title="${__escHtml(__fmtUsdFull(sp))}">${__escHtml(__fmtUsdCompact(sp))}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+
+  contractsPanelInner.innerHTML = html;
+
+  // Bind interactive controls
+  contractsPanelInner.querySelectorAll('button[data-cpos]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      __contractsUiState.pos = btn.getAttribute('data-cpos') || 'all';
+      renderContractsPanel(data);
+    });
+  });
+  contractsPanelInner.querySelectorAll('button[data-cway]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      __contractsUiState.way = btn.getAttribute('data-cway') || 'all';
+      renderContractsPanel(data);
+    });
+  });
+  const searchEl = document.getElementById('contractsSearchInput');
+  if(searchEl){
+    searchEl.addEventListener('input', () => {
+      const posCaret = searchEl.selectionStart;
+      __contractsUiState.search = searchEl.value;
+      renderContractsPanel(data);
+      const next = document.getElementById('contractsSearchInput');
+      if(next){
+        next.focus();
+        try{ next.setSelectionRange(posCaret, posCaret); }catch(_){/*noop*/}
+      }
+    });
+  }
+  contractsPanelInner.querySelectorAll('th[data-csort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const k = th.getAttribute('data-csort');
+      if(!k) return;
+      if(__contractsUiState.sortKey === k){
+        __contractsUiState.sortDir = __contractsUiState.sortDir === 'asc' ? 'desc' : 'asc';
+      }else{
+        __contractsUiState.sortKey = k;
+        __contractsUiState.sortDir = (k === 'playerName' || k === 'position') ? 'asc' : 'desc';
+      }
+      renderContractsPanel(data);
+    });
+  });
+  // Persist clicked player ID in localStorage so Skaters/Goalies opens directly on that player.
+  contractsPanelInner.querySelectorAll('a.contract-player-link[data-cpid]').forEach(a => {
+    a.addEventListener('click', () => {
+      const pid = a.getAttribute('data-cpid');
+      const isG = a.getAttribute('data-cgoalie') === '1';
+      if(pid && team){
+        try{ localStorage.setItem(`${isG ? 'goalies' : 'skaters'}_player_${team}`, String(pid)); }catch(_){/*noop*/}
+      }
+    });
+  });
+}
+
+async function loadContractsPanel(force){
+  if(!contractsPanelInner) return;
+  contractsPanelInner.innerHTML = `<div class="team-empty" style="padding:14px 0;">Loading contracts...</div>`;
+  const data = await fetchTeamContracts(!!force);
+  renderContractsPanel(data);
+}
 
 async function loadEdgePanel(){
   if(!edgePanelInner) return;
@@ -3209,11 +3646,40 @@ function reloadAll(){
   __tableLastKey = '';
   updateSlicerSummaries();
   loadCardPanel();
+  if(tabContracts?.classList.contains('active')) loadContractsPanel();
+  else void fetchTeamContracts(false);
   if(tabCharts?.classList.contains('active')) renderCharts();
   if(tabEdge?.classList.contains('active')) loadEdgePanel();
   if(tabProjections?.classList.contains('active')) renderProjections();
   if(tabTable?.classList.contains('active')) loadTablePanel();
 }
+
+try{
+  btnReloadContracts?.addEventListener('click', ()=> loadContractsPanel(true));
+  btnExportContractsCsv?.addEventListener('click', ()=>{
+    const rows = __filterAndSortContractsRoster(__teamContractsData?.roster || []);
+    if(!rows.length) return;
+    const isAvg = __teamContractsData?.mode === 'average';
+    const out = rows.map(r => ({
+      Player: r.playerName || '',
+      Position: r.position || '',
+      Type: r.twoWay ? '2-Way' : '1-Way',
+      Status: r.contractStatus || '',
+      ...(isAvg ? { Years: r.yearsCount ?? '' } : {}),
+      CapHitUSD: r.aavUsd ?? '',
+      SalaryUSD: r.totalSalaryUsd ?? '',
+      BaseUSD: r.baseSalaryUsd ?? '',
+      BonusUSD: r.signingBonusUsd ?? '',
+      TermYears: r.termYears ?? '',
+      StartSeason: r.startSeason || '',
+      EndSeason: r.endSeason || '',
+      ExpiryYear: r.expiryYear ?? '',
+      ExpiryStatus: r.expiryStatus || '',
+    }));
+    const ab = String(teamSelect?.value||'team').toLowerCase();
+    exportRowsToCsv(`${ab}_contracts.csv`, out);
+  });
+}catch(_){/*noop*/}
 
 try{
   cardSeasonState?.addEventListener('change', reloadAll);
@@ -3268,7 +3734,7 @@ async function initTeamsPage(){
   updateSlicerSummaries();
 
   // Default tab to Card if not restored.
-  if(!tabCard?.classList.contains('active') && !tabCharts?.classList.contains('active') && !tabEdge?.classList.contains('active') && !tabProjections?.classList.contains('active') && !tabTable?.classList.contains('active')){
+  if(!tabCard?.classList.contains('active') && !tabCharts?.classList.contains('active') && !tabEdge?.classList.contains('active') && !tabProjections?.classList.contains('active') && !tabTable?.classList.contains('active') && !tabContracts?.classList.contains('active')){
     setActiveTab('card');
   }else{
     // Ensure current tab panel loads.
@@ -3277,14 +3743,16 @@ async function initTeamsPage(){
     if(tabEdge?.classList.contains('active')) loadEdgePanel();
     if(tabProjections?.classList.contains('active')) renderProjections();
     if(tabTable?.classList.contains('active')) loadTablePanel();
+    if(tabContracts?.classList.contains('active')) loadContractsPanel();
   }
+  if(!tabContracts?.classList.contains('active')) void fetchTeamContracts(false);
 }
 
 // Hash-based tab: override saved state BEFORE boot so initTeamsPage uses it
 (function(){
   var h = location.hash.replace('#','');
   if(!h) return;
-  var map = {Card:'card',Charts:'charts',Edge:'edge',Projections:'projections',Table:'table'};
+  var map = {Card:'card',Charts:'charts',Edge:'edge',Projections:'projections',Table:'table',Contracts:'contracts'};
   var tab = map[h];
   if(tab) __restoreActiveTab = tab;
 })();

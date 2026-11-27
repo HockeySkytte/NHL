@@ -10,7 +10,8 @@
     "Why This App Matters",
     "Please Help Share the App and Support the Work",
     "Future Perspectives",
-    "Glossary"
+    "Glossary",
+    "Contracts API"
   ],
   "section_text": {
     "inside-the-app": "Inside the App: A Modern NHL Analytics Platform for Fans, Analysts, and Hockey Nerds\n\nThere are a lot of hockey sites that show scores, standings, and player stats. There are fewer that try to connect those things into one place and answer the bigger questions: What happened in this game? Which players are truly driving results? How dangerous were those chances? Which lines are working? How does a player look beyond points? Where is a team creating its edge?\n\nThat is the problem this app is built to solve.\n\nAt its core, the app is an NHL analytics workspace. It combines schedule and live-game information, player and team dashboards, game reports, expected goals models, RAPM, lineup-based tools, odds history, and projection views into one connected experience. It is designed for people who want more than surface-level hockey stats, but it is also designed to remain usable for people who are still learning how to read modern hockey analytics.\n\nThis article walks through what the app does, how to use it, how to interpret the numbers, how the xG and RAPM models work, and where the platform can go next.",

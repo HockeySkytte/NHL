@@ -100,6 +100,10 @@ async fn about_page_slug(
     let text = about::strip_leading_heading(raw_text, title);
     let segments = about::text_segments(&text, &state.cfg.static_dir);
     let is_glossary = state.about.is_glossary_slug(&slug);
+    let is_contracts_api = state.about.is_contracts_api_slug(&slug);
+    let api_base_url = templates::url_root(&state.cfg, host_str(&headers))
+        .trim_end_matches('/')
+        .to_string();
 
     let mut extra: BTreeMap<&'static str, serde_json::Value> = BTreeMap::new();
     extra.insert("active_tab", json!("About"));
@@ -118,13 +122,23 @@ async fn about_page_slug(
     extra.insert("about_section_title", json!(title));
     extra.insert("about_segments", Value::Array(segments));
     extra.insert("about_is_glossary", json!(is_glossary));
+    extra.insert("about_is_contracts_api", json!(is_contracts_api));
+    extra.insert("api_base_url", json!(api_base_url));
+    extra.insert(
+        "contracts_api_rate_limit",
+        json!(crate::routes::contracts_api::rate_limit_per_min()),
+    );
     extra.insert(
         "meta_title",
         json!(format!("{title} · About · Hockey-Statistics")),
     );
     extra.insert(
         "meta_description",
-        json!("Learn about the metrics and models behind Hockey-Statistics NHL analytics — xG, RAPM, GSAx, Corsi, Fenwick, and more."),
+        json!(if is_contracts_api {
+            "Public NHL Contracts REST API by Hockey-Statistics — free JSON endpoints for player contracts, salary cap space, expiring free agents, and cap penalties sourced primarily from the NHLPA."
+        } else {
+            "Learn about the metrics and models behind Hockey-Statistics NHL analytics — xG, RAPM, GSAx, Corsi, Fenwick, and more."
+        }),
     );
 
     let path = format!("/about/{slug}");
@@ -157,7 +171,7 @@ async fn robots_txt(State(state): State<AppState>, headers: HeaderMap) -> Respon
 
 /// `GET /sitemap.xml` — port of `sitemap_xml` (same static page list).
 async fn sitemap_xml(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    const STATIC_PAGES: [(&str, &str, &str); 10] = [
+    const STATIC_PAGES: [(&str, &str, &str); 11] = [
         ("/", "weekly", "1.0"),
         ("/schedule", "daily", "0.9"),
         ("/live", "always", "0.9"),
@@ -168,6 +182,7 @@ async fn sitemap_xml(State(state): State<AppState>, headers: HeaderMap) -> Respo
         ("/line-tool", "weekly", "0.8"),
         ("/teams", "weekly", "0.8"),
         ("/about", "monthly", "0.5"),
+        ("/about/contracts-api", "weekly", "0.7"),
     ];
     let base = templates::url_root(&state.cfg, host_str(&headers))
         .trim_end_matches('/')

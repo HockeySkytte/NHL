@@ -23,6 +23,9 @@ pub struct Caches {
     pub goalies_players: TtlCache<(Vec<i64>, String, String), Value>,
     pub team_seasons: TtlCache<String, Value>,
     pub player_landing: TtlCache<i64, Value>,
+    pub player_contract: TtlCache<(i64, Vec<i64>), Value>,
+    pub team_contracts: TtlCache<(String, Vec<i64>), Arc<Value>>,
+    pub contracts_api: TtlCache<String, Arc<Value>>,
     pub team_logo: TtlCache<String, Arc<Vec<u8>>>,
     pub player_headshot: TtlCache<String, Arc<Vec<u8>>>,
     pub lineups_all: TtlCache<(), Value>,
@@ -103,6 +106,20 @@ impl Caches {
             player_landing: TtlCache::new(
                 env_ttl("PLAYER_LANDING_CACHE_TTL_SECONDS", 3600),
                 env_max("PLAYER_LANDING_CACHE_MAX_ITEMS", 512),
+            ),
+            player_contract: TtlCache::new(
+                env_ttl("CONTRACTS_CACHE_TTL_SECONDS", 3600),
+                env_max("PLAYER_CONTRACT_CACHE_MAX_ITEMS", 1024),
+            ),
+            team_contracts: TtlCache::new_weighted(
+                env_ttl("CONTRACTS_CACHE_TTL_SECONDS", 3600),
+                8 * 1024 * 1024,
+                |v: &Arc<Value>| crate::cache::json_value_weight(v),
+            ),
+            contracts_api: TtlCache::new_weighted(
+                env_ttl("CONTRACTS_API_CACHE_TTL_SECONDS", 1800),
+                12 * 1024 * 1024,
+                |v: &Arc<Value>| crate::cache::json_value_weight(v),
             ),
             team_logo: TtlCache::new(
                 Duration::from_secs(days30),
