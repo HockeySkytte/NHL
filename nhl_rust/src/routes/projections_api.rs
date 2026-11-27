@@ -13,6 +13,7 @@ use axum::{Json, Router};
 use serde_json::{json, Value};
 
 use crate::data::lineups;
+use crate::data::odds;
 use crate::data::projections as p;
 use crate::data::rapm;
 use crate::data::rosters;
@@ -27,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/player-projections/v2", get(api_player_projections_v2))
         .route("/api/player-current-projections", get(api_player_current_projections))
         .route("/api/player-current-projections/public", get(api_player_current_projections_public))
+        .route("/api/projections/game-players", get(api_projections_game_players))
         .route("/api/skaters/current-projections", get(api_skaters_current_projections))
         .route("/api/teams/current-projections", get(api_teams_current_projections))
         .route("/api/skaters/player-projection-trend/{player_id}", get(api_skaters_player_projection_trend))
@@ -100,14 +102,44 @@ fn get_cookie_header(headers: &axum::http::HeaderMap) -> Option<&str> {
 // ── /api/player-projections/v2 ──
 async fn api_player_projections_v2(State(state): State<AppState>) -> Response {
     let season = current_season_id(None);
-    let result = p::build_v2_player_projections(&state, Some(season)).await;
+    let (result, effective_season) = p::build_v2_player_projections_latest(&state, Some(season)).await;
     json_no_store(json!({
         "players": result,
         "meta": {
             "coefficients": p::EVPP_COEF.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(),
             "count": result.len(),
+            "season": effective_season,
         },
     }))
+}
+
+// ── /api/projections/game-players ──
+// Returns the exact `player_current_projections` map (`raw_projected_value` +
+// `projected_value`) used by `/api/projections/games` so the lineup editor on
+// `/projections` recomputes win probabilities on the exact same scale.
+async fn api_projections_game_players(State(state): State<AppState>) -> Response {
+    let (data, roster_map) = tokio::join!(
+        p::load_current_player_projections_cached(&state),
+        rosters::all_rosters(&state.caches, &state.http),
+    );
+    let mut out: serde_json::Map<String, Value> = serde_json::Map::new();
+    for (k, mut row) in data {
+        let pid = safe_int(row.get("player_id")).or_else(|| safe_int(row.get("playerId"))).unwrap_or(k);
+        let info = roster_map.get(&pid.to_string()).cloned().unwrap_or(Value::Null);
+        if info.is_object() {
+            if str_value(row.get("name").or_else(|| row.get("player"))).is_empty() {
+                row["name"] = json!(str_value(info.get("name")));
+            }
+            if str_value(row.get("team").or_else(|| row.get("Team"))).is_empty() {
+                row["team"] = json!(str_value(info.get("team")).to_uppercase());
+            }
+            if str_value(row.get("position").or_else(|| row.get("Position"))).is_empty() {
+                row["position"] = json!(str_value(info.get("position")).to_uppercase());
+            }
+        }
+        out.insert(k.to_string(), row);
+    }
+    json_no_store(Value::Object(out))
 }
 
 // ── /api/player-current-projections ──
@@ -861,11 +893,30 @@ async fn api_projections_games(
         }
     }
 
-    // B2B via previous date.
+    // Build game_id -> (away, home) map for batched odds_snapshots lookup.
+    let mut game_team_map: HashMap<i64, (String, String)> = HashMap::new();
+    for g in &out {
+        if let Some(gid) = safe_int(g.get("id")) {
+            let aa = str_value(g.get("awayTeam").and_then(|t| t.get("abbrev"))).to_uppercase();
+            let ha = str_value(g.get("homeTeam").and_then(|t| t.get("abbrev"))).to_uppercase();
+            game_team_map.insert(gid, (aa, ha));
+        }
+    }
+
+    // Fetch previous-date schedule (B2B), lineups, player projections,
+    // Supabase odds snapshots, and live NHL partner/score odds concurrently.
     let prev_date = (date_et - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
-    let mut prev_set: HashSet<String> = HashSet::new();
     let prev_url = format!("{API_WEB}/v1/schedule/{prev_date}");
-    if let Ok(js2) = get_json(&state.http, &prev_url, 20).await {
+    let (prev_res, lineups_all, proj_map, odds_snapshot_map, live_odds_map) = tokio::join!(
+        get_json(&state.http, &prev_url, 20),
+        lineups::load_all(&state.caches, state.sb.as_ref(), &state.cfg.static_dir),
+        p::load_current_player_projections_cached(&state),
+        odds::load_latest_snapshot_map(state.sb.as_ref(), &game_team_map),
+        odds::fetch_partner_odds_map(&state.http, &date_str),
+    );
+
+    let mut prev_set: HashSet<String> = HashSet::new();
+    if let Ok(js2) = prev_res {
         for wk in js2.get("gameWeek").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
             if str_value(wk.get("date")).get(..10) != Some(prev_date.as_str()) {
                 continue;
@@ -881,9 +932,6 @@ async fn api_projections_games(
         }
     }
 
-    let lineups_all = lineups::load_all(&state.caches, state.sb.as_ref(), &state.cfg.static_dir).await;
-    let proj_map = p::load_current_player_projections_cached(&state).await;
-
     let situation_for = |aa: &str, ha: &str| -> (String, f64, bool, bool) {
         let a_b2b = prev_set.contains(&aa.to_uppercase());
         let h_b2b = prev_set.contains(&ha.to_uppercase());
@@ -895,6 +943,8 @@ async fn api_projections_games(
         };
         (key.to_string(), val, a_b2b, h_b2b)
     };
+
+    let now_utc = chrono::Utc::now();
 
     for g in &mut out {
         let aa = str_value(g.get("awayTeam").and_then(|t| t.get("abbrev")));
@@ -916,6 +966,53 @@ async fn api_projections_games(
             "winProbAway": round6(win_away),
             "winProbHome": round6(win_home),
         });
+
+        let st_raw = str_value(g.get("startTimeUTC"));
+        let (not_started, started) = if !st_raw.is_empty() {
+            let normalized = st_raw.replace('Z', "+00:00");
+            match chrono::DateTime::parse_from_rfc3339(&normalized) {
+                Ok(dt) => {
+                    let start_utc = dt.with_timezone(&chrono::Utc);
+                    (now_utc < start_utc, now_utc >= start_utc)
+                }
+                Err(_) => (false, false),
+            }
+        } else {
+            (false, false)
+        };
+        g["started"] = json!(started);
+
+        if let Some(gid) = safe_int(g.get("id")) {
+            let snapshot = odds_snapshot_map.get(&gid);
+            let snap_has_odds = snapshot
+                .map(|s| !s.get("oddsAway").unwrap_or(&Value::Null).is_null()
+                    || !s.get("oddsHome").unwrap_or(&Value::Null).is_null())
+                .unwrap_or(false);
+            if not_started {
+                if let Some(live) = live_odds_map.get(&gid) {
+                    g["odds"] = live.clone();
+                } else if snap_has_odds {
+                    if let Some(s) = snapshot {
+                        g["odds"] = json!({
+                            "away": s.get("oddsAway").cloned().unwrap_or(Value::Null),
+                            "home": s.get("oddsHome").cloned().unwrap_or(Value::Null),
+                        });
+                    }
+                }
+            }
+            if started && snap_has_odds {
+                if let Some(s) = snapshot {
+                    g["prestart"] = json!({
+                        "oddsAway": s.get("oddsAway").cloned().unwrap_or(Value::Null),
+                        "oddsHome": s.get("oddsHome").cloned().unwrap_or(Value::Null),
+                        "winAwayPct": s.get("winAwayPct").cloned().unwrap_or(Value::Null),
+                        "winHomePct": s.get("winHomePct").cloned().unwrap_or(Value::Null),
+                        "betAwayPct": s.get("betAwayPct").cloned().unwrap_or(Value::Null),
+                        "betHomePct": s.get("betHomePct").cloned().unwrap_or(Value::Null),
+                    });
+                }
+            }
+        }
     }
 
     json_no_store(json!({"date": date_str, "timezone": "ET", "games": out}))

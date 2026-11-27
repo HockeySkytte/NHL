@@ -442,8 +442,12 @@ function renderPlayerItems(list, preselectIds){
   const denom = posMax + negMaxAbs;
   const leftPct = denom>0 ? (100 * (negMaxAbs/denom)) : 50;
   const rightPct = 100 - leftPct;
+  const goaliesInList = list.filter(x => x.pos === 'G' && String(x.unit || '').toUpperCase() !== 'EXT');
+  const defaultGoalie = goaliesInList.find(x => String(x.unit || '').toUpperCase() === 'G1')
+    || goaliesInList.find(x => !String(x.unit || '').trim())
+    || null;
   const rows = list.map(p=>{
-  const defaultChecked = preselectIds ? preselectIds.has(p.id) : ((p.pos==='F' || p.pos==='D') ? (String(p.unit||'').toUpperCase()!=='EXT') : (p.pos==='G' ? (String(p.unit||'').toUpperCase()==='G1') : false));
+  const defaultChecked = preselectIds ? preselectIds.has(p.id) : ((p.pos==='F' || p.pos==='D') ? (String(p.unit||'').toUpperCase()!=='EXT') : (p.pos==='G' ? (defaultGoalie ? p === defaultGoalie : false) : false));
     const t = Number(p.total);
     const isPos = Number.isFinite(t) && t>0;
     const isNeg = Number.isFinite(t) && t<0;
@@ -569,8 +573,8 @@ function renderTable(games){
     const displayOddsH = (oddsMode==='american') ? (rawOddsH ?? '') : (rawOddsH!=null ? toDecimal(rawOddsH).toFixed(2) : '');
   const betA = started && pre && pre.betAwayPct!=null ? (Number(pre.betAwayPct)/100) : kelly03(pAway, rawOddsA);
   const betH = started && pre && pre.betHomePct!=null ? (Number(pre.betHomePct)/100) : kelly03(pHome, rawOddsH);
-    const winAVal = (p.winProbAway!=null) ? (p.winProbAway*100) : null;
-    const winHVal = (p.winProbHome!=null) ? (p.winProbHome*100) : null;
+    const winAVal = (pAway!=null) ? (pAway*100) : null;
+    const winHVal = (pHome!=null) ? (pHome*100) : null;
     const winBgA = winAVal!=null ? winBgColor(winAVal) : '';
     const winBgH = winHVal!=null ? winBgColor(winHVal) : '';
     const betBgA = betA!=null ? betBgColor(betA) : '';
@@ -1076,7 +1080,7 @@ async function ensureRosterCache(teamAbbrev){
 async function ensureCurrentProjections(){
   if(window._currentProjCache) return window._currentProjCache;
   try{
-    const r = await fetch('/api/player-current-projections', { cache:'no-store' });
+    const r = await fetch('/api/projections/game-players', { cache:'no-store' });
     if(!r.ok) return null;
     const data = await r.json();
     if(!data || typeof data !== 'object') return null;
@@ -1326,9 +1330,11 @@ function recomputeWinWithSelection(gameId, side, selected){
     return total;
   };
   const teamSum = sumTeam();
-  let projAway = projBaseAway;
-  let projHome = projBaseHome;
-  if(side==='away') projAway = teamSum; else projHome = teamSum;
+  window._projOverrides = window._projOverrides || {};
+  window._projOverrides[gameId] = window._projOverrides[gameId] || {};
+  window._projOverrides[gameId][side] = teamSum;
+  const projAway = window._projOverrides[gameId].away ?? projBaseAway;
+  const projHome = window._projOverrides[gameId].home ?? projBaseHome;
   const dproj = projAway - projHome;
   const winAway = 1.0/(1.0 + Math.exp(-(dproj) - sVal));
   const winHome = 1.0 - winAway;

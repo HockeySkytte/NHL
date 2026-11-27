@@ -183,11 +183,12 @@ async fn run_once(state: &AppState, cfg: &Config) {
         if !((0..=window_secs).contains(&delta_before) || (0..=grace_secs).contains(&delta_after)) {
             continue;
         }
-        // Load odds snapshot for this game (best-effort).
-        let snapshot = crate::data::odds::load_snapshot_rows(&state.caches, state.sb.as_ref(), gid)
-            .await
-            .into_iter()
-            .next();
+        // Load odds snapshot for this game (best-effort) and aggregate into latest payload.
+        let away_abbrev = as_str(g.get("awayAbbrev"));
+        let home_abbrev = as_str(g.get("homeAbbrev"));
+        let rows = crate::data::odds::load_snapshot_rows(&state.caches, state.sb.as_ref(), gid).await;
+        let (latest, _) = crate::data::odds::build_payloads(&rows, &away_abbrev, &home_abbrev);
+        let snapshot = if latest.is_object() { Some(latest) } else { None };
         let odds_away = snapshot
             .as_ref()
             .and_then(|r| r.get("oddsAway"))
@@ -214,8 +215,8 @@ async fn run_once(state: &AppState, cfg: &Config) {
             "DateET": date_et,
             "GameID": gid,
             "StartTimeET": st_raw,
-            "Away": as_str(g.get("awayAbbrev")),
-            "Home": as_str(g.get("homeAbbrev")),
+            "Away": away_abbrev,
+            "Home": home_abbrev,
             "WinAway": round3(win_away),
             "WinHome": round3(win_home),
             "OddsAway": odds_away,

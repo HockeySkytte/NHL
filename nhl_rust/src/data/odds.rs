@@ -1,10 +1,11 @@
 //! Odds snapshots — port of `_load_odds_snapshot_rows` + `_build_odds_snapshot_payloads`
 //! (plus the `_snapshot_*` field helpers). Supabase `odds_snapshots` is read-only here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{json, Map, Value};
 
+use crate::nhl::client::{get_json, API_WEB};
 use crate::state::Caches;
 use crate::supabase::read::SbClient;
 use crate::util::parse::{ci_get, parse_locale_float, safe_int, str_value};
@@ -335,9 +336,275 @@ pub async fn game_team_abbrevs(
 }
 
 /// `_safe_int` wrapper for snapshot game ids.
-#[allow(dead_code)]
 fn snapshot_game_id(row: &Map<String, Value>) -> Option<i64> {
     safe_int(
         snapshot_pick(row, &["game_id", "gameId", "GameID", "gameid"]).as_ref(),
     )
+}
+
+/// Port of `_load_latest_odds_snapshot_map(game_team_map)`: fetches all
+/// `odds_snapshots` rows for the requested games in a single batched query
+/// (`game_id=in.(...)`) and returns the latest structured payload per game id.
+pub async fn load_latest_snapshot_map(
+    sb: Option<&SbClient>,
+    game_team_map: &HashMap<i64, (String, String)>,
+) -> HashMap<i64, Value> {
+    let mut out = HashMap::new();
+    let Some(sb) = sb else { return out };
+    if game_team_map.is_empty() {
+        return out;
+    }
+    let mut ids: Vec<i64> = game_team_map.keys().copied().filter(|&id| id > 0).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    if ids.is_empty() {
+        return out;
+    }
+    let id_list = ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let in_expr = format!("in.({id_list})");
+    let rows = match sb
+        .read(
+            "odds_snapshots",
+            "*",
+            Some(&crate::supabase::read::filters(&[("game_id", &in_expr)])),
+            None,
+            None,
+            0,
+        )
+        .await
+    {
+        Some(r) => r,
+        None => sb
+            .read(
+                "odds_snapshots",
+                "*",
+                Some(&crate::supabase::read::filters(&[("gameid", &in_expr)])),
+                None,
+                None,
+                0,
+            )
+            .await
+            .unwrap_or_default(),
+    };
+    let mut by_game: HashMap<i64, Vec<Value>> = HashMap::new();
+    for row in rows {
+        if let Some(gid) = row.as_object().and_then(snapshot_game_id) {
+            by_game.entry(gid).or_default().push(row);
+        }
+    }
+    for (gid, (away_abbrev, home_abbrev)) in game_team_map {
+        let Some(game_rows) = by_game.get(gid) else { continue };
+        let (latest, _) = build_payloads(game_rows, away_abbrev, home_abbrev);
+        if latest.is_object() {
+            out.insert(*gid, latest);
+        }
+    }
+    out
+}
+
+/// Fetches live bookmaker moneyline odds mapped by NHL `game_id` → `{"away", "home"}`.
+///
+/// Queries `/v1/score/{date_str}` (which carries DraftKings `providerId: 9` and
+/// FanDuel `providerId: 7` American moneylines all day, including before noon ET
+/// and for tomorrow's games) and `/v1/partner-game/US/now` concurrently, letting
+/// partner-game `MONEY_LINE_2_WAY` overlay score odds when present for a game.
+pub async fn fetch_partner_odds_map(
+    http: &reqwest::Client,
+    date_str: &str,
+) -> HashMap<i64, Value> {
+    let score_url = format!("{API_WEB}/v1/score/{date_str}");
+    let partner_url = format!("{API_WEB}/v1/partner-game/US/now");
+    let (score_res, partner_res) = tokio::join!(
+        get_json(http, &score_url, 15),
+        get_json(http, &partner_url, 15),
+    );
+    let mut out = score_res
+        .ok()
+        .map(|js| parse_score_odds_json(&js))
+        .unwrap_or_default();
+    if let Ok(js) = partner_res {
+        for (gid, val) in parse_partner_odds_json(&js) {
+            out.insert(gid, val);
+        }
+    }
+    out
+}
+
+/// Preferred US American-odds provider IDs in `/v1/score/{date}`:
+/// 9 = DraftKings (US), 7 = FanDuel (CA, American format).
+const SCORE_AMERICAN_PROVIDERS: [i64; 2] = [9, 7];
+
+fn extract_score_team_ml(team_obj: Option<&Value>) -> Option<Value> {
+    let list = team_obj?.get("odds")?.as_array()?;
+    for want_provider in SCORE_AMERICAN_PROVIDERS {
+        for entry in list {
+            if safe_int(entry.get("providerId")) == Some(want_provider) {
+                if let Some(val) = entry.get("value") {
+                    let s = str_value(Some(val));
+                    if !s.is_empty() {
+                        return Some(val.clone());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Extracts `{ game_id -> {"away": <ml>, "home": <ml>} }` from `/v1/score/{date}`.
+pub fn parse_score_odds_json(js: &Value) -> HashMap<i64, Value> {
+    let mut out = HashMap::new();
+    let Some(games) = js.get("games").and_then(Value::as_array) else {
+        return out;
+    };
+    for g in games {
+        let Some(gid) = safe_int(g.get("id").or_else(|| g.get("gameId"))) else {
+            continue;
+        };
+        let away = extract_score_team_ml(g.get("awayTeam"));
+        let home = extract_score_team_ml(g.get("homeTeam"));
+        if away.is_some() || home.is_some() {
+            out.insert(
+                gid,
+                json!({
+                    "away": away.unwrap_or(Value::Null),
+                    "home": home.unwrap_or(Value::Null),
+                }),
+            );
+        }
+    }
+    out
+}
+
+fn extract_partner_team_ml(team_obj: Option<&Value>) -> Option<Value> {
+    let list = team_obj?.get("odds")?.as_array()?;
+    for want_desc in ["MONEY_LINE_2_WAY", "MONEY_LINE_2_WAY_TNB"] {
+        for entry in list {
+            let desc = str_value(entry.get("description")).to_uppercase();
+            if desc == want_desc {
+                if let Some(val) = entry.get("value") {
+                    let s = str_value(Some(val));
+                    if !s.is_empty() {
+                        return Some(val.clone());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Extracts `{ game_id -> {"away": <ml>, "home": <ml>} }` from `/v1/partner-game/US/*`.
+pub fn parse_partner_odds_json(js: &Value) -> HashMap<i64, Value> {
+    let mut out = HashMap::new();
+    let Some(games) = js.get("games").and_then(Value::as_array) else {
+        return out;
+    };
+    for g in games {
+        let Some(gid) = safe_int(
+            g.get("gameId")
+                .or_else(|| g.get("id"))
+                .or_else(|| g.get("eventId")),
+        ) else {
+            continue;
+        };
+        let away = extract_partner_team_ml(g.get("awayTeam"));
+        let home = extract_partner_team_ml(g.get("homeTeam"));
+        if away.is_some() || home.is_some() {
+            out.insert(
+                gid,
+                json!({
+                    "away": away.unwrap_or(Value::Null),
+                    "home": home.unwrap_or(Value::Null),
+                }),
+            );
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_score_odds_prefers_draftkings_over_fanduel_and_ignores_decimal_providers() {
+        let payload = json!({
+            "games": [
+                {
+                    "id": 2026020377,
+                    "awayTeam": {
+                        "abbrev": "TOR",
+                        "odds": [
+                            {"providerId": 3, "value": "2.30"},
+                            {"providerId": 7, "value": "+126"},
+                            {"providerId": 9, "value": "+130"}
+                        ]
+                    },
+                    "homeTeam": {
+                        "abbrev": "BOS",
+                        "odds": [
+                            {"providerId": 3, "value": "1.64"},
+                            {"providerId": 7, "value": "-152"},
+                            {"providerId": 9, "value": "-155"}
+                        ]
+                    }
+                },
+                {
+                    "id": 2026020378,
+                    "awayTeam": {
+                        "abbrev": "MTL",
+                        "odds": [
+                            {"providerId": 3, "value": "1.95"},
+                            {"providerId": 7, "value": "-105"}
+                        ]
+                    },
+                    "homeTeam": {
+                        "abbrev": "OTT",
+                        "odds": [
+                            {"providerId": 3, "value": "1.87"},
+                            {"providerId": 7, "value": "-115"}
+                        ]
+                    }
+                },
+                {
+                    "id": 2026020379,
+                    "awayTeam": { "abbrev": "DET", "odds": [{"providerId": 3, "value": "2.10"}] },
+                    "homeTeam": { "abbrev": "BUF", "odds": [{"providerId": 3, "value": "1.75"}] }
+                }
+            ]
+        });
+        let map = parse_score_odds_json(&payload);
+        assert_eq!(map.get(&2026020377), Some(&json!({"away": "+130", "home": "-155"})));
+        assert_eq!(map.get(&2026020378), Some(&json!({"away": "-105", "home": "-115"})));
+        assert!(!map.contains_key(&2026020379));
+    }
+
+    #[test]
+    fn parse_partner_odds_extracts_money_line_2_way() {
+        let payload = json!({
+            "games": [
+                {
+                    "gameId": 2026020377,
+                    "awayTeam": {
+                        "odds": [
+                            {"description": "PUCK_LINE", "value": "+1.5"},
+                            {"description": "MONEY_LINE_2_WAY", "value": "+135"}
+                        ]
+                    },
+                    "homeTeam": {
+                        "odds": [
+                            {"description": "MONEY_LINE_2_WAY_TNB", "value": "-160"}
+                        ]
+                    }
+                }
+            ]
+        });
+        let map = parse_partner_odds_json(&payload);
+        assert_eq!(map.get(&2026020377), Some(&json!({"away": "+135", "home": "-160"})));
+    }
 }

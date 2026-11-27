@@ -293,12 +293,14 @@ pub async fn build_v2_player_projections(
         a2: f64,
     }
 
-    let mut players: BTreeMap<i64, Acc> = BTreeMap::new();
+    // Group by (player_id, season) so `season = None` (GM Mode all-seasons scan)
+    // never sums two seasons together for a player with rows in multiple seasons.
+    let mut players_by_season: BTreeMap<(i64, i64), Acc> = BTreeMap::new();
     let mut seen_any = false;
-    const V2_COLS: &str = "nhl_api_player_id,playerid,nhl_player_name,position,team,gp,strengthstate,ig,a1,a2,faceoffs,passes,carries,defensive,dump_ins_outs,off_the_puck,xga,xgf,gax,gsax,rookie";
+    const V2_COLS: &str = "season,nhl_api_player_id,playerid,nhl_player_name,position,team,gp,strengthstate,ig,a1,a2,faceoffs,passes,carries,defensive,dump_ins_outs,off_the_puck,xga,xgf,gax,gsax,rookie";
     let season_filter = season.unwrap_or_else(|| current_season_id(None));
     // Stream projections + load context concurrently; omit DB sort since `players`
-    // is already a BTreeMap keyed by player_id.
+    // is already a BTreeMap keyed by (player_id, season).
     let (streamed, ctx_rows) = tokio::join!(
         read_each(
             sb,
@@ -317,9 +319,10 @@ pub async fn build_v2_player_projections(
                     if pid <= 0 {
                         continue;
                     }
+                    let row_season = safe_int(r.get("season")).unwrap_or(0);
                     let ss = str_value(r.get("strengthstate"));
                     let pos = str_value(r.get("position"));
-                    let acc = players.entry(pid).or_insert_with(|| Acc {
+                    let acc = players_by_season.entry((pid, row_season)).or_insert_with(|| Acc {
                         player_id: pid,
                         name: str_value(r.get("nhl_player_name")),
                         position: pos.clone(),
@@ -387,6 +390,13 @@ pub async fn build_v2_player_projections(
     );
     if streamed.is_none() || !seen_any {
         return Vec::new();
+    }
+
+    // BTreeMap iterates in ascending (pid, row_season) order, so inserting by
+    // pid keeps strictly each player's newest season.
+    let mut players: BTreeMap<i64, Acc> = BTreeMap::new();
+    for ((pid, _row_season), acc) in players_by_season {
+        players.insert(pid, acc);
     }
 
     let mut ctx_by_pid: HashMap<i64, (Option<f64>, Option<f64>, Option<f64>)> = HashMap::new();
@@ -481,32 +491,38 @@ async fn latest_v2_projection_season(state: &AppState) -> Option<i64> {
     Some(max_s)
 }
 
-/// `_load_v2_player_projections_cached()`: keyed by nhl_api_player_id.
-///
-/// `nhl_current_playerprojections` only contains rows once a season's possession
-/// values have been exported, so the season `current_season_id()` names is empty
-/// from September until that season's data lands. Building from that empty season
-/// silently collapsed every lineup player onto the rookie fallback, which drove
-/// every team to an identical team-projection value and made all 32 teams project
-/// ~84 points. Fall back to the newest season that actually has rows.
-pub async fn load_v2_player_projections_cached(
+/// Builds V2 player projections for `season`, falling back to the newest
+/// season present in `nhl_current_playerprojections` when `season` has no rows
+/// yet (e.g. before the current season's possession values are exported).
+pub async fn build_v2_player_projections_latest(
     state: &AppState,
     season: Option<i64>,
-) -> HashMap<i64, Value> {
+) -> (Vec<Value>, i64) {
     let season = season.unwrap_or_else(|| current_season_id(None));
     let mut players = build_v2_player_projections(state, Some(season)).await;
+    let mut effective_season = season;
     if players.is_empty() {
         if let Some(fallback_season) = latest_v2_projection_season(state).await {
             if fallback_season != season {
                 tracing::warn!(
                     season,
                     fallback_season,
-                    "no V2 player projections for season; falling back to newest available"
+                    "no V2 player projections for season; using newest available season"
                 );
                 players = build_v2_player_projections(state, Some(fallback_season)).await;
+                effective_season = fallback_season;
             }
         }
     }
+    (players, effective_season)
+}
+
+/// `_load_v2_player_projections_cached()`: keyed by nhl_api_player_id.
+pub async fn load_v2_player_projections_cached(
+    state: &AppState,
+    season: Option<i64>,
+) -> HashMap<i64, Value> {
+    let (players, _effective_season) = build_v2_player_projections_latest(state, season).await;
     let mut out: HashMap<i64, Value> = HashMap::new();
     for p in players {
         let pid = safe_int(p.get("player_id")).unwrap_or(0);
@@ -589,20 +605,55 @@ fn value_to_pid_map(v: &Value) -> HashMap<i64, Value> {
     out
 }
 
+/// Previous NHL season id (e.g. `20262027` -> `20252026`).
+fn previous_season_id(season: i64) -> i64 {
+    let start = season / 10_000;
+    if start > 1900 {
+        (start - 1) * 10_000 + start
+    } else {
+        season
+    }
+}
+
+/// Deduplicates `player_current_projections` rows by `player_id`, preferring
+/// the highest `season` (e.g. `20262027` over `20252026`) so players who have
+/// not yet appeared in the current-season export still carry their latest
+/// `preseason_updating` projection rather than dropping to rookie fallback.
+fn pick_latest_current_projections(rows: &[Value]) -> HashMap<i64, Value> {
+    let mut best: HashMap<i64, (i64, Value)> = HashMap::new();
+    for r in rows {
+        let Some(pid) = safe_int(r.get("player_id")).filter(|&id| id > 0) else {
+            continue;
+        };
+        let row_season = safe_int(r.get("season")).unwrap_or(0);
+        match best.get(&pid) {
+            Some((cur_season, _)) if *cur_season > row_season => continue,
+            _ => {
+                best.insert(pid, (row_season, r.clone()));
+            }
+        }
+    }
+    best.into_iter().map(|(pid, (_, row))| (pid, row)).collect()
+}
+
 /// `_load_current_player_projections_cached()`: `player_current_projections`
-/// for the current season + `preseason_updating` model.
+/// for the `preseason_updating` model, preferring the current season and
+/// retaining each active player's latest prior-season projection when they
+/// have not yet been exported in the current season.
 pub async fn load_current_player_projections_cached(state: &AppState) -> HashMap<i64, Value> {
     if let Some(v) = state.caches.current_player_projections.get(&()) {
         return value_to_pid_map(&v);
     }
     let Some(sb) = state.sb.as_ref() else { return HashMap::new() };
     let season = current_season_id(None);
+    let prev = previous_season_id(season);
+    let season_filter = format!("in.({prev},{season})");
     let rows = sb
         .read(
             "player_current_projections",
-            "season,player_id,position,raw_projected_value,projected_value,games_in_window,rookie_factor,source_player_id,source_game_id,model_key",
+            "season,player_id,player,position,raw_projected_value,projected_value,games_in_window,rookie_factor,source_player_id,source_game_id,source_game_date,generated_at,model_key",
             Some(&filters(&[
-                ("season", &format!("eq.{season}")),
+                ("season", &season_filter),
                 ("model_key", "eq.preseason_updating"),
             ])),
             None,
@@ -611,16 +662,11 @@ pub async fn load_current_player_projections_cached(state: &AppState) -> HashMap
         )
         .await
         .unwrap_or_default();
-    let mut out: HashMap<i64, Value> = HashMap::new();
-    for r in &rows {
-        if let Some(pid) = safe_int(r.get("player_id")) {
-            if pid > 0 {
-                out.insert(pid, r.clone());
-            }
-        }
+    let out = pick_latest_current_projections(&rows);
+    if !out.is_empty() {
+        let v = json!(out.iter().map(|(k, v)| (k.to_string(), v.clone())).collect::<serde_json::Map<_, _>>());
+        state.caches.current_player_projections.insert((), v);
     }
-    let v = json!(out.iter().map(|(k, v)| (k.to_string(), v.clone())).collect::<serde_json::Map<_, _>>());
-    state.caches.current_player_projections.insert((), v);
     out
 }
 
@@ -652,28 +698,61 @@ pub fn proj_value_for_player(row: Option<&Value>) -> f64 {
 }
 
 /// `_team_proj_from_lineup(team, lineups_all, proj_map)`.
+///
+/// Mirrors Flask + `projections.html`:
+/// - Includes all non-`EXT` forwards and defensemen.
+/// - Includes strictly one goalie (`G1` preferred, else the first non-`EXT`
+///   goalie with an empty unit).
+/// - Uses `rookie_fallback(pos)` whenever a player has no projection row in
+///   `proj_map` (not `0.0`).
 pub fn team_proj_from_lineup(team: &str, lineups_all: &Value, proj_map: &HashMap<i64, Value>) -> f64 {
     let t = team.to_uppercase();
     let li = lineups_all.get(&t).cloned().unwrap_or(Value::Null);
     let mut total = 0.0;
-    for sec in ["forwards", "defense", "goalies"] {
+    for sec in ["forwards", "defense"] {
         let arr = li.get(sec).and_then(|a| a.as_array()).cloned().unwrap_or_default();
+        let default_pos = if sec == "defense" { "D" } else { "F" };
         for it in &arr {
             let unit_val = str_value(it.get("unit")).to_uppercase();
             if unit_val == "EXT" {
                 continue;
             }
             let pid = safe_int(it.get("playerId"));
-            let pos = str_value(it.get("pos")).to_uppercase().chars().next().map(|c| c.to_string()).unwrap_or_default();
-            if pos == "G" {
-                if !unit_val.is_empty() && unit_val != "G1" {
-                    continue;
-                }
-            }
-            if let Some(pid) = pid {
-                total += proj_value_for_player(proj_map.get(&pid));
+            let pos = str_value(it.get("pos"))
+                .to_uppercase()
+                .chars()
+                .next()
+                .map(|c| c.to_string())
+                .unwrap_or_default();
+            if let Some(row) = pid.and_then(|id| proj_map.get(&id)) {
+                total += proj_value_for_player(Some(row));
             } else {
-                total += rookie_fallback(if pos.is_empty() { "F" } else { &pos });
+                total += rookie_fallback(if pos.is_empty() { default_pos } else { &pos });
+            }
+        }
+    }
+    if let Some(goalies) = li.get("goalies").and_then(|a| a.as_array()) {
+        let mut g1: Option<&Value> = None;
+        let mut g_empty: Option<&Value> = None;
+        for it in goalies {
+            let unit_val = str_value(it.get("unit")).to_uppercase();
+            if unit_val == "EXT" {
+                continue;
+            }
+            if unit_val == "G1" {
+                g1 = Some(it);
+                break;
+            }
+            if unit_val.is_empty() && g_empty.is_none() {
+                g_empty = Some(it);
+            }
+        }
+        if let Some(g) = g1.or(g_empty) {
+            let pid = safe_int(g.get("playerId"));
+            if let Some(row) = pid.and_then(|id| proj_map.get(&id)) {
+                total += proj_value_for_player(Some(row));
+            } else {
+                total += rookie_fallback("G");
             }
         }
     }
@@ -688,8 +767,8 @@ pub fn team_proj_from_custom_lineup_entries(entries: &[Value], proj_map: &HashMa
         let pos = str_value(entry.get("pos")).to_uppercase().chars().next().map(|c| c.to_string()).unwrap_or_else(|| "F".to_string());
         let games = normalize_games(entry.get("games"));
         let weight = games as f64 / 82.0;
-        if pid > 0 {
-            total += proj_value_for_player(proj_map.get(&pid)) * weight;
+        if let Some(row) = (pid > 0).then(|| proj_map.get(&pid)).flatten() {
+            total += proj_value_for_player(Some(row)) * weight;
         } else {
             total += rookie_fallback(&pos) * weight;
         }
@@ -1586,5 +1665,57 @@ mod tests {
     fn max_season_is_none_without_usable_rows() {
         assert_eq!(max_season_from_rows(&[]), None);
         assert_eq!(max_season_from_rows(&[json!({"season": "not-a-season"})]), None);
+    }
+
+    #[test]
+    fn previous_season_id_steps_back_one_season() {
+        assert_eq!(previous_season_id(20262027), 20252026);
+        assert_eq!(previous_season_id(20252026), 20242025);
+    }
+
+    #[test]
+    fn pick_latest_current_projections_prefers_newer_season_and_keeps_prior_only_players() {
+        let rows = vec![
+            json!({"season": 20252026, "player_id": 100, "raw_projected_value": 0.15}),
+            json!({"season": 20262027, "player_id": 100, "raw_projected_value": 0.25}),
+            json!({"season": 20252026, "player_id": 200, "raw_projected_value": 0.20}),
+        ];
+        let picked = pick_latest_current_projections(&rows);
+        assert_eq!(picked.len(), 2);
+        assert_eq!(picked[&100]["season"], 20262027);
+        assert_eq!(picked[&100]["raw_projected_value"], 0.25);
+        assert_eq!(picked[&200]["season"], 20252026);
+        assert_eq!(picked[&200]["raw_projected_value"], 0.20);
+    }
+
+    #[test]
+    fn team_proj_from_lineup_uses_rookie_fallback_for_missing_pid_and_picks_one_goalie() {
+        let lineups = json!({
+            "TOR": {
+                "forwards": [
+                    {"playerId": 1, "pos": "F", "unit": "C1"},
+                    {"playerId": 2, "pos": "F", "unit": "LW1"},
+                    {"playerId": 3, "pos": "F", "unit": "EXT"}
+                ],
+                "defense": [
+                    {"playerId": 4, "pos": "D", "unit": "LD1"}
+                ],
+                "goalies": [
+                    {"playerId": 10, "pos": "G", "unit": ""},
+                    {"playerId": 11, "pos": "G", "unit": "G1"},
+                    {"playerId": 12, "pos": "G", "unit": "G2"}
+                ]
+            }
+        });
+        let mut proj_map = HashMap::new();
+        proj_map.insert(1, json!({"raw_projected_value": 0.30}));
+        proj_map.insert(3, json!({"raw_projected_value": 0.99})); // EXT must be ignored
+        proj_map.insert(10, json!({"raw_projected_value": 0.50})); // not G1
+        proj_map.insert(11, json!({"raw_projected_value": 0.10})); // G1 must win
+        proj_map.insert(12, json!({"raw_projected_value": 0.40})); // G2 must be ignored
+
+        let total = team_proj_from_lineup("TOR", &lineups, &proj_map);
+        let expected = 0.30 + rookie_fallback("F") + rookie_fallback("D") + 0.10;
+        assert!((total - expected).abs() < 1e-9, "got {total}, expected {expected}");
     }
 }
